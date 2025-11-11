@@ -1,7 +1,6 @@
 const express = require('express');
 const { marked } = require('marked');
 const OpenAI = require('openai');
-const TradingBot = require('./tradingEngine');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -15,7 +14,55 @@ const openai = new OpenAI({
   apiKey: process.env.API_KEY
 });
 
-const tradingBot = new TradingBot();
+// SIMPLE TRADING BOT (without CCXT for now)
+class SimpleTradingBot {
+  constructor() {
+    this.isRunning = false;
+    this.tradingPair = 'BTC/USDT';
+  }
+
+  async analyzeMarket() {
+    // Mock analysis for testing
+    const mockPrice = 35000 + (Math.random() * 1000);
+    const mockBalance = 1000;
+    
+    const randomSignal = Math.random();
+    if (randomSignal > 0.6) {
+      return { action: 'BUY', amount: 0.001, price: mockPrice, balance: mockBalance };
+    } else if (randomSignal < 0.4) {
+      return { action: 'SELL', amount: 0.001, price: mockPrice, balance: mockBalance };
+    } else {
+      return { action: 'HOLD', price: mockPrice, balance: mockBalance };
+    }
+  }
+
+  async runSingleCheck() {
+    console.log('🤖 Running market analysis...');
+    const analysis = await this.analyzeMarket();
+    console.log('📈 Analysis result:', analysis);
+    return analysis;
+  }
+
+  startBot() {
+    this.isRunning = true;
+    console.log('🚀 Trading bot started (mock mode)');
+    
+    // Run every 2 minutes
+    this.interval = setInterval(() => {
+      this.runSingleCheck();
+    }, 2 * 60 * 1000);
+  }
+
+  stopBot() {
+    this.isRunning = false;
+    if (this.interval) {
+      clearInterval(this.interval);
+    }
+    console.log('🛑 Trading bot stopped');
+  }
+}
+
+const tradingBot = new SimpleTradingBot();
 
 // Trading Bot Routes
 app.post('/start-bot', (req, res) => {
@@ -23,7 +70,7 @@ app.post('/start-bot', (req, res) => {
   res.json({ 
     status: 'Bot started', 
     time: new Date(),
-    message: 'Bot will check market every 2 minutes'
+    message: 'Bot running in MOCK mode - checking every 2 minutes'
   });
 });
 
@@ -48,6 +95,7 @@ app.get('/bot-status', (req, res) => {
   res.json({ 
     running: tradingBot.isRunning,
     pair: tradingBot.tradingPair,
+    mode: 'MOCK DEMO',
     lastUpdate: new Date()
   });
 });
@@ -75,4 +123,5 @@ app.post('/chat', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🤖 Trading bot ready - visit your Render URL`);
+  console.log(`📝 Mode: MOCK DEMO - No real trading`);
 });
