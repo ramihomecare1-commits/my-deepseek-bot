@@ -1,10 +1,12 @@
 const express = require('express');
 const { marked } = require('marked');
 const OpenAI = require('openai');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Serve static files from 'public' directory
 app.use(express.static('public'));
 app.use(express.json());
 
@@ -23,7 +25,7 @@ class SimpleTradingBot {
 
   async analyzeMarket() {
     // Mock analysis for testing
-    const mockPrice = 35000 + (Math.random() * 1000);
+    const mockPrice = (35000 + (Math.random() * 1000)).toFixed(2);
     const mockBalance = 1000;
     
     const randomSignal = Math.random();
@@ -63,6 +65,11 @@ class SimpleTradingBot {
 }
 
 const tradingBot = new SimpleTradingBot();
+
+// ROOT ROUTE - Serve the chat interface
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Trading Bot Routes
 app.post('/start-bot', (req, res) => {
@@ -120,8 +127,14 @@ app.post('/chat', async (req, res) => {
   }
 });
 
+// Keep-alive endpoint
+app.get('/ping', (req, res) => {
+  res.json({ status: 'OK', time: new Date() });
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🤖 Trading bot ready - visit your Render URL`);
   console.log(`📝 Mode: MOCK DEMO - No real trading`);
+  console.log(`🏠 Root route: https://my-deepseek-bot-1.onrender.com/`);
 });
