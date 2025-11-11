@@ -613,78 +613,449 @@ app.get('/', (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Professional Crypto Scanner</title>
+        <title>🤖 AI Crypto Trading Scanner</title>
         <meta http-equiv="refresh" content="300">
         <style>
-            body { font-family: Arial, sans-serif; max-width: 1400px; margin: 0 auto; padding: 20px; }
-            .card { background: #f5f5f5; padding: 20px; margin: 10px 0; border-radius: 8px; }
-            .buy { color: green; font-weight: bold; background: #e8f5e8; border-left: 4px solid green; }
-            .sell { color: red; font-weight: bold; background: #f8d7da; border-left: 4px solid red; }
-            .hold { color: orange; font-weight: bold; background: #fff3cd; border-left: 4px solid orange; }
-            .opportunity { padding: 15px; margin: 10px 0; border-radius: 5px; background: white; }
-            .technical-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
-            .technical-item { background: #e9ecef; padding: 8px; border-radius: 4px; font-size: 0.9em; }
-            .scan-info { background: #007bff; color: white; padding: 10px; border-radius: 5px; margin: 10px 0; }
-            button { padding: 10px 20px; margin: 5px; border: none; border-radius: 4px; cursor: pointer; background: #007bff; color: white; }
-            .auto-scanning { background: #28a745; }
-            .stopped { background: #dc3545; }
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                color: #333;
+            }
+            
+            .container {
+                display: grid;
+                grid-template-columns: 1fr 400px;
+                gap: 20px;
+                max-width: 1800px;
+                margin: 0 auto;
+                padding: 20px;
+                min-height: 100vh;
+            }
+            
+            .main-content {
+                background: rgba(255, 255, 255, 0.95);
+                border-radius: 20px;
+                padding: 30px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                backdrop-filter: blur(10px);
+            }
+            
+            .sidebar {
+                background: rgba(255, 255, 255, 0.95);
+                border-radius: 20px;
+                padding: 25px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                backdrop-filter: blur(10px);
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+            }
+            
+            .header {
+                text-align: center;
+                margin-bottom: 30px;
+                padding-bottom: 20px;
+                border-bottom: 2px solid #e9ecef;
+            }
+            
+            .header h1 {
+                color: #2c3e50;
+                font-size: 2.5em;
+                margin-bottom: 10px;
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            
+            .header p {
+                color: #6c757d;
+                font-size: 1.1em;
+            }
+            
+            .controls {
+                background: #f8f9fa;
+                padding: 25px;
+                border-radius: 15px;
+                margin-bottom: 25px;
+                border: 1px solid #e9ecef;
+            }
+            
+            .controls h3 {
+                color: #2c3e50;
+                margin-bottom: 15px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            
+            .button-group {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                margin-bottom: 15px;
+            }
+            
+            button {
+                padding: 12px 20px;
+                border: none;
+                border-radius: 10px;
+                cursor: pointer;
+                font-weight: 600;
+                font-size: 14px;
+                transition: all 0.3s ease;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+            }
+            
+            .btn-primary {
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                color: white;
+            }
+            
+            .btn-success {
+                background: linear-gradient(135deg, #56ab2f, #a8e6cf);
+                color: white;
+            }
+            
+            .btn-danger {
+                background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
+                color: white;
+            }
+            
+            .btn-secondary {
+                background: #6c757d;
+                color: white;
+            }
+            
+            button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            }
+            
+            .status-card {
+                background: linear-gradient(135deg, #74b9ff, #0984e3);
+                color: white;
+                padding: 20px;
+                border-radius: 15px;
+                text-align: center;
+            }
+            
+            .status-card h4 {
+                margin-bottom: 10px;
+                font-size: 1.1em;
+            }
+            
+            .opportunity {
+                background: white;
+                border-radius: 15px;
+                padding: 20px;
+                margin-bottom: 15px;
+                border-left: 5px solid;
+                box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+                transition: transform 0.3s ease;
+            }
+            
+            .opportunity:hover {
+                transform: translateY(-3px);
+            }
+            
+            .opportunity.buy {
+                border-left-color: #00b894;
+                background: linear-gradient(135deg, #fff, #e8f5e8);
+            }
+            
+            .opportunity.sell {
+                border-left-color: #ff7675;
+                background: linear-gradient(135deg, #fff, #f8d7da);
+            }
+            
+            .opportunity.hold {
+                border-left-color: #fdcb6e;
+                background: linear-gradient(135deg, #fff, #fff3cd);
+            }
+            
+            .coin-header {
+                display: flex;
+                justify-content: between;
+                align-items: center;
+                margin-bottom: 15px;
+            }
+            
+            .coin-name {
+                font-size: 1.3em;
+                font-weight: bold;
+                color: #2c3e50;
+            }
+            
+            .action-badge {
+                padding: 6px 12px;
+                border-radius: 20px;
+                font-weight: bold;
+                font-size: 0.9em;
+            }
+            
+            .buy-badge {
+                background: #00b894;
+                color: white;
+            }
+            
+            .sell-badge {
+                background: #ff7675;
+                color: white;
+            }
+            
+            .hold-badge {
+                background: #fdcb6e;
+                color: white;
+            }
+            
+            .technical-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+                margin: 15px 0;
+            }
+            
+            .technical-item {
+                background: #f8f9fa;
+                padding: 10px;
+                border-radius: 8px;
+                text-align: center;
+                font-size: 0.9em;
+            }
+            
+            .technical-item strong {
+                display: block;
+                color: #6c757d;
+                font-size: 0.8em;
+                margin-bottom: 5px;
+            }
+            
+            .confidence-bar {
+                height: 8px;
+                background: #e9ecef;
+                border-radius: 10px;
+                margin: 10px 0;
+                overflow: hidden;
+            }
+            
+            .confidence-fill {
+                height: 100%;
+                border-radius: 10px;
+                transition: width 0.5s ease;
+            }
+            
+            .high-confidence { background: linear-gradient(90deg, #00b894, #55efc4); }
+            .medium-confidence { background: linear-gradient(90deg, #fdcb6e, #ffeaa7); }
+            .low-confidence { background: linear-gradient(90deg, #ff7675, #ff9a9e); }
+            
+            .ai-panel {
+                background: #2c3e50;
+                color: white;
+                border-radius: 15px;
+                padding: 0;
+                overflow: hidden;
+            }
+            
+            .ai-header {
+                background: linear-gradient(135deg, #34495e, #2c3e50);
+                padding: 20px;
+                text-align: center;
+                border-bottom: 1px solid #34495e;
+            }
+            
+            .ai-header h3 {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                font-size: 1.2em;
+            }
+            
+            .current-analysis {
+                padding: 20px;
+                background: #34495e;
+                margin: 15px;
+                border-radius: 10px;
+                min-height: 200px;
+            }
+            
+            .analysis-stage {
+                font-size: 1.1em;
+                margin-bottom: 15px;
+                color: #74b9ff;
+                font-weight: 600;
+            }
+            
+            .analysis-technicals {
+                background: #2c3e50;
+                padding: 15px;
+                border-radius: 8px;
+                margin: 15px 0;
+            }
+            
+            .technical-row {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                margin-bottom: 8px;
+            }
+            
+            .recent-analysis {
+                max-height: 300px;
+                overflow-y: auto;
+                padding: 15px;
+            }
+            
+            .recent-item {
+                background: #34495e;
+                padding: 12px;
+                margin-bottom: 8px;
+                border-radius: 8px;
+                border-left: 3px solid #74b9ff;
+                font-size: 0.9em;
+            }
+            
+            .no-opportunities {
+                text-align: center;
+                padding: 60px 20px;
+                color: #6c757d;
+            }
+            
+            .no-opportunities h3 {
+                margin-bottom: 15px;
+                color: #95a5a6;
+            }
+            
+            .scan-info {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 15px;
+                margin-top: 15px;
+            }
+            
+            .info-item {
+                background: #f8f9fa;
+                padding: 15px;
+                border-radius: 10px;
+                text-align: center;
+            }
+            
+            .info-value {
+                font-size: 1.5em;
+                font-weight: bold;
+                color: #2c3e50;
+                margin-top: 5px;
+            }
+            
+            @media (max-width: 1200px) {
+                .container {
+                    grid-template-columns: 1fr;
+                }
+                
+                .sidebar {
+                    order: -1;
+                }
+            }
         </style>
     </head>
     <body>
-        <h1>🎯 Professional Crypto Scanner</h1>
-        <p>Technical Analysis: RSI + Bollinger Bands + Support/Resistance (Daily Timeframe)</p>
-        
-        <div class="card">
-            <h3>Scanner Controls:</h3>
-            <button onclick="startAutoScan()" id="startBtn">🚀 Start Auto-Scan (5min)</button>
-            <button onclick="stopAutoScan()" id="stopBtn">🛑 Stop Auto-Scan</button>
-            <button onclick="manualScan()">🔍 Manual Scan Now</button>
-            <button onclick="showAnalysisDialog()">🧠 View Live Analysis</button>
-            <div id="status" class="scan-info">
-                <strong>Status:</strong> <span id="statusText">Ready to start</span>
-                <br><strong>Next Scan:</strong> <span id="nextScan">Not scheduled</span>
+        <div class="container">
+            <!-- Main Content -->
+            <div class="main-content">
+                <div class="header">
+                    <h1>🤖 AI Crypto Trading Scanner</h1>
+                    <p>Professional Technical Analysis • RSI + Bollinger Bands + Support/Resistance</p>
+                </div>
+                
+                <div class="controls">
+                    <h3>🎯 Scanner Controls</h3>
+                    <div class="button-group">
+                        <button class="btn-success" onclick="startAutoScan()">
+                            🚀 Start Auto-Scan
+                        </button>
+                        <button class="btn-danger" onclick="stopAutoScan()">
+                            🛑 Stop Auto-Scan
+                        </button>
+                        <button class="btn-primary" onclick="manualScan()">
+                            🔍 Scan Now
+                        </button>
+                        <button class="btn-secondary" onclick="viewHistory()">
+                            📊 History
+                        </button>
+                    </div>
+                    
+                    <div class="status-card">
+                        <h4>Scanner Status</h4>
+                        <div id="statusText">🟢 Ready to start</div>
+                        <div id="nextScan">Next scan: Not scheduled</div>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 style="margin-bottom: 20px; color: #2c3e50;">📈 Trading Opportunities</h3>
+                    <div id="results">
+                        <div class="no-opportunities">
+                            <h3>🔍 Ready to Scan</h3>
+                            <p>Click "Scan Now" to start technical analysis</p>
+                            <p>Only high-confidence opportunities (65%+) will be shown</p>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
-
-        <div class="card">
-            <h3>📈 Live Trading Opportunities</h3>
-            <div id="results">
-                <p>Scanner will analyze cryptocurrencies every 5 minutes.</p>
-                <p>Only high-confidence opportunities (65%+ confidence) will be shown.</p>
-            </div>
-        </div>
-
-        <div id="analysisDialog" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 500px; background: white; border: 3px solid #007bff; border-radius: 10px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); z-index: 1000; max-height: 80vh; overflow-y: auto;">
-            <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 15px;">
-                <h3 style="margin: 0; color: #007bff;">🧠 DeepSeek AI Analysis</h3>
-                <button onclick="closeAnalysisDialog()" style="background: #dc3545; border: none; color: white; padding: 5px 10px; border-radius: 3px; cursor: pointer;">✕</button>
-            </div>
-            <div id="currentAnalysis">
-                <p>Waiting for analysis to start...</p>
-            </div>
-            <div style="margin-top: 15px; border-top: 1px solid #ddd; padding-top: 10px;">
-                <h4>Recent Analysis:</h4>
-                <div id="recentAnalysis" style="max-height: 200px; overflow-y: auto;"></div>
+            
+            <!-- AI Analysis Sidebar -->
+            <div class="sidebar">
+                <div class="ai-panel">
+                    <div class="ai-header">
+                        <h3>🧠 DeepSeek AI Analysis</h3>
+                        <p>Live Technical Analysis</p>
+                    </div>
+                    
+                    <div class="current-analysis">
+                        <h4 style="margin-bottom: 15px; color: #74b9ff;">Current Analysis</h4>
+                        <div id="currentAnalysis">
+                            <div class="analysis-stage">Waiting for analysis to start...</div>
+                            <p style="color: #bdc3c7; text-align: center; margin-top: 20px;">
+                                Start a scan to see live AI analysis
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div style="padding: 0 20px;">
+                        <h4 style="margin-bottom: 15px; color: white;">Recent Analysis</h4>
+                        <div class="recent-analysis" id="recentAnalysis">
+                            <div style="color: #bdc3c7; text-align: center; padding: 20px;">
+                                No recent analysis
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="scan-info">
+                    <div class="info-item">
+                        <div>Coins Tracked</div>
+                        <div class="info-value" id="coinsTracked">10</div>
+                    </div>
+                    <div class="info-item">
+                        <div>Confidence Min</div>
+                        <div class="info-value" id="confidenceMin">65%</div>
+                    </div>
+                </div>
             </div>
         </div>
 
         <script>
             let analysisUpdateInterval = null;
-
-            function showAnalysisDialog() {
-                document.getElementById('analysisDialog').style.display = 'block';
-                updateLiveAnalysis();
-                if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
-                analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
-            }
-
-            function closeAnalysisDialog() {
-                document.getElementById('analysisDialog').style.display = 'none';
-                if (analysisUpdateInterval) {
-                    clearInterval(analysisUpdateInterval);
-                    analysisUpdateInterval = null;
-                }
-            }
 
             async function updateLiveAnalysis() {
                 try {
@@ -695,56 +1066,68 @@ app.get('/', (req, res) => {
                     if (data.currentlyAnalyzing) {
                         const analysis = data.currentlyAnalyzing;
                         currentDiv.innerHTML = \`
-                            <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 4px solid #007bff;">
-                                <h4 style="margin: 0 0 10px 0;">🔍 Analyzing: \${analysis.symbol} - \${analysis.name}</h4>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-                                    <div><strong>Stage:</strong> \${analysis.stage}</div>
-                                    <div><strong>Time:</strong> \${new Date(analysis.timestamp).toLocaleTimeString()}</div>
-                                </div>
-                                \${analysis.technicals ? \`
-                                <div style="background: #e9ecef; padding: 10px; border-radius: 3px; margin: 10px 0;">
-                                    <strong>Technical Indicators:</strong>
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px;">
-                                        <div>RSI: \${analysis.technicals.rsi}</div>
-                                        <div>Bollinger: \${analysis.technicals.bollingerPosition}</div>
-                                        <div>Support: $\${analysis.technicals.support}</div>
-                                        <div>Resistance: $\${analysis.technicals.resistance}</div>
-                                        <div>Trend: \${analysis.technicals.trend}</div>
-                                    </div>
-                                </div>
-                                \` : ''}
-                                \${analysis.result ? \`
-                                <div style="background: \${analysis.result.action === 'BUY' ? '#e8f5e8' : analysis.result.action === 'SELL' ? '#f8d7da' : '#fff3cd'}; 
-                                            padding: 10px; border-radius: 3px; margin: 10px 0; border-left: 4px solid \${analysis.result.action === 'BUY' ? 'green' : analysis.result.action === 'SELL' ? 'red' : 'orange'};">
-                                    <strong>AI Decision:</strong> <span style="color: \${analysis.result.action === 'BUY' ? 'green' : analysis.result.action === 'SELL' ? 'red' : 'orange'}; font-weight: bold;">\${analysis.result.action}</span>
-                                    <br><strong>Confidence:</strong> \${analysis.result.confidence}
-                                    <br><strong>Reason:</strong> \${analysis.result.reason}
-                                </div>
-                                \` : ''}
-                                \${analysis.error ? \`<div style="color: red; font-weight: bold;">❌ \${analysis.stage}</div>\` : ''}
+                            <div class="analysis-stage">\${analysis.stage}</div>
+                            <div style="margin: 10px 0; padding: 10px; background: #2c3e50; border-radius: 8px;">
+                                <strong style="color: #74b9ff;">\${analysis.symbol}</strong> - \${analysis.name}
+                                <br><small style="color: #bdc3c7;">\${new Date(analysis.timestamp).toLocaleTimeString()}</small>
                             </div>
+                            \${analysis.technicals ? \`
+                            <div class="analysis-technicals">
+                                <div style="color: #ecf0f1; margin-bottom: 10px;">Technical Indicators:</div>
+                                <div class="technical-row">
+                                    <div>RSI: <span style="color: #74b9ff;">\${analysis.technicals.rsi}</span></div>
+                                    <div>Bollinger: <span style="color: #74b9ff;">\${analysis.technicals.bollingerPosition}</span></div>
+                                </div>
+                                <div class="technical-row">
+                                    <div>Support: <span style="color: #74b9ff;">$\${analysis.technicals.support}</span></div>
+                                    <div>Resistance: <span style="color: #74b9ff;">$\${analysis.technicals.resistance}</span></div>
+                                </div>
+                                <div class="technical-row">
+                                    <div>Trend: <span style="color: #74b9ff;">\${analysis.technicals.trend}</span></div>
+                                </div>
+                            </div>
+                            \` : ''}
+                            \${analysis.result ? \`
+                            <div style="background: \${analysis.result.action === 'BUY' ? '#00b894' : analysis.result.action === 'SELL' ? '#ff7675' : '#fdcb6e'}; 
+                                        padding: 15px; border-radius: 10px; margin-top: 15px; text-align: center;">
+                                <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 5px;">
+                                    \${analysis.result.action} (\${analysis.result.confidence})
+                                </div>
+                                <div style="font-size: 0.9em;">
+                                    \${analysis.result.reason}
+                                </div>
+                            </div>
+                            \` : ''}
+                            \${analysis.error ? \`
+                            <div style="background: #e74c3c; color: white; padding: 15px; border-radius: 10px; margin-top: 15px; text-align: center;">
+                                ❌ \${analysis.stage}
+                            </div>
+                            \` : ''}
                         \`;
                     } else {
                         currentDiv.innerHTML = \`
-                            <div style="text-align: center; padding: 20px; color: #6c757d;">
-                                <h4>🔄 No Active Analysis</h4>
-                                <p>The scanner is currently not analyzing any coins.</p>
-                                <p>Start a scan to see live AI analysis.</p>
-                            </div>
+                            <div class="analysis-stage">No Active Analysis</div>
+                            <p style="color: #bdc3c7; text-align: center; margin-top: 20px;">
+                                The scanner is currently not analyzing any coins.<br>
+                                Start a scan to see live AI analysis.
+                            </p>
                         \`;
                     }
                     
                     const recentDiv = document.getElementById('recentAnalysis');
                     if (data.recentAnalysis && data.recentAnalysis.length > 0) {
                         recentDiv.innerHTML = data.recentAnalysis.map(analysis => \`
-                            <div style="border-bottom: 1px solid #eee; padding: 5px 0; font-size: 0.9em;">
+                            <div class="recent-item">
                                 <strong>\${analysis.symbol}</strong>: \${analysis.stage}
-                                <br><small style="color: #666;">\${new Date(analysis.timestamp).toLocaleTimeString()}</small>
-                                \${analysis.result ? \`<br><small style="color: \${analysis.result.action === 'BUY' ? 'green' : analysis.result.action === 'SELL' ? 'red' : 'orange'};">→ \${analysis.result.action} (\${analysis.result.confidence})</small>\` : ''}
+                                <br><small style="color: #bdc3c7;">\${new Date(analysis.timestamp).toLocaleTimeString()}</small>
+                                \${analysis.result ? \`
+                                <br><small style="color: \${analysis.result.action === 'BUY' ? '#00b894' : analysis.result.action === 'SELL' ? '#ff7675' : '#fdcb6e'}">
+                                    → \${analysis.result.action} (\${analysis.result.confidence})
+                                </small>\` : ''}
                             </div>
                         \`).join('');
                     } else {
-                        recentDiv.innerHTML = '<p style="color: #666; text-align: center;">No recent analysis</p>';
+                        recentDiv.innerHTML = '<div style="color: #bdc3c7; text-align: center; padding: 20px;">No recent analysis</div>';
                     }
                     
                 } catch (error) {
@@ -757,11 +1140,8 @@ app.get('/', (req, res) => {
                     const response = await fetch('/start-scan', { method: 'POST' });
                     const result = await response.json();
                     
-                    document.getElementById('statusText').innerHTML = \`<span style="color: lightgreen;">🔄 Auto-Scanning</span>\`;
-                    document.getElementById('statusText').parentElement.className = 'scan-info auto-scanning';
-                    document.getElementById('nextScan').textContent = 'Every 5 minutes';
-                    
-                    alert(\`Auto-scan started! Scanning \${result.coins} coins every \${result.interval}\`);
+                    document.getElementById('statusText').innerHTML = '🔄 Auto-Scanning';
+                    document.getElementById('nextScan').textContent = 'Next scan: Every 5 minutes';
                     
                     manualScan();
                     
@@ -775,11 +1155,8 @@ app.get('/', (req, res) => {
                     const response = await fetch('/stop-scan', { method: 'POST' });
                     const result = await response.json();
                     
-                    document.getElementById('statusText').innerHTML = '<span style="color: lightcoral;">🛑 Stopped</span>';
-                    document.getElementById('statusText').parentElement.className = 'scan-info stopped';
-                    document.getElementById('nextScan').textContent = 'Manual mode';
-                    
-                    alert('Auto-scan stopped');
+                    document.getElementById('statusText').innerHTML = '🛑 Stopped';
+                    document.getElementById('nextScan').textContent = 'Next scan: Manual mode';
                     
                 } catch (error) {
                     alert('Error stopping auto-scan');
@@ -788,16 +1165,19 @@ app.get('/', (req, res) => {
 
             async function manualScan() {
                 try {
-                    document.getElementById('results').innerHTML = '<p>🔍 Scanning cryptocurrencies with technical analysis...</p>';
+                    document.getElementById('results').innerHTML = '<div class="no-opportunities"><h3>🔍 Scanning...</h3><p>Analyzing cryptocurrencies with technical analysis</p></div>';
                     
-                    showAnalysisDialog();
+                    // Start live analysis updates
+                    if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
+                    analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
+                    updateLiveAnalysis();
                     
                     const response = await fetch('/scan-now');
                     const data = await response.json();
                     
                     if (data.opportunities.length === 0) {
                         document.getElementById('results').innerHTML = \`
-                            <div style="text-align: center; padding: 40px; color: #6c757d;">
+                            <div class="no-opportunities">
                                 <h3>📭 No High-Confidence Opportunities</h3>
                                 <p>Scanned \${data.analyzedCoins} of \${data.totalCoins} coins</p>
                                 <p><em>No technical setups meeting 65%+ confidence threshold</em></p>
@@ -808,45 +1188,77 @@ app.get('/', (req, res) => {
                     }
                     
                     let opportunitiesHTML = \`
-                        <div style="margin-bottom: 20px;">
-                            <h4>🎯 Found \${data.opportunitiesFound} Technical Opportunities</h4>
-                            <p><em>Scan time: \${new Date(data.scanTime).toLocaleString()} | Next scan: \${new Date(data.nextScan).toLocaleTimeString()}</em></p>
+                        <div style="margin-bottom: 25px;">
+                            <div style="background: linear-gradient(135deg, #74b9ff, #0984e3); color: white; padding: 20px; border-radius: 15px; text-align: center;">
+                                <h3 style="margin-bottom: 10px;">🎯 Found \${data.opportunitiesFound} Opportunities</h3>
+                                <p>Scan: \${new Date(data.scanTime).toLocaleString()} | Next: \${new Date(data.nextScan).toLocaleTimeString()}</p>
+                            </div>
                         </div>
                     \`;
                     
                     data.opportunities.forEach(opp => {
                         const actionClass = opp.action.toLowerCase();
+                        const confidencePercent = (opp.confidence * 100).toFixed(0);
+                        const confidenceLevel = confidencePercent >= 75 ? 'high-confidence' : confidencePercent >= 60 ? 'medium-confidence' : 'low-confidence';
                         
                         opportunitiesHTML += \`
-                            <div class="opportunity">
-                                <div style="display: flex; justify-content: between; align-items: start;">
-                                    <div style="flex: 1;">
-                                        <h4 style="margin: 0;">
-                                            <span class="\${actionClass}">\${opp.action}</span> 
-                                            \${opp.symbol} - \${opp.name}
-                                        </h4>
-                                        <p><strong>Price:</strong> \${opp.price} • <strong>Confidence:</strong> \${(opp.confidence * 100).toFixed(0)}%</p>
-                                        <p><strong>Signal:</strong> \${opp.signal}</p>
-                                        <p><strong>Reason:</strong> \${opp.reason}</p>
+                            <div class="opportunity \${actionClass}">
+                                <div class="coin-header">
+                                    <div class="coin-name">\${opp.symbol} - \${opp.name}</div>
+                                    <div class="\${actionClass}-badge action-badge">\${opp.action}</div>
+                                </div>
+                                
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0;">
+                                    <div>
+                                        <div style="font-size: 1.4em; font-weight: bold; color: #2c3e50;">\${opp.price}</div>
+                                        <div style="color: #6c757d; font-size: 0.9em;">Current Price</div>
                                     </div>
-                                    <div style="flex: 1;">
-                                        <div class="technical-grid">
-                                            <div class="technical-item"><strong>RSI:</strong> \${opp.technicals.rsi}</div>
-                                            <div class="technical-item"><strong>Bollinger:</strong> \${opp.technicals.bollingerPosition}</div>
-                                            <div class="technical-item"><strong>Trend:</strong> \${opp.technicals.trend}</div>
-                                            <div class="technical-item"><strong>Support:</strong> \${opp.technicals.support}</div>
-                                            <div class="technical-item"><strong>Resistance:</strong> \${opp.technicals.resistance}</div>
-                                        </div>
+                                    <div>
+                                        <div style="font-size: 1.4em; font-weight: bold; color: #2c3e50;">\${confidencePercent}%</div>
+                                        <div style="color: #6c757d; font-size: 0.9em;">Confidence</div>
                                     </div>
                                 </div>
-                                <div style="margin-top: 10px;">
-                                    <strong>Insights:</strong>
-                                    <ul>
+                                
+                                <div class="confidence-bar">
+                                    <div class="confidence-fill \${confidenceLevel}" style="width: \${confidencePercent}%"></div>
+                                </div>
+                                
+                                <div style="margin: 15px 0; color: #5a6268; line-height: 1.5;">
+                                    \${opp.reason}
+                                </div>
+                                
+                                <div class="technical-grid">
+                                    <div class="technical-item">
+                                        <strong>RSI</strong>
+                                        \${opp.technicals.rsi}
+                                    </div>
+                                    <div class="technical-item">
+                                        <strong>Bollinger</strong>
+                                        \${opp.technicals.bollingerPosition}
+                                    </div>
+                                    <div class="technical-item">
+                                        <strong>Support</strong>
+                                        \${opp.technicals.support}
+                                    </div>
+                                    <div class="technical-item">
+                                        <strong>Resistance</strong>
+                                        \${opp.technicals.resistance}
+                                    </div>
+                                    <div class="technical-item">
+                                        <strong>Trend</strong>
+                                        \${opp.technicals.trend}
+                                    </div>
+                                </div>
+                                
+                                <div style="margin-top: 15px;">
+                                    <strong style="color: #6c757d;">Insights:</strong>
+                                    <ul style="margin-top: 8px; padding-left: 20px; color: #5a6268;">
                                         \${opp.insights.map(insight => \`<li>\${insight}</li>\`).join('')}
                                     </ul>
                                 </div>
-                                <div style="font-size: 0.8em; color: #666; margin-top: 5px;">
-                                    Analyzed: \${new Date(opp.timestamp).toLocaleTimeString()}
+                                
+                                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e9ecef; color: #6c757d; font-size: 0.8em;">
+                                    Analyzed: \${new Date(opp.timestamp).toLocaleString()}
                                 </div>
                             </div>
                         \`;
@@ -856,16 +1268,28 @@ app.get('/', (req, res) => {
                     
                 } catch (error) {
                     document.getElementById('results').innerHTML = 
-                        '<p style="color: red;">Scan failed. Technical analysis may be rate limited.</p>';
+                        '<div class="no-opportunities" style="color: #e74c3c;"><h3>❌ Scan Failed</h3><p>Technical analysis may be rate limited. Try again in 60 seconds.</p></div>';
                 }
             }
 
+            async function viewHistory() {
+                try {
+                    const response = await fetch('/scan-history');
+                    const history = await response.json();
+                    alert(\`Last scan: \${history.length > 0 ? new Date(history[0].timestamp).toLocaleString() : 'No history'}\`);
+                } catch (error) {
+                    alert('Error loading history');
+                }
+            }
+
+            // Auto-refresh every 30 seconds when auto-scanning
             setInterval(() => {
                 if (document.getElementById('statusText').textContent.includes('Auto-Scanning')) {
                     manualScan();
                 }
             }, 30000);
 
+            // Initial load
             manualScan();
         </script>
     </body>
