@@ -217,3 +217,41 @@ app.listen(PORT, () => {
   console.log(`📝 Mode: MOCK DEMO - No real trading`);
   console.log(`🏠 Root route: https://my-deepseek-bot-1.onrender.com/`);
 });
+const PriceService = require('./priceService');
+const priceService = new PriceService();
+
+// Update the analyzeMarket method
+async analyzeMarket() {
+  try {
+    // Get REAL price data
+    const btcData = await priceService.getPrice('bitcoin');
+    const ethData = await priceService.getPrice('ethereum');
+    
+    const currentPrice = btcData.price;
+    const mockBalance = 1000;
+    
+    // Simple strategy based on real price
+    let action = 'HOLD';
+    let amount = 0.001;
+    
+    // Example: Buy if price drops 2% from recent average, Sell if rises 3%
+    if (currentPrice < 35000 * 0.98) {
+      action = 'BUY';
+    } else if (currentPrice > 35000 * 1.03) {
+      action = 'SELL';
+    }
+    
+    return {
+      action,
+      amount,
+      price: currentPrice,
+      balance: mockBalance,
+      signal: `BTC: $${currentPrice} | ETH: $${ethData.price} | Action: ${action}`,
+      timestamp: new Date()
+    };
+    
+  } catch (error) {
+    console.error('Analysis error:', error);
+    return this.getMockAnalysis();
+  }
+}
