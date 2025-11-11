@@ -9,7 +9,7 @@ app.use(express.json());
 
 const openai = new OpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.API_KEY || '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'
+  apiKey: process.env.API_KEY
 });
 
 app.post('/chat', async (req, res) => {
