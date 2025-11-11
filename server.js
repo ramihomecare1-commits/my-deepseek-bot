@@ -255,3 +255,12 @@ async analyzeMarket() {
     return this.getMockAnalysis();
   }
 }
+// ==== ADD THIS IF MISSING ====
+const PORT = process.env.PORT || 10000;
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`✅ Service bound to 0.0.0.0:${PORT}`);
+  console.log(`✅ Ready to receive traffic`);
+});
+// ==== END ====
