@@ -1,38 +1,24 @@
 const express = require('express');
-const ccxt = require('ccxt'); // Use CCXT for Pionex
+const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(express.json());
 
-// Trading Bot Class with REAL Pionex API
+// Trading Bot Class with DIRECT Pionex API
 class TradingBot {
   constructor() {
     this.isRunning = false;
     this.tradingPair = 'BTC/USDT';
     this.balance = 1000;
-    this.exchange = null;
-    this.initExchange();
-  }
-
-  initExchange() {
-    try {
-      this.exchange = new ccxt.pionex({
-        'apiKey': process.env.PIONEX_API_KEY,
-        'secret': process.env.PIONEX_API_SECRET,
-        'sandbox': false, // Real mode
-        'verbose': false
-      });
-      console.log('✅ Pionex exchange initialized');
-    } catch (error) {
-      console.log('❌ Pionex init error:', error.message);
-    }
+    this.apiKey = process.env.PIONEX_API_KEY;
+    this.apiSecret = process.env.PIONEX_API_SECRET;
   }
 
   async analyzeMarket() {
     try {
       // Get REAL price from Pionex
-      const priceData = await this.getRealPrice();
+      const priceData = await this.getPionexPrice();
       
       let action = 'HOLD';
       let reason = 'Price within range';
@@ -63,38 +49,54 @@ class TradingBot {
     }
   }
 
-  async getRealPrice() {
+  async getPionexPrice() {
     try {
-      if (!this.exchange) {
-        throw new Error('Exchange not initialized');
+      console.log('📊 Fetching REAL Bitcoin price from Pionex API...');
+      
+      // Pionex API endpoint for market data (public - no auth needed)
+      const response = await axios.get('https://api.pionex.com/api/v1/market/tickers');
+      
+      if (response.data && response.data.data && response.data.data.tickers) {
+        const btcTicker = response.data.data.tickers.find(t => t.symbol === 'BTC_USDT');
+        
+        if (btcTicker && btcTicker.close) {
+          const price = parseFloat(btcTicker.close);
+          console.log(`✅ REAL Pionex Price: $${price}`);
+          return { price, source: 'Pionex Live' };
+        }
       }
-
-      console.log('📊 Fetching REAL Bitcoin price from Pionex...');
       
-      // Get ticker from Pionex
-      const ticker = await this.exchange.fetchTicker('BTC/USDT');
-      const price = ticker.last;
-      
-      console.log(`✅ REAL Pionex Price: $${price}`);
-      return { price, source: 'Pionex Live' };
+      throw new Error('No BTC price found in Pionex response');
       
     } catch (error) {
       console.log('❌ Pionex API failed:', error.message);
+      return await this.getCoinGeckoPrice();
+    }
+  }
+
+  async getCoinGeckoPrice() {
+    try {
+      console.log('🔄 Trying CoinGecko as backup...');
+      const response = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
       
-      // Fallback to CoinGecko
-      try {
-        console.log('🔄 Trying CoinGecko as backup...');
-        const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
-        const data = await response.json();
-        const price = data.bitcoin.usd;
+      if (response.data && response.data.bitcoin && response.data.bitcoin.usd) {
+        const price = response.data.bitcoin.usd;
         console.log(`✅ CoinGecko Price: $${price}`);
         return { price, source: 'CoinGecko Backup' };
-      } catch (cgError) {
-        console.log('❌ All APIs failed, using mock price');
-        const mockPrice = 35000 + Math.random() * 10000;
-        return { price: mockPrice, source: 'Mock Data' };
       }
+      
+      throw new Error('No price from CoinGecko');
+      
+    } catch (error) {
+      console.log('❌ CoinGecko failed:', error.message);
+      return this.getMockPrice();
     }
+  }
+
+  getMockPrice() {
+    console.log('❌ All APIs failed, using mock price');
+    const mockPrice = 35000 + Math.random() * 10000;
+    return { price: mockPrice, source: 'Mock Data' };
   }
 
   getMockAnalysis() {
@@ -113,7 +115,8 @@ class TradingBot {
 
   startBot() {
     this.isRunning = true;
-    console.log('🤖 Trading bot started with REAL Pionex data');
+    console.log('🤖 Trading bot started');
+    console.log(`🔑 Pionex API Key: ${this.apiKey ? 'Configured' : 'Missing'}`);
     return { status: 'started', time: new Date() };
   }
 
@@ -134,7 +137,7 @@ app.get('/', (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Trading Bot - Pionex Live</title>
+        <title>Trading Bot - Live Data</title>
         <style>
             body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
             .card { background: #f5f5f5; padding: 20px; margin: 10px 0; border-radius: 8px; }
@@ -142,24 +145,25 @@ app.get('/', (req, res) => {
             .sell { color: red; font-weight: bold; } 
             .hold { color: orange; font-weight: bold; }
             .live { color: blue; font-weight: bold; }
+            .mock { color: gray; font-style: italic; }
             button { padding: 10px 20px; margin: 5px; border: none; border-radius: 4px; cursor: pointer; background: #007bff; color: white; }
             button:hover { background: #0056b3; }
         </style>
     </head>
     <body>
-        <h1>🤖 Trading Bot - Pionex Live Data</h1>
-        <p>Using your REAL Pionex API connection!</p>
+        <h1>🤖 Trading Bot - Live Market Data</h1>
+        <p>Using Pionex API for real cryptocurrency prices</p>
         
         <div class="card">
             <h3>Quick Actions:</h3>
-            <button onclick="checkMarket()">Check Pionex Market</button>
+            <button onclick="checkMarket()">Get Live Market Data</button>
             <button onclick="startBot()">Start Auto-Trading</button>
             <button onclick="stopBot()">Stop Auto-Trading</button>
         </div>
 
         <div class="card">
             <h3>Live Market Data:</h3>
-            <div id="marketData">Click "Check Pionex Market" to load REAL data...</div>
+            <div id="marketData">Click "Get Live Market Data" to load...</div>
         </div>
 
         <script>
@@ -172,7 +176,8 @@ app.get('/', (req, res) => {
                     if (data.action === 'BUY') actionClass = 'buy';
                     if (data.action === 'SELL') actionClass = 'sell';
                     
-                    const sourceClass = data.source.includes('Pionex') ? 'live' : '';
+                    let sourceClass = 'live';
+                    if (data.source.includes('Mock')) sourceClass = 'mock';
                     
                     document.getElementById('marketData').innerHTML = \`
                         <p class="\${actionClass}">Action: <strong>\${data.action}</strong></p>
@@ -190,7 +195,7 @@ app.get('/', (req, res) => {
             async function startBot() {
                 try {
                     await fetch('/start-bot', { method: 'POST' });
-                    alert('Bot started with Pionex data!');
+                    alert('Bot started!');
                 } catch (error) {
                     alert('Error starting bot');
                 }
@@ -205,6 +210,7 @@ app.get('/', (req, res) => {
                 }
             }
 
+            // Load on page start
             checkMarket();
         </script>
     </body>
@@ -248,8 +254,7 @@ app.get('/health', (req, res) => {
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Trading Bot Server running on port ${PORT}`);
-  console.log(`✅ Using REAL Pionex API for live data`);
-  console.log(`✅ Pionex API Key: ${process.env.PIONEX_API_KEY ? 'Set' : 'Missing'}`);
+  console.log(`✅ Using direct Pionex API calls`);
 });
 
 module.exports = app;
