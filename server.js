@@ -22,11 +22,11 @@ class SimpleTradingBot {
     this.isRunning = false;
     this.tradingPair = 'BTC/USDT';
   }
-
-  async analyzeMarket() {
-    // Mock analysis for testing
-    const mockPrice = (35000 + (Math.random() * 1000)).toFixed(2);
-    const mockBalance = 1000;
+async analyzeMarket() {
+  // Get REAL Bitcoin price
+  const priceService = new (require('./priceService'))();
+  const btcData = await priceService.getBitcoinPrice();
+  const currentPrice = btcData.price;
     
     const randomSignal = Math.random();
     if (randomSignal > 0.6) {
