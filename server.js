@@ -79,6 +79,7 @@ class ProfessionalTradingBot {
     };
     this.latestHeatmap = [];
     this.newsCache = new Map();
+    this.priceCache = new Map();
   }
 
   getTop100Coins() {
@@ -407,6 +408,12 @@ class ProfessionalTradingBot {
       return false;
     }
 
+    // PREVENT TEST COIN NOTIFICATIONS
+    if (opportunity.symbol === 'TEST' || opportunity.name.includes('Test') || opportunity.usesMockData) {
+      console.log(`⏭️ Skipping notification for test/mock data: ${opportunity.symbol}`);
+      return false;
+    }
+
     const coinKey = opportunity.symbol;
     const now = Date.now();
 
@@ -583,47 +590,49 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       let mockDataUsed = 0;
       const heatmapEntries = [];
 
-// Replace lines ~485-510 with this:
-for (const coin of this.trackedCoins) {
-    try {
-        const analysis = await this.analyzeWithTechnicalIndicators(coin, { options });
-        analyzedCount += 1;
+      for (const coin of this.trackedCoins) {
+        try {
+          const analysis = await this.analyzeWithTechnicalIndicators(coin, { options });
+          analyzedCount += 1;
 
-        // DEBUG: Log every analysis
-        console.log(`🔍 ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}%) - Mock: ${analysis.usesMockData}`);
+          console.log(`🔍 ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}%) - Mock: ${analysis.usesMockData}`);
 
-        if (analysis.usesMockData) {
+          if (analysis.usesMockData) {
             mockDataUsed += 1;
-        }
+          }
 
-        if (analysis.heatmapEntry) {
+          if (analysis.heatmapEntry) {
             heatmapEntries.push(analysis.heatmapEntry);
-        }
+          }
 
-        // FIXED LINE: Remove mock data restriction - allow both real and mock data
-        if (analysis.confidence >= this.minConfidence) {
+          // Only add real opportunities with valid data
+          if (analysis.confidence >= this.minConfidence && !analysis.usesMockData) {
             if (!this.applyScanFilters(analysis, options)) {
-                console.log(`🚫 ${coin.symbol}: Filtered out by scan filters`);
-                continue;
+              console.log(`🚫 ${coin.symbol}: Filtered out by scan filters`);
+              continue;
             }
             opportunities.push(analysis);
             console.log(`✅ ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}% confidence) - ADDED TO OPPORTUNITIES`);
-        } else {
-            console.log(`❌ ${coin.symbol}: Confidence too low (${(analysis.confidence * 100).toFixed(0)}% < ${(this.minConfidence * 100).toFixed(0)}%)`);
-        }
-    } catch (error) {
-        console.log(`❌ ${coin.symbol}: Analysis failed - ${error.message}`);
-        this.stats.apiErrors += 1;
-    } finally {
-        this.scanProgress.processed += 1;
-        this.scanProgress.percent = Math.min(
+          } else {
+            if (analysis.usesMockData) {
+              console.log(`❌ ${coin.symbol}: Using mock data - skipping notification`);
+            } else {
+              console.log(`❌ ${coin.symbol}: Confidence too low (${(analysis.confidence * 100).toFixed(0)}% < ${(this.minConfidence * 100).toFixed(0)}%)`);
+            }
+          }
+        } catch (error) {
+          console.log(`❌ ${coin.symbol}: Analysis failed - ${error.message}`);
+          this.stats.apiErrors += 1;
+        } finally {
+          this.scanProgress.processed += 1;
+          this.scanProgress.percent = Math.min(
             Math.round((this.scanProgress.processed / this.scanProgress.total) * 100),
             100,
-        );
-    }
+          );
+        }
 
-    await sleep(COINGECKO_DELAY);
-}
+        await sleep(COINGECKO_DELAY);
+      }
 
       opportunities.sort((a, b) => b.confidence - a.confidence);
 
@@ -642,8 +651,11 @@ for (const coin of this.trackedCoins) {
       if (TELEGRAM_ENABLED && opportunities.length > 0) {
         console.log(`📱 Sending Telegram notifications for ${opportunities.length} opportunities...`);
         for (const opp of opportunities) {
-          await this.sendTelegramNotification(opp);
-          await sleep(1500);
+          // Only send notifications for real data, not mock data
+          if (!opp.usesMockData) {
+            await this.sendTelegramNotification(opp);
+            await sleep(1500);
+          }
         }
       }
 
@@ -725,8 +737,15 @@ for (const coin of this.trackedCoins) {
         hourlyData,
         dailyData,
         usedMock,
+        currentPrice
       } = await this.fetchHistoricalData(coin.id);
       usesMockData = usedMock;
+
+      // If we're using mock data, skip further analysis to avoid fake signals
+      if (usesMockData) {
+        console.log(`⏭️ ${coin.symbol}: Using mock data - skipping detailed analysis`);
+        return this.basicTechnicalAnalysis(coin, true);
+      }
 
       const timeframeSeries = this.prepareTimeframeSeries(minuteData, hourlyData, dailyData);
       const hasEnoughData = Object.values(timeframeSeries).some(
@@ -740,7 +759,7 @@ for (const coin of this.trackedCoins) {
       this.currentlyAnalyzing.progress = 40;
       this.updateLiveAnalysis();
 
-      let currentPrice = null;
+      let calculatedPrice = currentPrice;
       const frameIndicators = {};
       Object.entries(timeframeSeries).forEach(([frameKey, series]) => {
         if (!Array.isArray(series) || series.length < 3) return;
@@ -748,7 +767,7 @@ for (const coin of this.trackedCoins) {
           .map((d) => d.price)
           .filter((price) => typeof price === 'number' && Number.isFinite(price));
         if (prices.length < 3) return;
-        currentPrice = currentPrice ?? prices[prices.length - 1];
+        calculatedPrice = calculatedPrice ?? prices[prices.length - 1];
 
         const basePrice = prices[prices.length - 1];
         const rsiPeriod = Math.min(14, prices.length - 1);
@@ -779,7 +798,7 @@ for (const coin of this.trackedCoins) {
         };
       });
 
-      if (!currentPrice) {
+      if (!calculatedPrice) {
         throw new Error('No historical data available');
       }
 
@@ -790,7 +809,7 @@ for (const coin of this.trackedCoins) {
       const indicatorSnapshot = {
         symbol: coin.symbol,
         name: coin.name,
-        currentPrice,
+        currentPrice: calculatedPrice,
         frames: frameIndicators,
       };
 
@@ -824,7 +843,7 @@ for (const coin of this.trackedCoins) {
         this.updateLiveAnalysis();
       }, 2500);
 
-      // FIXED: Extract frame indicators for easier reference
+      // Extract frame indicators for easier reference
       const dailyFrame = frameIndicators['1d'] || {};
       const hourlyFrame = frameIndicators['1h'] || {};
       const fastFrame = frameIndicators['10m'] || {};
@@ -903,7 +922,7 @@ for (const coin of this.trackedCoins) {
         symbol: coin.symbol,
         name: coin.name,
         action,
-        price: `$${currentPrice.toFixed(4)}`,
+        price: `$${calculatedPrice.toFixed(4)}`,
         confidence,
         signal: aiAnalysis.signal,
         reason,
@@ -991,12 +1010,35 @@ for (const coin of this.trackedCoins) {
         this.updateLiveAnalysis();
       }, 3000);
 
-      return this.basicTechnicalAnalysis(coin);
+      return this.basicTechnicalAnalysis(coin, true);
     }
   }
 
   async fetchHistoricalData(coinId) {
     let usedMock = false;
+    let currentPrice = null;
+
+    // Try to get current price first
+    try {
+      const priceResponse = await axios.get(
+        `https://api.coingecko.com/api/v3/simple/price`,
+        {
+          params: { ids: coinId, vs_currencies: 'usd' },
+          timeout: 10000,
+        },
+      );
+      
+      if (priceResponse.data && priceResponse.data[coinId]) {
+        currentPrice = priceResponse.data[coinId].usd;
+        this.priceCache.set(coinId, { price: currentPrice, timestamp: Date.now() });
+      }
+    } catch (priceError) {
+      console.log(`⚠️ ${coinId}: Failed to fetch current price, using cached if available`);
+      const cached = this.priceCache.get(coinId);
+      if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
+        currentPrice = cached.price;
+      }
+    }
 
     const fetchData = async (days, interval) => {
       try {
@@ -1012,12 +1054,18 @@ for (const coin of this.trackedCoins) {
         );
 
         if (response.data && Array.isArray(response.data.prices)) {
-          return response.data.prices
+          const prices = response.data.prices
             .map(([timestamp, price]) => ({
               timestamp: new Date(timestamp),
               price: typeof price === 'number' ? price : Number(price),
             }))
             .filter((item) => Number.isFinite(item.price) && item.price > 0);
+
+          if (prices.length > 0) {
+            currentPrice = currentPrice || prices[prices.length - 1].price;
+          }
+          
+          return prices;
         }
 
         throw new Error('Invalid API response structure');
@@ -1032,8 +1080,15 @@ for (const coin of this.trackedCoins) {
         fetchData(7, 'hourly'),
         fetchData(30, 'daily'),
       ]);
+      
       const minuteData = minuteRaw.slice(-720); // last 12 hours (~720 minutes at 1-min granularity)
-      return { minuteData, hourlyData, dailyData, usedMock };
+      
+      // Validate we have real data
+      if (minuteData.length === 0 || hourlyData.length === 0 || dailyData.length === 0) {
+        throw new Error('No valid price data received');
+      }
+
+      return { minuteData, hourlyData, dailyData, usedMock, currentPrice };
     } catch (primaryError) {
       console.log(`⚠️ ${coinId}: Falling back to mock data (${primaryError.message})`);
       usedMock = true;
@@ -1043,6 +1098,7 @@ for (const coin of this.trackedCoins) {
         hourlyData: mockData.hourlyData,
         dailyData: mockData.dailyData,
         usedMock,
+        currentPrice: mockData.currentPrice,
       };
     }
   }
@@ -1099,7 +1155,12 @@ for (const coin of this.trackedCoins) {
 
       generateMinute(720, minute);
 
-      return { minuteData: minute, hourlyData: hourly, dailyData: daily };
+      return { 
+        minuteData: minute, 
+        hourlyData: hourly, 
+        dailyData: daily, 
+        currentPrice: basePrice 
+      };
     } catch (mockError) {
       return this.generateBasicMockData();
     }
@@ -1144,7 +1205,12 @@ for (const coin of this.trackedCoins) {
 
     generateMinute(720);
 
-    return { minuteData: minute, hourlyData: hourly, dailyData: daily };
+    return { 
+      minuteData: minute, 
+      hourlyData: hourly, 
+      dailyData: daily, 
+      currentPrice: basePrice 
+    };
   }
 
   updateLiveAnalysis() {
@@ -1465,7 +1531,7 @@ Respond with JSON:
     };
   }
 
-  basicTechnicalAnalysis(coin) {
+  basicTechnicalAnalysis(coin, usesMockData = false) {
     return {
       symbol: coin.symbol,
       name: coin.name,
@@ -1476,7 +1542,7 @@ Respond with JSON:
       reason: 'Technical analysis data not available',
       insights: ['Data fetch failed'],
       timestamp: new Date(),
-      usesMockData: true,
+      usesMockData,
       news: [],
       indicators: {
         momentum: 'N/A',
@@ -2132,6 +2198,18 @@ app.get('/', (req, res) => {
         .news-section a:hover {
           text-decoration: underline;
         }
+        .mock-data-warning {
+          background: linear-gradient(135deg, #fef3c7, #fde68a);
+          border: 1px solid #f59e0b;
+          border-radius: 12px;
+          padding: 16px;
+          margin: 16px 0;
+          color: #92400e;
+        }
+        .mock-data-warning h4 {
+          color: #92400e;
+          margin-bottom: 8px;
+        }
       </style>
     </head>
     <body>
@@ -2676,7 +2754,15 @@ app.get('/', (req, res) => {
             }
 
             let html = '';
+            let mockDataWarning = false;
+            
             data.opportunities.forEach((opp) => {
+              // Skip mock data opportunities for display
+              if (opp.usesMockData) {
+                mockDataWarning = true;
+                return;
+              }
+
               const actionClass = opp.action.toLowerCase();
               const confidencePercent = (opp.confidence * 100).toFixed(0);
               const confidenceLevel =
@@ -2763,6 +2849,13 @@ app.get('/', (req, res) => {
                 newsHtml +
               '</div>';
             });
+
+            if (mockDataWarning && html === '') {
+              html = '<div class="mock-data-warning">' +
+                '<h4>⚠️ Limited Data Available</h4>' +
+                '<p>Some coins are using simulated data due to API limitations. Real-time analysis requires stable CoinGecko API access.</p>' +
+                '</div>';
+            }
 
             document.getElementById('results').innerHTML = html;
           } catch (error) {
