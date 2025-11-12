@@ -2426,35 +2426,33 @@ app.get('/', (req, res) => {
                 .map((item) => '<li><span class="ai-tag">' + item.label + '</span>' + item.value + '</li>')
                 .join('');
 
-              html += \`
-                <div class="opportunity ${actionClass}">
-                  <div class="coin-header">
-                    <div class="coin-name">${opp.name} (${opp.symbol})</div>
-                    <div class="${actionClass}-badge action-badge">${opp.action}</div>
-                  </div>
-                  <div class="price-confidence">
-                    <div class="price-box">
-                      <div class="value">${opp.price}</div>
-                      <div>Current Price</div>
-                    </div>
-                    <div class="confidence-box">
-                      <div class="value">${confidencePercent}%</div>
-                      <div>Confidence</div>
-                    </div>
-                  </div>
-                  <div class="confidence-bar"><div class="confidence-fill ${confidenceLevel}" style="width: ${confidencePercent}%"></div></div>
-                  <div class="reason-box"><p>${opp.reason}</p></div>
-                  <div class="timeframe-grid">${timeframeCards}</div>
-                  <div class="ai-visual">
-                    <h4>🧠 DeepSeek Evaluation</h4>
-                    <ul class="ai-list">${aiList}</ul>
-                  </div>
-                  <div class="insights-list">
-                    <h4>💡 Key Insights</h4>
-                    <ul>${opp.insights.map((i) => '<li>' + i + '</li>').join('')}</ul>
-                  </div>
-                </div>
-              \`;
+              html += '<div class="opportunity ' + actionClass + '">' +
+                '<div class="coin-header">' +
+                  '<div class="coin-name">' + opp.name + ' (' + opp.symbol + ')</div>' +
+                  '<div class="' + actionClass + '-badge action-badge">' + opp.action + '</div>' +
+                '</div>' +
+                '<div class="price-confidence">' +
+                  '<div class="price-box">' +
+                    '<div class="value">' + opp.price + '</div>' +
+                    '<div>Current Price</div>' +
+                  '</div>' +
+                  '<div class="confidence-box">' +
+                    '<div class="value">' + confidencePercent + '%</div>' +
+                    '<div>Confidence</div>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="confidence-bar"><div class="confidence-fill ' + confidenceLevel + '" style="width: ' + confidencePercent + '%"></div></div>' +
+                '<div class="reason-box"><p>' + opp.reason + '</p></div>' +
+                '<div class="timeframe-grid">' + timeframeCards + '</div>' +
+                '<div class="ai-visual">' +
+                  '<h4>🧠 DeepSeek Evaluation</h4>' +
+                  '<ul class="ai-list">' + aiList + '</ul>' +
+                '</div>' +
+                '<div class="insights-list">' +
+                  '<h4>💡 Key Insights</h4>' +
+                  '<ul>' + opp.insights.map((i) => '<li>' + i + '</li>').join('') + '</ul>' +
+                '</div>' +
+              '</div>';
             });
 
             document.getElementById('results').innerHTML = html;
