@@ -1,32 +1,58 @@
+/* eslint-disable no-console */
 const express = require('express');
 const axios = require('axios');
+
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(express.json());
 
-// Telegram Configuration
+// Ensure fetch exists (Node 18+/polyfill)
+let fetchFn = global.fetch;
+if (!fetchFn) {
+  fetchFn = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+}
+const fetch = fetchFn;
+
+// Telegram configuration
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
-const TELEGRAM_ENABLED = TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID;
+const TELEGRAM_ENABLED = Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID);
+
+// Rate limiting helpers
+const COINGECKO_DELAY = Number(process.env.CG_DELAY_MS || 1000); // ms between calls
+const SCAN_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000; // 30 min
+
+// Simple sleep util
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Enhanced Professional Trading Bot
 class ProfessionalTradingBot {
   constructor() {
     this.isRunning = false;
-    this.scanInterval = null;
+    this.scanTimer = null;
+    this.scanInProgress = false;
+
     this.trackedCoins = this.getTop100Coins();
     this.minConfidence = 0.65;
+
     this.analysisHistory = [];
     this.liveAnalysis = [];
     this.currentlyAnalyzing = null;
+
     this.stats = {
       totalScans: 0,
       totalOpportunities: 0,
       avgConfidence: 0,
       lastScanDuration: 0,
-      notificationsSent: 0
+      notificationsSent: 0,
+      lastSuccessfulScan: null,
+      mockDataUsage: 0,
+      apiErrors: 0,
+      skippedDueToOverlap: 0,
     };
+
     this.lastNotificationTime = {};
   }
 
@@ -144,7 +170,7 @@ class ProfessionalTradingBot {
       { symbol: 'LOOM', name: 'Loom Network', id: 'loom-network' },
       { symbol: 'POWR', name: 'Power Ledger', id: 'power-ledger' },
       { symbol: 'COTI', name: 'COTI', id: 'coti' },
-      { symbol: 'DENT', name: 'Dent', id: 'dent' }
+      { symbol: 'DENT', name: 'Dent', id: 'dent' },
     ];
   }
 
@@ -159,24 +185,36 @@ class ProfessionalTradingBot {
 
     await this.performTechnicalScan();
 
-    this.scanInterval = setInterval(async () => {
-      console.log('🔄 Scheduled 1-hour scan triggered');
-      await this.performTechnicalScan();
-    }, 60 * 60 * 1000);
+    const scheduleNext = async () => {
+      if (!this.isRunning) return;
+      const delay = Math.max(SCAN_INTERVAL_MS - this.stats.lastScanDuration, 5000);
+      this.scanTimer = setTimeout(async () => {
+        if (this.scanInProgress) {
+          console.log('⏳ Previous scan still running, skipping scheduled scan');
+          this.stats.skippedDueToOverlap += 1;
+          scheduleNext();
+          return;
+        }
+        await this.performTechnicalScan();
+        scheduleNext();
+      }, delay);
+    };
+
+    scheduleNext();
 
     return {
       status: 'started',
       interval: '1 hour',
       coins: this.trackedCoins.length,
-      time: new Date()
+      time: new Date(),
     };
   }
 
   stopAutoScan() {
     this.isRunning = false;
-    if (this.scanInterval) {
-      clearInterval(this.scanInterval);
-      this.scanInterval = null;
+    if (this.scanTimer) {
+      clearTimeout(this.scanTimer);
+      this.scanTimer = null;
     }
     console.log('🛑 Auto-scan stopped');
     return { status: 'stopped', time: new Date() };
@@ -190,58 +228,71 @@ class ProfessionalTradingBot {
 
     const coinKey = opportunity.symbol;
     const now = Date.now();
-    const cooldown = 30 * 60 * 1000;
 
-    if (this.lastNotificationTime[coinKey] && (now - this.lastNotificationTime[coinKey]) < cooldown) {
+    if (
+      this.lastNotificationTime[coinKey] &&
+      now - this.lastNotificationTime[coinKey] < NOTIFICATION_COOLDOWN_MS
+    ) {
       console.log(`⏳ Skipping notification for ${coinKey} (cooldown active)`);
       return false;
     }
 
     try {
-      const actionEmoji = opportunity.action === 'BUY' ? '🟢' : opportunity.action === 'SELL' ? '🔴' : '🟡';
+      const actionEmoji =
+        opportunity.action === 'BUY'
+          ? '🟢'
+          : opportunity.action === 'SELL'
+            ? '🔴'
+            : '🟡';
       const confidencePercent = (opportunity.confidence * 100).toFixed(0);
-      
+
+      const indicators = opportunity.indicators;
+
       const message = `${actionEmoji} *${opportunity.action} SIGNAL DETECTED*
 
 *Coin:* ${opportunity.name} (${opportunity.symbol})
 *Price:* ${opportunity.price}
 *Confidence:* ${confidencePercent}%
 
-📊 *Technical Analysis:*
-• RSI: ${opportunity.technicals.rsi}
-• Bollinger: ${opportunity.technicals.bollingerPosition}
-• Trend: ${opportunity.technicals.trend}
-• Momentum: ${opportunity.technicals.momentum || 'N/A'}
-• Support: ${opportunity.technicals.support}
-• Resistance: ${opportunity.technicals.resistance}
+📊 *Technical Snapshot:*
+• Daily RSI: ${indicators.daily.rsi}
+• Hourly RSI: ${indicators.hourly.rsi}
+• Daily Bollinger: ${indicators.daily.bollingerPosition}
+• Hourly Bollinger: ${indicators.hourly.bollingerPosition}
+• Daily Trend: ${indicators.daily.trend}
+• Hourly Trend: ${indicators.hourly.trend}
+• Momentum: ${indicators.momentum}
 
 💡 *Key Insights:*
-${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
+${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
 
 📝 *Reason:* ${opportunity.reason}
 
 ⏰ Detected: ${new Date(opportunity.timestamp).toLocaleString()}`;
 
       const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-      
-      const response = await axios.post(telegramUrl, {
-        chat_id: TELEGRAM_CHAT_ID,
-        text: message,
-        parse_mode: 'Markdown'
-      }, {
-        timeout: 10000
-      });
+
+      const response = await axios.post(
+        telegramUrl,
+        {
+          chat_id: TELEGRAM_CHAT_ID,
+          text: message,
+          parse_mode: 'Markdown',
+        },
+        {
+          timeout: 10000,
+        },
+      );
 
       if (response.data.ok) {
         console.log(`✅ Telegram notification sent for ${opportunity.symbol}`);
         this.lastNotificationTime[coinKey] = now;
-        this.stats.notificationsSent++;
+        this.stats.notificationsSent += 1;
         return true;
-      } else {
-        console.log(`❌ Telegram API error: ${response.data.description}`);
-        return false;
       }
-      
+
+      console.log(`❌ Telegram API error: ${response.data.description}`);
+      return false;
     } catch (error) {
       console.log(`❌ Failed to send Telegram notification: ${error.message}`);
       return false;
@@ -260,84 +311,113 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
         action: 'BUY',
         price: '$1,234.56',
         confidence: 0.85,
-        signal: 'TEST | System Check',
         reason: 'This is a test notification to verify Telegram integration is working correctly.',
-        technicals: {
-          rsi: '45.2',
-          bollingerPosition: 'MIDDLE',
-          trend: 'BULLISH',
-          momentum: 'UP',
-          support: '$1,200.00',
-          resistance: '$1,300.00'
-        },
         insights: [
           '✅ Telegram integration test successful',
           '✅ Bot is properly configured',
-          '✅ Notifications will be sent for trading opportunities'
+          '✅ Notifications will be sent for trading opportunities',
         ],
-        timestamp: new Date()
+        timestamp: new Date(),
+        indicators: {
+          momentum: 'UP',
+          daily: {
+            rsi: '45.2',
+            bollingerPosition: 'MIDDLE',
+            trend: 'BULLISH',
+            support: '$1,200.00',
+            resistance: '$1,300.00',
+          },
+          hourly: {
+            rsi: '50.1',
+            bollingerPosition: 'MIDDLE',
+            trend: 'BULLISH',
+          },
+        },
       };
 
       const success = await this.sendTelegramNotification(testOpportunity);
-      
+
       if (success) {
-        return { 
-          success: true, 
-          message: '✅ Test notification sent successfully! Check your Telegram.' 
-        };
-      } else {
-        return { 
-          success: false, 
-          message: '❌ Failed to send test notification. Check console for details.' 
+        return {
+          success: true,
+          message: '✅ Test notification sent successfully! Check your Telegram.',
         };
       }
+
+      return {
+        success: false,
+        message: '❌ Failed to send test notification. Check console for details.',
+      };
     } catch (error) {
-      return { 
-        success: false, 
-        message: `❌ Error sending test: ${error.message}` 
+      return {
+        success: false,
+        message: `❌ Error sending test: ${error.message}`,
       };
     }
   }
 
   async performTechnicalScan() {
+    if (this.scanInProgress) {
+      console.log('⏳ Scan skipped; previous scan still running');
+      this.stats.skippedDueToOverlap += 1;
+      return {
+        scanTime: new Date(),
+        status: 'skipped',
+        reason: 'previous_scan_in_progress',
+      };
+    }
+
     const startTime = Date.now();
+    this.scanInProgress = true;
+
     try {
       console.log(`\n🎯 TECHNICAL SCAN STARTED: ${new Date().toLocaleString()}`);
 
       const opportunities = [];
       let analyzedCount = 0;
+      let mockDataUsed = 0;
 
       for (const coin of this.trackedCoins) {
         try {
           const analysis = await this.analyzeWithTechnicalIndicators(coin);
-          analyzedCount++;
-          
-          if (analysis.confidence >= this.minConfidence) {
-            opportunities.push(analysis);
-            console.log(`✅ ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}% confidence)`);
+          analyzedCount += 1;
+
+          if (analysis.usesMockData) {
+            mockDataUsed += 1;
           }
 
-          await new Promise(resolve => setTimeout(resolve, 800));
-          
+          if (analysis.confidence >= this.minConfidence && !analysis.usesMockData) {
+            opportunities.push(analysis);
+            console.log(
+              `✅ ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}% confidence)`,
+            );
+          }
         } catch (error) {
           console.log(`❌ ${coin.symbol}: Analysis failed - ${error.message}`);
+          this.stats.apiErrors += 1;
         }
+
+        await sleep(COINGECKO_DELAY);
       }
 
       opportunities.sort((a, b) => b.confidence - a.confidence);
 
-      this.stats.totalScans++;
+      this.stats.totalScans += 1;
       this.stats.totalOpportunities += opportunities.length;
       this.stats.lastScanDuration = Date.now() - startTime;
+      this.stats.mockDataUsage += mockDataUsed;
+      this.stats.lastSuccessfulScan = new Date();
+
       if (opportunities.length > 0) {
-        this.stats.avgConfidence = opportunities.reduce((sum, o) => sum + o.confidence, 0) / opportunities.length;
+        this.stats.avgConfidence =
+          opportunities.reduce((sum, o) => sum + o.confidence, 0) / opportunities.length;
       }
 
       if (TELEGRAM_ENABLED && opportunities.length > 0) {
         console.log(`📱 Sending Telegram notifications for ${opportunities.length} opportunities...`);
         for (const opp of opportunities) {
           await this.sendTelegramNotification(opp);
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await sleep(1500);
         }
       }
 
@@ -345,7 +425,8 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
         timestamp: new Date(),
         opportunities: opportunities.length,
         details: opportunities,
-        duration: this.stats.lastScanDuration
+        duration: this.stats.lastScanDuration,
+        analyzed: analyzedCount,
       });
 
       if (this.analysisHistory.length > 288) {
@@ -353,165 +434,166 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
       }
 
       console.log(`\n📈 SCAN COMPLETE: ${opportunities.length} opportunities found`);
+      this.scanInProgress = false;
 
       return {
         scanTime: new Date(),
         totalCoins: this.trackedCoins.length,
         analyzedCoins: analyzedCount,
         opportunitiesFound: opportunities.length,
-        opportunities: opportunities,
-        nextScan: new Date(Date.now() + 60 * 60 * 1000),
-        duration: this.stats.lastScanDuration
+        opportunities,
+        nextScan: this.isRunning ? new Date(Date.now() + SCAN_INTERVAL_MS) : null,
+        duration: this.stats.lastScanDuration,
+        mockDataUsed,
       };
-
     } catch (error) {
       console.log('❌ Technical scan failed:', error.message);
+      this.scanInProgress = false;
       return {
         scanTime: new Date(),
         error: error.message,
-        opportunities: []
+        opportunities: [],
       };
     }
   }
 
   async analyzeWithTechnicalIndicators(coin) {
+    let usesMockData = false;
+
     try {
       this.currentlyAnalyzing = {
         symbol: coin.symbol,
         name: coin.name,
-        stage: 'Fetching historical data...',
+        stage: 'Fetching historical data…',
         timestamp: new Date(),
-        progress: 10
+        progress: 10,
       };
       this.updateLiveAnalysis();
 
-      const dailyData = await this.getHistoricalData(coin.id, 7, 'daily');
-      const hourlyData = await this.getHistoricalData(coin.id, 1, 'hourly');
-      
-      if ((!dailyData || dailyData.length === 0) && (!hourlyData || hourlyData.length === 0)) {
-        throw new Error('No historical data available');
-      }
+      const { dailyData, hourlyData, usedMock } = await this.fetchHistoricalData(coin.id);
+      usesMockData = usedMock;
 
-      const validDailyData = dailyData ? dailyData.filter(item => item && typeof item.price === 'number' && item.price > 0) : [];
-      const validHourlyData = hourlyData ? hourlyData.filter(item => item && typeof item.price === 'number' && item.price > 0) : [];
-      
-      if (validDailyData.length < 3 && validHourlyData.length < 3) {
+      if (dailyData.length < 3 && hourlyData.length < 3) {
         throw new Error('Insufficient valid price data');
       }
 
-      this.currentlyAnalyzing.stage = 'Calculating technical indicators...';
+      this.currentlyAnalyzing.stage = 'Calculating technical indicators…';
       this.currentlyAnalyzing.progress = 40;
       this.updateLiveAnalysis();
 
-      const currentPrice = validHourlyData.length > 0 ? 
-        validHourlyData[validHourlyData.length - 1].price : 
-        validDailyData[validDailyData.length - 1].price;
+      const currentPrice = hourlyData.length
+        ? hourlyData[hourlyData.length - 1].price
+        : dailyData[dailyData.length - 1].price;
 
-      const dailyPrices = validDailyData.map(d => d.price);
-      const hourlyPrices = validHourlyData.map(d => d.price);
+      const dailyPrices = dailyData.map((d) => d.price);
+      const hourlyPrices = hourlyData.map((d) => d.price);
 
-      this.currentlyAnalyzing.stage = 'Analyzing multiple timeframes...';
-      this.currentlyAnalyzing.progress = 60;
-      this.updateLiveAnalysis();
-      
       const dailyRsi = dailyPrices.length >= 14 ? this.calculateRSI(dailyPrices, 14) : 50;
-      const dailyBB = dailyPrices.length >= 20 ? this.calculateBollingerBands(dailyPrices, 20) : { upper: currentPrice * 1.1, lower: currentPrice * 0.9 };
+      const dailyBB =
+        dailyPrices.length >= 20
+          ? this.calculateBollingerBands(dailyPrices, 20)
+          : this.placeholderBollinger(currentPrice);
       const dailySR = this.identifySupportResistance(dailyPrices);
       const dailyTrend = this.identifyTrend(dailyPrices);
 
       const hourlyRsi = hourlyPrices.length >= 14 ? this.calculateRSI(hourlyPrices, 14) : 50;
-      const hourlyBB = hourlyPrices.length >= 20 ? this.calculateBollingerBands(hourlyPrices, 20) : { upper: currentPrice * 1.1, lower: currentPrice * 0.9 };
+      const hourlyBB =
+        hourlyPrices.length >= 20
+          ? this.calculateBollingerBands(hourlyPrices, 20)
+          : this.placeholderBollinger(currentPrice);
       const hourlyTrend = this.identifyTrend(hourlyPrices);
-      const momentum = this.calculateMomentum(hourlyPrices.length > 0 ? hourlyPrices : dailyPrices);
+      const momentum = this.calculateMomentum(hourlyPrices.length ? hourlyPrices : dailyPrices);
 
-      const technicalData = {
+      const indicatorSnapshot = {
         symbol: coin.symbol,
         name: coin.name,
-        currentPrice: currentPrice,
+        currentPrice,
         daily: {
           rsi: dailyRsi,
-          bollingerBands: { 
-            upper: dailyBB.upper, 
-            lower: dailyBB.lower,
-            position: this.getBollingerPosition(currentPrice, dailyBB.upper, dailyBB.lower)
-          },
+          bollingerBands: dailyBB,
+          bollingerPosition: this.getBollingerPosition(currentPrice, dailyBB.upper, dailyBB.lower),
           supportResistance: dailySR,
-          trend: dailyTrend
+          trend: dailyTrend,
         },
         hourly: {
           rsi: hourlyRsi,
-          bollingerBands: { 
-            upper: hourlyBB.upper, 
-            lower: hourlyBB.lower,
-            position: this.getBollingerPosition(currentPrice, hourlyBB.upper, hourlyBB.lower)
-          },
-          trend: hourlyTrend
+          bollingerBands: hourlyBB,
+          bollingerPosition: this.getBollingerPosition(
+            currentPrice,
+            hourlyBB.upper,
+            hourlyBB.lower,
+          ),
+          trend: hourlyTrend,
         },
-        momentum: momentum,
-        priceHistory: dailyPrices.slice(-10)
+        momentum,
+        priceHistory: dailyPrices.slice(-10),
       };
 
-      this.currentlyAnalyzing.stage = 'DeepSeek AI analyzing...';
-      this.currentlyAnalyzing.progress = 80;
+      this.currentlyAnalyzing.stage = 'DeepSeek AI is evaluating…';
+      this.currentlyAnalyzing.progress = 70;
       this.currentlyAnalyzing.technicals = {
         dailyRsi: dailyRsi.toFixed(1),
         hourlyRsi: hourlyRsi.toFixed(1),
-        dailyBB: technicalData.daily.bollingerBands.position,
-        hourlyBB: technicalData.hourly.bollingerBands.position,
-        dailyTrend: dailyTrend,
-        hourlyTrend: hourlyTrend,
-        momentum: momentum
+        dailyBB: indicatorSnapshot.daily.bollingerPosition,
+        hourlyBB: indicatorSnapshot.hourly.bollingerPosition,
+        dailyTrend,
+        hourlyTrend,
+        momentum,
       };
       this.updateLiveAnalysis();
 
-      const aiAnalysis = await this.getAITechnicalAnalysis(technicalData);
+      const aiAnalysis = await this.getAITechnicalAnalysis(indicatorSnapshot);
 
       this.currentlyAnalyzing.stage = 'Analysis complete';
       this.currentlyAnalyzing.progress = 100;
       this.currentlyAnalyzing.result = {
         action: aiAnalysis.action,
-        confidence: (aiAnalysis.confidence * 100).toFixed(0) + '%',
-        reason: aiAnalysis.reason
+        confidence: `${(aiAnalysis.confidence * 100).toFixed(0)}%`,
+        reason: aiAnalysis.reason,
       };
       this.updateLiveAnalysis();
 
       setTimeout(() => {
         this.currentlyAnalyzing = null;
         this.updateLiveAnalysis();
-      }, 2000);
+      }, 2500);
 
       return {
         symbol: coin.symbol,
         name: coin.name,
         action: aiAnalysis.action,
-        price: `${currentPrice.toFixed(4)}`,
+        price: `$${currentPrice.toFixed(4)}`,
         confidence: aiAnalysis.confidence,
         signal: aiAnalysis.signal,
         reason: aiAnalysis.reason,
-        technicals: {
-          dailyRsi: dailyRsi.toFixed(1),
-          hourlyRsi: hourlyRsi.toFixed(1),
-          dailyBollinger: technicalData.daily.bollingerBands.position,
-          hourlyBollinger: technicalData.hourly.bollingerBands.position,
-          support: `${dailySR.support.toFixed(2)}`,
-          resistance: `${dailySR.resistance.toFixed(2)}`,
-          dailyTrend: dailyTrend,
-          hourlyTrend: hourlyTrend,
-          momentum: momentum
-        },
         insights: aiAnalysis.insights,
-        timestamp: new Date()
+        timestamp: new Date(),
+        usesMockData,
+        indicators: {
+          momentum,
+          daily: {
+            rsi: dailyRsi.toFixed(1),
+            bollingerPosition: indicatorSnapshot.daily.bollingerPosition,
+            trend: dailyTrend,
+            support: dailySR.support.toFixed(2),
+            resistance: dailySR.resistance.toFixed(2),
+          },
+          hourly: {
+            rsi: hourlyRsi.toFixed(1),
+            bollingerPosition: indicatorSnapshot.hourly.bollingerPosition,
+            trend: hourlyTrend,
+          },
+        },
       };
-
     } catch (error) {
       console.log(`❌ Technical analysis failed for ${coin.symbol}:`, error.message);
-      
+
       this.currentlyAnalyzing = {
         symbol: coin.symbol,
         name: coin.name,
-        stage: 'Analysis failed: ' + error.message,
+        stage: `Analysis failed: ${error.message}`,
         timestamp: new Date(),
-        error: true
+        error: true,
       };
       this.updateLiveAnalysis();
 
@@ -524,44 +606,57 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
     }
   }
 
-  calculateMomentum(prices) {
-    if (prices.length < 2) return 'NEUTRAL';
-    const recentChange = ((prices[prices.length - 1] - prices[prices.length - 2]) / prices[prices.length - 2]) * 100;
-    if (recentChange > 2) return 'STRONG_UP';
-    if (recentChange > 0.5) return 'UP';
-    if (recentChange < -2) return 'STRONG_DOWN';
-    if (recentChange < -0.5) return 'DOWN';
-    return 'NEUTRAL';
-  }
+  async fetchHistoricalData(coinId) {
+    let usedMock = false;
 
-  async getHistoricalData(coinId, days = 7, interval = 'daily') {
-    try {
-      const response = await axios.get(
-        `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}&interval=${interval}`,
-        { 
-          timeout: 15000,
-          headers: { 'User-Agent': 'TradingBot/1.0' }
+    const fetchData = async (days, interval) => {
+      try {
+        const response = await axios.get(
+          `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart`,
+          {
+            params: { vs_currency: 'usd', days, interval },
+            timeout: 15000,
+            headers: { 'User-Agent': 'ProfessionalTradingBot/2.0' },
+          },
+        );
+
+        if (response.data && Array.isArray(response.data.prices)) {
+          return response.data.prices
+            .map(([timestamp, price]) => ({
+              timestamp: new Date(timestamp),
+              price: typeof price === 'number' ? price : Number(price),
+            }))
+            .filter((item) => Number.isFinite(item.price) && item.price > 0);
         }
-      );
 
-      if (response.data && response.data.prices && Array.isArray(response.data.prices)) {
-        return response.data.prices.map(([timestamp, price]) => ({
-          timestamp: new Date(timestamp),
-          price: price
-        }));
+        throw new Error('Invalid API response structure');
+      } catch (error) {
+        throw error;
       }
-      throw new Error('Invalid API response structure');
-      
-    } catch (error) {
-      return await this.generateRealisticMockData(coinId);
+    };
+
+    try {
+      const [dailyData, hourlyData] = await Promise.all([
+        fetchData(7, 'daily'),
+        fetchData(1, 'hourly'),
+      ]);
+      return { dailyData, hourlyData, usedMock };
+    } catch (primaryError) {
+      console.log(`⚠️ ${coinId}: Falling back to mock data (${primaryError.message})`);
+      usedMock = true;
+      const mockData = await this.generateRealisticMockData(coinId);
+      return { dailyData: mockData.daily, hourlyData: mockData.hourly, usedMock };
     }
   }
 
   async generateRealisticMockData(coinId) {
     try {
       const currentPriceResponse = await axios.get(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`,
-        { timeout: 10000 }
+        `https://api.coingecko.com/api/v3/simple/price`,
+        {
+          params: { ids: coinId, vs_currencies: 'usd' },
+          timeout: 10000,
+        },
       );
 
       let basePrice = 100;
@@ -569,47 +664,64 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
         basePrice = currentPriceResponse.data[coinId].usd;
       }
 
-      const data = [];
+      const daily = [];
+      const hourly = [];
+
       const now = new Date();
-      
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date(now);
-        date.setDate(date.getDate() - i);
-        const volatility = 0.02 + (Math.random() * 0.06);
-        const change = (Math.random() - 0.5) * 2 * volatility;
-        const previousPrice = data.length > 0 ? data[data.length - 1].price : basePrice;
-        data.push({
-          timestamp: date,
-          price: previousPrice * (1 + change)
-        });
-      }
-      return data;
+
+      const generate = (points, granularityMinutes, list) => {
+        let previousPrice = basePrice;
+        for (let i = points - 1; i >= 0; i -= 1) {
+          const timestamp = new Date(now);
+          timestamp.setMinutes(timestamp.getMinutes() - i * granularityMinutes);
+          const volatility = 0.01 + Math.random() * 0.03;
+          const change = (Math.random() - 0.5) * 2 * volatility;
+          const price = Math.max(previousPrice * (1 + change), 0.0001);
+          list.push({ timestamp, price });
+          previousPrice = price;
+        }
+      };
+
+      generate(7, 24 * 60, daily);
+      generate(24, 60, hourly);
+
+      return { daily, hourly };
     } catch (mockError) {
       return this.generateBasicMockData();
     }
   }
 
   generateBasicMockData() {
-    const data = [];
-    const basePrice = 100 + Math.random() * 1000;
     const now = new Date();
-    
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(now);
-      date.setDate(date.getDate() - i);
-      const volatility = 0.05;
-      const change = (Math.random() - 0.5) * 2 * volatility;
-      const price = i === 6 ? basePrice : data[data.length - 1].price * (1 + change);
-      data.push({ timestamp: date, price: Math.max(price, 0.0001) });
-    }
-    return data;
+    const basePrice = 100 + Math.random() * 1000;
+
+    const daily = [];
+    const hourly = [];
+
+    const generate = (points, granularityMinutes, list) => {
+      let previousPrice = basePrice;
+      for (let i = points - 1; i >= 0; i -= 1) {
+        const timestamp = new Date(now);
+        timestamp.setMinutes(timestamp.getMinutes() - i * granularityMinutes);
+        const volatility = 0.05;
+        const change = (Math.random() - 0.5) * 2 * volatility;
+        const price = Math.max(previousPrice * (1 + change), 0.0001);
+        list.push({ timestamp, price });
+        previousPrice = price;
+      }
+    };
+
+    generate(7, 24 * 60, daily);
+    generate(24, 60, hourly);
+
+    return { daily, hourly };
   }
 
   updateLiveAnalysis() {
     if (this.currentlyAnalyzing) {
       this.liveAnalysis.unshift({ ...this.currentlyAnalyzing });
-      if (this.liveAnalysis.length > 20) {
-        this.liveAnalysis = this.liveAnalysis.slice(0, 20);
+      if (this.liveAnalysis.length > 25) {
+        this.liveAnalysis = this.liveAnalysis.slice(0, 25);
       }
     }
   }
@@ -618,59 +730,80 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
     return {
       currentlyAnalyzing: this.currentlyAnalyzing,
       recentAnalysis: this.liveAnalysis.slice(0, 10),
-      timestamp: new Date()
+      timestamp: new Date(),
     };
   }
 
   getStats() {
-    return this.stats;
+    return {
+      ...this.stats,
+      running: this.isRunning,
+      minConfidence: this.minConfidence,
+      trackedCoins: this.trackedCoins.length,
+      telegramEnabled: TELEGRAM_ENABLED,
+    };
   }
 
   calculateRSI(prices, period = 14) {
     if (prices.length < period + 1) return 50;
-    let gains = 0, losses = 0;
-    for (let i = 1; i <= period; i++) {
+
+    let gains = 0;
+    let losses = 0;
+    for (let i = 1; i <= period; i += 1) {
       const change = prices[prices.length - i] - prices[prices.length - i - 1];
       if (change > 0) gains += change;
       else losses -= change;
     }
+
     const avgGain = gains / period;
     const avgLoss = losses / period;
     if (avgLoss === 0) return 100;
+
     const rs = avgGain / avgLoss;
-    return 100 - (100 / (1 + rs));
+    return 100 - 100 / (1 + rs);
   }
 
   calculateBollingerBands(prices, period = 20, multiplier = 2) {
     if (prices.length < period) {
-      const currentPrice = prices[prices.length - 1];
-      return { upper: currentPrice * 1.1, lower: currentPrice * 0.9, middle: currentPrice };
+      return this.placeholderBollinger(prices[prices.length - 1]);
     }
     const slice = prices.slice(-period);
     const mean = slice.reduce((sum, price) => sum + price, 0) / period;
-    const variance = slice.reduce((sum, price) => sum + Math.pow(price - mean, 2), 0) / period;
+    const variance = slice.reduce((sum, price) => sum + (price - mean) ** 2, 0) / period;
     const stdDev = Math.sqrt(variance);
+
     return {
-      upper: mean + (multiplier * stdDev),
-      lower: mean - (multiplier * stdDev),
-      middle: mean
+      upper: mean + multiplier * stdDev,
+      lower: mean - multiplier * stdDev,
+      middle: mean,
+    };
+  }
+
+  placeholderBollinger(currentPrice) {
+    return {
+      upper: currentPrice * 1.1,
+      lower: currentPrice * 0.9,
+      middle: currentPrice,
     };
   }
 
   identifySupportResistance(prices) {
     const recentPrices = prices.slice(-20);
-    return { 
-      support: Math.min(...recentPrices), 
-      resistance: Math.max(...recentPrices) 
+    return {
+      support: Math.min(...recentPrices),
+      resistance: Math.max(...recentPrices),
     };
   }
 
   identifyTrend(prices) {
     if (prices.length < 3) return 'SIDEWAYS';
+
     const shortTerm = prices.slice(-3);
     const longTerm = prices.slice(-7);
+
     const shortTrend = shortTerm[shortTerm.length - 1] - shortTerm[0];
     const longTrend = longTerm[longTerm.length - 1] - longTerm[0];
+
     if (shortTrend > 0 && longTrend > 0) return 'BULLISH';
     if (shortTrend < 0 && longTrend < 0) return 'BEARISH';
     return 'SIDEWAYS';
@@ -679,35 +812,49 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
   getBollingerPosition(price, upperBand, lowerBand) {
     const bandWidth = upperBand - lowerBand;
     if (bandWidth === 0) return 'MIDDLE';
+
     const position = (price - lowerBand) / bandWidth;
     if (position > 0.8) return 'UPPER';
     if (position < 0.2) return 'LOWER';
     return 'MIDDLE';
   }
 
+  calculateMomentum(prices) {
+    if (prices.length < 2) return 'NEUTRAL';
+    const recentChange = ((prices[prices.length - 1] - prices[prices.length - 2]) / prices[prices.length - 2]) * 100;
+
+    if (recentChange > 2) return 'STRONG_UP';
+    if (recentChange > 0.5) return 'UP';
+    if (recentChange < -2) return 'STRONG_DOWN';
+    if (recentChange < -0.5) return 'DOWN';
+    return 'NEUTRAL';
+  }
+
   async getAITechnicalAnalysis(technicalData) {
     try {
       const prompt = this.createTechnicalAnalysisPrompt(technicalData);
+
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.API_KEY}`,
+          Authorization: `Bearer ${process.env.API_KEY}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
-          'X-Title': 'Technical Analysis Bot'
+          'X-Title': 'Technical Analysis Bot',
         },
         body: JSON.stringify({
-          model: "deepseek/deepseek-r1:free",
-          messages: [{ role: "user", content: prompt }],
+          model: 'deepseek/deepseek-r1:free',
+          messages: [{ role: 'user', content: prompt }],
           max_tokens: 300,
-          temperature: 0.1
-        })
+          temperature: 0.1,
+        }),
       });
 
       if (!response.ok) throw new Error('AI API failed');
       const data = await response.json();
       return this.parseTechnicalAIResponse(data.choices[0].message.content, technicalData);
     } catch (error) {
+      console.log('⚠️ AI analysis failed, using deterministic fallback:', error.message);
       return this.generateTechnicalAnalysis(technicalData);
     }
   }
@@ -720,14 +867,14 @@ CURRENT PRICE: ${technicalData.currentPrice}
 
 DAILY TIMEFRAME INDICATORS:
 - RSI(14): ${technicalData.daily.rsi} ${this.getRSILevel(technicalData.daily.rsi)}
-- Bollinger: ${technicalData.daily.bollingerBands.position}
+- Bollinger band position: ${technicalData.daily.bollingerPosition}
 - Support: ${technicalData.daily.supportResistance.support}
 - Resistance: ${technicalData.daily.supportResistance.resistance}
 - Trend: ${technicalData.daily.trend}
 
 HOURLY TIMEFRAME INDICATORS:
 - RSI(14): ${technicalData.hourly.rsi} ${this.getRSILevel(technicalData.hourly.rsi)}
-- Bollinger: ${technicalData.hourly.bollingerBands.position}
+- Bollinger band position: ${technicalData.hourly.bollingerPosition}
 - Trend: ${technicalData.hourly.trend}
 
 MOMENTUM: ${technicalData.momentum}
@@ -757,7 +904,7 @@ Analyze both timeframes and provide JSON:
           confidence: Math.min(Math.max(parsed.confidence || 0.5, 0.1), 0.95),
           reason: parsed.reason || 'Technical analysis completed',
           insights: parsed.insights || ['Analysis provided'],
-          signal: `${parsed.action} | Technical Analysis`
+          signal: `${parsed.action} | Technical Analysis`,
         };
       }
       throw new Error('Invalid AI response format');
@@ -767,43 +914,54 @@ Analyze both timeframes and provide JSON:
   }
 
   generateTechnicalAnalysis(technicalData) {
-    let action = 'HOLD', confidence = 0.5, reason = '', insights = [];
-    
-    const dailyRsi = technicalData.daily ? technicalData.daily.rsi : 50;
-    const dailyBBPosition = technicalData.daily ? technicalData.daily.bollingerBands.position : 'MIDDLE';
-    const dailyTrend = technicalData.daily ? technicalData.daily.trend : 'SIDEWAYS';
-    
-    const hourlyRsi = technicalData.hourly ? technicalData.hourly.rsi : 50;
-    const hourlyTrend = technicalData.hourly ? technicalData.hourly.trend : 'SIDEWAYS';
+    let action = 'HOLD';
+    let confidence = 0.3;
+    let reason = 'No clear technical setup';
+    let insights = ['Wait for clearer signals', 'Monitor key levels', 'Low conviction'];
 
-    if (dailyRsi < 30 && dailyBBPosition === 'LOWER' && dailyTrend === 'BEARISH') {
+    const { daily, hourly, momentum } = technicalData;
+
+    const dailyRsi = daily.rsi;
+    const dailyBB = daily.bollingerPosition;
+    const dailyTrend = daily.trend;
+
+    const hourlyRsi = hourly.rsi;
+    const hourlyTrend = hourly.trend;
+
+    if (dailyRsi < 30 && dailyBB === 'LOWER' && dailyTrend === 'BEARISH') {
       action = 'BUY';
       confidence = 0.75;
-      reason = 'Daily oversold with Bollinger support and bearish exhaustion';
-      insights = ['Strong reversal potential', 'Risk: Trend continuation', 'Stop below support'];
-    } else if (dailyRsi > 70 && dailyBBPosition === 'UPPER' && dailyTrend === 'BULLISH') {
+      reason = 'Daily oversold with Bollinger support and potential bearish exhaustion';
+      insights = ['Strong mean-reversion potential', 'Risk: Trend continuation', 'Stop below daily support'];
+    } else if (dailyRsi > 70 && dailyBB === 'UPPER' && dailyTrend === 'BULLISH') {
       action = 'SELL';
       confidence = 0.75;
       reason = 'Daily overbought at Bollinger resistance';
-      insights = ['Profit taking opportunity', 'Risk: Trend continuation', 'Stop above resistance'];
+      insights = ['Profit-taking opportunity', 'Risk: Trend continuation', 'Stop above resistance'];
     } else if (dailyRsi < 35 && dailyTrend === 'BULLISH' && hourlyTrend === 'BULLISH') {
       action = 'BUY';
-      confidence = 0.70;
-      reason = 'Both timeframes bullish with daily oversold';
+      confidence = 0.7;
+      reason = 'Both timeframes bullish with daily oversold signal';
       insights = ['Trend alignment positive', 'Watch for confirmation', 'Stop below recent low'];
     } else if (hourlyRsi < 30 && hourlyTrend === 'BULLISH') {
       action = 'BUY';
       confidence = 0.65;
-      reason = 'Hourly oversold in bullish trend';
-      insights = ['Short-term opportunity', 'Confirm with volume', 'Tight stop loss'];
-    } else {
-      action = 'HOLD';
-      confidence = 0.3;
-      reason = 'No clear technical setup on either timeframe';
-      insights = ['Wait for clearer signals', 'Monitor key levels', 'Low conviction'];
+      reason = 'Hourly oversold in bullish hourly trend';
+      insights = ['Short-term mean reversion opportunity', 'Confirm with volume', 'Tight stop loss'];
+    } else if (momentum === 'STRONG_DOWN' && dailyTrend === 'BEARISH') {
+      action = 'SELL';
+      confidence = 0.6;
+      reason = 'Momentum and daily trend both bearish';
+      insights = ['Potential continuation move', 'Watch for support breaks', 'Consider partial position sizing'];
     }
 
-    return { action, confidence, reason, insights, signal: `${action} | Multi-Timeframe Analysis` };
+    return {
+      action,
+      confidence,
+      reason,
+      insights,
+      signal: `${action} | Multi-Timeframe Analysis`,
+    };
   }
 
   basicTechnicalAnalysis(coin) {
@@ -815,19 +973,24 @@ Analyze both timeframes and provide JSON:
       confidence: 0.1,
       signal: 'HOLD | Data Unavailable',
       reason: 'Technical analysis data not available',
-      technicals: { 
-        dailyRsi: 'N/A', 
-        hourlyRsi: 'N/A',
-        dailyBollinger: 'N/A',
-        hourlyBollinger: 'N/A', 
-        support: 'N/A', 
-        resistance: 'N/A', 
-        dailyTrend: 'N/A',
-        hourlyTrend: 'N/A',
-        momentum: 'N/A' 
-      },
       insights: ['Data fetch failed'],
-      timestamp: new Date()
+      timestamp: new Date(),
+      usesMockData: true,
+      indicators: {
+        momentum: 'N/A',
+        daily: {
+          rsi: 'N/A',
+          bollingerPosition: 'N/A',
+          trend: 'N/A',
+          support: 'N/A',
+          resistance: 'N/A',
+        },
+        hourly: {
+          rsi: 'N/A',
+          bollingerPosition: 'N/A',
+          trend: 'N/A',
+        },
+      },
     };
   }
 
@@ -838,7 +1001,7 @@ Analyze both timeframes and provide JSON:
 
 const tradingBot = new ProfessionalTradingBot();
 
-// API Routes
+// API routes
 app.post('/start-scan', async (req, res) => {
   const result = await tradingBot.startAutoScan();
   res.json(result);
@@ -863,9 +1026,9 @@ app.post('/test-telegram', async (req, res) => {
     const result = await tradingBot.sendTestNotification();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: `Error: ${error.message}` 
+    res.status(500).json({
+      success: false,
+      message: `Error: ${error.message}`,
     });
   }
 });
@@ -884,341 +1047,675 @@ app.get('/bot-status', (req, res) => {
   res.json({
     running: tradingBot.isRunning,
     coinsTracked: tradingBot.trackedCoins.length,
-    strategy: 'RSI + Bollinger Bands + Support/Resistance + Momentum',
+    strategy: 'RSI + Bollinger Bands + Support/Resistance + Momentum + AI overlay',
     interval: '1 hour',
     minConfidence: tradingBot.minConfidence,
     stats: tradingBot.getStats(),
     telegramEnabled: TELEGRAM_ENABLED,
-    lastUpdate: new Date()
+    lastUpdate: new Date(),
   });
 });
 
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
+  res.json({
+    status: 'healthy',
     service: 'professional-scanner-v2',
     strategy: 'Technical Analysis (Enhanced)',
     autoScan: tradingBot.isRunning,
     telegramEnabled: TELEGRAM_ENABLED,
     scanInterval: '1 hour',
     coinsTracked: tradingBot.trackedCoins.length,
-    time: new Date() 
+    lastSuccessfulScan: tradingBot.stats.lastSuccessfulScan,
+    mockDataUsage: tradingBot.stats.mockDataUsage,
+    time: new Date(),
   });
 });
 
-// Main UI Route with complete HTML
+// Main UI route
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-        <title>🤖 AI Crypto Trading Scanner Pro</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            
-            body {
-                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                color: #1a202c;
-            }
-            
-            .container {
-                display: grid;
-                grid-template-columns: 1fr 420px;
-                gap: 24px;
-                max-width: 1920px;
-                margin: 0 auto;
-                padding: 24px;
-            }
-            
-            .main-content, .sidebar {
-                background: rgba(255, 255, 255, 0.97);
-                border-radius: 24px;
-                padding: 32px;
-                box-shadow: 0 24px 48px rgba(0,0,0,0.12);
-            }
-            
-            .header { text-align: center; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid #e2e8f0; }
-            .header h1 {
-                color: #1a202c;
-                font-size: 2.75em;
-                font-weight: 700;
-                margin-bottom: 12px;
-                background: linear-gradient(135deg, #667eea, #764ba2);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-            }
-            
-            .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
-            .stat-card { background: linear-gradient(135deg, #f7fafc, #edf2f7); padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; }
-            .stat-label { color: #718096; font-size: 0.85em; font-weight: 600; text-transform: uppercase; margin-bottom: 8px; }
-            .stat-value { font-size: 2em; font-weight: 700; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-            
-            .controls { background: linear-gradient(135deg, #f7fafc, #edf2f7); padding: 28px; border-radius: 20px; margin-bottom: 28px; }
-            .button-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
-            button { padding: 14px 24px; border: none; border-radius: 12px; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 8px; }
-            .btn-success { background: linear-gradient(135deg, #10b981, #059669); color: white; }
-            .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
-            .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
-            .btn-secondary { background: linear-gradient(135deg, #64748b, #475569); color: white; }
-            .btn-telegram { background: linear-gradient(135deg, #0088cc, #005c8a); color: white; }
-            button:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
-            
-            .status-card { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 24px; border-radius: 16px; text-align: center; }
-            
-            .opportunity { background: white; border-radius: 20px; padding: 24px; margin-bottom: 20px; border-left: 6px solid; box-shadow: 0 8px 24px rgba(0,0,0,0.06); transition: all 0.3s; }
-            .opportunity:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(0,0,0,0.12); }
-            .opportunity.buy { border-left-color: #10b981; background: linear-gradient(135deg, #fff, #f0fdf4); }
-            .opportunity.sell { border-left-color: #ef4444; background: linear-gradient(135deg, #fff, #fef2f2); }
-            .opportunity.hold { border-left-color: #f59e0b; background: linear-gradient(135deg, #fff, #fffbeb); }
-            
-            .coin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-            .coin-name { font-size: 1.4em; font-weight: 700; color: #1a202c; }
-            .action-badge { padding: 8px 16px; border-radius: 24px; font-weight: 700; font-size: 0.9em; }
-            .buy-badge { background: #10b981; color: white; }
-            .sell-badge { background: #ef4444; color: white; }
-            .hold-badge { background: #f59e0b; color: white; }
-            
-            .price-confidence { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; padding: 20px; background: rgba(0,0,0,0.02); border-radius: 12px; }
-            .price-box .value, .confidence-box .value { font-size: 1.6em; font-weight: 700; color: #1a202c; margin-bottom: 4px; }
-            
-            .technical-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0; }
-            .technical-item { background: rgba(255,255,255,0.8); padding: 14px; border-radius: 12px; text-align: center; border: 1px solid rgba(0,0,0,0.05); }
-            .technical-item strong { display: block; color: #718096; font-size: 0.75em; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; }
-            
-            .confidence-bar { height: 10px; background: #e2e8f0; border-radius: 12px; margin: 16px 0; overflow: hidden; }
-            .confidence-fill { height: 100%; border-radius: 12px; transition: width 0.8s; }
-            .high-confidence { background: linear-gradient(90deg, #10b981, #34d399); }
-            .medium-confidence { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
-            .low-confidence { background: linear-gradient(90deg, #ef4444, #f87171); }
-            
-            .reason-box { margin: 20px 0; padding: 16px; background: rgba(0,0,0,0.02); border-radius: 12px; border-left: 4px solid #667eea; }
-            .insights-list { margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
-            .insights-list ul { list-style: none; padding: 0; }
-            .insights-list li { padding: 10px 12px; margin-bottom: 8px; background: rgba(255,255,255,0.6); border-radius: 8px; padding-left: 32px; position: relative; }
-            .insights-list li::before { content: '→'; position: absolute; left: 12px; color: #667eea; font-weight: bold; }
-            
-            .no-opportunities { text-align: center; padding: 80px 20px; color: #718096; }
-            .loading-spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 1s linear infinite; }
-            @keyframes spin { to { transform: rotate(360deg); } }
-            
-            @media (max-width: 1400px) { .container { grid-template-columns: 1fr; } }
-            @media (max-width: 768px) { .button-group { grid-template-columns: 1fr; } }
-        </style>
+      <title>🤖 AI Crypto Trading Scanner Pro</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          background: radial-gradient(circle at top left, #1f2937, #0f172a 55%, #020617 100%);
+          min-height: 100vh;
+          color: #1a202c;
+        }
+        .container {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 380px;
+          gap: 24px;
+          max-width: 1920px;
+          margin: 0 auto;
+          padding: 24px;
+        }
+        .main-content, .sidebar {
+          background: rgba(255, 255, 255, 0.95);
+          border-radius: 24px;
+          padding: 32px;
+          box-shadow: 0 24px 48px rgba(15, 23, 42, 0.35);
+        }
+        .header { text-align: center; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid rgba(148, 163, 184, 0.2); }
+        .header h1 {
+          color: #0f172a;
+          font-size: 2.75em;
+          font-weight: 700;
+          margin-bottom: 12px;
+          background: linear-gradient(135deg, #6366f1, #22d3ee);
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+          color: #334155;
+          font-weight: 500;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+        }
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 16px;
+          margin-bottom: 28px;
+        }
+        .stat-card {
+          background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9));
+          padding: 20px;
+          border-radius: 16px;
+          border: 1px solid rgba(148, 163, 184, 0.25);
+          position: relative;
+          overflow: hidden;
+        }
+        .stat-card::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.2), transparent);
+          opacity: 0;
+          transition: opacity 0.3s;
+        }
+        .stat-card:hover::after { opacity: 1; }
+        .stat-label { color: #64748b; font-size: 0.75em; font-weight: 600; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.08em; }
+        .stat-value { font-size: 2em; font-weight: 700; color: #0f172a; }
+        .controls {
+          background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9));
+          padding: 28px;
+          border-radius: 20px;
+          margin-bottom: 28px;
+          border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+        .button-group {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 12px;
+          margin-bottom: 20px;
+        }
+        button {
+          padding: 14px 24px;
+          border: none;
+          border-radius: 12px;
+          cursor: pointer;
+          font-weight: 600;
+          font-size: 14px;
+          transition: all 0.3s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          color: white;
+        }
+        .btn-success { background: linear-gradient(135deg, #22c55e, #16a34a); }
+        .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .btn-primary { background: linear-gradient(135deg, #6366f1, #4338ca); }
+        .btn-secondary { background: linear-gradient(135deg, #475569, #334155); }
+        .btn-telegram { background: linear-gradient(135deg, #0088cc, #0369a1); }
+        button:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 12px 24px rgba(15, 23, 42, 0.25);
+        }
+        .status-card {
+          background: linear-gradient(135deg, #0ea5e9, #6366f1);
+          color: white;
+          padding: 24px;
+          border-radius: 16px;
+          text-align: center;
+        }
+        .status-card h4 { margin-bottom: 8px; font-size: 1.2em; }
+        .status-meta { font-size: 0.85em; opacity: 0.85; margin-top: 8px; }
+        .opportunity {
+          background: white;
+          border-radius: 20px;
+          padding: 24px;
+          margin-bottom: 20px;
+          border-left: 6px solid;
+          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+          transition: transform 0.3s ease, box-shadow 0.3s ease;
+          position: relative;
+        }
+        .opportunity::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          border-radius: 20px;
+          background: radial-gradient(circle at top right, rgba(14, 165, 233, 0.15), transparent);
+          opacity: 0;
+          transition: opacity 0.3s ease;
+        }
+        .opportunity:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+        }
+        .opportunity:hover::before { opacity: 1; }
+        .opportunity.buy { border-left-color: #22c55e; }
+        .opportunity.sell { border-left-color: #ef4444; }
+        .opportunity.hold { border-left-color: #f59e0b; }
+        .coin-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 20px;
+        }
+        .coin-name { font-size: 1.4em; font-weight: 700; color: #0f172a; }
+        .action-badge {
+          padding: 8px 16px;
+          border-radius: 999px;
+          font-weight: 700;
+          font-size: 0.9em;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .buy-badge { background: rgba(34, 197, 94, 0.15); color: #15803d; }
+        .sell-badge { background: rgba(239, 68, 68, 0.15); color: #b91c1c; }
+        .hold-badge { background: rgba(245, 158, 11, 0.15); color: #b45309; }
+        .price-confidence {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+          gap: 20px;
+          margin: 20px 0;
+          padding: 20px;
+          background: rgba(148, 163, 184, 0.08);
+          border-radius: 12px;
+        }
+        .price-box .value, .confidence-box .value {
+          font-size: 1.6em;
+          font-weight: 700;
+          color: #0f172a;
+          margin-bottom: 4px;
+        }
+        .confidence-bar {
+          height: 10px;
+          background: rgba(226, 232, 240, 0.7);
+          border-radius: 12px;
+          margin: 16px 0;
+          overflow: hidden;
+        }
+        .confidence-fill {
+          height: 100%;
+          border-radius: 12px;
+          transition: width 0.8s;
+        }
+        .high-confidence { background: linear-gradient(90deg, #22c55e, #16a34a); }
+        .medium-confidence { background: linear-gradient(90deg, #f59e0b, #d97706); }
+        .low-confidence { background: linear-gradient(90deg, #ef4444, #b91c1c); }
+        .technical-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+          gap: 12px;
+          margin: 20px 0;
+        }
+        .technical-item {
+          background: rgba(241, 245, 249, 0.85);
+          padding: 14px;
+          border-radius: 12px;
+          text-align: center;
+          border: 1px solid rgba(148, 163, 184, 0.25);
+        }
+        .technical-item strong {
+          display: block;
+          color: #475569;
+          font-size: 0.75em;
+          text-transform: uppercase;
+          margin-bottom: 6px;
+        }
+        .reason-box {
+          margin: 16px 0;
+          padding: 16px;
+          background: rgba(148, 163, 184, 0.08);
+          border-radius: 12px;
+          border-left: 4px solid #6366f1;
+        }
+        .insights-list ul { list-style: none; padding: 0; }
+        .insights-list li {
+          padding: 10px 12px;
+          margin-bottom: 8px;
+          background: rgba(241, 245, 249, 0.85);
+          border-radius: 8px;
+          padding-left: 32px;
+          position: relative;
+        }
+        .insights-list li::before {
+          content: '→';
+          position: absolute;
+          left: 12px;
+          color: #6366f1;
+          font-weight: bold;
+        }
+        .no-opportunities {
+          text-align: center;
+          padding: 80px 20px;
+          color: #64748b;
+        }
+        .ai-visual {
+          margin-top: 20px;
+          background: rgba(14, 116, 144, 0.15);
+          border-radius: 16px;
+          padding: 18px;
+          border: 1px solid rgba(125, 211, 252, 0.3);
+        }
+        .ai-visual h4 { color: #bae6fd; font-size: 1.1em; margin-bottom: 12px; }
+        .ai-list { list-style: none; color: #bae6fd; font-size: 0.95em; }
+        .ai-list li { margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+        .ai-tag {
+          padding: 2px 10px;
+          border-radius: 999px;
+          font-size: 0.75em;
+          background: rgba(125, 211, 252, 0.2);
+          color: #0ea5e9;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+        .live-progress {
+          margin-top: 16px;
+          background: rgba(15, 23, 42, 0.6);
+          padding: 14px;
+          border-radius: 12px;
+          border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+        .progress-bar {
+          height: 6px;
+          background: rgba(148, 163, 184, 0.3);
+          border-radius: 999px;
+          overflow: hidden;
+          margin-top: 8px;
+        }
+        .progress-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #38bdf8, #6366f1);
+          width: 0;
+          transition: width 0.3s ease;
+        }
+        .ai-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.75em;
+          text-transform: uppercase;
+          color: #94a3b8;
+          letter-spacing: 0.12em;
+          background: rgba(148, 163, 184, 0.12);
+          padding: 4px 10px;
+          border-radius: 999px;
+          margin-right: 8px;
+        }
+        .history-card {
+          margin-top: 20px;
+          padding: 16px;
+          background: rgba(15, 23, 42, 0.55);
+          border-radius: 12px;
+          border: 1px solid rgba(100, 116, 139, 0.35);
+        }
+        .history-item {
+          display: flex;
+          justify-content: space-between;
+          color: #e2e8f0;
+          font-size: 0.85em;
+          padding: 10px 0;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+        }
+        .history-item:last-child { border-bottom: none; }
+        @media (max-width: 1400px) { .container { grid-template-columns: 1fr; } }
+        @media (max-width: 768px) {
+          .button-group { grid-template-columns: 1fr; }
+          .main-content, .sidebar { padding: 20px; }
+        }
+      </style>
     </head>
     <body>
-        <div class="container">
-            <div class="main-content">
-                <div class="header">
-                    <h1>🤖 AI Crypto Trading Scanner Pro</h1>
-                    <p>Advanced Technical Analysis • Real-Time Market Intelligence • 1-Hour Intervals</p>
-                </div>
-                
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-label">Total Scans</div>
-                        <div class="stat-value" id="totalScans">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Opportunities</div>
-                        <div class="stat-value" id="totalOpps">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Notifications</div>
-                        <div class="stat-value" id="notifications">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Avg Confidence</div>
-                        <div class="stat-value" id="avgConf">0%</div>
-                    </div>
-                </div>
-                
-                <div class="controls">
-                    <h3>🎯 Scanner Controls</h3>
-                    <div class="button-group">
-                        <button class="btn-success" onclick="startAutoScan()">🚀 Start Auto-Scan</button>
-                        <button class="btn-danger" onclick="stopAutoScan()">🛑 Stop Auto-Scan</button>
-                        <button class="btn-primary" onclick="manualScan()">🔍 Scan Now</button>
-                        <button class="btn-telegram" onclick="testTelegram()">📱 Test Telegram</button>
-                        <button class="btn-secondary" onclick="viewHistory()">📊 View History</button>
-                    </div>
-                    <div class="status-card">
-                        <h4>Scanner Status</h4>
-                        <div id="statusText">🟢 Ready to start</div>
-                        <div id="nextScan">Next scan: Not scheduled</div>
-                        <div id="telegramStatus" style="margin-top: 10px; font-size: 0.9em;">
-                            ${TELEGRAM_ENABLED ? '✅ Telegram: ENABLED' : '⚠️ Telegram: DISABLED'}
-                        </div>
-                    </div>
-                </div>
-                
-                <div>
-                    <h3 style="margin-bottom: 24px; color: #1a202c; font-size: 1.5em; font-weight: 700;">📈 Trading Opportunities</h3>
-                    <div id="results">
-                        <div class="no-opportunities">
-                            <h3>🔍 Ready to Scan</h3>
-                            <p>Click "Scan Now" to start comprehensive technical analysis</p>
-                        </div>
-                    </div>
-                </div>
+      <div class="container">
+        <div class="main-content">
+          <div class="header">
+            <h1>🤖 AI Crypto Trading Scanner Pro</h1>
+            <div class="subtitle">Advanced Technical Analysis • AI Validation • Hourly Updates</div>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Total Scans</div>
+              <div class="stat-value" id="totalScans">0</div>
             </div>
-            
-            <div class="sidebar">
-                <div style="background: linear-gradient(135deg, #1e293b, #0f172a); color: white; border-radius: 20px; padding: 24px;">
-                    <h3 style="text-align: center; margin-bottom: 16px;">🧠 DeepSeek AI Analysis</h3>
-                    <div id="currentAnalysis" style="min-height: 200px; padding: 20px; background: #1e293b; border-radius: 12px;">
-                        <p style="color: #94a3b8; text-align: center;">Waiting for analysis...</p>
-                    </div>
-                </div>
+            <div class="stat-card">
+              <div class="stat-label">Opportunities</div>
+              <div class="stat-value" id="totalOpps">0</div>
             </div>
+            <div class="stat-card">
+              <div class="stat-label">Notifications Sent</div>
+              <div class="stat-value" id="notifications">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Avg Confidence</div>
+              <div class="stat-value" id="avgConf">0%</div>
+            </div>
+          </div>
+
+          <div class="controls">
+            <h3>🎯 Scanner Controls</h3>
+            <div class="button-group">
+              <button class="btn-success" onclick="startAutoScan()">🚀 Start Auto-Scan</button>
+              <button class="btn-danger" onclick="stopAutoScan()">🛑 Stop Auto-Scan</button>
+              <button class="btn-primary" onclick="manualScan()">🔍 Scan Now</button>
+              <button class="btn-telegram" onclick="testTelegram()">📱 Test Telegram</button>
+              <button class="btn-secondary" onclick="viewHistory()">📊 View History</button>
+            </div>
+            <div class="status-card">
+              <h4>Scanner Status</h4>
+              <div id="statusText">🟢 Ready to start</div>
+              <div id="nextScan">Next scan: Not scheduled</div>
+              <div class="status-meta" id="telemetryStatus">
+                Telegram: ${TELEGRAM_ENABLED ? '✅ Enabled' : '⚠️ Disabled'}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">📈 Trading Opportunities</h3>
+            <div id="results">
+              <div class="no-opportunities">
+                <h3>🔍 Ready to Scan</h3>
+                <p>Click "Scan Now" to start comprehensive technical analysis</p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <script>
-            let analysisUpdateInterval = null;
+        <div class="sidebar">
+          <div style="background: linear-gradient(135deg, #0f172a, #111827); color: white; border-radius: 20px; padding: 24px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+              <h3 style="margin-bottom: 0;">🧠 DeepSeek AI Monitor</h3>
+              <span class="ai-chip">Live Analysis</span>
+            </div>
+            <div id="currentAnalysis" style="min-height: 220px; padding: 20px; background: rgba(15, 23, 42, 0.6); border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.25);">
+              <p style="color: #94a3b8; text-align: center;">Waiting for analysis...</p>
+            </div>
 
-            async function testTelegram() {
-                try {
-                    const response = await fetch('/test-telegram', { method: 'POST' });
-                    const result = await response.json();
-                    alert(result.message);
-                } catch (error) {
-                    alert('Error testing Telegram: ' + error.message);
-                }
+            <div class="history-card" id="recentHistory">
+              <div class="history-item">
+                <span>Scans completed</span>
+                <span id="historyScans">0</span>
+              </div>
+              <div class="history-item">
+                <span>Signals delivered</span>
+                <span id="historySignals">0</span>
+              </div>
+              <div class="history-item">
+                <span>Mock data usage</span>
+                <span id="historyMock">0</span>
+              </div>
+              <div class="history-item">
+                <span>Skipped scans</span>
+                <span id="historySkipped">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        let analysisUpdateInterval = null;
+
+        async function testTelegram() {
+          try {
+            const response = await fetch('/test-telegram', { method: 'POST' });
+            const result = await response.json();
+            alert(result.message);
+          } catch (error) {
+            alert('Error testing Telegram: ' + error.message);
+          }
+        }
+
+        function renderAiInsightList(analysis) {
+          if (!analysis || !analysis.details) return '';
+          const items = analysis.details.slice(0, 3).map((item) => {
+            return '<li><span class="ai-tag">' + item.label + '</span>' + item.value + '</li>';
+          }).join('');
+          return '<div class="ai-visual"><h4>🔎 Why the AI chose this</h4><ul class="ai-list">' + items + '</ul></div>';
+        }
+
+        async function updateStats() {
+          try {
+            const response = await fetch('/bot-status');
+            const data = await response.json();
+            if (data.stats) {
+              document.getElementById('totalScans').textContent = data.stats.totalScans || 0;
+              document.getElementById('totalOpps').textContent = data.stats.totalOpportunities || 0;
+              document.getElementById('notifications').textContent = data.stats.notificationsSent || 0;
+              document.getElementById('avgConf').textContent = data.stats.avgConfidence
+                ? (data.stats.avgConfidence * 100).toFixed(0) + '%'
+                : '0%';
+
+              document.getElementById('historyScans').textContent = data.stats.totalScans || 0;
+              document.getElementById('historySignals').textContent = data.stats.totalOpportunities || 0;
+              document.getElementById('historyMock').textContent = data.stats.mockDataUsage || 0;
+              document.getElementById('historySkipped').textContent = data.stats.skippedDueToOverlap || 0;
+
+              document.getElementById('telemetryStatus').textContent =
+                'Telegram: ' + (data.telegramEnabled ? '✅ Enabled' : '⚠️ Disabled');
             }
+          } catch (error) {
+            console.log('Error updating stats:', error);
+          }
+        }
 
-            async function updateStats() {
-                try {
-                    const response = await fetch('/bot-status');
-                    const data = await response.json();
-                    if (data.stats) {
-                        document.getElementById('totalScans').textContent = data.stats.totalScans || 0;
-                        document.getElementById('totalOpps').textContent = data.stats.totalOpportunities || 0;
-                        document.getElementById('notifications').textContent = data.stats.notificationsSent || 0;
-                        document.getElementById('avgConf').textContent = data.stats.avgConfidence ? (data.stats.avgConfidence * 100).toFixed(0) + '%' : '0%';
-                    }
-                } catch (error) {
-                    console.log('Error updating stats:', error);
-                }
+        async function updateLiveAnalysis() {
+          try {
+            const response = await fetch('/live-analysis');
+            const data = await response.json();
+            const currentDiv = document.getElementById('currentAnalysis');
+            if (data.currentlyAnalyzing) {
+              const analysis = data.currentlyAnalyzing;
+              const progress = analysis.progress || 0;
+
+              const insightDetails = [
+                {
+                  label: 'Stage',
+                  value: analysis.stage || 'Collecting data…'
+                },
+              ];
+
+              if (analysis.technicals) {
+                insightDetails.push({ label: 'Daily RSI', value: analysis.technicals.dailyRsi });
+                insightDetails.push({ label: 'Hourly RSI', value: analysis.technicals.hourlyRsi });
+                insightDetails.push({ label: 'Trends', value: analysis.technicals.dailyTrend + ' / ' + analysis.technicals.hourlyTrend });
+                insightDetails.push({ label: 'Momentum', value: analysis.technicals.momentum });
+              }
+
+              if (analysis.result) {
+                insightDetails.push({ label: 'AI Verdict', value: analysis.result.action + ' • ' + analysis.result.confidence });
+                insightDetails.push({ label: 'Rationale', value: analysis.result.reason });
+              }
+
+              const insightList = insightDetails.map((item) => {
+                return '<li><span class="ai-tag">' + item.label + '</span>' + item.value + '</li>';
+              }).join('');
+
+              currentDiv.innerHTML = \`
+                <div style="color: #60a5fa; font-weight: 600; margin-bottom: 12px;">\${analysis.stage}</div>
+                <div style="color: #e2e8f0; font-size: 1.15em; margin-bottom: 8px;"><strong>\${analysis.symbol}</strong> • \${analysis.name}</div>
+                <div class="live-progress">
+                  <div style="display: flex; justify-content: space-between; align-items: center; color: #cbd5f5; font-size: 0.9em;">
+                    <span>Progress</span>
+                    <span>\${progress}%</span>
+                  </div>
+                  <div class="progress-bar"><div class="progress-fill" style="width: \${progress}%"></div></div>
+                </div>
+                <div class="ai-visual">
+                  <h4>🔍 DeepSeek Evaluation</h4>
+                  <ul class="ai-list">\${insightList}</ul>
+                </div>
+              \`;
+            } else {
+              currentDiv.innerHTML = '<p style="color: #94a3b8; text-align: center;">No active analysis</p>';
             }
+          } catch (error) {
+            console.log('Error updating live analysis:', error);
+          }
+        }
 
-            async function updateLiveAnalysis() {
-                try {
-                    const response = await fetch('/live-analysis');
-                    const data = await response.json();
-                    const currentDiv = document.getElementById('currentAnalysis');
-                    if (data.currentlyAnalyzing) {
-                        const analysis = data.currentlyAnalyzing;
-                        currentDiv.innerHTML = \`<div style="color: #60a5fa; font-weight: 600; margin-bottom: 12px;">\${analysis.stage}</div>
-                            <div style="color: #e2e8f0;"><strong>\${analysis.symbol}</strong> - \${analysis.name}</div>\`;
-                    } else {
-                        currentDiv.innerHTML = '<p style="color: #94a3b8; text-align: center;">No active analysis</p>';
-                    }
-                } catch (error) {
-                    console.log('Error updating live analysis:', error);
-                }
+        async function startAutoScan() {
+          try {
+            const response = await fetch('/start-scan', { method: 'POST' });
+            const result = await response.json();
+            if (result.status === 'already_running') {
+              alert('Auto-scan is already running!');
+              return;
             }
-
-            async function startAutoScan() {
-                try {
-                    const response = await fetch('/start-scan', { method: 'POST' });
-                    const result = await response.json();
-                    if (result.status === 'already_running') {
-                        alert('Auto-scan is already running!');
-                        return;
-                    }
-                    document.getElementById('statusText').innerHTML = '🔄 Auto-Scanning Active';
-                    document.getElementById('nextScan').textContent = 'Next scan: Every 1 hour';
-                    if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
-                    analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
-                    manualScan();
-                } catch (error) {
-                    alert('Error starting auto-scan: ' + error.message);
-                }
-            }
-
-            async function stopAutoScan() {
-                try {
-                    await fetch('/stop-scan', { method: 'POST' });
-                    document.getElementById('statusText').innerHTML = '🛑 Stopped';
-                    document.getElementById('nextScan').textContent = 'Next scan: Manual mode';
-                    if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
-                } catch (error) {
-                    alert('Error stopping auto-scan: ' + error.message);
-                }
-            }
-
-            async function manualScan() {
-                try {
-                    document.getElementById('results').innerHTML = '<div class="no-opportunities"><div class="loading-spinner" style="width: 40px; height: 40px; margin: 0 auto 20px;"></div><h3>🔍 Scanning...</h3></div>';
-                    if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
-                    analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
-                    updateLiveAnalysis();
-                    
-                    const response = await fetch('/scan-now');
-                    const data = await response.json();
-                    updateStats();
-                    
-                    if (data.opportunities.length === 0) {
-                        document.getElementById('results').innerHTML = \`<div class="no-opportunities"><h3>📭 No High-Confidence Opportunities</h3><p>Scanned \${data.analyzedCoins} coins</p></div>\`;
-                        return;
-                    }
-                    
-                    let html = '';
-                    data.opportunities.forEach(opp => {
-                        const actionClass = opp.action.toLowerCase();
-                        const confidencePercent = (opp.confidence * 100).toFixed(0);
-                        const confidenceLevel = confidencePercent >= 75 ? 'high-confidence' : confidencePercent >= 60 ? 'medium-confidence' : 'low-confidence';
-                        
-                        html += \`<div class="opportunity \${actionClass}">
-                            <div class="coin-header">
-                                <div class="coin-name">\${opp.name} (\${opp.symbol})</div>
-                                <div class="\${actionClass}-badge action-badge">\${opp.action}</div>
-                            </div>
-                            <div class="price-confidence">
-                                <div class="price-box"><div class="value">\${opp.price}</div><div>Current Price</div></div>
-                                <div class="confidence-box"><div class="value">\${confidencePercent}%</div><div>Confidence</div></div>
-                            </div>
-                            <div class="confidence-bar"><div class="confidence-fill \${confidenceLevel}" style="width: \${confidencePercent}%"></div></div>
-                            <div class="reason-box"><p>\${opp.reason}</p></div>
-                            <div class="technical-grid">
-                                <div class="technical-item"><strong>RSI</strong><div>\${opp.technicals.rsi}</div></div>
-                                <div class="technical-item"><strong>Bollinger</strong><div>\${opp.technicals.bollingerPosition}</div></div>
-                                <div class="technical-item"><strong>Trend</strong><div>\${opp.technicals.trend}</div></div>
-                            </div>
-                            <div class="insights-list"><h4>💡 Key Insights</h4><ul>\${opp.insights.map(i => \`<li>\${i}</li>\`).join('')}</ul></div>
-                        </div>\`;
-                    });
-                    
-                    document.getElementById('results').innerHTML = html;
-                } catch (error) {
-                    console.error('Scan error:', error);
-                    document.getElementById('results').innerHTML = '<div class="no-opportunities" style="color: #ef4444;"><h3>❌ Scan Failed</h3><p>Please try again</p></div>';
-                }
-            }
-
-            async function viewHistory() {
-                try {
-                    const response = await fetch('/scan-history');
-                    const history = await response.json();
-                    if (history.length === 0) {
-                        alert('No scan history available yet.');
-                        return;
-                    }
-                    const historyText = history.slice(0, 5).map((scan, index) => 
-                        \`Scan #\${index + 1}: \${new Date(scan.timestamp).toLocaleString()}\\n   - Opportunities: \${scan.opportunities}\`
-                    ).join('\\n\\n');
-                    alert('Recent Scan History:\\n\\n' + historyText);
-                } catch (error) {
-                    alert('Error loading history: ' + error.message);
-                }
-            }
-
-            updateStats();
+            document.getElementById('statusText').innerHTML = '🔄 Auto-Scanning Active';
+            document.getElementById('nextScan').textContent = 'Next scan: Every 1 hour';
+            if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
+            analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
             manualScan();
-        </script>
+          } catch (error) {
+            alert('Error starting auto-scan: ' + error.message);
+          }
+        }
+
+        async function stopAutoScan() {
+          try {
+            await fetch('/stop-scan', { method: 'POST' });
+            document.getElementById('statusText').innerHTML = '🛑 Stopped';
+            document.getElementById('nextScan').textContent = 'Next scan: Manual mode';
+            if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
+          } catch (error) {
+            alert('Error stopping auto-scan: ' + error.message);
+          }
+        }
+
+        async function manualScan() {
+          try {
+            document.getElementById('results').innerHTML = '<div class="no-opportunities"><div class="loading-spinner" style="width: 40px; height: 40px; border: 4px solid rgba(100, 116, 139, 0.2); border-top-color: #6366f1; border-radius: 999px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div><h3>🔍 Scanning...</h3></div>';
+            if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
+            analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
+            updateLiveAnalysis();
+
+            const response = await fetch('/scan-now');
+            const data = await response.json();
+            updateStats();
+
+            if (!data || !data.opportunities || data.opportunities.length === 0) {
+              const msg = data.status === 'skipped'
+                ? 'Previous scan still running, waiting for completion…'
+                : \`Scanned \${data.analyzedCoins || 0} coins\`;
+              document.getElementById('results').innerHTML = '<div class="no-opportunities"><h3>📭 No High-Confidence Opportunities</h3><p>' + msg + '</p></div>';
+              return;
+            }
+
+            let html = '';
+            data.opportunities.forEach((opp) => {
+              const actionClass = opp.action.toLowerCase();
+              const confidencePercent = (opp.confidence * 100).toFixed(0);
+              const confidenceLevel =
+                confidencePercent >= 75 ? 'high-confidence' :
+                confidencePercent >= 60 ? 'medium-confidence' :
+                'low-confidence';
+
+              const daily = opp.indicators.daily;
+              const hourly = opp.indicators.hourly;
+
+              const aiInsights = [
+                { label: 'Daily RSI', value: daily.rsi },
+                { label: 'Hourly RSI', value: hourly.rsi },
+                { label: 'Daily Trend', value: daily.trend },
+                { label: 'Hourly Trend', value: hourly.trend },
+                { label: 'Momentum', value: opp.indicators.momentum },
+                { label: 'Support / Resistance', value: \`\${daily.support} / \${daily.resistance}\` },
+              ];
+
+              const aiList = aiInsights.map((item) => {
+                return '<li><span class="ai-tag">' + item.label + '</span>' + item.value + '</li>';
+              }).join('');
+
+              html += \`
+                <div class="opportunity \${actionClass}">
+                  <div class="coin-header">
+                    <div class="coin-name">\${opp.name} (\${opp.symbol})</div>
+                    <div class="\${actionClass}-badge action-badge">\${opp.action}</div>
+                  </div>
+                  <div class="price-confidence">
+                    <div class="price-box">
+                      <div class="value">\${opp.price}</div>
+                      <div>Current Price</div>
+                    </div>
+                    <div class="confidence-box">
+                      <div class="value">\${confidencePercent}%</div>
+                      <div>Confidence</div>
+                    </div>
+                  </div>
+                  <div class="confidence-bar"><div class="confidence-fill \${confidenceLevel}" style="width: \${confidencePercent}%"></div></div>
+                  <div class="reason-box"><p>\${opp.reason}</p></div>
+                  <div class="technical-grid">
+                    <div class="technical-item"><strong>Daily RSI</strong><div>\${daily.rsi}</div></div>
+                    <div class="technical-item"><strong>Hourly RSI</strong><div>\${hourly.rsi}</div></div>
+                    <div class="technical-item"><strong>Daily Trend</strong><div>\${daily.trend}</div></div>
+                    <div class="technical-item"><strong>Hourly Trend</strong><div>\${hourly.trend}</div></div>
+                    <div class="technical-item"><strong>Momentum</strong><div>\${opp.indicators.momentum}</div></div>
+                    <div class="technical-item"><strong>Bollinger</strong><div>\${daily.bollingerPosition} / \${hourly.bollingerPosition}</div></div>
+                  </div>
+                  <div class="ai-visual">
+                    <h4>🧠 DeepSeek Evaluation</h4>
+                    <ul class="ai-list">\${aiList}</ul>
+                  </div>
+                  <div class="insights-list">
+                    <h4>💡 Key Insights</h4>
+                    <ul>\${opp.insights.map((i) => '<li>' + i + '</li>').join('')}</ul>
+                  </div>
+                </div>
+              \`;
+            });
+
+            document.getElementById('results').innerHTML = html;
+          } catch (error) {
+            console.error('Scan error:', error);
+            document.getElementById('results').innerHTML = '<div class="no-opportunities" style="color: #ef4444;"><h3>❌ Scan Failed</h3><p>Please try again</p></div>';
+          }
+        }
+
+        async function viewHistory() {
+          try {
+            const response = await fetch('/scan-history');
+            const history = await response.json();
+            if (!history || history.length === 0) {
+              alert('No scan history available yet.');
+              return;
+            }
+            const historyText = history.slice(0, 5).map((scan, index) =>
+              \`Scan #\${index + 1}: \${new Date(scan.timestamp).toLocaleString()}\\n   - Opportunities: \${scan.opportunities}\n   - Duration: \${Math.round(scan.duration / 1000)}s\n   - Analyzed coins: \${scan.analyzed}\`
+            ).join('\\n\\n');
+            alert('Recent Scan History:\\n\\n' + historyText);
+          } catch (error) {
+            alert('Error loading history: ' + error.message);
+          }
+        }
+
+        updateStats();
+        manualScan();
+
+        setInterval(updateStats, 20000);
+      </script>
     </body>
     </html>
   `);
@@ -1227,11 +1724,11 @@ app.get('/', (req, res) => {
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🎯 Professional Crypto Scanner V2 running on port ${PORT}`);
-  console.log(`📊 Strategy: RSI + Bollinger + Support/Resistance + Momentum`);
-  console.log(`⏰ Auto-scan: 1 HOUR intervals`);
-  console.log(`🎯 Coins: 100 cryptocurrencies`);
+  console.log('📊 Strategy: RSI + Bollinger + Support/Resistance + Momentum + AI overlay');
+  console.log('⏰ Auto-scan: 1 HOUR intervals');
+  console.log('🎯 Coins:', tradingBot.trackedCoins.length);
   console.log(`📱 Telegram: ${TELEGRAM_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
-  console.log(`🔔 Test Telegram: POST /test-telegram`);
+  console.log('🔔 Test Telegram: POST /test-telegram');
 });
 
 module.exports = app;
