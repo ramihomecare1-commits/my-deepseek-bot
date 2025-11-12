@@ -1,22 +1,32 @@
 const express = require('express');
 const axios = require('axios');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const TechnicalIndicators = require('technicalindicators');
+
 const app = express();
 const PORT = process.env.PORT || 10000;
-
 app.use(express.json());
+app.use(helmet());
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 })); // Basic rate limiting
 
 // Telegram Configuration
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 const TELEGRAM_ENABLED = TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID;
 
+// Configurable settings from env
+const MIN_CONFIDENCE = parseFloat(process.env.MIN_CONFIDENCE) || 0.65;
+const SCAN_INTERVAL_MS = parseInt(process.env.SCAN_INTERVAL_MS) || 60 * 60 * 1000; // 1 hour default
+const COIN_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 // Enhanced Professional Trading Bot
 class ProfessionalTradingBot {
   constructor() {
     this.isRunning = false;
     this.scanInterval = null;
-    this.trackedCoins = this.getTop100Coins(); // ✅ Updated to 100 coins
-    this.minConfidence = 0.65;
+    this.trackedCoins = [];
+    this.minConfidence = MIN_CONFIDENCE;
     this.analysisHistory = [];
     this.liveAnalysis = [];
     this.currentlyAnalyzing = null;
@@ -28,124 +38,136 @@ class ProfessionalTradingBot {
       notificationsSent: 0
     };
     this.lastNotificationTime = {};
+    this.coinListLastUpdated = 0;
   }
 
-  getTop100Coins() { // ✅ Renamed to getTop100Coins
+  async getTop100Coins() {
+    if (Date.now() - this.coinListLastUpdated < COIN_REFRESH_INTERVAL_MS && this.trackedCoins.length > 0) {
+      console.log('Using cached top coins');
+      return this.trackedCoins;
+    }
+
+    const url = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1';
+    try {
+      const response = await axios.get(url, { timeout: 10000 });
+      const coins = response.data.map(coin => ({
+        symbol: coin.symbol.toUpperCase(),
+        name: coin.name,
+        id: coin.id
+      }));
+      this.trackedCoins = coins;
+      this.coinListLastUpdated = Date.now();
+      console.log(`Fetched ${coins.length} top coins`);
+      return coins;
+    } catch (error) {
+      console.error('Error fetching top coins:', error.message);
+      console.log('Using fallback hardcoded coins');
+      return this.getFallbackCoins();
+    }
+  }
+
+  getFallbackCoins() {
     return [
       { symbol: 'BTC', name: 'Bitcoin', id: 'bitcoin' },
       { symbol: 'ETH', name: 'Ethereum', id: 'ethereum' },
       { symbol: 'USDT', name: 'Tether', id: 'tether' },
-      { symbol: 'BNB', name: 'Binance Coin', id: 'binancecoin' },
+      { symbol: 'XRP', name: 'XRP', id: 'xrp' },
+      { symbol: 'BNB', name: 'BNB', id: 'bnb' },
       { symbol: 'SOL', name: 'Solana', id: 'solana' },
-      { symbol: 'USDC', name: 'USD Coin', id: 'usd-coin' },
-      { symbol: 'XRP', name: 'Ripple', id: 'ripple' },
+      { symbol: 'USDC', name: 'USDC', id: 'usdc' },
+      { symbol: 'STETH', name: 'Lido Staked Ether', id: 'lido-staked-ether' },
+      { symbol: 'TRX', name: 'TRON', id: 'tron' },
       { symbol: 'DOGE', name: 'Dogecoin', id: 'dogecoin' },
       { symbol: 'ADA', name: 'Cardano', id: 'cardano' },
-      { symbol: 'TRX', name: 'TRON', id: 'tron' },
-      { symbol: 'AVAX', name: 'Avalanche', id: 'avalanche-2' },
-      { symbol: 'SHIB', name: 'Shiba Inu', id: 'shiba-inu' },
-      { symbol: 'TON', name: 'Toncoin', id: 'the-open-network' },
+      { symbol: 'FIGR_HELOC', name: 'Figure Heloc', id: 'figure-heloc' },
+      { symbol: 'WSTETH', name: 'Wrapped stETH', id: 'wrapped-steth' },
+      { symbol: 'WBTC', name: 'Wrapped Bitcoin', id: 'wrapped-bitcoin' },
+      { symbol: 'WBETH', name: 'Wrapped Beacon ETH', id: 'wrapped-beacon-eth' },
+      { symbol: 'WBT', name: 'WhiteBIT Coin', id: 'whitebit' },
+      { symbol: 'HYPE', name: 'Hyperliquid', id: 'hyperliquid' },
       { symbol: 'LINK', name: 'Chainlink', id: 'chainlink' },
-      { symbol: 'DOT', name: 'Polkadot', id: 'polkadot' },
       { symbol: 'BCH', name: 'Bitcoin Cash', id: 'bitcoin-cash' },
-      { symbol: 'MATIC', name: 'Polygon', id: 'matic-network' },
-      { symbol: 'DAI', name: 'Dai', id: 'dai' },
-      { symbol: 'LTC', name: 'Litecoin', id: 'litecoin' },
-      { symbol: 'UNI', name: 'Uniswap', id: 'uniswap' },
-      { symbol: 'NEAR', name: 'NEAR Protocol', id: 'near' },
-      { symbol: 'ICP', name: 'Internet Computer', id: 'internet-computer' },
-      { symbol: 'LEO', name: 'LEO Token', id: 'leo-token' },
-      { symbol: 'ETC', name: 'Ethereum Classic', id: 'ethereum-classic' },
-      { symbol: 'APT', name: 'Aptos', id: 'aptos' },
-      { symbol: 'ATOM', name: 'Cosmos', id: 'cosmos' },
-      { symbol: 'FIL', name: 'Filecoin', id: 'filecoin' },
-      { symbol: 'CRO', name: 'Cronos', id: 'crypto-com-chain' },
-      { symbol: 'ARB', name: 'Arbitrum', id: 'arbitrum' },
+      { symbol: 'USDS', name: 'USDS', id: 'usds' },
       { symbol: 'XLM', name: 'Stellar', id: 'stellar' },
-      { symbol: 'VET', name: 'VeChain', id: 'vechain' },
-      { symbol: 'OKB', name: 'OKB', id: 'okb' },
-      { symbol: 'XMR', name: 'Monero', id: 'monero' },
-      { symbol: 'ALGO', name: 'Algorand', id: 'algorand' },
-      { symbol: 'HBAR', name: 'Hedera', id: 'hedera-hashgraph' },
-      { symbol: 'INJ', name: 'Injective', id: 'injective-protocol' },
-      { symbol: 'OP', name: 'Optimism', id: 'optimism' },
-      { symbol: 'QNT', name: 'Quant', id: 'quant-network' },
-      { symbol: 'AAVE', name: 'Aave', id: 'aave' },
-      { symbol: 'GRT', name: 'The Graph', id: 'the-graph' },
-      { symbol: 'RUNE', name: 'THORChain', id: 'thorchain' },
-      { symbol: 'STX', name: 'Stacks', id: 'blockstack' },
-      { symbol: 'MKR', name: 'Maker', id: 'maker' },
-      { symbol: 'SAND', name: 'The Sandbox', id: 'the-sandbox' },
-      { symbol: 'MANA', name: 'Decentraland', id: 'decentraland' },
-      { symbol: 'FTM', name: 'Fantom', id: 'fantom' },
-      { symbol: 'AXS', name: 'Axie Infinity', id: 'axie-infinity' },
-      { symbol: 'THETA', name: 'Theta Network', id: 'theta-token' },
-      { symbol: 'EGLD', name: 'MultiversX', id: 'elrond-erd-2' },
-      { symbol: 'XTZ', name: 'Tezos', id: 'tezos' },
-      { symbol: 'FLOW', name: 'Flow', id: 'flow' },
-      { symbol: 'EOS', name: 'EOS', id: 'eos' },
-      { symbol: 'KCS', name: 'KuCoin Token', id: 'kucoin-shares' },
-      { symbol: 'CHZ', name: 'Chiliz', id: 'chiliz' },
-      { symbol: 'BSV', name: 'Bitcoin SV', id: 'bitcoin-cash-sv' },
+      { symbol: 'BSC-USD', name: 'Binance Bridged USDT (BNB Smart Chain)', id: 'binance-bridged-usdt-bnb-smart-chain' },
+      { symbol: 'WEETH', name: 'Wrapped eETH', id: 'wrapped-eeth' },
+      { symbol: 'LEO', name: 'LEO Token', id: 'leo-token' },
+      { symbol: 'USDE', name: 'Ethena USDe', id: 'ethena-usde' },
+      { symbol: 'WETH', name: 'WETH', id: 'weth' },
+      { symbol: 'LTC', name: 'Litecoin', id: 'litecoin' },
+      { symbol: 'HBAR', name: 'Hedera', id: 'hedera' },
       { symbol: 'ZEC', name: 'Zcash', id: 'zcash' },
-      { symbol: 'KLAY', name: 'Klaytn', id: 'klay-token' },
-      { symbol: 'CAKE', name: 'PancakeSwap', id: 'pancakeswap-token' },
-      { symbol: 'NEO', name: 'Neo', id: 'neo' },
-      { symbol: 'DASH', name: 'Dash', id: 'dash' },
-      { symbol: 'IOTA', name: 'IOTA', id: 'iota' },
-      { symbol: 'LDO', name: 'Lido DAO', id: 'lido-dao' },
-      { symbol: 'CFX', name: 'Conflux', id: 'conflux-token' },
-      { symbol: 'GALA', name: 'Gala', id: 'gala' },
-      { symbol: 'BAT', name: 'Basic Attention Token', id: 'basic-attention-token' },
-      { symbol: 'ZIL', name: 'Zilliqa', id: 'zilliqa' },
-      { symbol: 'ENJ', name: 'Enjin Coin', id: 'enjincoin' },
-      { symbol: 'CRV', name: 'Curve DAO', id: 'curve-dao-token' },
-      { symbol: 'SNX', name: 'Synthetix', id: 'havven' },
-      { symbol: 'MINA', name: 'Mina', id: 'mina-protocol' },
-      { symbol: '1INCH', name: '1inch', id: '1inch' },
-      { symbol: 'FXS', name: 'Frax Share', id: 'frax-share' },
-      { symbol: 'COMP', name: 'Compound', id: 'compound-governance-token' },
-      { symbol: 'HNT', name: 'Helium', id: 'helium' },
-      { symbol: 'ZRX', name: '0x', id: '0x' },
-      { symbol: 'LRC', name: 'Loopring', id: 'loopring' },
-      { symbol: 'IMX', name: 'Immutable X', id: 'immutable-x' },
-      { symbol: 'ONE', name: 'Harmony', id: 'harmony' },
-      { symbol: 'GMX', name: 'GMX', id: 'gmx' },
-      { symbol: 'ROSE', name: 'Oasis Network', id: 'oasis-network' },
-      { symbol: 'WAVES', name: 'Waves', id: 'waves' },
-      { symbol: 'CVX', name: 'Convex Finance', id: 'convex-finance' },
-      { symbol: 'NEXO', name: 'Nexo', id: 'nexo' },
-      { symbol: 'JST', name: 'JUST', id: 'just' },
-      { symbol: 'ZEN', name: 'Horizen', id: 'zencash' },
-      { symbol: 'WOO', name: 'WOO Network', id: 'woo-network' },
-      { symbol: 'YFI', name: 'yearn.finance', id: 'yearn-finance' },
-      { symbol: 'AUDIO', name: 'Audius', id: 'audius' },
-      { symbol: 'SXP', name: 'Solar', id: 'swipe' },
-      { symbol: 'DYDX', name: 'dYdX', id: 'dydx' },
-      { symbol: 'HOT', name: 'Holo', id: 'holotoken' },
-      { symbol: 'ANKR', name: 'Ankr', id: 'ankr' },
-      { symbol: 'CELO', name: 'Celo', id: 'celo' },
-      { symbol: 'BAL', name: 'Balancer', id: 'balancer' },
-      { symbol: 'SKL', name: 'SKALE', id: 'skale' },
-      { symbol: 'QTUM', name: 'Qtum', id: 'qtum' },
-      { symbol: 'SUSHI', name: 'SushiSwap', id: 'sushi' },
-      { symbol: 'OMG', name: 'OMG Network', id: 'omisego' },
-      // ✅ Added 15 more coins to reach 100
-      { symbol: 'RNDR', name: 'Render Token', id: 'render-token' },
-      { symbol: 'FET', name: 'Fetch.ai', id: 'fetch-ai' },
-      { symbol: 'AGIX', name: 'SingularityNET', id: 'singularitynet' },
-      { symbol: 'OCEAN', name: 'Ocean Protocol', id: 'ocean-protocol' },
-      { symbol: 'NMR', name: 'Numeraire', id: 'numeraire' },
-      { symbol: 'UMA', name: 'UMA', id: 'uma' },
-      { symbol: 'BAND', name: 'Band Protocol', id: 'band-protocol' },
-      { symbol: 'OXT', name: 'Orchid', id: 'orchid' },
-      { symbol: 'CVC', name: 'Civic', id: 'civic' },
-      { symbol: 'REP', name: 'Augur', id: 'augur' },
-      { symbol: 'STORJ', name: 'Storj', id: 'storj' },
-      { symbol: 'LOOM', name: 'Loom Network', id: 'loom-network' },
-      { symbol: 'POWR', name: 'Power Ledger', id: 'power-ledger' },
-      { symbol: 'COTI', name: 'COTI', id: 'coti' },
-      { symbol: 'DENT', name: 'Dent', id: 'dent' }
+      { symbol: 'CBBTC', name: 'Coinbase Wrapped BTC', id: 'coinbase-wrapped-btc' },
+      { symbol: 'SUI', name: 'Sui', id: 'sui' },
+      { symbol: 'AVAX', name: 'Avalanche', id: 'avalanche' },
+      { symbol: 'XMR', name: 'Monero', id: 'monero' },
+      { symbol: 'SHIB', name: 'Shiba Inu', id: 'shiba-inu' },
+      { symbol: 'UNI', name: 'Uniswap', id: 'uniswap' },
+      { symbol: 'TON', name: 'Toncoin', id: 'toncoin' },
+      { symbol: 'DOT', name: 'Polkadot', id: 'polkadot' },
+      { symbol: 'CC', name: 'Canton', id: 'canton' },
+      { symbol: 'CRO', name: 'Cronos', id: 'cronos' },
+      { symbol: 'SUSDE', name: 'Ethena Staked USDe', id: 'ethena-staked-usde' },
+      { symbol: 'DAI', name: 'Dai', id: 'dai' },
+      { symbol: 'WLFI', name: 'World Liberty Financial', id: 'world-liberty-financial' },
+      { symbol: 'MNT', name: 'Mantle', id: 'mantle' },
+      { symbol: 'M', name: 'MemeCore', id: 'memecore' },
+      { symbol: 'USDT0', name: 'USDT0', id: 'usdt0' },
+      { symbol: 'SUSDS', name: 'sUSDS', id: 'susds' },
+      { symbol: 'TAO', name: 'Bittensor', id: 'bittensor' },
+      { symbol: 'ICP', name: 'Internet Computer', id: 'internet-computer' },
+      { symbol: 'NEAR', name: 'NEAR Protocol', id: 'near' },
+      { symbol: 'AAVE', name: 'Aave', id: 'aave' },
+      { symbol: 'PYUSD', name: 'PayPal USD', id: 'paypal-usd' },
+      { symbol: 'BGB', name: 'Bitget Token', id: 'bitget-token' },
+      { symbol: 'USD1', name: 'USD1', id: 'usd1-wlfi' },
+      { symbol: 'OKB', name: 'OKB', id: 'okb' },
+      { symbol: 'C1USD', name: 'Currency One USD', id: 'c1usd' },
+      { symbol: 'BUIDL', name: 'BlackRock USD Institutional Digital Liquidity Fund', id: 'blackrock-usd-institutional-digital-liquidity-fund' },
+      { symbol: 'PUMP', name: 'Pump.fun', id: 'pump-fun' },
+      { symbol: 'PEPE', name: 'Pepe', id: 'pepe' },
+      { symbol: 'ETC', name: 'Ethereum Classic', id: 'ethereum-classic' },
+      { symbol: 'ENA', name: 'Ethena', id: 'ethena' },
+      { symbol: 'ASTER', name: 'Aster', id: 'aster-2' },
+      { symbol: 'JITOSOL', name: 'Jito Staked SOL', id: 'jito-staked-sol' },
+      { symbol: 'APT', name: 'Aptos', id: 'aptos' },
+      { symbol: 'XAUT', name: 'Tether Gold', id: 'tether-gold' },
+      { symbol: 'USDF', name: 'Falcon USD', id: 'falcon-usd' },
+      { symbol: 'WETH', name: 'Binance-Peg WETH', id: 'binance-peg-weth' },
+      { symbol: 'ONDO', name: 'Ondo', id: 'ondo' },
+      { symbol: 'JLP', name: 'Jupiter Perpetuals Liquidity Provider Token', id: 'jupiter-perpetuals-liquidity-provider-token' },
+      { symbol: 'SOL', name: 'Wrapped SOL', id: 'wrapped-sol-2' },
+      { symbol: 'PI', name: 'Pi Network', id: 'pi-network' },
+      { symbol: 'USDTB', name: 'USDtb', id: 'usdtb' },
+      { symbol: 'POL', name: 'POL (ex-MATIC)', id: 'polygon' },
+      { symbol: 'WLD', name: 'Worldcoin', id: 'worldcoin' },
+      { symbol: 'HTX', name: 'HTX DAO', id: 'htx-dao' },
+      { symbol: 'KCS', name: 'KuCoin', id: 'kucoin-shares' },
+      { symbol: 'FIL', name: 'Filecoin', id: 'filecoin' },
+      { symbol: 'HASH', name: 'Provenance Blockchain', id: 'hash-2' },
+      { symbol: 'ALGO', name: 'Algorand', id: 'algorand' },
+      { symbol: 'TRUMP', name: 'Official Trump', id: 'official-trump' },
+      { symbol: 'ARB', name: 'Arbitrum', id: 'arbitrum' },
+      { symbol: 'RETH', name: 'Rocket Pool ETH', id: 'rocket-pool-eth' },
+      { symbol: 'VET', name: 'VeChain', id: 'vechain' },
+      { symbol: 'BNSOL', name: 'Binance Staked SOL', id: 'binance-staked-sol' },
+      { symbol: 'ATOM', name: 'Cosmos Hub', id: 'cosmos-hub' },
+      { symbol: 'GT', name: 'Gate', id: 'gatetoken' },
+      { symbol: 'PAXG', name: 'PAX Gold', id: 'pax-gold' },
+      { symbol: 'KHYPE', name: 'Kinetiq Staked HYPE', id: 'kinetiq-staked-hype' },
+      { symbol: 'BFUSD', name: 'BFUSD', id: 'bfusd' },
+      { symbol: 'KAS', name: 'Kaspa', id: 'kaspa' },
+      { symbol: 'USDC', name: 'Binance Bridged USDC (BNB Smart Chain)', id: 'binance-bridged-usdc-bnb-smart-chain' },
+      { symbol: 'SYRUPUSDT', name: 'syrupUSDT', id: 'syrupusdt' },
+      { symbol: 'WBNB', name: 'Wrapped BNB', id: 'wbnb' },
+      { symbol: 'SKY', name: 'Sky', id: 'sky' },
+      { symbol: 'RSETH', name: 'Kelp DAO Restaked ETH', id: 'kelp-dao-restaked-eth' },
+      { symbol: 'RENDER', name: 'Render', id: 'render' },
+      { symbol: 'FBTC', name: 'Function FBTC', id: 'function-fbtc' },
+      { symbol: 'FLR', name: 'Flare', id: 'flare' },
+      { symbol: 'SYRUPUSDC', name: 'syrupUSDC', id: 'syrup-usdc' },
+      { symbol: 'LBTC', name: 'Lombard Staked BTC', id: 'lombard-staked-btc' },
+      { symbol: 'QNT', name: 'Quant', id: 'quant' }
     ];
   }
 
@@ -154,20 +176,19 @@ class ProfessionalTradingBot {
       console.log('🔄 Auto-scan already running');
       return { status: 'already_running' };
     }
-
     this.isRunning = true;
     console.log('🚀 Starting automated technical analysis scan');
-
+    if (this.trackedCoins.length === 0) {
+      this.trackedCoins = await this.getTop100Coins();
+    }
     await this.performTechnicalScan();
-
     this.scanInterval = setInterval(async () => {
-      console.log('🔄 Scheduled 1-hour scan triggered');
+      console.log('🔄 Scheduled scan triggered');
       await this.performTechnicalScan();
-    }, 60 * 60 * 1000); // ✅ Changed to 1 hour
-
+    }, SCAN_INTERVAL_MS);
     return {
       status: 'started',
-      interval: '1 hour', // ✅ Updated interval description
+      interval: SCAN_INTERVAL_MS / (60 * 60 * 1000) + ' hours',
       coins: this.trackedCoins.length,
       time: new Date()
     };
@@ -188,27 +209,22 @@ class ProfessionalTradingBot {
       console.log('⚠️ Telegram notifications disabled (missing credentials)');
       return false;
     }
-
     // Rate limiting: Don't send notifications for same coin within 30 minutes
     const coinKey = opportunity.symbol;
     const now = Date.now();
     const cooldown = 30 * 60 * 1000; // 30 minutes
-
     if (this.lastNotificationTime[coinKey] && (now - this.lastNotificationTime[coinKey]) < cooldown) {
       console.log(`⏳ Skipping notification for ${coinKey} (cooldown active)`);
       return false;
     }
-
     try {
       const actionEmoji = opportunity.action === 'BUY' ? '🟢' : opportunity.action === 'SELL' ? '🔴' : '🟡';
       const confidencePercent = (opportunity.confidence * 100).toFixed(0);
-      
+     
       const message = `${actionEmoji} *${opportunity.action} SIGNAL DETECTED*
-
 *Coin:* ${opportunity.name} (${opportunity.symbol})
 *Price:* ${opportunity.price}
 *Confidence:* ${confidencePercent}%
-
 📊 *Technical Analysis:*
 • RSI: ${opportunity.technicals.rsi}
 • Bollinger: ${opportunity.technicals.bollingerPosition}
@@ -216,16 +232,12 @@ class ProfessionalTradingBot {
 • Momentum: ${opportunity.technicals.momentum || 'N/A'}
 • Support: ${opportunity.technicals.support}
 • Resistance: ${opportunity.technicals.resistance}
-
 💡 *Key Insights:*
 ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
-
 📝 *Reason:* ${opportunity.reason}
-
 ⏰ Detected: ${new Date(opportunity.timestamp).toLocaleString()}`;
-
       const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-      
+     
       const response = await axios.post(telegramUrl, {
         chat_id: TELEGRAM_CHAT_ID,
         text: message,
@@ -233,7 +245,6 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
       }, {
         timeout: 10000
       });
-
       if (response.data.ok) {
         console.log(`✅ Telegram notification sent for ${opportunity.symbol}`);
         this.lastNotificationTime[coinKey] = now;
@@ -243,19 +254,17 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
         console.log(`❌ Telegram API error: ${response.data.description}`);
         return false;
       }
-      
+     
     } catch (error) {
       console.log(`❌ Failed to send Telegram notification: ${error.message}`);
       return false;
     }
   }
 
-  // ✅ NEW: Test Telegram notification method
   async sendTestNotification() {
     if (!TELEGRAM_ENABLED) {
       return { success: false, message: 'Telegram credentials not configured' };
     }
-
     try {
       const testOpportunity = {
         symbol: 'TEST',
@@ -280,64 +289,58 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
         ],
         timestamp: new Date()
       };
-
       const success = await this.sendTelegramNotification(testOpportunity);
-      
+     
       if (success) {
-        return { 
-          success: true, 
-          message: '✅ Test notification sent successfully! Check your Telegram.' 
+        return {
+          success: true,
+          message: '✅ Test notification sent successfully! Check your Telegram.'
         };
       } else {
-        return { 
-          success: false, 
-          message: '❌ Failed to send test notification. Check console for details.' 
+        return {
+          success: false,
+          message: '❌ Failed to send test notification. Check console for details.'
         };
       }
     } catch (error) {
-      return { 
-        success: false, 
-        message: `❌ Error sending test: ${error.message}` 
+      return {
+        success: false,
+        message: `❌ Error sending test: ${error.message}`
       };
     }
   }
-
-  // ... rest of the methods remain the same (performTechnicalScan, analyzeWithTechnicalIndicators, etc.)
 
   async performTechnicalScan() {
     const startTime = Date.now();
     try {
       console.log(`\n🎯 TECHNICAL SCAN STARTED: ${new Date().toLocaleString()}`);
-
       const opportunities = [];
       let analyzedCount = 0;
-
       for (const coin of this.trackedCoins) {
         try {
+          this.currentlyAnalyzing = { stage: 'Analyzing technicals', symbol: coin.symbol, name: coin.name };
           const analysis = await this.analyzeWithTechnicalIndicators(coin);
           analyzedCount++;
-          
+          this.currentlyAnalyzing = null;
+         
           if (analysis.confidence >= this.minConfidence) {
             opportunities.push(analysis);
             console.log(`✅ ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}% confidence)`);
           }
-
           await new Promise(resolve => setTimeout(resolve, 800));
-          
+         
         } catch (error) {
           console.log(`❌ ${coin.symbol}: Analysis failed - ${error.message}`);
+          this.currentlyAnalyzing = null;
         }
       }
-
       opportunities.sort((a, b) => b.confidence - a.confidence);
-
       this.stats.totalScans++;
       this.stats.totalOpportunities += opportunities.length;
       this.stats.lastScanDuration = Date.now() - startTime;
       if (opportunities.length > 0) {
         this.stats.avgConfidence = opportunities.reduce((sum, o) => sum + o.confidence, 0) / opportunities.length;
       }
-
       // Send Telegram notifications for high-confidence opportunities
       if (TELEGRAM_ENABLED && opportunities.length > 0) {
         console.log(`📱 Sending Telegram notifications for ${opportunities.length} opportunities...`);
@@ -346,32 +349,28 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
           await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay between notifications
         }
       }
-
       this.analysisHistory.unshift({
         timestamp: new Date(),
         opportunities: opportunities.length,
         details: opportunities,
         duration: this.stats.lastScanDuration
       });
-
       if (this.analysisHistory.length > 288) {
         this.analysisHistory = this.analysisHistory.slice(0, 288);
       }
-
       console.log(`\n📈 SCAN COMPLETE: ${opportunities.length} opportunities found`);
-
       return {
         scanTime: new Date(),
         totalCoins: this.trackedCoins.length,
         analyzedCoins: analyzedCount,
         opportunitiesFound: opportunities.length,
         opportunities: opportunities,
-        nextScan: new Date(Date.now() + 60 * 60 * 1000), // ✅ Updated to 1 hour
+        nextScan: new Date(Date.now() + SCAN_INTERVAL_MS),
         duration: this.stats.lastScanDuration
       };
-
     } catch (error) {
       console.log('❌ Technical scan failed:', error.message);
+      this.currentlyAnalyzing = null;
       return {
         scanTime: new Date(),
         error: error.message,
@@ -380,25 +379,141 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
     }
   }
 
-  // ... (keep all other existing methods the same - calculateRSI, calculateBollingerBands, etc.)
+  async analyzeWithTechnicalIndicators(coin) {
+    try {
+      // Fetch historical data: last 30 days for calculations (need at least 26 for EMA, etc.)
+      const url = `https://api.coingecko.com/api/v3/coins/${coin.id}/market_chart?vs_currency=usd&days=30&interval=daily`;
+      const response = await axios.get(url, { timeout: 10000 });
+      const prices = response.data.prices.map(p => p[1]); // [timestamp, price]
+      if (prices.length < 30) throw new Error('Insufficient historical data');
+
+      const closingPrices = prices.slice(-30); // Last 30 days
+      const currentPrice = closingPrices[closingPrices.length - 1];
+
+      // Calculate RSI (14 period)
+      const rsiInput = { values: closingPrices.slice(-15), period: 14 }; // Last 15 for RSI14
+      const rsi = TechnicalIndicators.RSI.calculate(rsiInput)[0];
+
+      // Calculate Bollinger Bands (20 period, 2 std)
+      const bbInput = { values: closingPrices.slice(-20), period: 20, stdDev: 2 };
+      const bb = TechnicalIndicators.BollingerBands.calculate(bbInput)[0];
+      let bollingerPosition;
+      if (currentPrice > bb.upper) bollingerPosition = 'UPPER';
+      else if (currentPrice < bb.lower) bollingerPosition = 'LOWER';
+      else bollingerPosition = 'MIDDLE';
+
+      // Calculate MACD for momentum (12,26,9)
+      const macdInput = { values: closingPrices, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, SimpleMAOscillator: false, SimpleMASignal: false };
+      const macd = TechnicalIndicators.MACD.calculate(macdInput);
+      const lastMacd = macd[macd.length - 1];
+      const momentum = lastMacd.MACD;
+
+      // Simple trend: EMA12 vs EMA26
+      const ema12 = TechnicalIndicators.EMA.calculate({ period: 12, values: closingPrices })[closingPrices.length - 1 - 12 + 1];
+      const ema26 = TechnicalIndicators.EMA.calculate({ period: 26, values: closingPrices })[closingPrices.length - 1 - 26 + 1];
+      const trend = ema12 > ema26 ? 'BULLISH' : 'BEARISH';
+
+      // Support/Resistance: simple min/max over last 30 days
+      const support = Math.min(...closingPrices).toFixed(2);
+      const resistance = Math.max(...closingPrices).toFixed(2);
+
+      // Insights and scoring
+      const insights = [];
+      let score = 0;
+
+      if (rsi < 30) {
+        insights.push('Oversold (RSI < 30) - Potential buy signal');
+        score += 1;
+      } else if (rsi > 70) {
+        insights.push('Overbought (RSI > 70) - Potential sell signal');
+        score -= 1;
+      }
+
+      if (bollingerPosition === 'LOWER') {
+        insights.push('Below lower Bollinger Band - Potential buy');
+        score += 1;
+      } else if (bollingerPosition === 'UPPER') {
+        insights.push('Above upper Bollinger Band - Potential sell');
+        score -= 1;
+      }
+
+      if (trend === 'BULLISH') {
+        insights.push('Bullish trend (EMA12 > EMA26)');
+        score += 1;
+      } else {
+        insights.push('Bearish trend (EMA12 < EMA26)');
+        score -= 1;
+      }
+
+      if (lastMacd.histogram > 0) {
+        insights.push('Positive MACD histogram - Increasing momentum');
+        score += 1;
+      } else {
+        insights.push('Negative MACD histogram - Decreasing momentum');
+        score -= 1;
+      }
+
+      // Action and confidence
+      let action = 'HOLD';
+      if (score > 2) action = 'BUY';
+      else if (score < -2) action = 'SELL';
+      const confidence = Math.min(1, Math.max(0, (Math.abs(score) / 4) * this.minConfidence + 0.3)); // Normalized 0.3-1
+
+      const reason = `${action} recommended based on ${insights.length} indicators. Score: ${score}`;
+
+      return {
+        symbol: coin.symbol,
+        name: coin.name,
+        price: `$${currentPrice.toFixed(2)}`,
+        action,
+        confidence,
+        reason,
+        insights,
+        technicals: {
+          rsi: rsi.toFixed(2),
+          bollingerPosition,
+          trend,
+          momentum: momentum.toFixed(4),
+          support: `$${support}`,
+          resistance: `$${resistance}`
+        },
+        timestamp: new Date()
+      };
+    } catch (error) {
+      throw new Error(`Analysis error for ${coin.symbol}: ${error.message}`);
+    }
+  }
+
+  getLiveAnalysis() {
+    return {
+      currentlyAnalyzing: this.currentlyAnalyzing,
+      liveAnalysis: this.liveAnalysis // If you want to track more, push to this array
+    };
+  }
+
+  getScanHistory() {
+    return this.analysisHistory;
+  }
+
+  getStats() {
+    return this.stats;
+  }
 }
 
 const tradingBot = new ProfessionalTradingBot();
 
-// ✅ NEW: Test Telegram Notification Endpoint
+// Test Telegram Notification Endpoint
 app.post('/test-telegram', async (req, res) => {
   try {
     const result = await tradingBot.sendTestNotification();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: `Error: ${error.message}` 
+    res.status(500).json({
+      success: false,
+      message: `Error: ${error.message}`
     });
   }
 });
-
-// ... keep all existing API routes (start-scan, stop-scan, etc.)
 
 app.post('/start-scan', async (req, res) => {
   const result = await tradingBot.startAutoScan();
@@ -434,7 +549,7 @@ app.get('/bot-status', (req, res) => {
     running: tradingBot.isRunning,
     coinsTracked: tradingBot.trackedCoins.length,
     strategy: 'RSI + Bollinger Bands + Support/Resistance + Momentum',
-    interval: '1 hour', // ✅ Updated to 1 hour
+    interval: SCAN_INTERVAL_MS / (60 * 60 * 1000) + ' hours',
     minConfidence: tradingBot.minConfidence,
     stats: tradingBot.getStats(),
     telegramEnabled: TELEGRAM_ENABLED,
@@ -443,19 +558,19 @@ app.get('/bot-status', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
+  res.json({
+    status: 'healthy',
     service: 'professional-scanner-v2',
     strategy: 'Technical Analysis (Enhanced)',
     autoScan: tradingBot.isRunning,
     telegramEnabled: TELEGRAM_ENABLED,
-    scanInterval: '1 hour', // ✅ Updated
+    scanInterval: SCAN_INTERVAL_MS / (60 * 60 * 1000) + ' hours',
     coinsTracked: tradingBot.trackedCoins.length,
-    time: new Date() 
+    time: new Date()
   });
 });
 
-// ✅ UPDATED: Main UI Route with Test Telegram Button
+// Main UI Route with Test Telegram Button
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -466,14 +581,14 @@ app.get('/', (req, res) => {
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            
+           
             body {
                 font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 min-height: 100vh;
                 color: #1a202c;
             }
-            
+           
             .container {
                 display: grid;
                 grid-template-columns: 1fr 420px;
@@ -482,14 +597,14 @@ app.get('/', (req, res) => {
                 margin: 0 auto;
                 padding: 24px;
             }
-            
+           
             .main-content, .sidebar {
                 background: rgba(255, 255, 255, 0.97);
                 border-radius: 24px;
                 padding: 32px;
                 box-shadow: 0 24px 48px rgba(0,0,0,0.12);
             }
-            
+           
             .header { text-align: center; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid #e2e8f0; }
             .header h1 {
                 color: #1a202c;
@@ -500,12 +615,12 @@ app.get('/', (req, res) => {
                 -webkit-background-clip: text;
                 -webkit-text-fill-color: transparent;
             }
-            
+           
             .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
             .stat-card { background: linear-gradient(135deg, #f7fafc, #edf2f7); padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; }
             .stat-label { color: #718096; font-size: 0.85em; font-weight: 600; text-transform: uppercase; margin-bottom: 8px; }
             .stat-value { font-size: 2em; font-weight: 700; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-            
+           
             .controls { background: linear-gradient(135deg, #f7fafc, #edf2f7); padding: 28px; border-radius: 20px; margin-bottom: 28px; }
             .button-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; } /* ✅ Updated to 3 columns */
             button { padding: 14px 24px; border: none; border-radius: 12px; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -515,45 +630,45 @@ app.get('/', (req, res) => {
             .btn-secondary { background: linear-gradient(135deg, #64748b, #475569); color: white; }
             .btn-telegram { background: linear-gradient(135deg, #0088cc, #005c8a); color: white; } /* ✅ New Telegram button style */
             button:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
-            
+           
             .status-card { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 24px; border-radius: 16px; text-align: center; }
-            
+           
             .opportunity { background: white; border-radius: 20px; padding: 24px; margin-bottom: 20px; border-left: 6px solid; box-shadow: 0 8px 24px rgba(0,0,0,0.06); transition: all 0.3s; }
             .opportunity:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(0,0,0,0.12); }
             .opportunity.buy { border-left-color: #10b981; background: linear-gradient(135deg, #fff, #f0fdf4); }
             .opportunity.sell { border-left-color: #ef4444; background: linear-gradient(135deg, #fff, #fef2f2); }
             .opportunity.hold { border-left-color: #f59e0b; background: linear-gradient(135deg, #fff, #fffbeb); }
-            
+           
             .coin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
             .coin-name { font-size: 1.4em; font-weight: 700; color: #1a202c; }
             .action-badge { padding: 8px 16px; border-radius: 24px; font-weight: 700; font-size: 0.9em; }
             .buy-badge { background: #10b981; color: white; }
             .sell-badge { background: #ef4444; color: white; }
             .hold-badge { background: #f59e0b; color: white; }
-            
+           
             .price-confidence { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; padding: 20px; background: rgba(0,0,0,0.02); border-radius: 12px; }
             .price-box .value, .confidence-box .value { font-size: 1.6em; font-weight: 700; color: #1a202c; margin-bottom: 4px; }
-            
+           
             .technical-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0; }
             .technical-item { background: rgba(255,255,255,0.8); padding: 14px; border-radius: 12px; text-align: center; border: 1px solid rgba(0,0,0,0.05); }
             .technical-item strong { display: block; color: #718096; font-size: 0.75em; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; }
-            
+           
             .confidence-bar { height: 10px; background: #e2e8f0; border-radius: 12px; margin: 16px 0; overflow: hidden; }
             .confidence-fill { height: 100%; border-radius: 12px; transition: width 0.8s; }
             .high-confidence { background: linear-gradient(90deg, #10b981, #34d399); }
             .medium-confidence { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
             .low-confidence { background: linear-gradient(90deg, #ef4444, #f87171); }
-            
+           
             .reason-box { margin: 20px 0; padding: 16px; background: rgba(0,0,0,0.02); border-radius: 12px; border-left: 4px solid #667eea; }
             .insights-list { margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
             .insights-list ul { list-style: none; padding: 0; }
             .insights-list li { padding: 10px 12px; margin-bottom: 8px; background: rgba(255,255,255,0.6); border-radius: 8px; padding-left: 32px; position: relative; }
             .insights-list li::before { content: '→'; position: absolute; left: 12px; color: #667eea; font-weight: bold; }
-            
+           
             .no-opportunities { text-align: center; padding: 80px 20px; color: #718096; }
             .loading-spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 1s linear infinite; }
             @keyframes spin { to { transform: rotate(360deg); } }
-            
+           
             @media (max-width: 1400px) { .container { grid-template-columns: 1fr; } }
             @media (max-width: 768px) { .button-group { grid-template-columns: 1fr; } }
         </style>
@@ -563,9 +678,9 @@ app.get('/', (req, res) => {
             <div class="main-content">
                 <div class="header">
                     <h1>🤖 AI Crypto Trading Scanner Pro</h1>
-                    <p>Advanced Technical Analysis • Real-Time Market Intelligence • 1-Hour Intervals</p>
+                    <p>Advanced Technical Analysis • Real-Time Market Intelligence • Configurable Intervals</p>
                 </div>
-                
+               
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-label">Total Scans</div>
@@ -584,14 +699,14 @@ app.get('/', (req, res) => {
                         <div class="stat-value" id="avgConf">0%</div>
                     </div>
                 </div>
-                
+               
                 <div class="controls">
                     <h3>🎯 Scanner Controls</h3>
                     <div class="button-group">
                         <button class="btn-success" onclick="startAutoScan()">🚀 Start Auto-Scan</button>
                         <button class="btn-danger" onclick="stopAutoScan()">🛑 Stop Auto-Scan</button>
                         <button class="btn-primary" onclick="manualScan()">🔍 Scan Now</button>
-                        <button class="btn-telegram" onclick="testTelegram()">📱 Test Telegram</button> <!-- ✅ NEW BUTTON -->
+                        <button class="btn-telegram" onclick="testTelegram()">📱 Test Telegram</button>
                         <button class="btn-secondary" onclick="viewHistory()">📊 View History</button>
                     </div>
                     <div class="status-card">
@@ -603,7 +718,7 @@ app.get('/', (req, res) => {
                         </div>
                     </div>
                 </div>
-                
+               
                 <div>
                     <h3 style="margin-bottom: 24px; color: #1a202c; font-size: 1.5em; font-weight: 700;">📈 Trading Opportunities</h3>
                     <div id="results">
@@ -614,7 +729,7 @@ app.get('/', (req, res) => {
                     </div>
                 </div>
             </div>
-            
+           
             <div class="sidebar">
                 <div style="background: linear-gradient(135deg, #1e293b, #0f172a); color: white; border-radius: 20px; padding: 24px;">
                     <h3 style="text-align: center; margin-bottom: 16px;">🧠 DeepSeek AI Analysis</h3>
@@ -624,11 +739,8 @@ app.get('/', (req, res) => {
                 </div>
             </div>
         </div>
-
         <script>
             let analysisUpdateInterval = null;
-
-            // ✅ NEW: Test Telegram function
             async function testTelegram() {
                 try {
                     const response = await fetch('/test-telegram', { method: 'POST' });
@@ -638,7 +750,6 @@ app.get('/', (req, res) => {
                     alert('Error testing Telegram: ' + error.message);
                 }
             }
-
             async function updateStats() {
                 try {
                     const response = await fetch('/bot-status');
@@ -653,7 +764,6 @@ app.get('/', (req, res) => {
                     console.log('Error updating stats:', error);
                 }
             }
-
             async function updateLiveAnalysis() {
                 try {
                     const response = await fetch('/live-analysis');
@@ -670,7 +780,6 @@ app.get('/', (req, res) => {
                     console.log('Error updating live analysis:', error);
                 }
             }
-
             async function startAutoScan() {
                 try {
                     const response = await fetch('/start-scan', { method: 'POST' });
@@ -680,7 +789,7 @@ app.get('/', (req, res) => {
                         return;
                     }
                     document.getElementById('statusText').innerHTML = '🔄 Auto-Scanning Active';
-                    document.getElementById('nextScan').textContent = 'Next scan: Every 1 hour'; // ✅ Updated text
+                    document.getElementById('nextScan').textContent = \`Next scan: Every \${result.interval}\`;
                     if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
                     analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
                     manualScan();
@@ -688,7 +797,6 @@ app.get('/', (req, res) => {
                     alert('Error starting auto-scan: ' + error.message);
                 }
             }
-
             async function stopAutoScan() {
                 try {
                     await fetch('/stop-scan', { method: 'POST' });
@@ -699,29 +807,28 @@ app.get('/', (req, res) => {
                     alert('Error stopping auto-scan: ' + error.message);
                 }
             }
-
             async function manualScan() {
                 try {
                     document.getElementById('results').innerHTML = '<div class="no-opportunities"><div class="loading-spinner" style="width: 40px; height: 40px; margin: 0 auto 20px;"></div><h3>🔍 Scanning...</h3></div>';
                     if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
                     analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
                     updateLiveAnalysis();
-                    
+                   
                     const response = await fetch('/scan-now');
                     const data = await response.json();
                     updateStats();
-                    
+                   
                     if (data.opportunities.length === 0) {
                         document.getElementById('results').innerHTML = \`<div class="no-opportunities"><h3>📭 No High-Confidence Opportunities</h3><p>Scanned \${data.analyzedCoins} coins</p></div>\`;
                         return;
                     }
-                    
+                   
                     let html = '';
                     data.opportunities.forEach(opp => {
                         const actionClass = opp.action.toLowerCase();
                         const confidencePercent = (opp.confidence * 100).toFixed(0);
                         const confidenceLevel = confidencePercent >= 75 ? 'high-confidence' : confidencePercent >= 60 ? 'medium-confidence' : 'low-confidence';
-                        
+                       
                         html += \`<div class="opportunity \${actionClass}">
                             <div class="coin-header">
                                 <div class="coin-name">\${opp.name} (\${opp.symbol})</div>
@@ -741,14 +848,13 @@ app.get('/', (req, res) => {
                             <div class="insights-list"><h4>💡 Key Insights</h4><ul>\${opp.insights.map(i => \`<li>\${i}</li>\`).join('')}</ul></div>
                         </div>\`;
                     });
-                    
+                   
                     document.getElementById('results').innerHTML = html;
                 } catch (error) {
                     console.error('Scan error:', error);
                     document.getElementById('results').innerHTML = '<div class="no-opportunities" style="color: #ef4444;"><h3>❌ Scan Failed</h3><p>Please try again</p></div>';
                 }
             }
-
             async function viewHistory() {
                 try {
                     const response = await fetch('/scan-history');
@@ -757,15 +863,14 @@ app.get('/', (req, res) => {
                         alert('No scan history available yet.');
                         return;
                     }
-                    const historyText = history.slice(0, 5).map((scan, index) => 
-                        \`Scan #\${index + 1}: \${new Date(scan.timestamp).toLocaleString()}\\n   - Opportunities: \${scan.opportunities}\`
+                    const historyText = history.slice(0, 5).map((scan, index) =>
+                        \`Scan #\${index + 1}: \${new Date(scan.timestamp).toLocaleString()}\\n - Opportunities: \${scan.opportunities}\`
                     ).join('\\n\\n');
                     alert('Recent Scan History:\\n\\n' + historyText);
                 } catch (error) {
                     alert('Error loading history: ' + error.message);
                 }
             }
-
             updateStats();
             manualScan();
         </script>
@@ -778,10 +883,9 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🎯 Professional Crypto Scanner V2 running on port ${PORT}`);
   console.log(`📊 Strategy: RSI + Bollinger + Support/Resistance + Momentum`);
-  console.log(`⏰ Auto-scan: 1 HOUR intervals ✅`); // ✅ Updated log
-  console.log(`🎯 Coins: ${tradingBot.trackedCoins.length} cryptocurrencies ✅`); // ✅ Now shows 100
+  console.log(`⏰ Auto-scan: ${SCAN_INTERVAL_MS / (60 * 60 * 1000)} hour intervals`);
+  console.log(`🎯 Coins: Dynamic top 100 (fallback to ${tradingBot.getFallbackCoins().length})`);
   console.log(`📱 Telegram: ${TELEGRAM_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
-  console.log(`🔔 Test Telegram: POST /test-telegram ✅`); // ✅ New feature log
+  console.log(`🔔 Test Telegram: POST /test-telegram ✅`);
 });
-
 module.exports = app;
