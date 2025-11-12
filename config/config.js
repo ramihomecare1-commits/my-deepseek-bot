@@ -1,20 +1,20 @@
 // API Configuration
 const COINMARKETCAP_API_KEY = process.env.COINMARKETCAP_API_KEY || '';
 const COINMARKETCAP_ENABLED = Boolean(COINMARKETCAP_API_KEY);
-const COINPAPRIKA_ENABLED = true; // Free tier, no API key needed
+const COINPAPRIKA_ENABLED = true;
 
 // Telegram configuration
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 const TELEGRAM_ENABLED = Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID);
 
-// News configuration (CryptoPanic)
+// News configuration
 const CRYPTOPANIC_API_KEY = process.env.CRYPTOPANIC_API_KEY || '';
 const NEWS_ENABLED = Boolean(CRYPTOPANIC_API_KEY);
 
-// Rate limiting and timing configuration
-const API_DELAY = Number(process.env.API_DELAY_MS || 1000); // ms between calls
-const NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000; // 30 min
+// Rate limiting
+const API_DELAY = Number(process.env.API_DELAY_MS || 1000);
+const NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000;
 
 // Scan intervals
 const SCAN_INTERVAL_OPTIONS = {
@@ -28,6 +28,13 @@ const SCAN_INTERVAL_OPTIONS = {
 // AI Configuration
 const AI_API_KEY = process.env.API_KEY || '';
 const AI_MODEL = 'deepseek/deepseek-r1:free';
+
+// Log configuration status
+console.log('🔧 Configuration Status:');
+console.log(`   Telegram: ${TELEGRAM_ENABLED ? 'ENABLED' : 'DISABLED'}`);
+console.log(`   CoinMarketCap: ${COINMARKETCAP_ENABLED ? 'ENABLED' : 'DISABLED'}`);
+console.log(`   News: ${NEWS_ENABLED ? 'ENABLED' : 'DISABLED'}`);
+console.log(`   AI: ${AI_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 
 module.exports = {
   COINMARKETCAP_API_KEY,
