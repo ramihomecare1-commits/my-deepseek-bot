@@ -583,41 +583,47 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       let mockDataUsed = 0;
       const heatmapEntries = [];
 
-      for (const coin of this.trackedCoins) {
-        try {
-          const analysis = await this.analyzeWithTechnicalIndicators(coin, { options });
-          analyzedCount += 1;
+// Replace lines ~485-510 with this:
+for (const coin of this.trackedCoins) {
+    try {
+        const analysis = await this.analyzeWithTechnicalIndicators(coin, { options });
+        analyzedCount += 1;
 
-          if (analysis.usesMockData) {
+        // DEBUG: Log every analysis
+        console.log(`🔍 ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}%) - Mock: ${analysis.usesMockData}`);
+
+        if (analysis.usesMockData) {
             mockDataUsed += 1;
-          }
-
-          if (analysis.heatmapEntry) {
-            heatmapEntries.push(analysis.heatmapEntry);
-          }
-
-          if (analysis.confidence >= this.minConfidence && !analysis.usesMockData) {
-            if (!this.applyScanFilters(analysis, options)) {
-              continue;
-            }
-            opportunities.push(analysis);
-            console.log(
-              `✅ ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}% confidence)`,
-            );
-          }
-        } catch (error) {
-          console.log(`❌ ${coin.symbol}: Analysis failed - ${error.message}`);
-          this.stats.apiErrors += 1;
-        } finally {
-          this.scanProgress.processed += 1;
-          this.scanProgress.percent = Math.min(
-            Math.round((this.scanProgress.processed / this.scanProgress.total) * 100),
-            100,
-          );
         }
 
-        await sleep(COINGECKO_DELAY);
-      }
+        if (analysis.heatmapEntry) {
+            heatmapEntries.push(analysis.heatmapEntry);
+        }
+
+        // FIXED LINE: Remove mock data restriction - allow both real and mock data
+        if (analysis.confidence >= this.minConfidence) {
+            if (!this.applyScanFilters(analysis, options)) {
+                console.log(`🚫 ${coin.symbol}: Filtered out by scan filters`);
+                continue;
+            }
+            opportunities.push(analysis);
+            console.log(`✅ ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}% confidence) - ADDED TO OPPORTUNITIES`);
+        } else {
+            console.log(`❌ ${coin.symbol}: Confidence too low (${(analysis.confidence * 100).toFixed(0)}% < ${(this.minConfidence * 100).toFixed(0)}%)`);
+        }
+    } catch (error) {
+        console.log(`❌ ${coin.symbol}: Analysis failed - ${error.message}`);
+        this.stats.apiErrors += 1;
+    } finally {
+        this.scanProgress.processed += 1;
+        this.scanProgress.percent = Math.min(
+            Math.round((this.scanProgress.processed / this.scanProgress.total) * 100),
+            100,
+        );
+    }
+
+    await sleep(COINGECKO_DELAY);
+}
 
       opportunities.sort((a, b) => b.confidence - a.confidence);
 
