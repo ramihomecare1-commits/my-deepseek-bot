@@ -2281,6 +2281,7 @@ app.get('/', (req, res) => {
 
       <script>
         let analysisUpdateInterval = null;
+        let scanInFlight = false;
         const intervalLabels = {
           '10m': 'Every 10 minutes',
           '1h': 'Every 1 hour',
@@ -2463,10 +2464,11 @@ app.get('/', (req, res) => {
             const text = document.getElementById('scanProgressText');
             if (!container || !fill || !text) return;
 
-            if (progress.running) {
+            if (progress.running || scanInFlight) {
               container.style.display = 'block';
-              fill.style.width = progress.percent + '%';
-              text.textContent = progress.percent + '% (' + progress.processed + '/' + progress.total + ')';
+              const pct = typeof progress.percent === 'number' ? progress.percent : 0;
+              fill.style.width = pct + '%';
+              text.textContent = pct + '% (' + (progress.processed || 0) + '/' + (progress.total || 0) + ')';
             } else if (progress.percent === 100) {
               container.style.display = 'block';
               fill.style.width = '100%';
@@ -2586,6 +2588,7 @@ app.get('/', (req, res) => {
             analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
             updateLiveAnalysis();
             pollScanProgress();
+            scanInFlight = true;
 
             const scanOptions = {
               minConfidence: (Number(document.getElementById('confidenceSlider').value) || 65) / 100,
@@ -2612,6 +2615,7 @@ app.get('/', (req, res) => {
             const data = await response.json();
             updateStats();
             if (data.greedFear) updateSentimentCard(data.greedFear);
+            scanInFlight = false;
 
             if (!data || !data.opportunities || data.opportunities.length === 0) {
               const msg = data.status === 'skipped'
@@ -2714,6 +2718,7 @@ app.get('/', (req, res) => {
           } catch (error) {
             console.error('Scan error:', error);
             document.getElementById('results').innerHTML = '<div class="no-opportunities" style="color: #ef4444;"><h3>❌ Scan Failed</h3><p>Please try again</p></div>';
+            scanInFlight = false;
           }
         }
 
