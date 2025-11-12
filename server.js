@@ -824,7 +824,7 @@ for (const coin of this.trackedCoins) {
         this.updateLiveAnalysis();
       }, 2500);
 
-      // Extract frame indicators for easier reference
+      // FIXED: Extract frame indicators for easier reference
       const dailyFrame = frameIndicators['1d'] || {};
       const hourlyFrame = frameIndicators['1h'] || {};
       const fastFrame = frameIndicators['10m'] || {};
