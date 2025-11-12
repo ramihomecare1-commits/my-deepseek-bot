@@ -3,6 +3,12 @@ const config = require('../config/config');
 
 async function sendTelegramNotification(opportunity, lastNotificationTime, stats, greedFearIndex, globalMetrics, options = {}) {
   const { force = false } = options;
+  
+  console.log('🔧 Telegram Notification Debug:');
+  console.log(`   Enabled: ${config.TELEGRAM_ENABLED}`);
+  console.log(`   Bot Token: ${config.TELEGRAM_BOT_TOKEN ? 'Set' : 'Missing'}`);
+  console.log(`   Chat ID: ${config.TELEGRAM_CHAT_ID ? 'Set' : 'Missing'}`);
+  
   if (!config.TELEGRAM_ENABLED) {
     console.log('⚠️ Telegram notifications disabled (missing credentials)');
     return false;
@@ -86,6 +92,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
 ⏰ Detected: ${new Date(opportunity.timestamp).toLocaleString()}`;
 
     const telegramUrl = `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/sendMessage`;
+    console.log(`📤 Sending to Telegram URL: ${telegramUrl.replace(config.TELEGRAM_BOT_TOKEN, 'HIDDEN')}`);
 
     const response = await axios.post(
       telegramUrl,
@@ -110,13 +117,30 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     return false;
   } catch (error) {
     console.log(`❌ Failed to send Telegram notification: ${error.message}`);
+    if (error.response) {
+      console.log(`   Response status: ${error.response.status}`);
+      console.log(`   Response data:`, error.response.data);
+    }
     return false;
   }
 }
 
 async function sendTestNotification(config) {
+  console.log('🔧 Testing Telegram configuration...');
+  console.log(`   Bot Token: ${config.TELEGRAM_BOT_TOKEN ? 'Set' : 'Missing'}`);
+  console.log(`   Chat ID: ${config.TELEGRAM_CHAT_ID ? 'Set' : 'Missing'}`);
+  
   if (!config.TELEGRAM_ENABLED) {
-    return { success: false, message: 'Telegram credentials not configured' };
+    const message = 'Telegram credentials not configured. Please set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID environment variables.';
+    console.log('❌ ' + message);
+    return { 
+      success: false, 
+      message,
+      required: {
+        TELEGRAM_BOT_TOKEN: 'Your bot token from BotFather',
+        TELEGRAM_CHAT_ID: 'Your personal chat ID or group ID'
+      }
+    };
   }
 
   try {
@@ -133,6 +157,8 @@ async function sendTestNotification(config) {
         '✅ Notifications will be sent for trading opportunities',
       ],
       timestamp: new Date(),
+      usesMockData: false,
+      dataSource: 'test',
       indicators: {
         momentum: 'UP',
         daily: {
@@ -155,23 +181,43 @@ async function sendTestNotification(config) {
     const greedFearIndex = { value: 55, classification: 'Neutral' };
     const globalMetrics = {};
 
-    const success = await sendTelegramNotification(testOpportunity, lastNotificationTime, stats, greedFearIndex, globalMetrics, { force: true });
+    console.log('📱 Attempting to send test notification...');
+    const success = await sendTelegramNotification(
+      testOpportunity, 
+      lastNotificationTime, 
+      stats, 
+      greedFearIndex, 
+      globalMetrics, 
+      { force: true }
+    );
 
     if (success) {
+      const message = '✅ Test notification sent successfully! Check your Telegram.';
+      console.log(message);
       return {
         success: true,
-        message: '✅ Test notification sent successfully! Check your Telegram.',
+        message,
+      };
+    } else {
+      const message = '❌ Failed to send test notification. Check console for details.';
+      console.log(message);
+      return {
+        success: false,
+        message,
       };
     }
-
-    return {
-      success: false,
-      message: '❌ Failed to send test notification. Check console for details.',
-    };
   } catch (error) {
+    const errorMessage = `❌ Error sending test: ${error.message}`;
+    console.error(errorMessage);
+    console.error('Full error:', error);
+    
     return {
       success: false,
-      message: `❌ Error sending test: ${error.message}`,
+      message: errorMessage,
+      errorDetails: {
+        message: error.message,
+        stack: error.stack
+      }
     };
   }
 }
