@@ -1,9 +1,9 @@
 const express = require('express');
 const axios = require('axios');
 const TechnicalIndicators = require('technicalindicators');
-
 const app = express();
 const PORT = process.env.PORT || 10000;
+
 app.use(express.json());
 
 // Telegram Configuration
@@ -16,7 +16,6 @@ const MIN_CONFIDENCE = parseFloat(process.env.MIN_CONFIDENCE) || 0.65;
 const SCAN_INTERVAL_MS = parseInt(process.env.SCAN_INTERVAL_MS) || 60 * 60 * 1000; // 1 hour default
 const COIN_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-// Enhanced Professional Trading Bot
 class ProfessionalTradingBot {
   constructor() {
     this.isRunning = false;
@@ -42,7 +41,6 @@ class ProfessionalTradingBot {
       console.log('Using cached top coins');
       return this.trackedCoins;
     }
-
     const url = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1';
     try {
       const response = await axios.get(url, { timeout: 10000 });
@@ -64,506 +62,106 @@ class ProfessionalTradingBot {
 
   getFallbackCoins() {
     return [
-      {
-        "symbol": "BTC",
-        "name": "Bitcoin",
-        "id": "bitcoin"
-      },
-      {
-        "symbol": "ETH",
-        "name": "Ethereum",
-        "id": "ethereum"
-      },
-      {
-        "symbol": "USDT",
-        "name": "Tether",
-        "id": "tether"
-      },
-      {
-        "symbol": "XRP",
-        "name": "XRP",
-        "id": "xrp"
-      },
-      {
-        "symbol": "BNB",
-        "name": "BNB",
-        "id": "bnb"
-      },
-      {
-        "symbol": "SOL",
-        "name": "Solana",
-        "id": "solana"
-      },
-      {
-        "symbol": "USDC",
-        "name": "USDC",
-        "id": "usdc"
-      },
-      {
-        "symbol": "STETH",
-        "name": "Lido Staked Ether",
-        "id": "lido-staked-ether"
-      },
-      {
-        "symbol": "TRX",
-        "name": "TRON",
-        "id": "tron"
-      },
-      {
-        "symbol": "DOGE",
-        "name": "Dogecoin",
-        "id": "dogecoin"
-      },
-      {
-        "symbol": "ADA",
-        "name": "Cardano",
-        "id": "cardano"
-      },
-      {
-        "symbol": "FIGR_HELOC",
-        "name": "Figure Heloc",
-        "id": "figure-heloc"
-      },
-      {
-        "symbol": "WSTETH",
-        "name": "Wrapped stETH",
-        "id": "wrapped-steth"
-      },
-      {
-        "symbol": "WBTC",
-        "name": "Wrapped Bitcoin",
-        "id": "wrapped-bitcoin"
-      },
-      {
-        "symbol": "WBETH",
-        "name": "Wrapped Beacon ETH",
-        "id": "wrapped-beacon-eth"
-      },
-      {
-        "symbol": "WBT",
-        "name": "WhiteBIT Coin",
-        "id": "whitebit"
-      },
-      {
-        "symbol": "LINK",
-        "name": "Chainlink",
-        "id": "chainlink"
-      },
-      {
-        "symbol": "HYPE",
-        "name": "Hyperliquid",
-        "id": "hyperliquid"
-      },
-      {
-        "symbol": "BCH",
-        "name": "Bitcoin Cash",
-        "id": "bitcoin-cash"
-      },
-      {
-        "symbol": "XLM",
-        "name": "Stellar",
-        "id": "stellar"
-      },
-      {
-        "symbol": "USDS",
-        "name": "USDS",
-        "id": "usds"
-      },
-      {
-        "symbol": "WEETH",
-        "name": "Wrapped eETH",
-        "id": "wrapped-eeth"
-      },
-      {
-        "symbol": "BSC-USD",
-        "name": "Binance Bridged USDT (BNB Smart Chain)",
-        "id": "binance-bridged-usdt-bnb-smart-chain"
-      },
-      {
-        "symbol": "LEO",
-        "name": "LEO Token",
-        "id": "leo-token"
-      },
-      {
-        "symbol": "USDE",
-        "name": "Ethena USDe",
-        "id": "ethena-usde"
-      },
-      {
-        "symbol": "WETH",
-        "name": "WETH",
-        "id": "weth"
-      },
-      {
-        "symbol": "HBAR",
-        "name": "Hedera",
-        "id": "hedera"
-      },
-      {
-        "symbol": "ZEC",
-        "name": "Zcash",
-        "id": "zcash"
-      },
-      {
-        "symbol": "LTC",
-        "name": "Litecoin",
-        "id": "litecoin"
-      },
-      {
-        "symbol": "CBBTC",
-        "name": "Coinbase Wrapped BTC",
-        "id": "coinbase-wrapped-btc"
-      },
-      {
-        "symbol": "SUI",
-        "name": "Sui",
-        "id": "sui"
-      },
-      {
-        "symbol": "AVAX",
-        "name": "Avalanche",
-        "id": "avalanche"
-      },
-      {
-        "symbol": "XMR",
-        "name": "Monero",
-        "id": "monero"
-      },
-      {
-        "symbol": "SHIB",
-        "name": "Shiba Inu",
-        "id": "shiba-inu"
-      },
-      {
-        "symbol": "UNI",
-        "name": "Uniswap",
-        "id": "uniswap"
-      },
-      {
-        "symbol": "TON",
-        "name": "Toncoin",
-        "id": "toncoin"
-      },
-      {
-        "symbol": "DOT",
-        "name": "Polkadot",
-        "id": "polkadot"
-      },
-      {
-        "symbol": "CRO",
-        "name": "Cronos",
-        "id": "cronos"
-      },
-      {
-        "symbol": "CC",
-        "name": "Canton",
-        "id": "canton"
-      },
-      {
-        "symbol": "SUSDE",
-        "name": "Ethena Staked USDe",
-        "id": "ethena-staked-usde"
-      },
-      {
-        "symbol": "DAI",
-        "name": "Dai",
-        "id": "dai"
-      },
-      {
-        "symbol": "WLFI",
-        "name": "World Liberty Financial",
-        "id": "world-liberty-financial"
-      },
-      {
-        "symbol": "MNT",
-        "name": "Mantle",
-        "id": "mantle"
-      },
-      {
-        "symbol": "M",
-        "name": "MemeCore",
-        "id": "memecore"
-      },
-      {
-        "symbol": "USDT0",
-        "name": "USDT0",
-        "id": "usdt0"
-      },
-      {
-        "symbol": "SUSDS",
-        "name": "sUSDS",
-        "id": "susds"
-      },
-      {
-        "symbol": "TAO",
-        "name": "Bittensor",
-        "id": "bittensor"
-      },
-      {
-        "symbol": "ICP",
-        "name": "Internet Computer",
-        "id": "internet-computer"
-      },
-      {
-        "symbol": "NEAR",
-        "name": "NEAR Protocol",
-        "id": "near"
-      },
-      {
-        "symbol": "AAVE",
-        "name": "Aave",
-        "id": "aave"
-      },
-      {
-        "symbol": "PYUSD",
-        "name": "PayPal USD",
-        "id": "paypal-usd"
-      },
-      {
-        "symbol": "BGB",
-        "name": "Bitget Token",
-        "id": "bitget-token"
-      },
-      {
-        "symbol": "USD1",
-        "name": "USD1",
-        "id": "usd1-wlfi"
-      },
-      {
-        "symbol": "OKB",
-        "name": "OKB",
-        "id": "okb"
-      },
-      {
-        "symbol": "PUMP",
-        "name": "Pump.fun",
-        "id": "pump-fun"
-      },
-      {
-        "symbol": "C1USD",
-        "name": "Currency One USD",
-        "id": "c1usd"
-      },
-      {
-        "symbol": "BUIDL",
-        "name": "BlackRock USD Institutional Digital Liquidity Fund",
-        "id": "blackrock-usd-institutional-digital-liquidity-fund"
-      },
-      {
-        "symbol": "PEPE",
-        "name": "Pepe",
-        "id": "pepe"
-      },
-      {
-        "symbol": "ETC",
-        "name": "Ethereum Classic",
-        "id": "ethereum-classic"
-      },
-      {
-        "symbol": "ENA",
-        "name": "Ethena",
-        "id": "ethena"
-      },
-      {
-        "symbol": "ASTER",
-        "name": "Aster",
-        "id": "aster-2"
-      },
-      {
-        "symbol": "JITOSOL",
-        "name": "Jito Staked SOL",
-        "id": "jito-staked-sol"
-      },
-      {
-        "symbol": "APT",
-        "name": "Aptos",
-        "id": "aptos"
-      },
-      {
-        "symbol": "XAUT",
-        "name": "Tether Gold",
-        "id": "tether-gold"
-      },
-      {
-        "symbol": "USDF",
-        "name": "Falcon USD",
-        "id": "falcon-usd"
-      },
-      {
-        "symbol": "ONDO",
-        "name": "Ondo",
-        "id": "ondo"
-      },
-      {
-        "symbol": "WETH",
-        "name": "Binance-Peg WETH",
-        "id": "binance-peg-weth"
-      },
-      {
-        "symbol": "JLP",
-        "name": "Jupiter Perpetuals Liquidity Provider Token",
-        "id": "jupiter-perpetuals-liquidity-provider-token"
-      },
-      {
-        "symbol": "SOL",
-        "name": "Wrapped SOL",
-        "id": "wrapped-sol-2"
-      },
-      {
-        "symbol": "PI",
-        "name": "Pi Network",
-        "id": "pi-network"
-      },
-      {
-        "symbol": "POL",
-        "name": "POL (ex-MATIC)",
-        "id": "polygon"
-      },
-      {
-        "symbol": "USDTB",
-        "name": "USDtb",
-        "id": "usdtb"
-      },
-      {
-        "symbol": "WLD",
-        "name": "Worldcoin",
-        "id": "worldcoin"
-      },
-      {
-        "symbol": "HTX",
-        "name": "HTX DAO",
-        "id": "htx-dao"
-      },
-      {
-        "symbol": "KCS",
-        "name": "KuCoin",
-        "id": "kucoin-shares"
-      },
-      {
-        "symbol": "FIL",
-        "name": "Filecoin",
-        "id": "filecoin"
-      },
-      {
-        "symbol": "ALGO",
-        "name": "Algorand",
-        "id": "algorand"
-      },
-      {
-        "symbol": "HASH",
-        "name": "Provenance Blockchain",
-        "id": "hash-2"
-      },
-      {
-        "symbol": "TRUMP",
-        "name": "Official Trump",
-        "id": "official-trump"
-      },
-      {
-        "symbol": "ARB",
-        "name": "Arbitrum",
-        "id": "arbitrum"
-      },
-      {
-        "symbol": "RETH",
-        "name": "Rocket Pool ETH",
-        "id": "rocket-pool-eth"
-      },
-      {
-        "symbol": "VET",
-        "name": "VeChain",
-        "id": "vechain"
-      },
-      {
-        "symbol": "BNSOL",
-        "name": "Binance Staked SOL",
-        "id": "binance-staked-sol"
-      },
-      {
-        "symbol": "ATOM",
-        "name": "Cosmos Hub",
-        "id": "cosmos-hub"
-      },
-      {
-        "symbol": "GT",
-        "name": "Gate",
-        "id": "gatetoken"
-      },
-      {
-        "symbol": "PAXG",
-        "name": "PAX Gold",
-        "id": "pax-gold"
-      },
-      {
-        "symbol": "KHYPE",
-        "name": "Kinetiq Staked HYPE",
-        "id": "kinetiq-staked-hype"
-      },
-      {
-        "symbol": "KAS",
-        "name": "Kaspa",
-        "id": "kaspa"
-      },
-      {
-        "symbol": "BFUSD",
-        "name": "BFUSD",
-        "id": "bfusd"
-      },
-      {
-        "symbol": "SKY",
-        "name": "Sky",
-        "id": "sky"
-      },
-      {
-        "symbol": "USDC",
-        "name": "Binance Bridged USDC (BNB Smart Chain)",
-        "id": "binance-bridged-usdc-bnb-smart-chain"
-      },
-      {
-        "symbol": "WBNB",
-        "name": "Wrapped BNB",
-        "id": "wbnb"
-      },
-      {
-        "symbol": "SYRUPUSDT",
-        "name": "syrupUSDT",
-        "id": "syrupusdt"
-      },
-      {
-        "symbol": "RSETH",
-        "name": "Kelp DAO Restaked ETH",
-        "id": "kelp-dao-restaked-eth"
-      },
-      {
-        "symbol": "RENDER",
-        "name": "Render",
-        "id": "render"
-      },
-      {
-        "symbol": "IP",
-        "name": "Story",
-        "id": "story"
-      },
-      {
-        "symbol": "FBTC",
-        "name": "Function FBTC",
-        "id": "function-fbtc"
-      },
-      {
-        "symbol": "FLR",
-        "name": "Flare",
-        "id": "flare"
-      },
-      {
-        "symbol": "LBTC",
-        "name": "Lombard Staked BTC",
-        "id": "lombard-staked-btc"
-      },
-      {
-        "symbol": "SYRUPUSDC",
-        "name": "syrupUSDC",
-        "id": "syrup-usdc"
-      }
+      { symbol: "BTC", name: "Bitcoin", id: "bitcoin" },
+      { symbol: "ETH", name: "Ethereum", id: "ethereum" },
+      { symbol: "USDT", name: "Tether", id: "tether" },
+      { symbol: "XRP", name: "XRP", id: "xrp" },
+      { symbol: "BNB", name: "BNB", id: "bnb" },
+      { symbol: "SOL", name: "Solana", id: "solana" },
+      { symbol: "USDC", name: "USDC", id: "usdc" },
+      { symbol: "STETH", name: "Lido Staked Ether", id: "lido-staked-ether" },
+      { symbol: "TRX", name: "TRON", id: "tron" },
+      { symbol: "DOGE", name: "Dogecoin", id: "dogecoin" },
+      { symbol: "ADA", name: "Cardano", id: "cardano" },
+      { symbol: "FIGR_HELOC", name: "Figure Heloc", id: "figure-heloc" },
+      { symbol: "WSTETH", name: "Wrapped stETH", id: "wrapped-steth" },
+      { symbol: "WBTC", name: "Wrapped Bitcoin", id: "wrapped-bitcoin" },
+      { symbol: "WBETH", name: "Wrapped Beacon ETH", id: "wrapped-beacon-eth" },
+      { symbol: "WBT", name: "WhiteBIT Coin", id: "whitebit" },
+      { symbol: "LINK", name: "Chainlink", id: "chainlink" },
+      { symbol: "HYPE", name: "Hyperliquid", id: "hyperliquid" },
+      { symbol: "BCH", name: "Bitcoin Cash", id: "bitcoin-cash" },
+      { symbol: "XLM", name: "Stellar", id: "stellar" },
+      { symbol: "USDS", name: "USDS", id: "usds" },
+      { symbol: "WEETH", name: "Wrapped eETH", id: "wrapped-eeth" },
+      { symbol: "BSC-USD", name: "Binance Bridged USDT (BNB Smart Chain)", id: "binance-bridged-usdt-bnb-smart-chain" },
+      { symbol: "LEO", name: "LEO Token", id: "leo-token" },
+      { symbol: "USDE", name: "Ethena USDe", id: "ethena-usde" },
+      { symbol: "WETH", name: "WETH", id: "weth" },
+      { symbol: "HBAR", name: "Hedera", id: "hedera" },
+      { symbol: "ZEC", name: "Zcash", id: "zcash" },
+      { symbol: "LTC", name: "Litecoin", id: "litecoin" },
+      { symbol: "CBBTC", name: "Coinbase Wrapped BTC", id: "coinbase-wrapped-btc" },
+      { symbol: "SUI", name: "Sui", id: "sui" },
+      { symbol: "AVAX", name: "Avalanche", id: "avalanche" },
+      { symbol: "XMR", name: "Monero", id: "monero" },
+      { symbol: "SHIB", name: "Shiba Inu", id: "shiba-inu" },
+      { symbol: "UNI", name: "Uniswap", id: "uniswap" },
+      { symbol: "TON", name: "Toncoin", id: "toncoin" },
+      { symbol: "DOT", name: "Polkadot", id: "polkadot" },
+      { symbol: "CRO", name: "Cronos", id: "cronos" },
+      { symbol: "CC", name: "Canton", id: "canton" },
+      { symbol: "SUSDE", name: "Ethena Staked USDe", id: "ethena-staked-usde" },
+      { symbol: "DAI", name: "Dai", id: "dai" },
+      { symbol: "WLFI", name: "World Liberty Financial", id: "world-liberty-financial" },
+      { symbol: "MNT", name: "Mantle", id: "mantle" },
+      { symbol: "M", name: "MemeCore", id: "memecore" },
+      { symbol: "USDT0", name: "USDT0", id: "usdt0" },
+      { symbol: "SUSDS", name: "sUSDS", id: "susds" },
+      { symbol: "TAO", name: "Bittensor", id: "bittensor" },
+      { symbol: "ICP", name: "Internet Computer", id: "internet-computer" },
+      { symbol: "NEAR", name: "NEAR Protocol", id: "near" },
+      { symbol: "AAVE", name: "Aave", id: "aave" },
+      { symbol: "PYUSD", name: "PayPal USD", id: "paypal-usd" },
+      { symbol: "BGB", name: "Bitget Token", id: "bitget-token" },
+      { symbol: "USD1", name: "USD1", id: "usd1-wlfi" },
+      { symbol: "OKB", name: "OKB", id: "okb" },
+      { symbol: "PUMP", name: "Pump.fun", id: "pump-fun" },
+      { symbol: "C1USD", name: "Currency One USD", id: "c1usd" },
+      { symbol: "BUIDL", name: "BlackRock USD Institutional Digital Liquidity Fund", id: "blackrock-usd-institutional-digital-liquidity-fund" },
+      { symbol: "PEPE", name: "Pepe", id: "pepe" },
+      { symbol: "ETC", name: "Ethereum Classic", id: "ethereum-classic" },
+      { symbol: "ENA", name: "Ethena", id: "ethena" },
+      { symbol: "ASTER", name: "Aster", id: "aster-2" },
+      { symbol: "JITOSOL", name: "Jito Staked SOL", id: "jito-staked-sol" },
+      { symbol: "APT", name: "Aptos", id: "aptos" },
+      { symbol: "XAUT", name: "Tether Gold", id: "tether-gold" },
+      { symbol: "USDF", name: "Falcon USD", id: "falcon-usd" },
+      { symbol: "ONDO", name: "Ondo", id: "ondo" },
+      { symbol: "WETH", name: "Binance-Peg WETH", id: "binance-peg-weth" },
+      { symbol: "JLP", name: "Jupiter Perpetuals Liquidity Provider Token", id: "jupiter-perpetuals-liquidity-provider-token" },
+      { symbol: "SOL", name: "Wrapped SOL", id: "wrapped-sol-2" },
+      { symbol: "PI", name: "Pi Network", id: "pi-network" },
+      { symbol: "POL", name: "POL (ex-MATIC)", id: "polygon" },
+      { symbol: "USDTB", name: "USDtb", id: "usdtb" },
+      { symbol: "WLD", name: "Worldcoin", id: "worldcoin" },
+      { symbol: "HTX", name: "HTX DAO", id: "htx-dao" },
+      { symbol: "KCS", name: "KuCoin", id: "kucoin-shares" },
+      { symbol: "FIL", name: "Filecoin", id: "filecoin" },
+      { symbol: "ALGO", name: "Algorand", id: "algorand" },
+      { symbol: "HASH", name: "Provenance Blockchain", id: "hash-2" },
+      { symbol: "TRUMP", name: "Official Trump", id: "official-trump" },
+      { symbol: "ARB", name: "Arbitrum", id: "arbitrum" },
+      { symbol: "RETH", name: "Rocket Pool ETH", id: "rocket-pool-eth" },
+      { symbol: "VET", name: "VeChain", id: "vechain" },
+      { symbol: "BNSOL", name: "Binance Staked SOL", id: "binance-staked-sol" },
+      { symbol: "ATOM", name: "Cosmos Hub", id: "cosmos-hub" },
+      { symbol: "GT", name: "Gate", id: "gatetoken" },
+      { symbol: "PAXG", name: "PAX Gold", id: "pax-gold" },
+      { symbol: "KHYPE", name: "Kinetiq Staked HYPE", id: "kinetiq-staked-hype" },
+      { symbol: "KAS", name: "Kaspa", id: "kaspa" },
+      { symbol: "BFUSD", name: "BFUSD", id: "bfusd" },
+      { symbol: "SKY", name: "Sky", id: "sky" },
+      { symbol: "USDC", name: "Binance Bridged USDC (BNB Smart Chain)", id: "binance-bridged-usdc-bnb-smart-chain" },
+      { symbol: "WBNB", name: "Wrapped BNB", id: "wbnb" },
+      { symbol: "SYRUPUSDT", name: "syrupUSDT", id: "syrupusdt" },
+      { symbol: "RSETH", name: "Kelp DAO Restaked ETH", id: "kelp-dao-restaked-eth" },
+      { symbol: "RENDER", name: "Render", id: "render" },
+      { symbol: "IP", name: "Story", id: "story" },
+      { symbol: "FBTC", name: "Function FBTC", id: "function-fbtc" },
+      { symbol: "FLR", name: "Flare", id: "flare" },
+      { symbol: "LBTC", name: "Lombard Staked BTC", id: "lombard-staked-btc" },
+      { symbol: "SYRUPUSDC", name: "syrupUSDC", id: "syrup-usdc" }
     ];
   }
 
@@ -616,7 +214,7 @@ class ProfessionalTradingBot {
     try {
       const actionEmoji = opportunity.action === 'BUY' ? '🟢' : opportunity.action === 'SELL' ? '🔴' : '🟡';
       const confidencePercent = (opportunity.confidence * 100).toFixed(0);
-     
+
       const message = `${actionEmoji} *${opportunity.action} SIGNAL DETECTED*
 *Coin:* ${opportunity.name} (${opportunity.symbol})
 *Price:* ${opportunity.price}
@@ -633,7 +231,7 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
 📝 *Reason:* ${opportunity.reason}
 ⏰ Detected: ${new Date(opportunity.timestamp).toLocaleString()}`;
       const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-     
+
       const response = await axios.post(telegramUrl, {
         chat_id: TELEGRAM_CHAT_ID,
         text: message,
@@ -650,7 +248,7 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
         console.log(`❌ Telegram API error: ${response.data.description}`);
         return false;
       }
-     
+
     } catch (error) {
       console.log(`❌ Failed to send Telegram notification: ${error.message}`);
       return false;
@@ -686,7 +284,7 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
         timestamp: new Date()
       };
       const success = await this.sendTelegramNotification(testOpportunity);
-     
+
       if (success) {
         return {
           success: true,
@@ -718,13 +316,13 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
           const analysis = await this.analyzeWithTechnicalIndicators(coin);
           analyzedCount++;
           this.currentlyAnalyzing = null;
-         
+
           if (analysis.confidence >= this.minConfidence) {
             opportunities.push(analysis);
             console.log(`✅ ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}% confidence)`);
           }
           await new Promise(resolve => setTimeout(resolve, 800));
-         
+
         } catch (error) {
           console.log(`❌ ${coin.symbol}: Analysis failed - ${error.message}`);
           this.currentlyAnalyzing = null;
@@ -782,14 +380,11 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
       const response = await axios.get(url, { timeout: 10000 });
       const prices = response.data.prices.map(p => p[1]); // [timestamp, price]
       if (prices.length < 30) throw new Error('Insufficient historical data');
-
       const closingPrices = prices.slice(-30); // Last 30 days
       const currentPrice = closingPrices[closingPrices.length - 1];
-
       // Calculate RSI (14 period)
       const rsiInput = { values: closingPrices.slice(-15), period: 14 }; // Last 15 for RSI14
       const rsi = TechnicalIndicators.RSI.calculate(rsiInput)[0];
-
       // Calculate Bollinger Bands (20 period, 2 std)
       const bbInput = { values: closingPrices.slice(-20), period: 20, stdDev: 2 };
       const bb = TechnicalIndicators.BollingerBands.calculate(bbInput)[0];
@@ -797,26 +392,21 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
       if (currentPrice > bb.upper) bollingerPosition = 'UPPER';
       else if (currentPrice < bb.lower) bollingerPosition = 'LOWER';
       else bollingerPosition = 'MIDDLE';
-
       // Calculate MACD for momentum (12,26,9)
       const macdInput = { values: closingPrices, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, SimpleMAOscillator: false, SimpleMASignal: false };
       const macd = TechnicalIndicators.MACD.calculate(macdInput);
       const lastMacd = macd[macd.length - 1];
       const momentum = lastMacd.MACD;
-
       // Simple trend: EMA12 vs EMA26
       const ema12 = TechnicalIndicators.EMA.calculate({ period: 12, values: closingPrices })[closingPrices.length - 1 - 12 + 1];
       const ema26 = TechnicalIndicators.EMA.calculate({ period: 26, values: closingPrices })[closingPrices.length - 1 - 26 + 1];
       const trend = ema12 > ema26 ? 'BULLISH' : 'BEARISH';
-
       // Support/Resistance: simple min/max over last 30 days
       const support = Math.min(...closingPrices).toFixed(2);
       const resistance = Math.max(...closingPrices).toFixed(2);
-
       // Insights and scoring
       const insights = [];
       let score = 0;
-
       if (rsi < 30) {
         insights.push('Oversold (RSI < 30) - Potential buy signal');
         score += 1;
@@ -824,7 +414,6 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
         insights.push('Overbought (RSI > 70) - Potential sell signal');
         score -= 1;
       }
-
       if (bollingerPosition === 'LOWER') {
         insights.push('Below lower Bollinger Band - Potential buy');
         score += 1;
@@ -832,7 +421,6 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
         insights.push('Above upper Bollinger Band - Potential sell');
         score -= 1;
       }
-
       if (trend === 'BULLISH') {
         insights.push('Bullish trend (EMA12 > EMA26)');
         score += 1;
@@ -840,7 +428,6 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
         insights.push('Bearish trend (EMA12 < EMA26)');
         score -= 1;
       }
-
       if (lastMacd.histogram > 0) {
         insights.push('Positive MACD histogram - Increasing momentum');
         score += 1;
@@ -848,15 +435,12 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
         insights.push('Negative MACD histogram - Decreasing momentum');
         score -= 1;
       }
-
       // Action and confidence
       let action = 'HOLD';
       if (score > 2) action = 'BUY';
       else if (score < -2) action = 'SELL';
       const confidence = Math.min(1, Math.max(0, (Math.abs(score) / 4) * this.minConfidence + 0.3)); // Normalized 0.3-1
-
       const reason = `${action} recommended based on ${insights.length} indicators. Score: ${score}`;
-
       return {
         symbol: coin.symbol,
         name: coin.name,
@@ -977,14 +561,14 @@ app.get('/', (req, res) => {
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-           
+            
             body {
                 font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 min-height: 100vh;
                 color: #1a202c;
             }
-           
+            
             .container {
                 display: grid;
                 grid-template-columns: 1fr 420px;
@@ -993,14 +577,14 @@ app.get('/', (req, res) => {
                 margin: 0 auto;
                 padding: 24px;
             }
-           
+            
             .main-content, .sidebar {
                 background: rgba(255, 255, 255, 0.97);
                 border-radius: 24px;
                 padding: 32px;
                 box-shadow: 0 24px 48px rgba(0,0,0,0.12);
             }
-           
+            
             .header { text-align: center; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid #e2e8f0; }
             .header h1 {
                 color: #1a202c;
@@ -1011,12 +595,12 @@ app.get('/', (req, res) => {
                 -webkit-background-clip: text;
                 -webkit-text-fill-color: transparent;
             }
-           
+            
             .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
             .stat-card { background: linear-gradient(135deg, #f7fafc, #edf2f7); padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0; }
             .stat-label { color: #718096; font-size: 0.85em; font-weight: 600; text-transform: uppercase; margin-bottom: 8px; }
             .stat-value { font-size: 2em; font-weight: 700; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-           
+            
             .controls { background: linear-gradient(135deg, #f7fafc, #edf2f7); padding: 28px; border-radius: 20px; margin-bottom: 28px; }
             .button-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; } /* ✅ Updated to 3 columns */
             button { padding: 14px 24px; border: none; border-radius: 12px; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -1026,45 +610,45 @@ app.get('/', (req, res) => {
             .btn-secondary { background: linear-gradient(135deg, #64748b, #475569); color: white; }
             .btn-telegram { background: linear-gradient(135deg, #0088cc, #005c8a); color: white; } /* ✅ New Telegram button style */
             button:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
-           
+            
             .status-card { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 24px; border-radius: 16px; text-align: center; }
-           
+            
             .opportunity { background: white; border-radius: 20px; padding: 24px; margin-bottom: 20px; border-left: 6px solid; box-shadow: 0 8px 24px rgba(0,0,0,0.06); transition: all 0.3s; }
             .opportunity:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(0,0,0,0.12); }
             .opportunity.buy { border-left-color: #10b981; background: linear-gradient(135deg, #fff, #f0fdf4); }
             .opportunity.sell { border-left-color: #ef4444; background: linear-gradient(135deg, #fff, #fef2f2); }
             .opportunity.hold { border-left-color: #f59e0b; background: linear-gradient(135deg, #fff, #fffbeb); }
-           
+            
             .coin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
             .coin-name { font-size: 1.4em; font-weight: 700; color: #1a202c; }
             .action-badge { padding: 8px 16px; border-radius: 24px; font-weight: 700; font-size: 0.9em; }
             .buy-badge { background: #10b981; color: white; }
             .sell-badge { background: #ef4444; color: white; }
             .hold-badge { background: #f59e0b; color: white; }
-           
+            
             .price-confidence { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; padding: 20px; background: rgba(0,0,0,0.02); border-radius: 12px; }
             .price-box .value, .confidence-box .value { font-size: 1.6em; font-weight: 700; color: #1a202c; margin-bottom: 4px; }
-           
+            
             .technical-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0; }
             .technical-item { background: rgba(255,255,255,0.8); padding: 14px; border-radius: 12px; text-align: center; border: 1px solid rgba(0,0,0,0.05); }
             .technical-item strong { display: block; color: #718096; font-size: 0.75em; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; }
-           
+            
             .confidence-bar { height: 10px; background: #e2e8f0; border-radius: 12px; margin: 16px 0; overflow: hidden; }
             .confidence-fill { height: 100%; border-radius: 12px; transition: width 0.8s; }
             .high-confidence { background: linear-gradient(90deg, #10b981, #34d399); }
             .medium-confidence { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
             .low-confidence { background: linear-gradient(90deg, #ef4444, #f87171); }
-           
+            
             .reason-box { margin: 20px 0; padding: 16px; background: rgba(0,0,0,0.02); border-radius: 12px; border-left: 4px solid #667eea; }
             .insights-list { margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
             .insights-list ul { list-style: none; padding: 0; }
             .insights-list li { padding: 10px 12px; margin-bottom: 8px; background: rgba(255,255,255,0.6); border-radius: 8px; padding-left: 32px; position: relative; }
             .insights-list li::before { content: '→'; position: absolute; left: 12px; color: #667eea; font-weight: bold; }
-           
+            
             .no-opportunities { text-align: center; padding: 80px 20px; color: #718096; }
             .loading-spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 1s linear infinite; }
             @keyframes spin { to { transform: rotate(360deg); } }
-           
+            
             @media (max-width: 1400px) { .container { grid-template-columns: 1fr; } }
             @media (max-width: 768px) { .button-group { grid-template-columns: 1fr; } }
         </style>
@@ -1076,7 +660,7 @@ app.get('/', (req, res) => {
                     <h1>🤖 AI Crypto Trading Scanner Pro</h1>
                     <p>Advanced Technical Analysis • Real-Time Market Intelligence • Configurable Intervals</p>
                 </div>
-               
+                
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-label">Total Scans</div>
@@ -1095,7 +679,7 @@ app.get('/', (req, res) => {
                         <div class="stat-value" id="avgConf">0%</div>
                     </div>
                 </div>
-               
+                
                 <div class="controls">
                     <h3>🎯 Scanner Controls</h3>
                     <div class="button-group">
@@ -1114,7 +698,7 @@ app.get('/', (req, res) => {
                         </div>
                     </div>
                 </div>
-               
+                
                 <div>
                     <h3 style="margin-bottom: 24px; color: #1a202c; font-size: 1.5em; font-weight: 700;">📈 Trading Opportunities</h3>
                     <div id="results">
@@ -1125,7 +709,7 @@ app.get('/', (req, res) => {
                     </div>
                 </div>
             </div>
-           
+            
             <div class="sidebar">
                 <div style="background: linear-gradient(135deg, #1e293b, #0f172a); color: white; border-radius: 20px; padding: 24px;">
                     <h3 style="text-align: center; margin-bottom: 16px;">🧠 DeepSeek AI Analysis</h3>
@@ -1209,22 +793,22 @@ app.get('/', (req, res) => {
                     if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
                     analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
                     updateLiveAnalysis();
-                   
+                    
                     const response = await fetch('/scan-now');
                     const data = await response.json();
                     updateStats();
-                   
+                    
                     if (data.opportunities.length === 0) {
                         document.getElementById('results').innerHTML = \`<div class="no-opportunities"><h3>📭 No High-Confidence Opportunities</h3><p>Scanned \${data.analyzedCoins} coins</p></div>\`;
                         return;
                     }
-                   
+                    
                     let html = '';
                     data.opportunities.forEach(opp => {
                         const actionClass = opp.action.toLowerCase();
                         const confidencePercent = (opp.confidence * 100).toFixed(0);
                         const confidenceLevel = confidencePercent >= 75 ? 'high-confidence' : confidencePercent >= 60 ? 'medium-confidence' : 'low-confidence';
-                       
+                        
                         html += \`<div class="opportunity \${actionClass}">
                             <div class="coin-header">
                                 <div class="coin-name">\${opp.name} (\${opp.symbol})</div>
@@ -1244,7 +828,7 @@ app.get('/', (req, res) => {
                             <div class="insights-list"><h4>💡 Key Insights</h4><ul>\${opp.insights.map(i => \`<li>\${i}</li>\`).join('')}</ul></div>
                         </div>\`;
                     });
-                   
+                    
                     document.getElementById('results').innerHTML = html;
                 } catch (error) {
                     console.error('Scan error:', error);
@@ -1284,4 +868,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📱 Telegram: ${TELEGRAM_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
   console.log(`🔔 Test Telegram: POST /test-telegram ✅`);
 });
+
 module.exports = app;
