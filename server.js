@@ -19,6 +19,10 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 const TELEGRAM_ENABLED = Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID);
 
+// News configuration (CryptoPanic)
+const CRYPTOPANIC_API_KEY = process.env.CRYPTOPANIC_API_KEY || '';
+const NEWS_ENABLED = Boolean(CRYPTOPANIC_API_KEY);
+
 // Rate limiting helpers
 const COINGECKO_DELAY = Number(process.env.CG_DELAY_MS || 1000); // ms between calls
 const SCAN_INTERVAL_OPTIONS = {
@@ -74,6 +78,7 @@ class ProfessionalTradingBot {
       timestamp: null,
     };
     this.latestHeatmap = [];
+    this.newsCache = new Map();
   }
 
   getTop100Coins() {
@@ -311,6 +316,43 @@ class ProfessionalTradingBot {
       '1d': this.aggregateSeries(dailyData, 1, 90),
       '1w': this.aggregateSeries(dailyData, 7, 52),
     };
+  }
+
+  async fetchCoinNews(symbol, name) {
+    if (!NEWS_ENABLED) return [];
+    const cacheKey = `${symbol}`.toUpperCase();
+    const cached = this.newsCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && now - cached.timestamp < 15 * 60 * 1000) {
+      return cached.items;
+    }
+    try {
+      const response = await axios.get('https://cryptopanic.com/api/v1/posts/', {
+        params: {
+          auth_token: CRYPTOPANIC_API_KEY,
+          public: true,
+          currencies: symbol ? symbol.toUpperCase() : undefined,
+        },
+        timeout: 10000,
+      });
+      if (response.data && Array.isArray(response.data.results)) {
+        const items = response.data.results
+          .filter((article) => article.title && article.url)
+          .slice(0, 3)
+          .map((article) => ({
+            title: article.title,
+            description: article.summary || article.body || '',
+            url: article.url,
+            publishedAt: article.published_at || article.created_at,
+            source: article.source?.title || article.source?.domain || 'CryptoPanic',
+          }));
+        this.newsCache.set(cacheKey, { items, timestamp: now });
+        return items;
+      }
+    } catch (error) {
+      console.log(`⚠️ News fetch failed for ${symbol}:`, error.message);
+    }
+    return [];
   }
 
   scheduleNextScan() {
@@ -741,6 +783,11 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         frames: frameIndicators,
       };
 
+      const newsHeadlines = await this.fetchCoinNews(coin.symbol, coin.name);
+      indicatorSnapshot.news = newsHeadlines;
+
+      this.currentlyAnalyzing.news = newsHeadlines;
+
       this.currentlyAnalyzing.stage = 'DeepSeek AI is evaluating…';
       this.currentlyAnalyzing.progress = 70;
       this.currentlyAnalyzing.technicals = {
@@ -778,17 +825,71 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         fourHourFrame.momentum ||
         'NEUTRAL';
 
+      let action = aiAnalysis.action;
+      let confidence = aiAnalysis.confidence;
+      let reason = aiAnalysis.reason;
+      let insights = aiAnalysis.insights;
+
+      if (dailyRsi < 30 && dailyBB === 'LOWER' && dailyTrend === 'BEARISH') {
+        action = 'BUY';
+        confidence = 0.75;
+        reason = 'Daily oversold with Bollinger support and potential bearish exhaustion';
+        insights = [
+          'Strong mean-reversion potential',
+          'Risk: Trend continuation',
+          `Weekly trend backdrop: ${weeklyTrend}`,
+        ];
+      } else if (dailyRsi > 70 && dailyBB === 'UPPER' && dailyTrend === 'BULLISH') {
+        action = 'SELL';
+        confidence = 0.75;
+        reason = 'Daily overbought at Bollinger resistance';
+        insights = [
+          'Profit-taking opportunity',
+          'Risk: Trend continuation',
+          `Weekly trend backdrop: ${weeklyTrend}`,
+        ];
+      } else if (dailyRsi < 35 && dailyTrend === 'BULLISH' && hourlyTrend === 'BULLISH') {
+        action = 'BUY';
+        confidence = 0.7;
+        reason = 'Both timeframes bullish with daily oversold signal';
+        insights = ['Trend alignment positive', 'Watch for confirmation', 'Stop below recent low'];
+      } else if (hourlyRsi < 30 && hourlyTrend === 'BULLISH') {
+        action = 'BUY';
+        confidence = 0.65;
+        reason = 'Hourly oversold in bullish hourly trend';
+        insights = ['Short-term mean reversion opportunity', 'Confirm with volume', 'Tight stop loss'];
+      } else if (momentum10m === 'STRONG_DOWN' && dailyTrend === 'BEARISH') {
+        action = 'SELL';
+        confidence = 0.6;
+        reason = 'Short-term momentum and daily trend both bearish';
+        insights = ['Potential continuation move', 'Watch for support breaks', 'Consider partial position sizing'];
+      } else if (
+        frame1w.trend === 'BULLISH' &&
+        frame1d.trend === 'BULLISH' &&
+        frame4h.trend === 'BULLISH'
+      ) {
+        action = 'BUY';
+        confidence = 0.62;
+        reason = 'Weekly, daily, and 4H trends aligned to the upside';
+        insights = ['Momentum building across timeframes', 'Look for pullback entries', 'Maintain disciplined stop'];
+      }
+
+      if (technicalData.news && technicalData.news.length > 0) {
+        insights = [...insights, `News to watch: ${technicalData.news[0].title}`];
+      }
+
       return {
         symbol: coin.symbol,
         name: coin.name,
-        action: aiAnalysis.action,
+        action,
         price: `$${currentPrice.toFixed(4)}`,
-        confidence: aiAnalysis.confidence,
+        confidence,
         signal: aiAnalysis.signal,
-        reason: aiAnalysis.reason,
-        insights: aiAnalysis.insights,
+        reason,
+        insights,
         timestamp: new Date(),
         usesMockData,
+        news: newsHeadlines,
         indicators: {
           momentum: momentumHeadline,
           frames: Object.fromEntries(
@@ -1049,6 +1150,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       minConfidence: this.minConfidence,
       trackedCoins: this.trackedCoins.length,
       telegramEnabled: TELEGRAM_ENABLED,
+      newsEnabled: NEWS_ENABLED,
       selectedInterval: this.selectedIntervalKey,
       scanProgress: this.getScanProgress(),
       greedFear: this.greedFearIndex,
@@ -1195,6 +1297,9 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
 - Support: ${support}
 - Resistance: ${resistance}`;
     };
+    const newsLines = (technicalData.news || [])
+      .map((news) => `- (${news.source}) ${news.title}`)
+      .join('\n') || '- No significant headlines in the last few hours';
     return `PROFESSIONAL TECHNICAL ANALYSIS REQUEST:
 
 CRYPTO: ${technicalData.symbol} - ${technicalData.name}
@@ -1211,6 +1316,9 @@ ${frameToText('1d', '1 Day')}
 ${frameToText('1w', '1 Week')}
 
 Provide a technical view that balances short-term (10m/1h), swing (4h/1d), and macro (1w) context.
+
+RECENT NEWS:
+${newsLines}
 
 Respond with JSON:
 {
@@ -1313,6 +1421,10 @@ Respond with JSON:
       insights = ['Momentum building across timeframes', 'Look for pullback entries', 'Maintain disciplined stop'];
     }
 
+    if (technicalData.news && technicalData.news.length > 0) {
+      insights = [...insights, `News to watch: ${technicalData.news[0].title}`];
+    }
+
     return {
       action,
       confidence,
@@ -1334,6 +1446,7 @@ Respond with JSON:
       insights: ['Data fetch failed'],
       timestamp: new Date(),
       usesMockData: true,
+      news: [],
       indicators: {
         momentum: 'N/A',
         frames: {},
@@ -1449,6 +1562,7 @@ app.get('/bot-status', (req, res) => {
     minConfidence: tradingBot.minConfidence,
     stats: tradingBot.getStats(),
     telegramEnabled: TELEGRAM_ENABLED,
+    newsEnabled: NEWS_ENABLED,
     lastUpdate: new Date(),
   });
 });
@@ -1460,6 +1574,7 @@ app.get('/health', (req, res) => {
     strategy: 'Technical Analysis (Enhanced)',
     autoScan: tradingBot.isRunning,
     telegramEnabled: TELEGRAM_ENABLED,
+    newsEnabled: NEWS_ENABLED,
     scanInterval: tradingBot.selectedIntervalKey,
     coinsTracked: tradingBot.trackedCoins.length,
     lastSuccessfulScan: tradingBot.stats.lastSuccessfulScan,
@@ -1936,6 +2051,44 @@ app.get('/', (req, res) => {
           .button-group { grid-template-columns: 1fr; }
           .main-content, .sidebar { padding: 20px; }
         }
+        .insights-list li::before {
+          content: '→';
+          position: absolute;
+          left: 12px;
+          color: #6366f1;
+          font-weight: bold;
+        }
+        .news-section {
+          margin-top: 20px;
+          padding: 16px;
+          background: rgba(15, 23, 42, 0.04);
+          border-radius: 12px;
+          border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+        .news-section h4 {
+          margin-bottom: 10px;
+          font-size: 1em;
+          color: #0f172a;
+        }
+        .news-section ul {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+        }
+        .news-section li {
+          padding: 8px 0;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        }
+        .news-section li:last-child {
+          border-bottom: none;
+        }
+        .news-section a {
+          color: #2563eb;
+          text-decoration: none;
+        }
+        .news-section a:hover {
+          text-decoration: underline;
+        }
       </style>
     </head>
     <body>
@@ -2212,7 +2365,8 @@ app.get('/', (req, res) => {
               document.getElementById('historySkipped').textContent = data.stats.skippedDueToOverlap || 0;
 
               document.getElementById('telemetryStatus').textContent =
-                'Telegram: ' + (data.telegramEnabled ? '✅ Enabled' : '⚠️ Disabled');
+                'Telegram: ' + (data.telegramEnabled ? '✅ Enabled' : '⚠️ Disabled') +
+                ' • News: ' + (data.newsEnabled ? '✅ Enabled' : '⚠️ Disabled');
 
               updateSentimentCard(data.stats.greedFear);
               renderHeatmap(data.stats.heatmap);
@@ -2291,6 +2445,10 @@ app.get('/', (req, res) => {
               if (analysis.result) {
                 insightDetails.push({ label: 'AI Verdict', value: analysis.result.action + ' • ' + analysis.result.confidence });
                 insightDetails.push({ label: 'Rationale', value: analysis.result.reason });
+              }
+
+              if (analysis.news && analysis.news.length > 0) {
+                insightDetails.push({ label: 'News', value: analysis.news[0].title });
               }
 
               const insightList = insightDetails.map((item) => {
@@ -2426,6 +2584,20 @@ app.get('/', (req, res) => {
                 .map((item) => '<li><span class="ai-tag">' + item.label + '</span>' + item.value + '</li>')
                 .join('');
 
+              const newsItems = Array.isArray(opp.news) ? opp.news : [];
+              const newsHtml = newsItems.length > 0
+                ? '<div class="news-section"><h4>📰 Latest Headlines</h4><ul>' +
+                  newsItems.map((article) => {
+                    const published = article.publishedAt ? new Date(article.publishedAt).toLocaleString() : '';
+                    return '<li><a href="' + article.url + '" target="_blank" rel="noopener noreferrer">' + article.title + '</a>' +
+                      (article.source ? ' <em>(' + article.source + ')</em>' : '') +
+                      (published ? '<div style="font-size:0.75em;color:#475569;margin-top:4px;">' + published + '</div>' : '') +
+                      (article.description ? '<div style="font-size:0.85em;color:#475569;margin-top:4px;">' + article.description + '</div>' : '') +
+                      '</li>';
+                  }).join('') +
+                  '</ul></div>'
+                : '';
+
               html += '<div class="opportunity ' + actionClass + '">' +
                 '<div class="coin-header">' +
                   '<div class="coin-name">' + opp.name + ' (' + opp.symbol + ')</div>' +
@@ -2452,6 +2624,7 @@ app.get('/', (req, res) => {
                   '<h4>💡 Key Insights</h4>' +
                   '<ul>' + opp.insights.map((i) => '<li>' + i + '</li>').join('') + '</ul>' +
                 '</div>' +
+                newsHtml +
               '</div>';
             });
 
