@@ -818,17 +818,20 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         this.updateLiveAnalysis();
       }, 2500);
 
+      // Extract frame indicators for easier reference
       const dailyFrame = frameIndicators['1d'] || {};
       const hourlyFrame = frameIndicators['1h'] || {};
       const fastFrame = frameIndicators['10m'] || {};
       const fourHourFrame = frameIndicators['4h'] || {};
       const weeklyFrame = frameIndicators['1w'] || {};
-      const momentumHeadline =
-        fastFrame.momentum ||
-        hourlyFrame.momentum ||
-        dailyFrame.momentum ||
-        fourHourFrame.momentum ||
-        'NEUTRAL';
+
+      const dailyRsi = Number(dailyFrame.rsi) || 50;
+      const dailyBB = dailyFrame.bollingerPosition || 'MIDDLE';
+      const dailyTrend = dailyFrame.trend || 'SIDEWAYS';
+      const hourlyRsi = Number(hourlyFrame.rsi) || 50;
+      const hourlyTrend = hourlyFrame.trend || 'SIDEWAYS';
+      const momentum10m = fastFrame.momentum || 'NEUTRAL';
+      const weeklyTrend = weeklyFrame.trend || 'SIDEWAYS';
 
       let action = aiAnalysis.action;
       let confidence = aiAnalysis.confidence;
@@ -869,9 +872,9 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         reason = 'Short-term momentum and daily trend both bearish';
         insights = ['Potential continuation move', 'Watch for support breaks', 'Consider partial position sizing'];
       } else if (
-        frame1w.trend === 'BULLISH' &&
-        frame1d.trend === 'BULLISH' &&
-        frame4h.trend === 'BULLISH'
+        weeklyFrame.trend === 'BULLISH' &&
+        dailyFrame.trend === 'BULLISH' &&
+        fourHourFrame.trend === 'BULLISH'
       ) {
         action = 'BUY';
         confidence = 0.62;
@@ -882,6 +885,13 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       if (scanOptions.news && scanOptions.news.length > 0) {
         insights = [...insights, `News to watch: ${scanOptions.news[0].title}`];
       }
+
+      const momentumHeadline =
+        fastFrame.momentum ||
+        hourlyFrame.momentum ||
+        dailyFrame.momentum ||
+        fourHourFrame.momentum ||
+        'NEUTRAL';
 
       return {
         symbol: coin.symbol,
@@ -2282,6 +2292,7 @@ app.get('/', (req, res) => {
       <script>
         let analysisUpdateInterval = null;
         let scanInFlight = false;
+        let progressPollInterval = null;
         const intervalLabels = {
           '10m': 'Every 10 minutes',
           '1h': 'Every 1 hour',
@@ -2469,18 +2480,36 @@ app.get('/', (req, res) => {
               const pct = typeof progress.percent === 'number' ? progress.percent : 0;
               fill.style.width = pct + '%';
               text.textContent = pct + '% (' + (progress.processed || 0) + '/' + (progress.total || 0) + ')';
+              
+              // Keep polling while running
+              if (!progressPollInterval) {
+                progressPollInterval = setInterval(pollScanProgress, 2000);
+              }
             } else if (progress.percent === 100) {
               container.style.display = 'block';
               fill.style.width = '100%';
               text.textContent = '100% (' + progress.total + '/' + progress.total + ')';
+              
+              // Stop polling and hide after delay
+              if (progressPollInterval) {
+                clearInterval(progressPollInterval);
+                progressPollInterval = null;
+              }
+              
               setTimeout(() => {
                 container.style.display = 'none';
                 fill.style.width = '0%';
-              }, 4000);
+              }, 3000);
             } else {
               container.style.display = 'none';
               fill.style.width = '0%';
               text.textContent = '0%';
+              
+              // Stop polling when not running
+              if (progressPollInterval) {
+                clearInterval(progressPollInterval);
+                progressPollInterval = null;
+              }
             }
           } catch (error) {
             console.log('Progress poll failed:', error);
@@ -2568,6 +2597,10 @@ app.get('/', (req, res) => {
             document.getElementById('statusText').innerHTML = '🛑 Stopped';
             document.getElementById('nextScan').textContent = 'Next scan: Manual mode';
             if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
+            if (progressPollInterval) {
+              clearInterval(progressPollInterval);
+              progressPollInterval = null;
+            }
             const container = document.getElementById('scanProgressContainer');
             const fill = document.getElementById('scanProgressFill');
             const text = document.getElementById('scanProgressText');
@@ -2587,8 +2620,13 @@ app.get('/', (req, res) => {
             if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
             analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
             updateLiveAnalysis();
-            pollScanProgress();
             scanInFlight = true;
+            
+            // Start progress polling
+            if (!progressPollInterval) {
+              progressPollInterval = setInterval(pollScanProgress, 2000);
+            }
+            pollScanProgress();
 
             const scanOptions = {
               minConfidence: (Number(document.getElementById('confidenceSlider').value) || 65) / 100,
@@ -2616,6 +2654,12 @@ app.get('/', (req, res) => {
             updateStats();
             if (data.greedFear) updateSentimentCard(data.greedFear);
             scanInFlight = false;
+            
+            // Stop polling after scan completes
+            if (progressPollInterval) {
+              clearInterval(progressPollInterval);
+              progressPollInterval = null;
+            }
 
             if (!data || !data.opportunities || data.opportunities.length === 0) {
               const msg = data.status === 'skipped'
@@ -2719,6 +2763,10 @@ app.get('/', (req, res) => {
             console.error('Scan error:', error);
             document.getElementById('results').innerHTML = '<div class="no-opportunities" style="color: #ef4444;"><h3>❌ Scan Failed</h3><p>Please try again</p></div>';
             scanInFlight = false;
+            if (progressPollInterval) {
+              clearInterval(progressPollInterval);
+              progressPollInterval = null;
+            }
           }
         }
 
@@ -2743,7 +2791,6 @@ app.get('/', (req, res) => {
         manualScan();
 
         setInterval(updateStats, 20000);
-        setInterval(pollScanProgress, 3000);
         pollScanProgress();
 
         function updateConfidenceLabel(value) {
