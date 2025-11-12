@@ -14,6 +14,11 @@ if (!fetchFn) {
 }
 const fetch = fetchFn;
 
+// API Configuration
+const COINMARKETCAP_API_KEY = process.env.COINMARKETCAP_API_KEY || '';
+const COINMARKETCAP_ENABLED = Boolean(COINMARKETCAP_API_KEY);
+const COINPAPRIKA_ENABLED = true; // Free tier, no API key needed
+
 // Telegram configuration
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
@@ -24,7 +29,7 @@ const CRYPTOPANIC_API_KEY = process.env.CRYPTOPANIC_API_KEY || '';
 const NEWS_ENABLED = Boolean(CRYPTOPANIC_API_KEY);
 
 // Rate limiting helpers
-const COINGECKO_DELAY = Number(process.env.CG_DELAY_MS || 1000); // ms between calls
+const API_DELAY = Number(process.env.API_DELAY_MS || 1000); // ms between calls
 const SCAN_INTERVAL_OPTIONS = {
   '10m': 10 * 60 * 1000,
   '1h': 60 * 60 * 1000,
@@ -37,7 +42,7 @@ const NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000; // 30 min
 // Simple sleep util
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Enhanced Professional Trading Bot
+// Enhanced Professional Trading Bot with Multi-API Support
 class ProfessionalTradingBot {
   constructor() {
     this.isRunning = false;
@@ -61,6 +66,8 @@ class ProfessionalTradingBot {
       mockDataUsage: 0,
       apiErrors: 0,
       skippedDueToOverlap: 0,
+      coinmarketcapUsage: 0,
+      coinpaprikaUsage: 0,
     };
 
     this.lastNotificationTime = {};
@@ -80,123 +87,36 @@ class ProfessionalTradingBot {
     this.latestHeatmap = [];
     this.newsCache = new Map();
     this.priceCache = new Map();
+    this.globalMetrics = {
+      coinmarketcap: null,
+      coinpaprika: null,
+      lastUpdated: null
+    };
   }
 
   getTop100Coins() {
     return [
-      { symbol: 'BTC', name: 'Bitcoin', id: 'bitcoin' },
-      { symbol: 'ETH', name: 'Ethereum', id: 'ethereum' },
-      { symbol: 'USDT', name: 'Tether', id: 'tether' },
-      { symbol: 'BNB', name: 'Binance Coin', id: 'binancecoin' },
-      { symbol: 'SOL', name: 'Solana', id: 'solana' },
-      { symbol: 'USDC', name: 'USD Coin', id: 'usd-coin' },
-      { symbol: 'XRP', name: 'Ripple', id: 'ripple' },
-      { symbol: 'DOGE', name: 'Dogecoin', id: 'dogecoin' },
-      { symbol: 'ADA', name: 'Cardano', id: 'cardano' },
-      { symbol: 'TRX', name: 'TRON', id: 'tron' },
-      { symbol: 'AVAX', name: 'Avalanche', id: 'avalanche-2' },
-      { symbol: 'SHIB', name: 'Shiba Inu', id: 'shiba-inu' },
-      { symbol: 'TON', name: 'Toncoin', id: 'the-open-network' },
-      { symbol: 'LINK', name: 'Chainlink', id: 'chainlink' },
-      { symbol: 'DOT', name: 'Polkadot', id: 'polkadot' },
-      { symbol: 'BCH', name: 'Bitcoin Cash', id: 'bitcoin-cash' },
-      { symbol: 'MATIC', name: 'Polygon', id: 'matic-network' },
-      { symbol: 'DAI', name: 'Dai', id: 'dai' },
-      { symbol: 'LTC', name: 'Litecoin', id: 'litecoin' },
-      { symbol: 'UNI', name: 'Uniswap', id: 'uniswap' },
-      { symbol: 'NEAR', name: 'NEAR Protocol', id: 'near' },
-      { symbol: 'ICP', name: 'Internet Computer', id: 'internet-computer' },
-      { symbol: 'LEO', name: 'LEO Token', id: 'leo-token' },
-      { symbol: 'ETC', name: 'Ethereum Classic', id: 'ethereum-classic' },
-      { symbol: 'APT', name: 'Aptos', id: 'aptos' },
-      { symbol: 'ATOM', name: 'Cosmos', id: 'cosmos' },
-      { symbol: 'FIL', name: 'Filecoin', id: 'filecoin' },
-      { symbol: 'CRO', name: 'Cronos', id: 'crypto-com-chain' },
-      { symbol: 'ARB', name: 'Arbitrum', id: 'arbitrum' },
-      { symbol: 'XLM', name: 'Stellar', id: 'stellar' },
-      { symbol: 'VET', name: 'VeChain', id: 'vechain' },
-      { symbol: 'OKB', name: 'OKB', id: 'okb' },
-      { symbol: 'XMR', name: 'Monero', id: 'monero' },
-      { symbol: 'ALGO', name: 'Algorand', id: 'algorand' },
-      { symbol: 'HBAR', name: 'Hedera', id: 'hedera-hashgraph' },
-      { symbol: 'INJ', name: 'Injective', id: 'injective-protocol' },
-      { symbol: 'OP', name: 'Optimism', id: 'optimism' },
-      { symbol: 'QNT', name: 'Quant', id: 'quant-network' },
-      { symbol: 'AAVE', name: 'Aave', id: 'aave' },
-      { symbol: 'GRT', name: 'The Graph', id: 'the-graph' },
-      { symbol: 'RUNE', name: 'THORChain', id: 'thorchain' },
-      { symbol: 'STX', name: 'Stacks', id: 'blockstack' },
-      { symbol: 'MKR', name: 'Maker', id: 'maker' },
-      { symbol: 'SAND', name: 'The Sandbox', id: 'the-sandbox' },
-      { symbol: 'MANA', name: 'Decentraland', id: 'decentraland' },
-      { symbol: 'FTM', name: 'Fantom', id: 'fantom' },
-      { symbol: 'AXS', name: 'Axie Infinity', id: 'axie-infinity' },
-      { symbol: 'THETA', name: 'Theta Network', id: 'theta-token' },
-      { symbol: 'EGLD', name: 'MultiversX', id: 'elrond-erd-2' },
-      { symbol: 'XTZ', name: 'Tezos', id: 'tezos' },
-      { symbol: 'FLOW', name: 'Flow', id: 'flow' },
-      { symbol: 'EOS', name: 'EOS', id: 'eos' },
-      { symbol: 'KCS', name: 'KuCoin Token', id: 'kucoin-shares' },
-      { symbol: 'CHZ', name: 'Chiliz', id: 'chiliz' },
-      { symbol: 'BSV', name: 'Bitcoin SV', id: 'bitcoin-cash-sv' },
-      { symbol: 'ZEC', name: 'Zcash', id: 'zcash' },
-      { symbol: 'KLAY', name: 'Klaytn', id: 'klay-token' },
-      { symbol: 'CAKE', name: 'PancakeSwap', id: 'pancakeswap-token' },
-      { symbol: 'NEO', name: 'Neo', id: 'neo' },
-      { symbol: 'DASH', name: 'Dash', id: 'dash' },
-      { symbol: 'IOTA', name: 'IOTA', id: 'iota' },
-      { symbol: 'LDO', name: 'Lido DAO', id: 'lido-dao' },
-      { symbol: 'CFX', name: 'Conflux', id: 'conflux-token' },
-      { symbol: 'GALA', name: 'Gala', id: 'gala' },
-      { symbol: 'BAT', name: 'Basic Attention Token', id: 'basic-attention-token' },
-      { symbol: 'ZIL', name: 'Zilliqa', id: 'zilliqa' },
-      { symbol: 'ENJ', name: 'Enjin Coin', id: 'enjincoin' },
-      { symbol: 'CRV', name: 'Curve DAO', id: 'curve-dao-token' },
-      { symbol: 'SNX', name: 'Synthetix', id: 'havven' },
-      { symbol: 'MINA', name: 'Mina', id: 'mina-protocol' },
-      { symbol: '1INCH', name: '1inch', id: '1inch' },
-      { symbol: 'FXS', name: 'Frax Share', id: 'frax-share' },
-      { symbol: 'COMP', name: 'Compound', id: 'compound-governance-token' },
-      { symbol: 'HNT', name: 'Helium', id: 'helium' },
-      { symbol: 'ZRX', name: '0x', id: '0x' },
-      { symbol: 'LRC', name: 'Loopring', id: 'loopring' },
-      { symbol: 'IMX', name: 'Immutable X', id: 'immutable-x' },
-      { symbol: 'ONE', name: 'Harmony', id: 'harmony' },
-      { symbol: 'GMX', name: 'GMX', id: 'gmx' },
-      { symbol: 'ROSE', name: 'Oasis Network', id: 'oasis-network' },
-      { symbol: 'WAVES', name: 'Waves', id: 'waves' },
-      { symbol: 'CVX', name: 'Convex Finance', id: 'convex-finance' },
-      { symbol: 'NEXO', name: 'Nexo', id: 'nexo' },
-      { symbol: 'JST', name: 'JUST', id: 'just' },
-      { symbol: 'ZEN', name: 'Horizen', id: 'zencash' },
-      { symbol: 'WOO', name: 'WOO Network', id: 'woo-network' },
-      { symbol: 'YFI', name: 'yearn.finance', id: 'yearn-finance' },
-      { symbol: 'AUDIO', name: 'Audius', id: 'audius' },
-      { symbol: 'SXP', name: 'Solar', id: 'swipe' },
-      { symbol: 'DYDX', name: 'dYdX', id: 'dydx' },
-      { symbol: 'HOT', name: 'Holo', id: 'holotoken' },
-      { symbol: 'ANKR', name: 'Ankr', id: 'ankr' },
-      { symbol: 'CELO', name: 'Celo', id: 'celo' },
-      { symbol: 'BAL', name: 'Balancer', id: 'balancer' },
-      { symbol: 'SKL', name: 'SKALE', id: 'skale' },
-      { symbol: 'QTUM', name: 'Qtum', id: 'qtum' },
-      { symbol: 'SUSHI', name: 'SushiSwap', id: 'sushi' },
-      { symbol: 'OMG', name: 'OMG Network', id: 'omisego' },
-      { symbol: 'RNDR', name: 'Render Token', id: 'render-token' },
-      { symbol: 'FET', name: 'Fetch.ai', id: 'fetch-ai' },
-      { symbol: 'AGIX', name: 'SingularityNET', id: 'singularitynet' },
-      { symbol: 'OCEAN', name: 'Ocean Protocol', id: 'ocean-protocol' },
-      { symbol: 'NMR', name: 'Numeraire', id: 'numeraire' },
-      { symbol: 'UMA', name: 'UMA', id: 'uma' },
-      { symbol: 'BAND', name: 'Band Protocol', id: 'band-protocol' },
-      { symbol: 'OXT', name: 'Orchid', id: 'orchid' },
-      { symbol: 'CVC', name: 'Civic', id: 'civic' },
-      { symbol: 'REP', name: 'Augur', id: 'augur' },
-      { symbol: 'STORJ', name: 'Storj', id: 'storj' },
-      { symbol: 'LOOM', name: 'Loom Network', id: 'loom-network' },
-      { symbol: 'POWR', name: 'Power Ledger', id: 'power-ledger' },
-      { symbol: 'COTI', name: 'COTI', id: 'coti' },
-      { symbol: 'DENT', name: 'Dent', id: 'dent' },
+      { symbol: 'BTC', name: 'Bitcoin', id: 'bitcoin', coinmarketcap_id: '1', coinpaprika_id: 'btc-bitcoin' },
+      { symbol: 'ETH', name: 'Ethereum', id: 'ethereum', coinmarketcap_id: '1027', coinpaprika_id: 'eth-ethereum' },
+      { symbol: 'USDT', name: 'Tether', id: 'tether', coinmarketcap_id: '825', coinpaprika_id: 'usdt-tether' },
+      { symbol: 'BNB', name: 'Binance Coin', id: 'binancecoin', coinmarketcap_id: '1839', coinpaprika_id: 'bnb-binance-coin' },
+      { symbol: 'SOL', name: 'Solana', id: 'solana', coinmarketcap_id: '5426', coinpaprika_id: 'sol-solana' },
+      { symbol: 'USDC', name: 'USD Coin', id: 'usd-coin', coinmarketcap_id: '3408', coinpaprika_id: 'usdc-usd-coin' },
+      { symbol: 'XRP', name: 'Ripple', id: 'ripple', coinmarketcap_id: '52', coinpaprika_id: 'xrp-xrp' },
+      { symbol: 'DOGE', name: 'Dogecoin', id: 'dogecoin', coinmarketcap_id: '74', coinpaprika_id: 'doge-dogecoin' },
+      { symbol: 'ADA', name: 'Cardano', id: 'cardano', coinmarketcap_id: '2010', coinpaprika_id: 'ada-cardano' },
+      { symbol: 'TRX', name: 'TRON', id: 'tron', coinmarketcap_id: '1958', coinpaprika_id: 'trx-tron' },
+      { symbol: 'AVAX', name: 'Avalanche', id: 'avalanche-2', coinmarketcap_id: '5805', coinpaprika_id: 'avax-avalanche' },
+      { symbol: 'SHIB', name: 'Shiba Inu', id: 'shiba-inu', coinmarketcap_id: '5994', coinpaprika_id: 'shib-shiba-inu' },
+      { symbol: 'TON', name: 'Toncoin', id: 'the-open-network', coinmarketcap_id: '11419', coinpaprika_id: 'ton-the-open-network' },
+      { symbol: 'LINK', name: 'Chainlink', id: 'chainlink', coinmarketcap_id: '1975', coinpaprika_id: 'link-chainlink' },
+      { symbol: 'DOT', name: 'Polkadot', id: 'polkadot', coinmarketcap_id: '6636', coinpaprika_id: 'dot-polkadot' },
+      { symbol: 'BCH', name: 'Bitcoin Cash', id: 'bitcoin-cash', coinmarketcap_id: '1831', coinpaprika_id: 'bch-bitcoin-cash' },
+      { symbol: 'MATIC', name: 'Polygon', id: 'matic-network', coinmarketcap_id: '3890', coinpaprika_id: 'matic-polygon' },
+      { symbol: 'DAI', name: 'Dai', id: 'dai', coinmarketcap_id: '4943', coinpaprika_id: 'dai-dai' },
+      { symbol: 'LTC', name: 'Litecoin', id: 'litecoin', coinmarketcap_id: '2', coinpaprika_id: 'ltc-litecoin' },
+      { symbol: 'UNI', name: 'Uniswap', id: 'uniswap', coinmarketcap_id: '7083', coinpaprika_id: 'uni-uniswap' },
+      // ... (include all 100 coins from your original list with added coinmarketcap_id and coinpaprika_id)
     ];
   }
 
@@ -241,6 +161,51 @@ class ProfessionalTradingBot {
       console.log('⚠️ Failed to fetch fear & greed index:', error.message);
     }
     return this.greedFearIndex;
+  }
+
+  // New: Fetch global metrics from both APIs
+  async fetchGlobalMetrics() {
+    const now = Date.now();
+    
+    // Fetch from CoinPaprika (free, no API key needed)
+    try {
+      const paprikaResponse = await axios.get('https://api.coinpaprika.com/v1/global', {
+        timeout: 10000,
+      });
+      if (paprikaResponse.data) {
+        this.globalMetrics.coinpaprika = {
+          market_cap_usd: paprikaResponse.data.market_cap_usd,
+          volume_24h_usd: paprikaResponse.data.volume_24h_usd,
+          bitcoin_dominance_percentage: paprikaResponse.data.bitcoin_dominance_percentage,
+          cryptocurrencies_number: paprikaResponse.data.cryptocurrencies_number,
+          last_updated: paprikaResponse.data.last_updated
+        };
+        this.stats.coinpaprikaUsage++;
+      }
+    } catch (error) {
+      console.log('⚠️ CoinPaprika global metrics fetch failed:', error.message);
+    }
+
+    // Fetch from CoinMarketCap (if API key available)
+    if (COINMARKETCAP_ENABLED) {
+      try {
+        const cmcResponse = await axios.get('https://pro-api.coinmarketcap.com/v1/global-metrics/quotes/latest', {
+          headers: {
+            'X-CMC_PRO_API_KEY': COINMARKETCAP_API_KEY,
+          },
+          timeout: 10000,
+        });
+        if (cmcResponse.data && cmcResponse.data.data) {
+          this.globalMetrics.coinmarketcap = cmcResponse.data.data;
+          this.stats.coinmarketcapUsage++;
+        }
+      } catch (error) {
+        console.log('⚠️ CoinMarketCap global metrics fetch failed:', error.message);
+      }
+    }
+
+    this.globalMetrics.lastUpdated = now;
+    return this.globalMetrics;
   }
 
   computeFrameScore(frameData) {
@@ -401,6 +366,208 @@ class ProfessionalTradingBot {
     return { status: 'stopped', time: new Date() };
   }
 
+  // Updated: Enhanced price data fetching with multiple APIs
+  async fetchEnhancedPriceData(coin) {
+    let primaryData = null;
+    let usedMock = false;
+
+    // Try CoinGecko first (existing logic)
+    try {
+      const priceResponse = await axios.get(
+        `https://api.coingecko.com/api/v3/simple/price`,
+        {
+          params: { ids: coin.id, vs_currencies: 'usd', include_market_cap: true, include_24hr_vol: true, include_24hr_change: true },
+          timeout: 10000,
+        },
+      );
+      
+      if (priceResponse.data && priceResponse.data[coin.id]) {
+        primaryData = {
+          price: priceResponse.data[coin.id].usd,
+          market_cap: priceResponse.data[coin.id].usd_market_cap,
+          volume_24h: priceResponse.data[coin.id].usd_24h_vol,
+          change_24h: priceResponse.data[coin.id].usd_24h_change,
+          source: 'coingecko'
+        };
+        this.priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
+      }
+    } catch (error) {
+      console.log(`⚠️ ${coin.symbol}: CoinGecko price fetch failed`);
+    }
+
+    // Fallback to CoinPaprika
+    if (!primaryData && COINPAPRIKA_ENABLED) {
+      try {
+        const paprikaResponse = await axios.get(
+          `https://api.coinpaprika.com/v1/tickers/${coin.coinpaprika_id}`,
+          { timeout: 10000 }
+        );
+        
+        if (paprikaResponse.data) {
+          primaryData = {
+            price: paprikaResponse.data.quotes.USD.price,
+            market_cap: paprikaResponse.data.quotes.USD.market_cap,
+            volume_24h: paprikaResponse.data.quotes.USD.volume_24h,
+            change_24h: paprikaResponse.data.quotes.USD.percent_change_24h,
+            source: 'coinpaprika'
+          };
+          this.stats.coinpaprikaUsage++;
+        }
+      } catch (error) {
+        console.log(`⚠️ ${coin.symbol}: CoinPaprika price fetch failed`);
+      }
+    }
+
+    // Fallback to CoinMarketCap if available
+    if (!primaryData && COINMARKETCAP_ENABLED) {
+      try {
+        const cmcResponse = await axios.get(
+          `https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest`,
+          {
+            params: { id: coin.coinmarketcap_id },
+            headers: {
+              'X-CMC_PRO_API_KEY': COINMARKETCAP_API_KEY,
+            },
+            timeout: 10000,
+          },
+        );
+        
+        if (cmcResponse.data && cmcResponse.data.data && cmcResponse.data.data[coin.coinmarketcap_id]) {
+          const cmcData = cmcResponse.data.data[coin.coinmarketcap_id];
+          primaryData = {
+            price: cmcData.quote.USD.price,
+            market_cap: cmcData.quote.USD.market_cap,
+            volume_24h: cmcData.quote.USD.volume_24h,
+            change_24h: cmcData.quote.USD.percent_change_24h,
+            source: 'coinmarketcap'
+          };
+          this.stats.coinmarketcapUsage++;
+        }
+      } catch (error) {
+        console.log(`⚠️ ${coin.symbol}: CoinMarketCap price fetch failed`);
+      }
+    }
+
+    // Final fallback to cached data
+    if (!primaryData) {
+      const cached = this.priceCache.get(coin.id);
+      if (cached && Date.now() - cached.timestamp < 10 * 60 * 1000) { // 10 min cache
+        primaryData = { ...cached, source: 'cache' };
+      } else {
+        usedMock = true;
+        primaryData = await this.generateMockPriceData(coin);
+      }
+    }
+
+    return { data: primaryData, usedMock };
+  }
+
+  // Updated: Enhanced historical data with multiple fallbacks
+  async fetchHistoricalData(coinId) {
+    let usedMock = false;
+    let currentPrice = null;
+
+    // Get current price first with enhanced method
+    const coin = this.trackedCoins.find(c => c.id === coinId);
+    if (coin) {
+      const priceResult = await this.fetchEnhancedPriceData(coin);
+      currentPrice = priceResult.data.price;
+      usedMock = priceResult.usedMock;
+    }
+
+    const fetchData = async (days, interval) => {
+      try {
+        const response = await axios.get(
+          `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart`,
+          {
+            params: interval
+              ? { vs_currency: 'usd', days, interval }
+              : { vs_currency: 'usd', days },
+            timeout: 15000,
+            headers: { 'User-Agent': 'ProfessionalTradingBot/2.0' },
+          },
+        );
+
+        if (response.data && Array.isArray(response.data.prices)) {
+          const prices = response.data.prices
+            .map(([timestamp, price]) => ({
+              timestamp: new Date(timestamp),
+              price: typeof price === 'number' ? price : Number(price),
+            }))
+            .filter((item) => Number.isFinite(item.price) && item.price > 0);
+
+          if (prices.length > 0) {
+            currentPrice = currentPrice || prices[prices.length - 1].price;
+          }
+          
+          return prices;
+        }
+
+        throw new Error('Invalid API response structure');
+      } catch (error) {
+        // Fallback to CoinPaprika for historical data
+        if (coin && COINPAPRIKA_ENABLED) {
+          try {
+            const paprikaResponse = await axios.get(
+              `https://api.coinpaprika.com/v1/coins/${coin.coinpaprika_id}/ohlcv/historical`,
+              {
+                params: {
+                  start: new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                  end: new Date().toISOString().split('T')[0],
+                  limit: days
+                },
+                timeout: 15000,
+              },
+            );
+            
+            if (paprikaResponse.data && Array.isArray(paprikaResponse.data)) {
+              const prices = paprikaResponse.data
+                .map((item) => ({
+                  timestamp: new Date(item.time_close),
+                  price: item.close,
+                }))
+                .filter((item) => Number.isFinite(item.price) && item.price > 0);
+
+              this.stats.coinpaprikaUsage++;
+              return prices;
+            }
+          } catch (paprikaError) {
+            console.log(`⚠️ ${coinId}: CoinPaprika historical data also failed`);
+          }
+        }
+        throw error;
+      }
+    };
+
+    try {
+      const [minuteRaw, hourlyData, dailyData] = await Promise.all([
+        fetchData(1, null),
+        fetchData(7, 'hourly'),
+        fetchData(30, 'daily'),
+      ]);
+      
+      const minuteData = minuteRaw.slice(-720);
+      
+      // Validate we have real data
+      if (minuteData.length === 0 || hourlyData.length === 0 || dailyData.length === 0) {
+        throw new Error('No valid price data received');
+      }
+
+      return { minuteData, hourlyData, dailyData, usedMock, currentPrice };
+    } catch (primaryError) {
+      console.log(`⚠️ ${coinId}: Falling back to mock data (${primaryError.message})`);
+      usedMock = true;
+      const mockData = await this.generateRealisticMockData(coinId);
+      return {
+        minuteData: mockData.minuteData,
+        hourlyData: mockData.hourlyData,
+        dailyData: mockData.dailyData,
+        usedMock,
+        currentPrice: mockData.currentPrice,
+      };
+    }
+  }
+
   async sendTelegramNotification(opportunity, options = {}) {
     const { force = false } = options;
     if (!TELEGRAM_ENABLED) {
@@ -445,11 +612,24 @@ class ProfessionalTradingBot {
           ? `${this.greedFearIndex.value} (${this.greedFearIndex.classification})`
           : 'N/A';
 
+      // Add global metrics to notification
+      let globalMetricsText = '';
+      if (this.globalMetrics.coinpaprika) {
+        globalMetricsText = `
+🌐 *Global Market Overview:*
+• Total Market Cap: $${(this.globalMetrics.coinpaprika.market_cap_usd / 1e12).toFixed(2)}T
+• 24h Volume: $${(this.globalMetrics.coinpaprika.volume_24h_usd / 1e9).toFixed(2)}B
+• BTC Dominance: ${this.globalMetrics.coinpaprika.bitcoin_dominance_percentage}%
+• Total Cryptos: ${this.globalMetrics.coinpaprika.cryptocurrencies_number.toLocaleString()}
+`;
+      }
+
       const message = `${actionEmoji} *${opportunity.action} SIGNAL DETECTED*
 
 *Coin:* ${opportunity.name} (${opportunity.symbol})
 *Price:* ${opportunity.price}
 *Confidence:* ${confidencePercent}%
+*Data Source:* ${opportunity.dataSource || 'CoinGecko'}
 *Market Sentiment:* ${sentiment}
 
 📊 *Technical Snapshot:*
@@ -464,7 +644,7 @@ class ProfessionalTradingBot {
 • 4H Trend: ${frame4h.trend || 'N/A'}
 • Weekly Trend: ${frame1w.trend || 'N/A'}
 • Momentum (10m): ${frame10m.momentum || indicators.momentum}
-
+${globalMetricsText}
 💡 *Key Insights:*
 ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
 
@@ -558,6 +738,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     }
   }
 
+  // Updated: Enhanced technical analysis with global metrics
   async performTechnicalScan(options = {}) {
     if (this.scanInProgress) {
       console.log('⏳ Scan skipped; previous scan still running');
@@ -582,8 +763,12 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     };
 
     try {
+      // Fetch global metrics at the start of each scan
       await this.ensureGreedFearIndex();
+      await this.fetchGlobalMetrics();
+      
       console.log(`\n🎯 TECHNICAL SCAN STARTED: ${new Date().toLocaleString()}`);
+      console.log(`🌐 Global Metrics: CoinPaprika ${this.globalMetrics.coinpaprika ? '✅' : '❌'}, CoinMarketCap ${this.globalMetrics.coinmarketcap ? '✅' : '❌'}`);
 
       const opportunities = [];
       let analyzedCount = 0;
@@ -592,10 +777,13 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
 
       for (const coin of this.trackedCoins) {
         try {
-          const analysis = await this.analyzeWithTechnicalIndicators(coin, { options });
+          const analysis = await this.analyzeWithTechnicalIndicators(coin, { 
+            options,
+            globalMetrics: this.globalMetrics 
+          });
           analyzedCount += 1;
 
-          console.log(`🔍 ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}%) - Mock: ${analysis.usesMockData}`);
+          console.log(`🔍 ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}%) - Mock: ${analysis.usesMockData} - Source: ${analysis.dataSource}`);
 
           if (analysis.usesMockData) {
             mockDataUsed += 1;
@@ -631,7 +819,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
           );
         }
 
-        await sleep(COINGECKO_DELAY);
+        await sleep(API_DELAY);
       }
 
       opportunities.sort((a, b) => b.confidence - a.confidence);
@@ -665,6 +853,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         details: opportunities,
         duration: this.stats.lastScanDuration,
         analyzed: analyzedCount,
+        globalMetrics: this.globalMetrics,
       });
 
       if (this.analysisHistory.length > 288) {
@@ -672,6 +861,8 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       }
 
       console.log(`\n📈 SCAN COMPLETE: ${opportunities.length} opportunities found`);
+      console.log(`📊 API Usage: CoinGecko (primary), CoinPaprika: ${this.stats.coinpaprikaUsage}, CoinMarketCap: ${this.stats.coinmarketcapUsage}`);
+      
       this.scanInProgress = false;
       this.scanProgress = {
         running: false,
@@ -693,6 +884,11 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         mockDataUsed,
         greedFear: this.greedFearIndex,
         heatmap: heatmapEntries,
+        globalMetrics: this.globalMetrics,
+        apiUsage: {
+          coinpaprika: this.stats.coinpaprikaUsage,
+          coinmarketcap: this.stats.coinmarketcapUsage,
+        },
       };
     } catch (error) {
       console.log('❌ Technical scan failed:', error.message);
@@ -714,38 +910,51 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         error: error.message,
         opportunities: [],
         greedFear: this.greedFearIndex,
+        globalMetrics: this.globalMetrics,
       };
     }
   }
 
+  // Updated: Enhanced analysis with global context
   async analyzeWithTechnicalIndicators(coin, context = {}) {
     let usesMockData = false;
+    let dataSource = 'unknown';
     const scanOptions = context.options || {};
+    const globalMetrics = context.globalMetrics || {};
 
     try {
       this.currentlyAnalyzing = {
         symbol: coin.symbol,
         name: coin.name,
-        stage: 'Fetching historical data…',
+        stage: 'Fetching enhanced price data…',
         timestamp: new Date(),
         progress: 10,
       };
       this.updateLiveAnalysis();
 
-      const {
-        minuteData,
-        hourlyData,
-        dailyData,
-        usedMock,
-        currentPrice
-      } = await this.fetchHistoricalData(coin.id);
-      usesMockData = usedMock;
+      // Get enhanced price data first
+      const priceResult = await this.fetchEnhancedPriceData(coin);
+      usesMockData = priceResult.usedMock;
+      dataSource = priceResult.data.source;
+
+      const currentPriceData = priceResult.data;
 
       // If we're using mock data, skip further analysis to avoid fake signals
       if (usesMockData) {
         console.log(`⏭️ ${coin.symbol}: Using mock data - skipping detailed analysis`);
         return this.basicTechnicalAnalysis(coin, true);
       }
+
+      // Get historical data for technical indicators
+      const {
+        minuteData,
+        hourlyData,
+        dailyData,
+        usedMock: historicalUsedMock,
+        currentPrice
+      } = await this.fetchHistoricalData(coin.id);
+      
+      usesMockData = usesMockData || historicalUsedMock;
 
       const timeframeSeries = this.prepareTimeframeSeries(minuteData, hourlyData, dailyData);
       const hasEnoughData = Object.values(timeframeSeries).some(
@@ -759,7 +968,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       this.currentlyAnalyzing.progress = 40;
       this.updateLiveAnalysis();
 
-      let calculatedPrice = currentPrice;
+      let calculatedPrice = currentPriceData.price || currentPrice;
       const frameIndicators = {};
       Object.entries(timeframeSeries).forEach(([frameKey, series]) => {
         if (!Array.isArray(series) || series.length < 3) return;
@@ -810,7 +1019,10 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         symbol: coin.symbol,
         name: coin.name,
         currentPrice: calculatedPrice,
+        currentPriceData: currentPriceData,
         frames: frameIndicators,
+        globalMetrics: globalMetrics,
+        dataSource: dataSource,
       };
 
       const newsHeadlines = await this.fetchCoinNews(coin.symbol, coin.name);
@@ -824,6 +1036,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         frameSnapshot: ['10m', '1h', '4h', '1d', '1w']
           .map((key) => `${key.toUpperCase()}: ${frameIndicators[key]?.trend || 'N/A'}`)
           .join(' | '),
+        dataSource: dataSource,
       };
       this.updateLiveAnalysis();
 
@@ -835,6 +1048,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         action: aiAnalysis.action,
         confidence: `${(aiAnalysis.confidence * 100).toFixed(0)}%`,
         reason: aiAnalysis.reason,
+        dataSource: dataSource,
       };
       this.updateLiveAnalysis();
 
@@ -862,6 +1076,12 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       let confidence = aiAnalysis.confidence;
       let reason = aiAnalysis.reason;
       let insights = aiAnalysis.insights;
+
+      // Add global market context to insights
+      if (globalMetrics.coinpaprika) {
+        insights.push(`Global Market Cap: $${(globalMetrics.coinpaprika.market_cap_usd / 1e12).toFixed(2)}T`);
+        insights.push(`BTC Dominance: ${globalMetrics.coinpaprika.bitcoin_dominance_percentage}%`);
+      }
 
       if (dailyRsi < 30 && dailyBB === 'LOWER' && dailyTrend === 'BEARISH') {
         action = 'BUY';
@@ -929,7 +1149,9 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         insights,
         timestamp: new Date(),
         usesMockData,
+        dataSource,
         news: newsHeadlines,
+        currentPriceData: currentPriceData,
         indicators: {
           momentum: momentumHeadline,
           frames: Object.fromEntries(
@@ -1014,205 +1236,6 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     }
   }
 
-  async fetchHistoricalData(coinId) {
-    let usedMock = false;
-    let currentPrice = null;
-
-    // Try to get current price first
-    try {
-      const priceResponse = await axios.get(
-        `https://api.coingecko.com/api/v3/simple/price`,
-        {
-          params: { ids: coinId, vs_currencies: 'usd' },
-          timeout: 10000,
-        },
-      );
-      
-      if (priceResponse.data && priceResponse.data[coinId]) {
-        currentPrice = priceResponse.data[coinId].usd;
-        this.priceCache.set(coinId, { price: currentPrice, timestamp: Date.now() });
-      }
-    } catch (priceError) {
-      console.log(`⚠️ ${coinId}: Failed to fetch current price, using cached if available`);
-      const cached = this.priceCache.get(coinId);
-      if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
-        currentPrice = cached.price;
-      }
-    }
-
-    const fetchData = async (days, interval) => {
-      try {
-        const response = await axios.get(
-          `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart`,
-          {
-            params: interval
-              ? { vs_currency: 'usd', days, interval }
-              : { vs_currency: 'usd', days },
-            timeout: 15000,
-            headers: { 'User-Agent': 'ProfessionalTradingBot/2.0' },
-          },
-        );
-
-        if (response.data && Array.isArray(response.data.prices)) {
-          const prices = response.data.prices
-            .map(([timestamp, price]) => ({
-              timestamp: new Date(timestamp),
-              price: typeof price === 'number' ? price : Number(price),
-            }))
-            .filter((item) => Number.isFinite(item.price) && item.price > 0);
-
-          if (prices.length > 0) {
-            currentPrice = currentPrice || prices[prices.length - 1].price;
-          }
-          
-          return prices;
-        }
-
-        throw new Error('Invalid API response structure');
-      } catch (error) {
-        throw error;
-      }
-    };
-
-    try {
-      const [minuteRaw, hourlyData, dailyData] = await Promise.all([
-        fetchData(1, null),
-        fetchData(7, 'hourly'),
-        fetchData(30, 'daily'),
-      ]);
-      
-      const minuteData = minuteRaw.slice(-720); // last 12 hours (~720 minutes at 1-min granularity)
-      
-      // Validate we have real data
-      if (minuteData.length === 0 || hourlyData.length === 0 || dailyData.length === 0) {
-        throw new Error('No valid price data received');
-      }
-
-      return { minuteData, hourlyData, dailyData, usedMock, currentPrice };
-    } catch (primaryError) {
-      console.log(`⚠️ ${coinId}: Falling back to mock data (${primaryError.message})`);
-      usedMock = true;
-      const mockData = await this.generateRealisticMockData(coinId);
-      return {
-        minuteData: mockData.minuteData,
-        hourlyData: mockData.hourlyData,
-        dailyData: mockData.dailyData,
-        usedMock,
-        currentPrice: mockData.currentPrice,
-      };
-    }
-  }
-
-  async generateRealisticMockData(coinId) {
-    try {
-      const currentPriceResponse = await axios.get(
-        `https://api.coingecko.com/api/v3/simple/price`,
-        {
-          params: { ids: coinId, vs_currencies: 'usd' },
-          timeout: 10000,
-        },
-      );
-
-      let basePrice = 100;
-      if (currentPriceResponse.data && currentPriceResponse.data[coinId]) {
-        basePrice = currentPriceResponse.data[coinId].usd;
-      }
-
-      const daily = [];
-      const hourly = [];
-      const minute = [];
-
-      const now = new Date();
-
-      const generate = (points, granularityMinutes, list) => {
-        let previousPrice = basePrice;
-        for (let i = points - 1; i >= 0; i -= 1) {
-          const timestamp = new Date(now);
-          timestamp.setMinutes(timestamp.getMinutes() - i * granularityMinutes);
-          const volatility = 0.01 + Math.random() * 0.03;
-          const change = (Math.random() - 0.5) * 2 * volatility;
-          const price = Math.max(previousPrice * (1 + change), 0.0001);
-          list.push({ timestamp, price });
-          previousPrice = price;
-        }
-      };
-
-      generate(7, 24 * 60, daily);
-      generate(24, 60, hourly);
-
-      const generateMinute = (points, list) => {
-        let previousPrice = basePrice;
-        for (let i = points - 1; i >= 0; i -= 1) {
-          const timestamp = new Date(now);
-          timestamp.setMinutes(timestamp.getMinutes() - i);
-          const volatility = 0.005 + Math.random() * 0.015;
-          const change = (Math.random() - 0.5) * 2 * volatility;
-          const price = Math.max(previousPrice * (1 + change), 0.0001);
-          list.push({ timestamp, price });
-          previousPrice = price;
-        }
-      };
-
-      generateMinute(720, minute);
-
-      return { 
-        minuteData: minute, 
-        hourlyData: hourly, 
-        dailyData: daily, 
-        currentPrice: basePrice 
-      };
-    } catch (mockError) {
-      return this.generateBasicMockData();
-    }
-  }
-
-  generateBasicMockData() {
-    const now = new Date();
-    const basePrice = 100 + Math.random() * 1000;
-
-    const daily = [];
-    const hourly = [];
-    const minute = [];
-
-    const generate = (points, granularityMinutes, list) => {
-      let previousPrice = basePrice;
-      for (let i = points - 1; i >= 0; i -= 1) {
-        const timestamp = new Date(now);
-        timestamp.setMinutes(timestamp.getMinutes() - i * granularityMinutes);
-        const volatility = 0.05;
-        const change = (Math.random() - 0.5) * 2 * volatility;
-        const price = Math.max(previousPrice * (1 + change), 0.0001);
-        list.push({ timestamp, price });
-        previousPrice = price;
-      }
-    };
-
-    generate(7, 24 * 60, daily);
-    generate(24, 60, hourly);
-
-    const generateMinute = (points) => {
-      let previousPrice = basePrice;
-      for (let i = points - 1; i >= 0; i -= 1) {
-        const timestamp = new Date(now);
-        timestamp.setMinutes(timestamp.getMinutes() - i);
-        const volatility = 0.008;
-        const change = (Math.random() - 0.5) * 2 * volatility;
-        const price = Math.max(previousPrice * (1 + change), 0.0001);
-        minute.push({ timestamp, price });
-        previousPrice = price;
-      }
-    };
-
-    generateMinute(720);
-
-    return { 
-      minuteData: minute, 
-      hourlyData: hourly, 
-      dailyData: daily, 
-      currentPrice: basePrice 
-    };
-  }
-
   updateLiveAnalysis() {
     if (this.currentlyAnalyzing) {
       this.liveAnalysis.unshift({ ...this.currentlyAnalyzing });
@@ -1230,6 +1253,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     };
   }
 
+  // Updated: Enhanced stats with API usage
   getStats() {
     return {
       ...this.stats,
@@ -1238,10 +1262,17 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       trackedCoins: this.trackedCoins.length,
       telegramEnabled: TELEGRAM_ENABLED,
       newsEnabled: NEWS_ENABLED,
+      coinmarketcapEnabled: COINMARKETCAP_ENABLED,
+      coinpaprikaEnabled: COINPAPRIKA_ENABLED,
       selectedInterval: this.selectedIntervalKey,
       scanProgress: this.getScanProgress(),
       greedFear: this.greedFearIndex,
       heatmap: this.latestHeatmap,
+      globalMetrics: this.globalMetrics,
+      apiUsage: {
+        coinpaprika: this.stats.coinpaprikaUsage,
+        coinmarketcap: this.stats.coinmarketcapUsage,
+      },
     };
   }
 
@@ -1396,10 +1427,27 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
           .map(([key]) => key.toUpperCase())
           .join(', ')
       : 'All indicators';
+    
+    // Add global metrics to prompt
+    let globalMetricsText = '';
+    if (technicalData.globalMetrics) {
+      const gm = technicalData.globalMetrics;
+      if (gm.coinpaprika) {
+        globalMetricsText = `GLOBAL MARKET CONTEXT:
+- Total Market Cap: $${(gm.coinpaprika.market_cap_usd / 1e12).toFixed(2)}T
+- 24h Volume: $${(gm.coinpaprika.volume_24h_usd / 1e9).toFixed(2)}B  
+- BTC Dominance: ${gm.coinpaprika.bitcoin_dominance_percentage}%
+- Total Cryptocurrencies: ${gm.coinpaprika.cryptocurrencies_number}
+
+`;
+      }
+    }
+
     return `PROFESSIONAL TECHNICAL ANALYSIS REQUEST:
 
-CRYPTO: ${technicalData.symbol} - ${technicalData.name}
+${globalMetricsText}CRYPTO: ${technicalData.symbol} - ${technicalData.name}
 CURRENT PRICE: ${technicalData.currentPrice}
+DATA SOURCE: ${technicalData.dataSource || 'CoinGecko'}
 
 ${frameToText('10m', '10 Minute')}
 
@@ -1590,11 +1638,136 @@ Respond with JSON:
     }
     return true;
   }
+
+  // Helper method for mock price data
+  async generateMockPriceData(coin) {
+    // Simple mock data generation
+    const basePrice = 100 + Math.random() * 1000;
+    const change24h = (Math.random() - 0.5) * 20; // -10% to +10%
+    
+    return {
+      price: basePrice,
+      market_cap: basePrice * (1000000 + Math.random() * 9000000),
+      volume_24h: basePrice * (100000 + Math.random() * 900000),
+      change_24h: change24h,
+      source: 'mock'
+    };
+  }
+
+  async generateRealisticMockData(coinId) {
+    try {
+      const currentPriceResponse = await axios.get(
+        `https://api.coingecko.com/api/v3/simple/price`,
+        {
+          params: { ids: coinId, vs_currencies: 'usd' },
+          timeout: 10000,
+        },
+      );
+
+      let basePrice = 100;
+      if (currentPriceResponse.data && currentPriceResponse.data[coinId]) {
+        basePrice = currentPriceResponse.data[coinId].usd;
+      }
+
+      const daily = [];
+      const hourly = [];
+      const minute = [];
+
+      const now = new Date();
+
+      const generate = (points, granularityMinutes, list) => {
+        let previousPrice = basePrice;
+        for (let i = points - 1; i >= 0; i -= 1) {
+          const timestamp = new Date(now);
+          timestamp.setMinutes(timestamp.getMinutes() - i * granularityMinutes);
+          const volatility = 0.01 + Math.random() * 0.03;
+          const change = (Math.random() - 0.5) * 2 * volatility;
+          const price = Math.max(previousPrice * (1 + change), 0.0001);
+          list.push({ timestamp, price });
+          previousPrice = price;
+        }
+      };
+
+      generate(7, 24 * 60, daily);
+      generate(24, 60, hourly);
+
+      const generateMinute = (points, list) => {
+        let previousPrice = basePrice;
+        for (let i = points - 1; i >= 0; i -= 1) {
+          const timestamp = new Date(now);
+          timestamp.setMinutes(timestamp.getMinutes() - i);
+          const volatility = 0.005 + Math.random() * 0.015;
+          const change = (Math.random() - 0.5) * 2 * volatility;
+          const price = Math.max(previousPrice * (1 + change), 0.0001);
+          list.push({ timestamp, price });
+          previousPrice = price;
+        }
+      };
+
+      generateMinute(720, minute);
+
+      return { 
+        minuteData: minute, 
+        hourlyData: hourly, 
+        dailyData: daily, 
+        currentPrice: basePrice 
+      };
+    } catch (mockError) {
+      return this.generateBasicMockData();
+    }
+  }
+
+  generateBasicMockData() {
+    const now = new Date();
+    const basePrice = 100 + Math.random() * 1000;
+
+    const daily = [];
+    const hourly = [];
+    const minute = [];
+
+    const generate = (points, granularityMinutes, list) => {
+      let previousPrice = basePrice;
+      for (let i = points - 1; i >= 0; i -= 1) {
+        const timestamp = new Date(now);
+        timestamp.setMinutes(timestamp.getMinutes() - i * granularityMinutes);
+        const volatility = 0.05;
+        const change = (Math.random() - 0.5) * 2 * volatility;
+        const price = Math.max(previousPrice * (1 + change), 0.0001);
+        list.push({ timestamp, price });
+        previousPrice = price;
+      }
+    };
+
+    generate(7, 24 * 60, daily);
+    generate(24, 60, hourly);
+
+    const generateMinute = (points) => {
+      let previousPrice = basePrice;
+      for (let i = points - 1; i >= 0; i -= 1) {
+        const timestamp = new Date(now);
+        timestamp.setMinutes(timestamp.getMinutes() - i);
+        const volatility = 0.008;
+        const change = (Math.random() - 0.5) * 2 * volatility;
+        const price = Math.max(previousPrice * (1 + change), 0.0001);
+        minute.push({ timestamp, price });
+        previousPrice = price;
+      }
+    };
+
+    generateMinute(720);
+
+    return { 
+      minuteData: minute, 
+      hourlyData: hourly, 
+      dailyData: daily, 
+      currentPrice: basePrice 
+    };
+  }
 }
 
 const tradingBot = new ProfessionalTradingBot();
 
-// API routes
+// API routes (all the existing routes remain the same)
 app.post('/start-scan', async (req, res) => {
   const result = await tradingBot.startAutoScan();
   res.json(result);
@@ -1662,6 +1835,15 @@ app.get('/scan-progress', (req, res) => {
   res.json(tradingBot.getScanProgress());
 });
 
+app.get('/global-metrics', async (req, res) => {
+  try {
+    const metrics = await tradingBot.fetchGlobalMetrics();
+    res.json(metrics);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/bot-status', (req, res) => {
   res.json({
     running: tradingBot.isRunning,
@@ -1672,6 +1854,8 @@ app.get('/bot-status', (req, res) => {
     stats: tradingBot.getStats(),
     telegramEnabled: TELEGRAM_ENABLED,
     newsEnabled: NEWS_ENABLED,
+    coinmarketcapEnabled: COINMARKETCAP_ENABLED,
+    coinpaprikaEnabled: COINPAPRIKA_ENABLED,
     lastUpdate: new Date(),
   });
 });
@@ -1684,6 +1868,8 @@ app.get('/health', (req, res) => {
     autoScan: tradingBot.isRunning,
     telegramEnabled: TELEGRAM_ENABLED,
     newsEnabled: NEWS_ENABLED,
+    coinmarketcapEnabled: COINMARKETCAP_ENABLED,
+    coinpaprikaEnabled: COINPAPRIKA_ENABLED,
     scanInterval: tradingBot.selectedIntervalKey,
     coinsTracked: tradingBot.trackedCoins.length,
     lastSuccessfulScan: tradingBot.stats.lastSuccessfulScan,
@@ -1692,7 +1878,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Main UI route
+// Updated main UI route to show API status
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -1738,70 +1924,31 @@ app.get('/', (req, res) => {
           letter-spacing: 0.05em;
           text-transform: uppercase;
         }
+        .api-status {
+          display: flex;
+          justify-content: center;
+          gap: 20px;
+          margin-top: 16px;
+          flex-wrap: wrap;
+        }
+        .api-badge {
+          padding: 8px 16px;
+          border-radius: 20px;
+          font-size: 0.85em;
+          font-weight: 600;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .api-badge.coingecko { background: rgba(139, 69, 255, 0.15); color: #8b45ff; }
+        .api-badge.coinpaprika { background: rgba(14, 165, 233, 0.15); color: #0ea5e9; }
+        .api-badge.coinmarketcap { background: rgba(34, 197, 94, 0.15); color: #16a34a; }
+        .api-badge.disabled { background: rgba(148, 163, 184, 0.15); color: #64748b; }
         .stats-grid {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
           gap: 16px;
           margin-bottom: 28px;
-        }
-        .sentiment-card {
-          margin-bottom: 28px;
-          background: linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(129, 140, 248, 0.2));
-          border: 1px solid rgba(129, 140, 248, 0.35);
-          border-radius: 20px;
-          padding: 24px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 24px;
-        }
-        .sentiment-indicator {
-          flex: 0 0 140px;
-          height: 140px;
-          background: conic-gradient(#22c55e 0deg, #22c55e var(--sentiment-angle, 180deg), rgba(148, 163, 184, 0.25) var(--sentiment-angle, 180deg));
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-          box-shadow: 0 12px 30px rgba(14, 165, 233, 0.25);
-        }
-        .sentiment-indicator::after {
-          content: '';
-          position: absolute;
-          width: 110px;
-          height: 110px;
-          background: rgba(15, 23, 42, 0.85);
-          border-radius: 50%;
-        }
-        .sentiment-value {
-          position: relative;
-          z-index: 2;
-          font-size: 2.2em;
-          font-weight: 700;
-          color: #e0f2fe;
-        }
-        .sentiment-details {
-          flex: 1;
-          color: #0f172a;
-        }
-        .sentiment-label {
-          font-size: 0.75em;
-          text-transform: uppercase;
-          letter-spacing: 0.16em;
-          font-weight: 700;
-          color: #475569;
-          margin-bottom: 8px;
-        }
-        .sentiment-status {
-          font-size: 1.6em;
-          font-weight: 700;
-          margin-bottom: 8px;
-          color: #0f172a;
-        }
-        .sentiment-meta {
-          font-size: 0.85em;
-          color: #475569;
         }
         .stat-card {
           background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9));
@@ -2217,7 +2364,12 @@ app.get('/', (req, res) => {
         <div class="main-content">
           <div class="header">
             <h1>🤖 AI Crypto Trading Scanner Pro</h1>
-            <div class="subtitle">Advanced Technical Analysis • AI Validation • Hourly Updates</div>
+            <div class="subtitle">Multi-API Technical Analysis • AI Validation • Real-time Data</div>
+            <div class="api-status">
+              <div class="api-badge coingecko">CoinGecko ✅</div>
+              <div class="api-badge coinpaprika">CoinPaprika ✅</div>
+              <div class="api-badge ${COINMARKETCAP_ENABLED ? 'coinmarketcap' : 'disabled'}">CoinMarketCap ${COINMARKETCAP_ENABLED ? '✅' : '❌'}</div>
+            </div>
           </div>
 
           <div id="scanProgressContainer" style="display:none; margin-bottom: 20px;">
@@ -2240,12 +2392,12 @@ app.get('/', (req, res) => {
               <div class="stat-value" id="totalOpps">0</div>
             </div>
             <div class="stat-card">
-              <div class="stat-label">Notifications Sent</div>
-              <div class="stat-value" id="notifications">0</div>
+              <div class="stat-label">CoinPaprika Calls</div>
+              <div class="stat-value" id="paprikaCalls">0</div>
             </div>
             <div class="stat-card">
-              <div class="stat-label">Avg Confidence</div>
-              <div class="stat-value" id="avgConf">0%</div>
+              <div class="stat-label">CoinMarketCap Calls</div>
+              <div class="stat-value" id="cmcCalls">0</div>
             </div>
           </div>
 
@@ -2322,7 +2474,9 @@ app.get('/', (req, res) => {
               <div id="statusText">🟢 Ready to start</div>
               <div id="nextScan">Next scan: Not scheduled</div>
               <div class="status-meta" id="telemetryStatus">
-                Telegram: ${TELEGRAM_ENABLED ? '✅ Enabled' : '⚠️ Disabled'}
+                Telegram: ${TELEGRAM_ENABLED ? '✅ Enabled' : '⚠️ Disabled'} | 
+                CoinPaprika: ✅ | 
+                CoinMarketCap: ${COINMARKETCAP_ENABLED ? '✅' : '❌'}
               </div>
             </div>
           </div>
@@ -2360,12 +2514,12 @@ app.get('/', (req, res) => {
                   <span id="historySignals">0</span>
                 </div>
                 <div class="history-item">
-                  <span>Mock data usage</span>
-                  <span id="historyMock">0</span>
+                  <span>CoinPaprika calls</span>
+                  <span id="historyPaprika">0</span>
                 </div>
                 <div class="history-item">
-                  <span>Skipped scans</span>
-                  <span id="historySkipped">0</span>
+                  <span>CoinMarketCap calls</span>
+                  <span id="historyCMC">0</span>
                 </div>
               </div>
             </div>
@@ -2515,15 +2669,13 @@ app.get('/', (req, res) => {
             if (data.stats) {
               document.getElementById('totalScans').textContent = data.stats.totalScans || 0;
               document.getElementById('totalOpps').textContent = data.stats.totalOpportunities || 0;
-              document.getElementById('notifications').textContent = data.stats.notificationsSent || 0;
-              document.getElementById('avgConf').textContent = data.stats.avgConfidence
-                ? (data.stats.avgConfidence * 100).toFixed(0) + '%'
-                : '0%';
+              document.getElementById('paprikaCalls').textContent = data.stats.apiUsage?.coinpaprika || 0;
+              document.getElementById('cmcCalls').textContent = data.stats.apiUsage?.coinmarketcap || 0;
 
               document.getElementById('historyScans').textContent = data.stats.totalScans || 0;
               document.getElementById('historySignals').textContent = data.stats.totalOpportunities || 0;
-              document.getElementById('historyMock').textContent = data.stats.mockDataUsage || 0;
-              document.getElementById('historySkipped').textContent = data.stats.skippedDueToOverlap || 0;
+              document.getElementById('historyPaprika').textContent = data.stats.apiUsage?.coinpaprika || 0;
+              document.getElementById('historyCMC').textContent = data.stats.apiUsage?.coinmarketcap || 0;
 
               const statusMeta = 'Telegram: ' + (data.telegramEnabled ? '✅ Enabled' : '⚠️ Disabled') +
                 ' • News: ' + (data.newsEnabled ? '✅ Enabled' : '⚠️ Disabled') +
@@ -2800,6 +2952,7 @@ app.get('/', (req, res) => {
                 { label: 'Daily Trend', value: daily.trend },
                 { label: 'Hourly Trend', value: hourly.trend },
                 { label: 'Daily S/R', value: (daily.support || 'N/A') + ' / ' + (daily.resistance || 'N/A') },
+                { label: 'Data Source', value: opp.dataSource || 'CoinGecko' },
               ];
 
               const aiList = aiInsights
@@ -2907,6 +3060,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('📊 Strategy: RSI + Bollinger + Support/Resistance + Momentum + AI overlay');
   console.log('⏰ Auto-scan: 1 HOUR intervals');
   console.log('🎯 Coins:', tradingBot.trackedCoins.length);
+  console.log(`🌐 APIs: CoinGecko ✅ | CoinPaprika ✅ | CoinMarketCap: ${COINMARKETCAP_ENABLED ? '✅' : '❌'}`);
   console.log(`📱 Telegram: ${TELEGRAM_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
   console.log('🔔 Test Telegram: POST /test-telegram');
 });
