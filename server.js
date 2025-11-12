@@ -21,7 +21,13 @@ const TELEGRAM_ENABLED = Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID);
 
 // Rate limiting helpers
 const COINGECKO_DELAY = Number(process.env.CG_DELAY_MS || 1000); // ms between calls
-const SCAN_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const SCAN_INTERVAL_OPTIONS = {
+  '10m': 10 * 60 * 1000,
+  '1h': 60 * 60 * 1000,
+  '4h': 4 * 60 * 60 * 1000,
+  '1d': 24 * 60 * 60 * 1000,
+  '1w': 7 * 24 * 60 * 60 * 1000,
+};
 const NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000; // 30 min
 
 // Simple sleep util
@@ -54,6 +60,14 @@ class ProfessionalTradingBot {
     };
 
     this.lastNotificationTime = {};
+    this.selectedIntervalKey = '1h';
+    this.scanIntervalMs = SCAN_INTERVAL_OPTIONS[this.selectedIntervalKey];
+    this.scanProgress = {
+      running: false,
+      processed: 0,
+      total: this.trackedCoins.length,
+      percent: 0,
+    };
   }
 
   getTop100Coins() {
@@ -174,6 +188,40 @@ class ProfessionalTradingBot {
     ];
   }
 
+  setAutoScanInterval(key) {
+    if (!SCAN_INTERVAL_OPTIONS[key]) {
+      throw new Error(`Unsupported interval: ${key}`);
+    }
+    this.selectedIntervalKey = key;
+    this.scanIntervalMs = SCAN_INTERVAL_OPTIONS[key];
+    if (this.isRunning) {
+      if (this.scanTimer) {
+        clearTimeout(this.scanTimer);
+        this.scanTimer = null;
+      }
+      this.scheduleNextScan();
+    }
+  }
+
+  getScanProgress() {
+    return { ...this.scanProgress, interval: this.selectedIntervalKey };
+  }
+
+  scheduleNextScan() {
+    if (!this.isRunning) return;
+    const delay = Math.max(this.scanIntervalMs - this.stats.lastScanDuration, 5000);
+    this.scanTimer = setTimeout(async () => {
+      if (this.scanInProgress) {
+        console.log('⏳ Previous scan still running, skipping scheduled scan');
+        this.stats.skippedDueToOverlap += 1;
+        this.scheduleNextScan();
+        return;
+      }
+      await this.performTechnicalScan();
+      this.scheduleNextScan();
+    }, delay);
+  }
+
   async startAutoScan() {
     if (this.isRunning) {
       console.log('🔄 Auto-scan already running');
@@ -184,27 +232,11 @@ class ProfessionalTradingBot {
     console.log('🚀 Starting automated technical analysis scan');
 
     await this.performTechnicalScan();
-
-    const scheduleNext = async () => {
-      if (!this.isRunning) return;
-      const delay = Math.max(SCAN_INTERVAL_MS - this.stats.lastScanDuration, 5000);
-      this.scanTimer = setTimeout(async () => {
-        if (this.scanInProgress) {
-          console.log('⏳ Previous scan still running, skipping scheduled scan');
-          this.stats.skippedDueToOverlap += 1;
-          scheduleNext();
-          return;
-        }
-        await this.performTechnicalScan();
-        scheduleNext();
-      }, delay);
-    };
-
-    scheduleNext();
+    this.scheduleNextScan();
 
     return {
       status: 'started',
-      interval: '1 hour',
+      interval: this.selectedIntervalKey,
       coins: this.trackedCoins.length,
       time: new Date(),
     };
@@ -220,7 +252,8 @@ class ProfessionalTradingBot {
     return { status: 'stopped', time: new Date() };
   }
 
-  async sendTelegramNotification(opportunity) {
+  async sendTelegramNotification(opportunity, options = {}) {
+    const { force = false } = options;
     if (!TELEGRAM_ENABLED) {
       console.log('⚠️ Telegram notifications disabled (missing credentials)');
       return false;
@@ -230,6 +263,7 @@ class ProfessionalTradingBot {
     const now = Date.now();
 
     if (
+      !force &&
       this.lastNotificationTime[coinKey] &&
       now - this.lastNotificationTime[coinKey] < NOTIFICATION_COOLDOWN_MS
     ) {
@@ -335,7 +369,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         },
       };
 
-      const success = await this.sendTelegramNotification(testOpportunity);
+      const success = await this.sendTelegramNotification(testOpportunity, { force: true });
 
       if (success) {
         return {
@@ -369,6 +403,14 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
 
     const startTime = Date.now();
     this.scanInProgress = true;
+    this.scanProgress = {
+      running: true,
+      processed: 0,
+      total: this.trackedCoins.length,
+      percent: 0,
+      interval: this.selectedIntervalKey,
+      startedAt: new Date(),
+    };
 
     try {
       console.log(`\n🎯 TECHNICAL SCAN STARTED: ${new Date().toLocaleString()}`);
@@ -395,6 +437,12 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         } catch (error) {
           console.log(`❌ ${coin.symbol}: Analysis failed - ${error.message}`);
           this.stats.apiErrors += 1;
+        } finally {
+          this.scanProgress.processed += 1;
+          this.scanProgress.percent = Math.min(
+            Math.round((this.scanProgress.processed / this.scanProgress.total) * 100),
+            100,
+          );
         }
 
         await sleep(COINGECKO_DELAY);
@@ -435,6 +483,14 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
 
       console.log(`\n📈 SCAN COMPLETE: ${opportunities.length} opportunities found`);
       this.scanInProgress = false;
+      this.scanProgress = {
+        running: false,
+        processed: this.trackedCoins.length,
+        total: this.trackedCoins.length,
+        percent: 100,
+        interval: this.selectedIntervalKey,
+        completedAt: new Date(),
+      };
 
       return {
         scanTime: new Date(),
@@ -442,13 +498,25 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         analyzedCoins: analyzedCount,
         opportunitiesFound: opportunities.length,
         opportunities,
-        nextScan: this.isRunning ? new Date(Date.now() + SCAN_INTERVAL_MS) : null,
+        nextScan: this.isRunning ? new Date(Date.now() + this.scanIntervalMs) : null,
         duration: this.stats.lastScanDuration,
         mockDataUsed,
       };
     } catch (error) {
       console.log('❌ Technical scan failed:', error.message);
       this.scanInProgress = false;
+      this.scanProgress = {
+        running: false,
+        processed: this.scanProgress.processed,
+        total: this.trackedCoins.length,
+        percent: Math.min(
+          Math.round((this.scanProgress.processed / this.trackedCoins.length) * 100),
+          100,
+        ),
+        interval: this.selectedIntervalKey,
+        error: error.message,
+        completedAt: new Date(),
+      };
       return {
         scanTime: new Date(),
         error: error.message,
@@ -741,6 +809,8 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       minConfidence: this.minConfidence,
       trackedCoins: this.trackedCoins.length,
       telegramEnabled: TELEGRAM_ENABLED,
+      selectedInterval: this.selectedIntervalKey,
+      scanProgress: this.getScanProgress(),
     };
   }
 
@@ -1043,12 +1113,37 @@ app.get('/scan-history', (req, res) => {
   res.json(history);
 });
 
+app.post('/auto-scan-settings', (req, res) => {
+  try {
+    const { interval } = req.body || {};
+    if (!interval) {
+      throw new Error('Interval is required');
+    }
+    tradingBot.setAutoScanInterval(interval);
+    res.json({
+      success: true,
+      interval,
+      humanReadable: interval,
+      running: tradingBot.isRunning,
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+app.get('/scan-progress', (req, res) => {
+  res.json(tradingBot.getScanProgress());
+});
+
 app.get('/bot-status', (req, res) => {
   res.json({
     running: tradingBot.isRunning,
     coinsTracked: tradingBot.trackedCoins.length,
     strategy: 'RSI + Bollinger Bands + Support/Resistance + Momentum + AI overlay',
-    interval: '1 hour',
+    interval: tradingBot.selectedIntervalKey,
     minConfidence: tradingBot.minConfidence,
     stats: tradingBot.getStats(),
     telegramEnabled: TELEGRAM_ENABLED,
@@ -1063,7 +1158,7 @@ app.get('/health', (req, res) => {
     strategy: 'Technical Analysis (Enhanced)',
     autoScan: tradingBot.isRunning,
     telegramEnabled: TELEGRAM_ENABLED,
-    scanInterval: '1 hour',
+    scanInterval: tradingBot.selectedIntervalKey,
     coinsTracked: tradingBot.trackedCoins.length,
     lastSuccessfulScan: tradingBot.stats.lastSuccessfulScan,
     mockDataUsage: tradingBot.stats.mockDataUsage,
@@ -1394,6 +1489,16 @@ app.get('/', (req, res) => {
             <div class="subtitle">Advanced Technical Analysis • AI Validation • Hourly Updates</div>
           </div>
 
+          <div id="scanProgressContainer" style="display:none; margin-bottom: 20px;">
+            <div style="display:flex; justify-content:space-between; color:#475569; font-weight:600; margin-bottom:6px;">
+              <span>Current scan progress</span>
+              <span id="scanProgressText">0%</span>
+            </div>
+            <div style="height:10px; background:rgba(226,232,240,0.7); border-radius:12px; overflow:hidden;">
+              <div id="scanProgressFill" style="height:100%; width:0%; background:linear-gradient(90deg,#38bdf8,#6366f1); transition:width 0.4s;"></div>
+            </div>
+          </div>
+
           <div class="stats-grid">
             <div class="stat-card">
               <div class="stat-label">Total Scans</div>
@@ -1415,6 +1520,16 @@ app.get('/', (req, res) => {
 
           <div class="controls">
             <h3>🎯 Scanner Controls</h3>
+            <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
+              <label for="intervalSelect" style="font-weight:600; color:#475569;">Auto-scan interval</label>
+              <select id="intervalSelect" onchange="changeInterval(this.value)" style="padding:10px 14px; border-radius:10px; border:1px solid rgba(148,163,184,0.4); background:white; color:#0f172a;">
+                <option value="10m">Every 10 minutes</option>
+                <option value="1h" selected>Every 1 hour</option>
+                <option value="4h">Every 4 hours</option>
+                <option value="1d">Daily</option>
+                <option value="1w">Weekly</option>
+              </select>
+            </div>
             <div class="button-group">
               <button class="btn-success" onclick="startAutoScan()">🚀 Start Auto-Scan</button>
               <button class="btn-danger" onclick="stopAutoScan()">🛑 Stop Auto-Scan</button>
@@ -1477,6 +1592,17 @@ app.get('/', (req, res) => {
 
       <script>
         let analysisUpdateInterval = null;
+        const intervalLabels = {
+          '10m': 'Every 10 minutes',
+          '1h': 'Every 1 hour',
+          '4h': 'Every 4 hours',
+          '1d': 'Every 1 day',
+          '1w': 'Every 1 week',
+        };
+
+        function formatIntervalLabel(key) {
+          return intervalLabels[key] || key;
+        }
 
         async function testTelegram() {
           try {
@@ -1494,6 +1620,23 @@ app.get('/', (req, res) => {
             return '<li><span class="ai-tag">' + item.label + '</span>' + item.value + '</li>';
           }).join('');
           return '<div class="ai-visual"><h4>🔎 Why the AI chose this</h4><ul class="ai-list">' + items + '</ul></div>';
+        }
+
+        async function changeInterval(intervalKey) {
+          try {
+            const response = await fetch('/auto-scan-settings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ interval: intervalKey }),
+            });
+            const result = await response.json();
+            if (!result.success) {
+              throw new Error(result.message || 'Unknown error');
+            }
+            document.getElementById('nextScan').textContent = 'Next scan: ' + formatIntervalLabel(intervalKey);
+          } catch (error) {
+            alert('Unable to update interval: ' + error.message);
+          }
         }
 
         async function updateStats() {
@@ -1515,9 +1658,52 @@ app.get('/', (req, res) => {
 
               document.getElementById('telemetryStatus').textContent =
                 'Telegram: ' + (data.telegramEnabled ? '✅ Enabled' : '⚠️ Disabled');
+
+              const intervalKey = data.stats.selectedInterval || data.interval;
+              if (intervalKey) {
+                const select = document.getElementById('intervalSelect');
+                if (select && select.value !== intervalKey) {
+                  select.value = intervalKey;
+                }
+                const nextScanEl = document.getElementById('nextScan');
+                if (nextScanEl) {
+                  nextScanEl.textContent = 'Next scan: ' + (data.running ? formatIntervalLabel(intervalKey) : 'Manual mode');
+                }
+              }
             }
           } catch (error) {
             console.log('Error updating stats:', error);
+          }
+        }
+
+        async function pollScanProgress() {
+          try {
+            const response = await fetch('/scan-progress');
+            const progress = await response.json();
+            const container = document.getElementById('scanProgressContainer');
+            const fill = document.getElementById('scanProgressFill');
+            const text = document.getElementById('scanProgressText');
+            if (!container || !fill || !text) return;
+
+            if (progress.running) {
+              container.style.display = 'block';
+              fill.style.width = progress.percent + '%';
+              text.textContent = progress.percent + '% (' + progress.processed + '/' + progress.total + ')';
+            } else if (progress.percent === 100) {
+              container.style.display = 'block';
+              fill.style.width = '100%';
+              text.textContent = '100% (' + progress.total + '/' + progress.total + ')';
+              setTimeout(() => {
+                container.style.display = 'none';
+                fill.style.width = '0%';
+              }, 4000);
+            } else {
+              container.style.display = 'none';
+              fill.style.width = '0%';
+              text.textContent = '0%';
+            }
+          } catch (error) {
+            console.log('Progress poll failed:', error);
           }
         }
 
@@ -1585,7 +1771,9 @@ app.get('/', (req, res) => {
               return;
             }
             document.getElementById('statusText').innerHTML = '🔄 Auto-Scanning Active';
-            document.getElementById('nextScan').textContent = 'Next scan: Every 1 hour';
+            const selectEl = document.getElementById('intervalSelect');
+            const intervalKey = (selectEl && selectEl.value) || '1h';
+            document.getElementById('nextScan').textContent = 'Next scan: ' + formatIntervalLabel(intervalKey);
             if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
             analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
             manualScan();
@@ -1600,6 +1788,14 @@ app.get('/', (req, res) => {
             document.getElementById('statusText').innerHTML = '🛑 Stopped';
             document.getElementById('nextScan').textContent = 'Next scan: Manual mode';
             if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
+            const container = document.getElementById('scanProgressContainer');
+            const fill = document.getElementById('scanProgressFill');
+            const text = document.getElementById('scanProgressText');
+            if (container && fill && text) {
+              container.style.display = 'none';
+              fill.style.width = '0%';
+              text.textContent = '0%';
+            }
           } catch (error) {
             alert('Error stopping auto-scan: ' + error.message);
           }
@@ -1611,6 +1807,7 @@ app.get('/', (req, res) => {
             if (analysisUpdateInterval) clearInterval(analysisUpdateInterval);
             analysisUpdateInterval = setInterval(updateLiveAnalysis, 2000);
             updateLiveAnalysis();
+            pollScanProgress();
 
             const response = await fetch('/scan-now');
             const data = await response.json();
@@ -1715,6 +1912,8 @@ app.get('/', (req, res) => {
         manualScan();
 
         setInterval(updateStats, 20000);
+        setInterval(pollScanProgress, 3000);
+        pollScanProgress();
       </script>
     </body>
     </html>
