@@ -68,6 +68,12 @@ class ProfessionalTradingBot {
       total: this.trackedCoins.length,
       percent: 0,
     };
+    this.greedFearIndex = {
+      value: null,
+      classification: null,
+      timestamp: null,
+    };
+    this.latestHeatmap = [];
   }
 
   getTop100Coins() {
@@ -207,19 +213,119 @@ class ProfessionalTradingBot {
     return { ...this.scanProgress, interval: this.selectedIntervalKey };
   }
 
-  scheduleNextScan() {
-    if (!this.isRunning) return;
-    const delay = Math.max(this.scanIntervalMs - this.stats.lastScanDuration, 5000);
-    this.scanTimer = setTimeout(async () => {
-      if (this.scanInProgress) {
-        console.log('⏳ Previous scan still running, skipping scheduled scan');
-        this.stats.skippedDueToOverlap += 1;
-        this.scheduleNextScan();
-        return;
+  async ensureGreedFearIndex() {
+    const now = Date.now();
+    if (this.greedFearIndex.timestamp && now - this.greedFearIndex.timestamp < 15 * 60 * 1000) {
+      return this.greedFearIndex;
+    }
+    try {
+      const response = await axios.get('https://api.alternative.me/fng/', {
+        params: { limit: 1, format: 'json' },
+        timeout: 10000,
+      });
+      if (response.data && Array.isArray(response.data.data) && response.data.data.length > 0) {
+        const entry = response.data.data[0];
+        this.greedFearIndex = {
+          value: Number(entry.value),
+          classification: entry.value_classification,
+          timestamp: new Date(Number(entry.timestamp) * 1000),
+        };
       }
-      await this.performTechnicalScan();
+    } catch (error) {
+      console.log('⚠️ Failed to fetch fear & greed index:', error.message);
+    }
+    return this.greedFearIndex;
+  }
+
+  computeFrameScore(frameData) {
+    if (!frameData) return 0;
+    let score = 0;
+    const rsi = Number(frameData.rsi);
+    if (!Number.isNaN(rsi)) {
+      if (rsi < 30) score += 1.5;
+      else if (rsi < 45) score += 0.5;
+      else if (rsi > 70) score -= 1.5;
+      else if (rsi > 55) score -= 0.5;
+    }
+    if (frameData.trend === 'BULLISH') score += 1;
+    else if (frameData.trend === 'BEARISH') score -= 1;
+    if (frameData.momentum === 'STRONG_UP') score += 1;
+    else if (frameData.momentum === 'UP') score += 0.5;
+    else if (frameData.momentum === 'STRONG_DOWN') score -= 1;
+    else if (frameData.momentum === 'DOWN') score -= 0.5;
+    return score;
+  }
+
+  buildHeatmapEntry(coin, frames) {
+    const frameSummaries = {};
+    let totalScore = 0;
+    let counted = 0;
+    Object.entries(frames).forEach(([key, data]) => {
+      const frameData = {
+        rsi: data.rsi,
+        trend: data.trend,
+        momentum: data.momentum,
+        bollinger: data.bollingerPosition,
+        score: this.computeFrameScore(data),
+      };
+      frameSummaries[key] = frameData;
+      if (frameData.score !== 0) {
+        totalScore += frameData.score;
+        counted += 1;
+      }
+    });
+    return {
+      symbol: coin.symbol,
+      name: coin.name,
+      frames: frameSummaries,
+      overallScore: counted ? (totalScore / counted) : 0,
+    };
+  }
+
+  aggregateSeries(data = [], chunkSize = 1, maxPoints = 120) {
+    if (!Array.isArray(data) || data.length === 0) return [];
+    const cleaned = data
+      .filter((item) => item && typeof item.price === 'number' && Number.isFinite(item.price))
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    if (chunkSize <= 1) {
+      return cleaned.slice(-maxPoints);
+    }
+    const aggregated = [];
+    for (let i = chunkSize - 1; i < cleaned.length; i += chunkSize) {
+      const slice = cleaned.slice(i - chunkSize + 1, i + 1);
+      const avg =
+        slice.reduce((sum, point) => sum + point.price, 0) / slice.length;
+      aggregated.push({
+        timestamp: cleaned[i].timestamp,
+        price: avg,
+      });
+    }
+    return aggregated.slice(-maxPoints);
+  }
+
+  prepareTimeframeSeries(minuteData, hourlyData, dailyData) {
+    return {
+      '10m': this.aggregateSeries(minuteData, 10, 120),
+      '1h': this.aggregateSeries(hourlyData, 1, 168),
+      '4h': this.aggregateSeries(hourlyData, 4, 84),
+      '1d': this.aggregateSeries(dailyData, 1, 90),
+      '1w': this.aggregateSeries(dailyData, 7, 52),
+    };
+  }
+
+  scheduleNextScan() {
+      if (!this.isRunning) return;
+    const delay = Math.max(this.scanIntervalMs - this.stats.lastScanDuration, 5000);
+      this.scanTimer = setTimeout(async () => {
+        if (this.scanInProgress) {
+          console.log('⏳ Previous scan still running, skipping scheduled scan');
+          this.stats.skippedDueToOverlap += 1;
+        this.scheduleNextScan();
+          return;
+        }
+        await this.performTechnicalScan();
       this.scheduleNextScan();
-    }, delay);
+      }, delay);
   }
 
   async startAutoScan() {
@@ -281,21 +387,34 @@ class ProfessionalTradingBot {
       const confidencePercent = (opportunity.confidence * 100).toFixed(0);
 
       const indicators = opportunity.indicators;
+      const frames = indicators.frames || {};
+      const frame10m = frames['10m'] || {};
+      const frame4h = frames['4h'] || {};
+      const frame1w = frames['1w'] || {};
+      const sentiment =
+        this.greedFearIndex && this.greedFearIndex.value != null
+          ? `${this.greedFearIndex.value} (${this.greedFearIndex.classification})`
+          : 'N/A';
 
       const message = `${actionEmoji} *${opportunity.action} SIGNAL DETECTED*
 
 *Coin:* ${opportunity.name} (${opportunity.symbol})
 *Price:* ${opportunity.price}
 *Confidence:* ${confidencePercent}%
+*Market Sentiment:* ${sentiment}
 
 📊 *Technical Snapshot:*
 • Daily RSI: ${indicators.daily.rsi}
 • Hourly RSI: ${indicators.hourly.rsi}
+• 10m RSI: ${frame10m.rsi || 'N/A'}
 • Daily Bollinger: ${indicators.daily.bollingerPosition}
 • Hourly Bollinger: ${indicators.hourly.bollingerPosition}
+• 4H Bollinger: ${frame4h.bollingerPosition || 'N/A'}
 • Daily Trend: ${indicators.daily.trend}
 • Hourly Trend: ${indicators.hourly.trend}
-• Momentum: ${indicators.momentum}
+• 4H Trend: ${frame4h.trend || 'N/A'}
+• Weekly Trend: ${frame1w.trend || 'N/A'}
+• Momentum (10m): ${frame10m.momentum || indicators.momentum}
 
 💡 *Key Insights:*
 ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
@@ -413,11 +532,13 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     };
 
     try {
+      await this.ensureGreedFearIndex();
       console.log(`\n🎯 TECHNICAL SCAN STARTED: ${new Date().toLocaleString()}`);
 
       const opportunities = [];
       let analyzedCount = 0;
       let mockDataUsed = 0;
+      const heatmapEntries = [];
 
       for (const coin of this.trackedCoins) {
         try {
@@ -426,6 +547,10 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
 
           if (analysis.usesMockData) {
             mockDataUsed += 1;
+          }
+
+          if (analysis.heatmapEntry) {
+            heatmapEntries.push(analysis.heatmapEntry);
           }
 
           if (analysis.confidence >= this.minConfidence && !analysis.usesMockData) {
@@ -455,6 +580,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       this.stats.lastScanDuration = Date.now() - startTime;
       this.stats.mockDataUsage += mockDataUsed;
       this.stats.lastSuccessfulScan = new Date();
+      this.latestHeatmap = heatmapEntries.sort((a, b) => (b.overallScore || 0) - (a.overallScore || 0));
 
       if (opportunities.length > 0) {
         this.stats.avgConfidence =
@@ -501,6 +627,8 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         nextScan: this.isRunning ? new Date(Date.now() + this.scanIntervalMs) : null,
         duration: this.stats.lastScanDuration,
         mockDataUsed,
+        greedFear: this.greedFearIndex,
+        heatmap: heatmapEntries,
       };
     } catch (error) {
       console.log('❌ Technical scan failed:', error.message);
@@ -521,6 +649,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         scanTime: new Date(),
         error: error.message,
         opportunities: [],
+        greedFear: this.greedFearIndex,
       };
     }
   }
@@ -538,10 +667,19 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       };
       this.updateLiveAnalysis();
 
-      const { dailyData, hourlyData, usedMock } = await this.fetchHistoricalData(coin.id);
+      const {
+        minuteData,
+        hourlyData,
+        dailyData,
+        usedMock,
+      } = await this.fetchHistoricalData(coin.id);
       usesMockData = usedMock;
 
-      if (dailyData.length < 3 && hourlyData.length < 3) {
+      const timeframeSeries = this.prepareTimeframeSeries(minuteData, hourlyData, dailyData);
+      const hasEnoughData = Object.values(timeframeSeries).some(
+        (series) => Array.isArray(series) && series.length >= 3,
+      );
+      if (!hasEnoughData) {
         throw new Error('Insufficient valid price data');
       }
 
@@ -549,64 +687,66 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       this.currentlyAnalyzing.progress = 40;
       this.updateLiveAnalysis();
 
-      const currentPrice = hourlyData.length
-        ? hourlyData[hourlyData.length - 1].price
-        : dailyData[dailyData.length - 1].price;
+      let currentPrice = null;
+      const frameIndicators = {};
+      Object.entries(timeframeSeries).forEach(([frameKey, series]) => {
+        if (!Array.isArray(series) || series.length < 3) return;
+        const prices = series
+          .map((d) => d.price)
+          .filter((price) => typeof price === 'number' && Number.isFinite(price));
+        if (prices.length < 3) return;
+        currentPrice = currentPrice ?? prices[prices.length - 1];
 
-      const dailyPrices = dailyData.map((d) => d.price);
-      const hourlyPrices = hourlyData.map((d) => d.price);
+        const basePrice = prices[prices.length - 1];
+        const rsiPeriod = Math.min(14, prices.length - 1);
+        const bbPeriod = Math.min(20, prices.length);
+        const rsiValue = rsiPeriod > 0 ? this.calculateRSI(prices, rsiPeriod) : 50;
+        const bollingerRaw =
+          bbPeriod >= 5
+            ? this.calculateBollingerBands(prices, bbPeriod)
+            : this.placeholderBollinger(basePrice);
+        const bollingerPosition = this.getBollingerPosition(
+          basePrice,
+          bollingerRaw.upper,
+          bollingerRaw.lower,
+        );
+        const sr = this.identifySupportResistance(prices);
+        const trend = this.identifyTrend(prices);
+        const momentum = this.calculateMomentum(prices);
 
-      const dailyRsi = dailyPrices.length >= 14 ? this.calculateRSI(dailyPrices, 14) : 50;
-      const dailyBB =
-        dailyPrices.length >= 20
-          ? this.calculateBollingerBands(dailyPrices, 20)
-          : this.placeholderBollinger(currentPrice);
-      const dailySR = this.identifySupportResistance(dailyPrices);
-      const dailyTrend = this.identifyTrend(dailyPrices);
+        frameIndicators[frameKey] = {
+          rsi: rsiValue.toFixed(1),
+          trend,
+          momentum,
+          bollinger: bollingerRaw,
+          bollingerPosition,
+          support: sr.support,
+          resistance: sr.resistance,
+          points: prices.length,
+        };
+      });
 
-      const hourlyRsi = hourlyPrices.length >= 14 ? this.calculateRSI(hourlyPrices, 14) : 50;
-      const hourlyBB =
-        hourlyPrices.length >= 20
-          ? this.calculateBollingerBands(hourlyPrices, 20)
-          : this.placeholderBollinger(currentPrice);
-      const hourlyTrend = this.identifyTrend(hourlyPrices);
-      const momentum = this.calculateMomentum(hourlyPrices.length ? hourlyPrices : dailyPrices);
+      if (!currentPrice) {
+        throw new Error('No historical data available');
+      }
+
+      this.currentlyAnalyzing.stage = 'Analyzing multi-timeframes…';
+      this.currentlyAnalyzing.progress = 60;
+      this.updateLiveAnalysis();
 
       const indicatorSnapshot = {
         symbol: coin.symbol,
         name: coin.name,
         currentPrice,
-        daily: {
-          rsi: dailyRsi,
-          bollingerBands: dailyBB,
-          bollingerPosition: this.getBollingerPosition(currentPrice, dailyBB.upper, dailyBB.lower),
-          supportResistance: dailySR,
-          trend: dailyTrend,
-        },
-        hourly: {
-          rsi: hourlyRsi,
-          bollingerBands: hourlyBB,
-          bollingerPosition: this.getBollingerPosition(
-            currentPrice,
-            hourlyBB.upper,
-            hourlyBB.lower,
-          ),
-          trend: hourlyTrend,
-        },
-        momentum,
-        priceHistory: dailyPrices.slice(-10),
+        frames: frameIndicators,
       };
 
       this.currentlyAnalyzing.stage = 'DeepSeek AI is evaluating…';
       this.currentlyAnalyzing.progress = 70;
       this.currentlyAnalyzing.technicals = {
-        dailyRsi: dailyRsi.toFixed(1),
-        hourlyRsi: hourlyRsi.toFixed(1),
-        dailyBB: indicatorSnapshot.daily.bollingerPosition,
-        hourlyBB: indicatorSnapshot.hourly.bollingerPosition,
-        dailyTrend,
-        hourlyTrend,
-        momentum,
+        frameSnapshot: ['10m', '1h', '4h', '1d', '1w']
+          .map((key) => `${key.toUpperCase()}: ${frameIndicators[key]?.trend || 'N/A'}`)
+          .join(' | '),
       };
       this.updateLiveAnalysis();
 
@@ -626,6 +766,18 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         this.updateLiveAnalysis();
       }, 2500);
 
+      const dailyFrame = frameIndicators['1d'] || {};
+      const hourlyFrame = frameIndicators['1h'] || {};
+      const fastFrame = frameIndicators['10m'] || {};
+      const fourHourFrame = frameIndicators['4h'] || {};
+      const weeklyFrame = frameIndicators['1w'] || {};
+      const momentumHeadline =
+        fastFrame.momentum ||
+        hourlyFrame.momentum ||
+        dailyFrame.momentum ||
+        fourHourFrame.momentum ||
+        'NEUTRAL';
+
       return {
         symbol: coin.symbol,
         name: coin.name,
@@ -638,20 +790,67 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         timestamp: new Date(),
         usesMockData,
         indicators: {
-          momentum,
+          momentum: momentumHeadline,
+          frames: Object.fromEntries(
+            Object.entries(frameIndicators).map(([key, data]) => [
+              key,
+              {
+                rsi: data.rsi,
+                trend: data.trend,
+                momentum: data.momentum,
+                bollingerPosition: data.bollingerPosition,
+                support:
+                  data.support != null && Number.isFinite(data.support)
+                    ? data.support.toFixed(2)
+                    : 'N/A',
+                resistance:
+                  data.resistance != null && Number.isFinite(data.resistance)
+                    ? data.resistance.toFixed(2)
+                    : 'N/A',
+                score: this.computeFrameScore(data).toFixed(2),
+              },
+            ]),
+          ),
           daily: {
-            rsi: dailyRsi.toFixed(1),
-            bollingerPosition: indicatorSnapshot.daily.bollingerPosition,
-            trend: dailyTrend,
-            support: dailySR.support.toFixed(2),
-            resistance: dailySR.resistance.toFixed(2),
+            rsi: dailyFrame.rsi || 'N/A',
+            bollingerPosition: dailyFrame.bollingerPosition || 'N/A',
+            trend: dailyFrame.trend || 'N/A',
+            support:
+              dailyFrame.support != null && Number.isFinite(dailyFrame.support)
+                ? dailyFrame.support.toFixed(2)
+                : 'N/A',
+            resistance:
+              dailyFrame.resistance != null && Number.isFinite(dailyFrame.resistance)
+                ? dailyFrame.resistance.toFixed(2)
+                : 'N/A',
           },
           hourly: {
-            rsi: hourlyRsi.toFixed(1),
-            bollingerPosition: indicatorSnapshot.hourly.bollingerPosition,
-            trend: hourlyTrend,
+            rsi: hourlyFrame.rsi || 'N/A',
+            bollingerPosition: hourlyFrame.bollingerPosition || 'N/A',
+            trend: hourlyFrame.trend || 'N/A',
+            support:
+              hourlyFrame.support != null && Number.isFinite(hourlyFrame.support)
+                ? hourlyFrame.support.toFixed(2)
+                : 'N/A',
+            resistance:
+              hourlyFrame.resistance != null && Number.isFinite(hourlyFrame.resistance)
+                ? hourlyFrame.resistance.toFixed(2)
+                : 'N/A',
+          },
+          fourHour: {
+            rsi: fourHourFrame.rsi || 'N/A',
+            trend: fourHourFrame.trend || 'N/A',
+            momentum: fourHourFrame.momentum || 'N/A',
+            bollingerPosition: fourHourFrame.bollingerPosition || 'N/A',
+          },
+          weekly: {
+            rsi: weeklyFrame.rsi || 'N/A',
+            trend: weeklyFrame.trend || 'N/A',
+            momentum: weeklyFrame.momentum || 'N/A',
+            bollingerPosition: weeklyFrame.bollingerPosition || 'N/A',
           },
         },
+        heatmapEntry: this.buildHeatmapEntry(coin, frameIndicators),
       };
     } catch (error) {
       console.log(`❌ Technical analysis failed for ${coin.symbol}:`, error.message);
@@ -682,7 +881,9 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         const response = await axios.get(
           `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart`,
           {
-            params: { vs_currency: 'usd', days, interval },
+            params: interval
+              ? { vs_currency: 'usd', days, interval }
+              : { vs_currency: 'usd', days },
             timeout: 15000,
             headers: { 'User-Agent': 'ProfessionalTradingBot/2.0' },
           },
@@ -704,16 +905,23 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     };
 
     try {
-      const [dailyData, hourlyData] = await Promise.all([
-        fetchData(7, 'daily'),
-        fetchData(1, 'hourly'),
+      const [minuteRaw, hourlyData, dailyData] = await Promise.all([
+        fetchData(1, null),
+        fetchData(7, 'hourly'),
+        fetchData(30, 'daily'),
       ]);
-      return { dailyData, hourlyData, usedMock };
+      const minuteData = minuteRaw.slice(-720); // last 12 hours (~720 minutes at 1-min granularity)
+      return { minuteData, hourlyData, dailyData, usedMock };
     } catch (primaryError) {
       console.log(`⚠️ ${coinId}: Falling back to mock data (${primaryError.message})`);
       usedMock = true;
       const mockData = await this.generateRealisticMockData(coinId);
-      return { dailyData: mockData.daily, hourlyData: mockData.hourly, usedMock };
+      return {
+        minuteData: mockData.minuteData,
+        hourlyData: mockData.hourlyData,
+        dailyData: mockData.dailyData,
+        usedMock,
+      };
     }
   }
 
@@ -734,6 +942,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
 
       const daily = [];
       const hourly = [];
+      const minute = [];
 
       const now = new Date();
 
@@ -753,7 +962,22 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       generate(7, 24 * 60, daily);
       generate(24, 60, hourly);
 
-      return { daily, hourly };
+      const generateMinute = (points, list) => {
+        let previousPrice = basePrice;
+        for (let i = points - 1; i >= 0; i -= 1) {
+          const timestamp = new Date(now);
+          timestamp.setMinutes(timestamp.getMinutes() - i);
+          const volatility = 0.005 + Math.random() * 0.015;
+          const change = (Math.random() - 0.5) * 2 * volatility;
+          const price = Math.max(previousPrice * (1 + change), 0.0001);
+          list.push({ timestamp, price });
+          previousPrice = price;
+        }
+      };
+
+      generateMinute(720, minute);
+
+      return { minuteData: minute, hourlyData: hourly, dailyData: daily };
     } catch (mockError) {
       return this.generateBasicMockData();
     }
@@ -765,6 +989,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
 
     const daily = [];
     const hourly = [];
+    const minute = [];
 
     const generate = (points, granularityMinutes, list) => {
       let previousPrice = basePrice;
@@ -782,7 +1007,22 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     generate(7, 24 * 60, daily);
     generate(24, 60, hourly);
 
-    return { daily, hourly };
+    const generateMinute = (points) => {
+      let previousPrice = basePrice;
+      for (let i = points - 1; i >= 0; i -= 1) {
+        const timestamp = new Date(now);
+        timestamp.setMinutes(timestamp.getMinutes() - i);
+        const volatility = 0.008;
+        const change = (Math.random() - 0.5) * 2 * volatility;
+        const price = Math.max(previousPrice * (1 + change), 0.0001);
+        minute.push({ timestamp, price });
+        previousPrice = price;
+      }
+    };
+
+    generateMinute(720);
+
+    return { minuteData: minute, hourlyData: hourly, dailyData: daily };
   }
 
   updateLiveAnalysis() {
@@ -811,6 +1051,8 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       telegramEnabled: TELEGRAM_ENABLED,
       selectedInterval: this.selectedIntervalKey,
       scanProgress: this.getScanProgress(),
+      greedFear: this.greedFearIndex,
+      heatmap: this.latestHeatmap,
     };
   }
 
@@ -930,26 +1172,47 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
   }
 
   createTechnicalAnalysisPrompt(technicalData) {
+    const frames = technicalData.frames || {};
+    const frameToText = (key, label) => {
+      const frame = frames[key] || {};
+      const rsi = frame.rsi || 'N/A';
+      const trend = frame.trend || 'N/A';
+      const momentum = frame.momentum || 'N/A';
+      const bollinger = frame.bollingerPosition || 'N/A';
+      const support =
+        frame.support != null && Number.isFinite(frame.support)
+          ? frame.support.toFixed(2)
+          : frame.support || 'N/A';
+      const resistance =
+        frame.resistance != null && Number.isFinite(frame.resistance)
+          ? frame.resistance.toFixed(2)
+          : frame.resistance || 'N/A';
+      return `${label}:
+- RSI: ${rsi} ${this.getRSILevel(Number(rsi))}
+- Bollinger: ${bollinger}
+- Trend: ${trend}
+- Momentum: ${momentum}
+- Support: ${support}
+- Resistance: ${resistance}`;
+    };
     return `PROFESSIONAL TECHNICAL ANALYSIS REQUEST:
 
 CRYPTO: ${technicalData.symbol} - ${technicalData.name}
 CURRENT PRICE: ${technicalData.currentPrice}
 
-DAILY TIMEFRAME INDICATORS:
-- RSI(14): ${technicalData.daily.rsi} ${this.getRSILevel(technicalData.daily.rsi)}
-- Bollinger band position: ${technicalData.daily.bollingerPosition}
-- Support: ${technicalData.daily.supportResistance.support}
-- Resistance: ${technicalData.daily.supportResistance.resistance}
-- Trend: ${technicalData.daily.trend}
+${frameToText('10m', '10 Minute')}
 
-HOURLY TIMEFRAME INDICATORS:
-- RSI(14): ${technicalData.hourly.rsi} ${this.getRSILevel(technicalData.hourly.rsi)}
-- Bollinger band position: ${technicalData.hourly.bollingerPosition}
-- Trend: ${technicalData.hourly.trend}
+${frameToText('1h', '1 Hour')}
 
-MOMENTUM: ${technicalData.momentum}
+${frameToText('4h', '4 Hour')}
 
-Analyze both timeframes and provide JSON:
+${frameToText('1d', '1 Day')}
+
+${frameToText('1w', '1 Week')}
+
+Provide a technical view that balances short-term (10m/1h), swing (4h/1d), and macro (1w) context.
+
+Respond with JSON:
 {
   "action": "BUY|SELL|HOLD",
   "confidence": 0.75,
@@ -989,25 +1252,41 @@ Analyze both timeframes and provide JSON:
     let reason = 'No clear technical setup';
     let insights = ['Wait for clearer signals', 'Monitor key levels', 'Low conviction'];
 
-    const { daily, hourly, momentum } = technicalData;
+    const frames = technicalData.frames || {};
+    const frame10m = frames['10m'] || {};
+    const frame1h = frames['1h'] || {};
+    const frame4h = frames['4h'] || {};
+    const frame1d = frames['1d'] || {};
+    const frame1w = frames['1w'] || {};
 
-    const dailyRsi = daily.rsi;
-    const dailyBB = daily.bollingerPosition;
-    const dailyTrend = daily.trend;
+    const dailyRsi = Number(frame1d.rsi) || 50;
+    const dailyBB = frame1d.bollingerPosition || 'MIDDLE';
+    const dailyTrend = frame1d.trend || 'SIDEWAYS';
 
-    const hourlyRsi = hourly.rsi;
-    const hourlyTrend = hourly.trend;
+    const hourlyRsi = Number(frame1h.rsi) || 50;
+    const hourlyTrend = frame1h.trend || 'SIDEWAYS';
+
+    const momentum10m = frame10m.momentum || 'NEUTRAL';
+    const weeklyTrend = frame1w.trend || 'SIDEWAYS';
 
     if (dailyRsi < 30 && dailyBB === 'LOWER' && dailyTrend === 'BEARISH') {
       action = 'BUY';
       confidence = 0.75;
       reason = 'Daily oversold with Bollinger support and potential bearish exhaustion';
-      insights = ['Strong mean-reversion potential', 'Risk: Trend continuation', 'Stop below daily support'];
+      insights = [
+        'Strong mean-reversion potential',
+        'Risk: Trend continuation',
+        `Weekly trend backdrop: ${weeklyTrend}`,
+      ];
     } else if (dailyRsi > 70 && dailyBB === 'UPPER' && dailyTrend === 'BULLISH') {
       action = 'SELL';
       confidence = 0.75;
       reason = 'Daily overbought at Bollinger resistance';
-      insights = ['Profit-taking opportunity', 'Risk: Trend continuation', 'Stop above resistance'];
+      insights = [
+        'Profit-taking opportunity',
+        'Risk: Trend continuation',
+        `Weekly trend backdrop: ${weeklyTrend}`,
+      ];
     } else if (dailyRsi < 35 && dailyTrend === 'BULLISH' && hourlyTrend === 'BULLISH') {
       action = 'BUY';
       confidence = 0.7;
@@ -1018,11 +1297,20 @@ Analyze both timeframes and provide JSON:
       confidence = 0.65;
       reason = 'Hourly oversold in bullish hourly trend';
       insights = ['Short-term mean reversion opportunity', 'Confirm with volume', 'Tight stop loss'];
-    } else if (momentum === 'STRONG_DOWN' && dailyTrend === 'BEARISH') {
+    } else if (momentum10m === 'STRONG_DOWN' && dailyTrend === 'BEARISH') {
       action = 'SELL';
       confidence = 0.6;
-      reason = 'Momentum and daily trend both bearish';
+      reason = 'Short-term momentum and daily trend both bearish';
       insights = ['Potential continuation move', 'Watch for support breaks', 'Consider partial position sizing'];
+    } else if (
+      frame1w.trend === 'BULLISH' &&
+      frame1d.trend === 'BULLISH' &&
+      frame4h.trend === 'BULLISH'
+    ) {
+      action = 'BUY';
+      confidence = 0.62;
+      reason = 'Weekly, daily, and 4H trends aligned to the upside';
+      insights = ['Momentum building across timeframes', 'Look for pullback entries', 'Maintain disciplined stop'];
     }
 
     return {
@@ -1048,6 +1336,7 @@ Analyze both timeframes and provide JSON:
       usesMockData: true,
       indicators: {
         momentum: 'N/A',
+        frames: {},
         daily: {
           rsi: 'N/A',
           bollingerPosition: 'N/A',
@@ -1060,7 +1349,20 @@ Analyze both timeframes and provide JSON:
           bollingerPosition: 'N/A',
           trend: 'N/A',
         },
+        fourHour: {
+          rsi: 'N/A',
+          trend: 'N/A',
+          momentum: 'N/A',
+          bollingerPosition: 'N/A',
+        },
+        weekly: {
+          rsi: 'N/A',
+          trend: 'N/A',
+          momentum: 'N/A',
+          bollingerPosition: 'N/A',
+        },
       },
+      heatmapEntry: null,
     };
   }
 
@@ -1218,6 +1520,65 @@ app.get('/', (req, res) => {
           gap: 16px;
           margin-bottom: 28px;
         }
+        .sentiment-card {
+          margin-bottom: 28px;
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(129, 140, 248, 0.2));
+          border: 1px solid rgba(129, 140, 248, 0.35);
+          border-radius: 20px;
+          padding: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 24px;
+        }
+        .sentiment-indicator {
+          flex: 0 0 140px;
+          height: 140px;
+          background: conic-gradient(#22c55e 0deg, #22c55e var(--sentiment-angle, 180deg), rgba(148, 163, 184, 0.25) var(--sentiment-angle, 180deg));
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+          box-shadow: 0 12px 30px rgba(14, 165, 233, 0.25);
+        }
+        .sentiment-indicator::after {
+          content: '';
+          position: absolute;
+          width: 110px;
+          height: 110px;
+          background: rgba(15, 23, 42, 0.85);
+          border-radius: 50%;
+        }
+        .sentiment-value {
+          position: relative;
+          z-index: 2;
+          font-size: 2.2em;
+          font-weight: 700;
+          color: #e0f2fe;
+        }
+        .sentiment-details {
+          flex: 1;
+          color: #0f172a;
+        }
+        .sentiment-label {
+          font-size: 0.75em;
+          text-transform: uppercase;
+          letter-spacing: 0.16em;
+          font-weight: 700;
+          color: #475569;
+          margin-bottom: 8px;
+        }
+        .sentiment-status {
+          font-size: 1.6em;
+          font-weight: 700;
+          margin-bottom: 8px;
+          color: #0f172a;
+        }
+        .sentiment-meta {
+          font-size: 0.85em;
+          color: #475569;
+        }
         .stat-card {
           background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9));
           padding: 20px;
@@ -1243,6 +1604,78 @@ app.get('/', (req, res) => {
           border-radius: 20px;
           margin-bottom: 28px;
           border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+        .heatmap-section {
+          background: linear-gradient(135deg, rgba(15, 23, 42, 0.05), rgba(59, 130, 246, 0.08));
+          border-radius: 20px;
+          padding: 24px;
+          border: 1px solid rgba(148, 163, 184, 0.2);
+          margin-bottom: 28px;
+        }
+        .section-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: baseline;
+          margin-bottom: 16px;
+          color: #0f172a;
+        }
+        .section-header small {
+          color: #475569;
+          font-size: 0.8em;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+        }
+        .heatmap-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+          gap: 12px;
+        }
+        .heatmap-empty {
+          grid-column: 1 / -1;
+          text-align: center;
+          padding: 24px;
+          color: #475569;
+          background: rgba(241, 245, 249, 0.7);
+          border-radius: 14px;
+          border: 1px dashed rgba(148, 163, 184, 0.4);
+        }
+        .heatmap-cell {
+          padding: 16px;
+          border-radius: 14px;
+          background: rgba(248, 250, 252, 0.9);
+          border: 1px solid rgba(148, 163, 184, 0.25);
+          transition: transform 0.2s ease;
+        }
+        .heatmap-cell:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 18px 32px rgba(15, 23, 42, 0.12);
+        }
+        .heatmap-coin {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 10px;
+          font-weight: 600;
+          color: #0f172a;
+        }
+        .heatmap-score {
+          font-size: 1.4em;
+          font-weight: 700;
+        }
+        .heatmap-frames {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 6px;
+          font-size: 0.7em;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+        .heatmap-frame {
+          padding: 6px;
+          border-radius: 8px;
+          background: rgba(15, 23, 42, 0.06);
+          text-align: center;
+          font-weight: 600;
         }
         .button-group {
           display: grid;
@@ -1370,6 +1803,30 @@ app.get('/', (req, res) => {
           border-radius: 12px;
           text-align: center;
           border: 1px solid rgba(148, 163, 184, 0.25);
+        }
+        .timeframe-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+          gap: 10px;
+          margin: 16px 0;
+        }
+        .timeframe-card {
+          border-radius: 12px;
+          padding: 12px;
+          background: rgba(15, 23, 42, 0.05);
+          border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+        .timeframe-card h5 {
+          font-size: 0.75em;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #475569;
+          margin-bottom: 8px;
+        }
+        .timeframe-card .metric {
+          font-size: 0.9em;
+          color: #0f172a;
+          margin-bottom: 4px;
         }
         .technical-item strong {
           display: block;
@@ -1518,6 +1975,17 @@ app.get('/', (req, res) => {
             </div>
           </div>
 
+          <div class="sentiment-card" id="sentimentCard">
+            <div class="sentiment-indicator" id="sentimentGauge">
+              <div class="sentiment-value" id="sentimentValue">--</div>
+            </div>
+            <div class="sentiment-details">
+              <div class="sentiment-label">Fear & Greed Index</div>
+              <div class="sentiment-status" id="sentimentStatus">Fetching sentiment…</div>
+              <div class="sentiment-meta" id="sentimentMeta">Last updated: --</div>
+            </div>
+          </div>
+
           <div class="controls">
             <h3>🎯 Scanner Controls</h3>
             <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
@@ -1544,6 +2012,16 @@ app.get('/', (req, res) => {
               <div class="status-meta" id="telemetryStatus">
                 Telegram: ${TELEGRAM_ENABLED ? '✅ Enabled' : '⚠️ Disabled'}
               </div>
+            </div>
+          </div>
+
+          <div class="heatmap-section">
+            <div class="section-header">
+              <h3>🧭 Multi-Timeframe Heatmap</h3>
+              <small>RSI + Trend + Momentum composite</small>
+            </div>
+            <div class="heatmap-grid" id="heatmapGrid">
+              <div class="heatmap-empty">Run a scan to populate the heatmap.</div>
             </div>
           </div>
 
@@ -1622,6 +2100,83 @@ app.get('/', (req, res) => {
           return '<div class="ai-visual"><h4>🔎 Why the AI chose this</h4><ul class="ai-list">' + items + '</ul></div>';
         }
 
+        function heatmapColor(score) {
+          const numericScore = Number(score);
+          if (score == null || !Number.isFinite(numericScore)) {
+            return {
+              background: 'rgba(148, 163, 184, 0.18)',
+              border: 'rgba(148, 163, 184, 0.4)',
+              text: '#0f172a',
+            };
+          }
+          const clamped = Math.max(-2.5, Math.min(2.5, numericScore));
+          const normalized = (clamped + 2.5) / 5; // 0..1
+          const hue = normalized * 120;
+          return {
+            background: 'hsla(' + hue + ', 85%, 88%, 0.95)',
+            border: 'hsla(' + hue + ', 75%, 55%, 0.7)',
+            text: 'hsla(' + hue + ', 80%, 25%, 1)',
+          };
+        }
+
+        function renderHeatmap(entries) {
+          const grid = document.getElementById('heatmapGrid');
+          if (!grid) return;
+          if (!entries || entries.length === 0) {
+            grid.innerHTML = '<div class="heatmap-empty">No heatmap data yet. Run a scan to populate insights.</div>';
+            return;
+          }
+          const topEntries = entries.slice(0, 12);
+          grid.innerHTML = topEntries.map((entry) => {
+            const score = Number(entry.overallScore ?? 0);
+            const styles = heatmapColor(score);
+            const frames = entry.frames || {};
+            const frameOrder = [
+              { key: '10m', label: '10m' },
+              { key: '1h', label: '1h' },
+              { key: '4h', label: '4h' },
+              { key: '1d', label: '1d' },
+              { key: '1w', label: '1w' },
+            ];
+            const framesHtml = frameOrder.map(({ key, label }) => {
+              const frame = frames[key] || {};
+              const frameColor = heatmapColor(frame.score);
+              return '<div class="heatmap-frame" style="background:' + frameColor.background + '; color:' + frameColor.text + ';">' + label + '</div>';
+            }).join('');
+            return '<div class="heatmap-cell" style="background:' + styles.background + '; border-color:' + styles.border + '; color:' + styles.text + ';">' +
+              '<div class="heatmap-coin"><span>' + entry.symbol + '</span><span class="heatmap-score">' + score.toFixed(2) + '</span></div>' +
+              '<div class="heatmap-frames">' + framesHtml + '</div>' +
+              '</div>';
+          }).join('');
+        }
+
+        function updateSentimentCard(sentiment) {
+          const gauge = document.getElementById('sentimentGauge');
+          const valueEl = document.getElementById('sentimentValue');
+          const statusEl = document.getElementById('sentimentStatus');
+          const metaEl = document.getElementById('sentimentMeta');
+          if (!gauge || !valueEl || !statusEl || !metaEl) return;
+
+          if (!sentiment || sentiment.value == null) {
+            valueEl.textContent = '--';
+            statusEl.textContent = 'No data';
+            metaEl.textContent = 'Last updated: --';
+            gauge.style.setProperty('--sentiment-angle', '180deg');
+            return;
+          }
+
+          const value = Number(sentiment.value);
+          valueEl.textContent = value.toFixed(0);
+          statusEl.textContent = sentiment.classification || 'Neutral';
+          const updatedAt = sentiment.timestamp ? new Date(sentiment.timestamp) : new Date();
+          metaEl.textContent = 'Last updated: ' + updatedAt.toLocaleString();
+
+          const angle = Math.min(Math.max((value / 100) * 360, 0), 360);
+          gauge.style.setProperty('--sentiment-angle', angle + 'deg');
+          const colorStyles = heatmapColor((value / 100) * 2 - 1);
+          gauge.style.boxShadow = '0 12px 30px ' + colorStyles.border;
+        }
+
         async function changeInterval(intervalKey) {
           try {
             const response = await fetch('/auto-scan-settings', {
@@ -1658,6 +2213,9 @@ app.get('/', (req, res) => {
 
               document.getElementById('telemetryStatus').textContent =
                 'Telegram: ' + (data.telegramEnabled ? '✅ Enabled' : '⚠️ Disabled');
+
+              updateSentimentCard(data.stats.greedFear);
+              renderHeatmap(data.stats.heatmap);
 
               const intervalKey = data.stats.selectedInterval || data.interval;
               if (intervalKey) {
@@ -1812,6 +2370,8 @@ app.get('/', (req, res) => {
             const response = await fetch('/scan-now');
             const data = await response.json();
             updateStats();
+            if (data.heatmap) renderHeatmap(data.heatmap);
+            if (data.greedFear) updateSentimentCard(data.greedFear);
 
             if (!data || !data.opportunities || data.opportunities.length === 0) {
               const msg = data.status === 'skipped'
@@ -1832,53 +2392,66 @@ app.get('/', (req, res) => {
 
               const daily = opp.indicators.daily;
               const hourly = opp.indicators.hourly;
+              const frames = opp.indicators.frames || {};
+
+              const timeframeOrder = [
+                { key: '10m', label: '10 Min' },
+                { key: '1h', label: '1 Hour' },
+                { key: '4h', label: '4 Hour' },
+                { key: '1d', label: '1 Day' },
+                { key: '1w', label: '1 Week' },
+              ];
+
+              const timeframeCards = timeframeOrder.map(({ key, label }) => {
+                const frame = frames[key] || {};
+                const styles = heatmapColor(frame.score);
+                return '<div class="timeframe-card" style="background:' + styles.background + '; border-color:' + styles.border + '; color:' + styles.text + ';">' +
+                  '<h5>' + label + '</h5>' +
+                  '<div class="metric"><strong>RSI:</strong> ' + (frame.rsi || 'N/A') + '</div>' +
+                  '<div class="metric"><strong>Trend:</strong> ' + (frame.trend || 'N/A') + '</div>' +
+                  '<div class="metric"><strong>Momentum:</strong> ' + (frame.momentum || 'N/A') + '</div>' +
+                '</div>';
+              }).join('');
 
               const aiInsights = [
                 { label: 'Daily RSI', value: daily.rsi },
                 { label: 'Hourly RSI', value: hourly.rsi },
+                { label: 'Headline Momentum', value: opp.indicators.momentum },
                 { label: 'Daily Trend', value: daily.trend },
                 { label: 'Hourly Trend', value: hourly.trend },
-                { label: 'Momentum', value: opp.indicators.momentum },
-                { label: 'Support / Resistance', value: \`\${daily.support} / \${daily.resistance}\` },
+                { label: 'Daily S/R', value: (daily.support || 'N/A') + ' / ' + (daily.resistance || 'N/A') },
               ];
 
-              const aiList = aiInsights.map((item) => {
-                return '<li><span class="ai-tag">' + item.label + '</span>' + item.value + '</li>';
-              }).join('');
+              const aiList = aiInsights
+                .map((item) => '<li><span class="ai-tag">' + item.label + '</span>' + item.value + '</li>')
+                .join('');
 
               html += \`
-                <div class="opportunity \${actionClass}">
+                <div class="opportunity ${actionClass}">
                   <div class="coin-header">
-                    <div class="coin-name">\${opp.name} (\${opp.symbol})</div>
-                    <div class="\${actionClass}-badge action-badge">\${opp.action}</div>
+                    <div class="coin-name">${opp.name} (${opp.symbol})</div>
+                    <div class="${actionClass}-badge action-badge">${opp.action}</div>
                   </div>
                   <div class="price-confidence">
                     <div class="price-box">
-                      <div class="value">\${opp.price}</div>
+                      <div class="value">${opp.price}</div>
                       <div>Current Price</div>
                     </div>
                     <div class="confidence-box">
-                      <div class="value">\${confidencePercent}%</div>
+                      <div class="value">${confidencePercent}%</div>
                       <div>Confidence</div>
                     </div>
                   </div>
-                  <div class="confidence-bar"><div class="confidence-fill \${confidenceLevel}" style="width: \${confidencePercent}%"></div></div>
-                  <div class="reason-box"><p>\${opp.reason}</p></div>
-                  <div class="technical-grid">
-                    <div class="technical-item"><strong>Daily RSI</strong><div>\${daily.rsi}</div></div>
-                    <div class="technical-item"><strong>Hourly RSI</strong><div>\${hourly.rsi}</div></div>
-                    <div class="technical-item"><strong>Daily Trend</strong><div>\${daily.trend}</div></div>
-                    <div class="technical-item"><strong>Hourly Trend</strong><div>\${hourly.trend}</div></div>
-                    <div class="technical-item"><strong>Momentum</strong><div>\${opp.indicators.momentum}</div></div>
-                    <div class="technical-item"><strong>Bollinger</strong><div>\${daily.bollingerPosition} / \${hourly.bollingerPosition}</div></div>
-                  </div>
+                  <div class="confidence-bar"><div class="confidence-fill ${confidenceLevel}" style="width: ${confidencePercent}%"></div></div>
+                  <div class="reason-box"><p>${opp.reason}</p></div>
+                  <div class="timeframe-grid">${timeframeCards}</div>
                   <div class="ai-visual">
                     <h4>🧠 DeepSeek Evaluation</h4>
-                    <ul class="ai-list">\${aiList}</ul>
+                    <ul class="ai-list">${aiList}</ul>
                   </div>
                   <div class="insights-list">
                     <h4>💡 Key Insights</h4>
-                    <ul>\${opp.insights.map((i) => '<li>' + i + '</li>').join('')}</ul>
+                    <ul>${opp.insights.map((i) => '<li>' + i + '</li>').join('')}</ul>
                   </div>
                 </div>
               \`;
