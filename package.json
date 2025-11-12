@@ -1,24 +1,12 @@
 {
   "name": "ai-crypto-trading-scanner",
   "version": "2.0.0",
-  "description": "Professional AI-powered crypto trading scanner with multi-API support",
+  "description": "Professional AI-powered crypto trading scanner",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "nodemon app.js",
-    "install-deps": "npm install express axios node-fetch dotenv"
+    "install-deps": "npm install"
   },
-  "keywords": [
-    "crypto",
-    "trading",
-    "scanner",
-    "ai",
-    "technical-analysis",
-    "bitcoin",
-    "ethereum"
-  ],
-  "author": "Your Name",
-  "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
     "axios": "^1.6.0",
