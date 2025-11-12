@@ -1,9 +1,69 @@
-const express = require('express');
+constructor() {
+    this.isRunning = false;
+    this.scanInterval = null;
+    this.trackedCoins = this.getTop50Coins();
+    this.minConfidence = 0.65;
+    this.analysisHistory = [];
+    this.liveAnalysis = [];
+    this.currentlyAnalyzing = null;
+    this.stats = {
+      totalScans: 0,
+      totalOpportunities: 0,
+      avgConfidence: 0,
+      lastScanDuration: 0,
+      notificationsSent: 0
+    };
+    this.lastNotificationTime = {};
+    this.notificationsSent = 0;
+    this.lastNotificationTime = {};
+  }
+
+  // Telegram notification method
+  async sendTelegramNotification(opportunity) {
+    if (!TELEGRAM_ENABLED) {
+      console.log('⚠️ Telegram notifications disabled (missing credentials)');
+      return false;
+    }
+
+    // Rate limiting: Don't send notifications for same coin within 30 minutes
+    const coinKey = opportunity.symbol;
+    const now = Date.now();
+    const cooldown = 30 * 60 * 1000; // 30 minutes
+
+    if (this.lastNotificationTime[coinKey] && (now - this.lastNotificationTime[coinKey]) < cooldown) {
+      console.log(`⏳ Skipping notification for ${coinKey} (cooldown active)`);
+      return false;
+    }
+
+    try {
+      const actionEmoji = opportunity.action === 'BUY' ? '🟢' : opportunity.action === 'SELL' ? '🔴' : '🟡';
+      const confidencePercent = (opportunity.confidence * 100).toFixed(0);
+      
+      const message = `
+${actionEmoji} *${opportunity.action} SIGNAL DETECTED*
+
+*Coin:* ${opportunity.name} (${opportunity.symbol})
+*Price:* ${opportunity.price}
+*Confidence:* ${confidencePercent}%
+
+📊 *Technical Analysis:*
+• RSI: ${opportunity.technicals.rsi}
+• Bollinger:const express = require('express');
 const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(express.json());
+
+// Telegram Configuration
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const TELEGRAM_ENABLED = TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID;
+
+// Telegram Configuration
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const TELEGRAM_ENABLED = TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID;
 
 // Enhanced Professional Trading Bot
 class ProfessionalTradingBot {
@@ -77,6 +137,73 @@ class ProfessionalTradingBot {
     return { status: 'stopped', time: new Date() };
   }
 
+  async sendTelegramNotification(opportunity) {
+    if (!TELEGRAM_ENABLED) {
+      console.log('⚠️ Telegram notifications disabled (missing credentials)');
+      return false;
+    }
+
+    // Rate limiting: Don't send notifications for same coin within 30 minutes
+    const coinKey = opportunity.symbol;
+    const now = Date.now();
+    const cooldown = 30 * 60 * 1000; // 30 minutes
+
+    if (this.lastNotificationTime[coinKey] && (now - this.lastNotificationTime[coinKey]) < cooldown) {
+      console.log(`⏳ Skipping notification for ${coinKey} (cooldown active)`);
+      return false;
+    }
+
+    try {
+      const actionEmoji = opportunity.action === 'BUY' ? '🟢' : opportunity.action === 'SELL' ? '🔴' : '🟡';
+      const confidencePercent = (opportunity.confidence * 100).toFixed(0);
+      
+      const message = `${actionEmoji} *${opportunity.action} SIGNAL DETECTED*
+
+*Coin:* ${opportunity.name} (${opportunity.symbol})
+*Price:* ${opportunity.price}
+*Confidence:* ${confidencePercent}%
+
+📊 *Technical Analysis:*
+• RSI: ${opportunity.technicals.rsi}
+• Bollinger: ${opportunity.technicals.bollingerPosition}
+• Trend: ${opportunity.technicals.trend}
+• Momentum: ${opportunity.technicals.momentum || 'N/A'}
+• Support: ${opportunity.technicals.support}
+• Resistance: ${opportunity.technicals.resistance}
+
+💡 *Key Insights:*
+${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
+
+📝 *Reason:* ${opportunity.reason}
+
+⏰ Detected: ${new Date(opportunity.timestamp).toLocaleString()}`;
+
+      const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+      
+      const response = await axios.post(telegramUrl, {
+        chat_id: TELEGRAM_CHAT_ID,
+        text: message,
+        parse_mode: 'Markdown'
+      }, {
+        timeout: 10000
+      });
+
+      if (response.data.ok) {
+        console.log(`✅ Telegram notification sent for ${opportunity.symbol}`);
+        this.lastNotificationTime[coinKey] = now;
+        this.stats.notificationsSent++;
+        return true;
+      } else {
+        console.log(`❌ Telegram API error: ${response.data.description}`);
+        return false;
+      }
+      
+    } catch (error) {
+      console.log(`❌ Failed to send Telegram notification: ${error.message}`);
+      return false;
+    }
+  }
+
   async performTechnicalScan() {
     const startTime = Date.now();
     try {
@@ -109,6 +236,15 @@ class ProfessionalTradingBot {
       this.stats.lastScanDuration = Date.now() - startTime;
       if (opportunities.length > 0) {
         this.stats.avgConfidence = opportunities.reduce((sum, o) => sum + o.confidence, 0) / opportunities.length;
+      }
+
+      // Send Telegram notifications for high-confidence opportunities
+      if (TELEGRAM_ENABLED && opportunities.length > 0) {
+        console.log(`📱 Sending Telegram notifications for ${opportunities.length} opportunities...`);
+        for (const opp of opportunities) {
+          await this.sendTelegramNotification(opp);
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay between notifications
+        }
       }
 
       this.analysisHistory.unshift({
@@ -1343,12 +1479,12 @@ app.get('/', (req, res) => {
                         <div class="stat-value" id="totalOpps">0</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-label">Avg Confidence</div>
-                        <div class="stat-value" id="avgConf">0%</div>
+                        <div class="stat-label">Notifications</div>
+                        <div class="stat-value" id="notifications">0</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-label">Last Duration</div>
-                        <div class="stat-value" id="lastDuration">0s</div>
+                        <div class="stat-label">Avg Confidence</div>
+                        <div class="stat-value" id="avgConf">0%</div>
                     </div>
                 </div>
                 
@@ -1446,10 +1582,9 @@ app.get('/', (req, res) => {
                     if (data.stats) {
                         document.getElementById('totalScans').textContent = data.stats.totalScans || 0;
                         document.getElementById('totalOpps').textContent = data.stats.totalOpportunities || 0;
+                        document.getElementById('notifications').textContent = data.stats.notificationsSent || 0;
                         document.getElementById('avgConf').textContent = 
                             data.stats.avgConfidence ? (data.stats.avgConfidence * 100).toFixed(0) + '%' : '0%';
-                        document.getElementById('lastDuration').textContent = 
-                            data.stats.lastScanDuration ? (data.stats.lastScanDuration / 1000).toFixed(1) + 's' : '0s';
                     }
                 } catch (error) {
                     console.log('Error updating stats:', error);
