@@ -551,7 +551,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     }
   }
 
-  async performTechnicalScan() {
+  async performTechnicalScan(options = {}) {
     if (this.scanInProgress) {
       console.log('⏳ Scan skipped; previous scan still running');
       this.stats.skippedDueToOverlap += 1;
@@ -571,6 +571,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       percent: 0,
       interval: this.selectedIntervalKey,
       startedAt: new Date(),
+      params: options,
     };
 
     try {
@@ -584,7 +585,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
 
       for (const coin of this.trackedCoins) {
         try {
-          const analysis = await this.analyzeWithTechnicalIndicators(coin);
+          const analysis = await this.analyzeWithTechnicalIndicators(coin, { options });
           analyzedCount += 1;
 
           if (analysis.usesMockData) {
@@ -596,6 +597,9 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
           }
 
           if (analysis.confidence >= this.minConfidence && !analysis.usesMockData) {
+            if (!this.applyScanFilters(analysis, options)) {
+              continue;
+            }
             opportunities.push(analysis);
             console.log(
               `✅ ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}% confidence)`,
@@ -696,8 +700,9 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     }
   }
 
-  async analyzeWithTechnicalIndicators(coin) {
+  async analyzeWithTechnicalIndicators(coin, context = {}) {
     let usesMockData = false;
+    const scanOptions = context.options || {};
 
     try {
       this.currentlyAnalyzing = {
@@ -797,7 +802,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
       };
       this.updateLiveAnalysis();
 
-      const aiAnalysis = await this.getAITechnicalAnalysis(indicatorSnapshot);
+      const aiAnalysis = await this.getAITechnicalAnalysis(indicatorSnapshot, scanOptions);
 
       this.currentlyAnalyzing.stage = 'Analysis complete';
       this.currentlyAnalyzing.progress = 100;
@@ -874,8 +879,8 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
         insights = ['Momentum building across timeframes', 'Look for pullback entries', 'Maintain disciplined stop'];
       }
 
-      if (technicalData.news && technicalData.news.length > 0) {
-        insights = [...insights, `News to watch: ${technicalData.news[0].title}`];
+      if (scanOptions.news && scanOptions.news.length > 0) {
+        insights = [...insights, `News to watch: ${scanOptions.news[0].title}`];
       }
 
       return {
@@ -1244,9 +1249,9 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     return 'NEUTRAL';
   }
 
-  async getAITechnicalAnalysis(technicalData) {
+  async getAITechnicalAnalysis(technicalData, options = {}) {
     try {
-      const prompt = this.createTechnicalAnalysisPrompt(technicalData);
+      const prompt = this.createTechnicalAnalysisPrompt(technicalData, options);
 
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -1273,7 +1278,7 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     }
   }
 
-  createTechnicalAnalysisPrompt(technicalData) {
+  createTechnicalAnalysisPrompt(technicalData, options = {}) {
     const frames = technicalData.frames || {};
     const frameToText = (key, label) => {
       const frame = frames[key] || {};
@@ -1300,6 +1305,15 @@ ${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
     const newsLines = (technicalData.news || [])
       .map((news) => `- (${news.source}) ${news.title}`)
       .join('\n') || '- No significant headlines in the last few hours';
+    const patternText = options.pattern
+      ? `Preferred pattern: ${options.pattern}`
+      : 'Preferred pattern: balanced';
+    const indicatorPrefs = options.indicators
+      ? Object.entries(options.indicators)
+          .filter(([, enabled]) => enabled)
+          .map(([key]) => key.toUpperCase())
+          .join(', ')
+      : 'All indicators';
     return `PROFESSIONAL TECHNICAL ANALYSIS REQUEST:
 
 CRYPTO: ${technicalData.symbol} - ${technicalData.name}
@@ -1315,7 +1329,8 @@ ${frameToText('1d', '1 Day')}
 
 ${frameToText('1w', '1 Week')}
 
-Provide a technical view that balances short-term (10m/1h), swing (4h/1d), and macro (1w) context.
+${patternText}
+Indicators selected: ${indicatorPrefs}
 
 RECENT NEWS:
 ${newsLines}
@@ -1482,6 +1497,17 @@ Respond with JSON:
   getScanHistory() {
     return this.analysisHistory.slice(0, 10);
   }
+
+  applyScanFilters(analysis, options) {
+    const cfg = options || {};
+    if (cfg.minConfidence && analysis.confidence < cfg.minConfidence) return false;
+    if (cfg.include) {
+      if (!cfg.include.buy && analysis.action === 'BUY') return false;
+      if (!cfg.include.sell && analysis.action === 'SELL') return false;
+      if (!cfg.include.hold && analysis.action === 'HOLD') return false;
+    }
+    return true;
+  }
 }
 
 const tradingBot = new ProfessionalTradingBot();
@@ -1497,9 +1523,10 @@ app.post('/stop-scan', (req, res) => {
   res.json(result);
 });
 
-app.get('/scan-now', async (req, res) => {
+app.post('/scan-now', async (req, res) => {
   try {
-    const result = await tradingBot.performTechnicalScan();
+    const options = req.body || {};
+    const result = await tradingBot.performTechnicalScan(options);
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -2158,6 +2185,44 @@ app.get('/', (req, res) => {
               <button class="btn-telegram" onclick="testTelegram()">📱 Test Telegram</button>
               <button class="btn-secondary" onclick="viewHistory()">📊 View History</button>
             </div>
+            <div style="margin-top:16px; background: rgba(241, 245, 249, 0.9); border-radius: 16px; padding: 18px; border:1px solid rgba(148,163,184,0.2);">
+              <h4 style="margin-bottom:12px; color:#0f172a;">Advanced Scan Settings</h4>
+              <div style="display:flex; flex-wrap:wrap; gap:16px;">
+                <div style="flex:1 1 220px;">
+                  <label style="font-size:0.8em; font-weight:600; color:#475569;">Confidence threshold</label>
+                  <input type="range" id="confidenceSlider" min="50" max="90" value="65" oninput="updateConfidenceLabel(this.value)" style="width:100%;">
+                  <div style="font-size:0.85em; color:#0f172a;"><span id="confidenceLabel">65</span>%</div>
+                </div>
+                <div style="flex:1 1 220px;">
+                  <label style="font-size:0.8em; font-weight:600; color:#475569;">Include signals</label>
+                  <div style="display:flex; gap:8px; margin-top:6px;">
+                    <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" id="filterBuy" checked> BUY</label>
+                    <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" id="filterSell" checked> SELL</label>
+                    <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" id="filterHold"> HOLD</label>
+                  </div>
+                </div>
+                <div style="flex:1 1 220px;">
+                  <label style="font-size:0.8em; font-weight:600; color:#475569;">Indicators</label>
+                  <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;">
+                    <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" id="useRSI" checked> RSI</label>
+                    <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" id="useBollinger" checked> Bollinger</label>
+                    <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" id="useTrend" checked> Trend</label>
+                    <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" id="useMomentum" checked> Momentum</label>
+                    <label style="display:flex; align-items:center; gap:4px;"><input type="checkbox" id="useNews" checked> News</label>
+                  </div>
+                </div>
+                <div style="flex:1 1 220px;">
+                  <label style="font-size:0.8em; font-weight:600; color:#475569;">Pattern focus</label>
+                  <select id="patternSelect" style="width:100%; padding:8px 12px; border-radius:10px; border:1px solid rgba(148,163,184,0.4);">
+                    <option value="balanced">Balanced (default)</option>
+                    <option value="meanReversion">Mean Reversion (RSI/Bollinger)</option>
+                    <option value="trendFollowing">Trend Following (Trend/Momentum)</option>
+                    <option value="newsDriven">News Driven</option>
+                    <option value="custom">Custom mix</option>
+                  </select>
+                </div>
+              </div>
+            </div>
             <div class="status-card">
               <h4>Scanner Status</h4>
               <div id="statusText">🟢 Ready to start</div>
@@ -2165,16 +2230,6 @@ app.get('/', (req, res) => {
               <div class="status-meta" id="telemetryStatus">
                 Telegram: ${TELEGRAM_ENABLED ? '✅ Enabled' : '⚠️ Disabled'}
               </div>
-            </div>
-          </div>
-
-          <div class="heatmap-section">
-            <div class="section-header">
-              <h3>🧭 Multi-Timeframe Heatmap</h3>
-              <small>RSI + Trend + Momentum composite</small>
-            </div>
-            <div class="heatmap-grid" id="heatmapGrid">
-              <div class="heatmap-empty">Run a scan to populate the heatmap.</div>
             </div>
           </div>
 
@@ -2190,31 +2245,34 @@ app.get('/', (req, res) => {
         </div>
 
         <div class="sidebar">
-          <div style="background: linear-gradient(135deg, #0f172a, #111827); color: white; border-radius: 20px; padding: 24px;">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
-              <h3 style="margin-bottom: 0;">🧠 DeepSeek AI Monitor</h3>
-              <span class="ai-chip">Live Analysis</span>
+          <div style="background: rgba(15, 23, 42, 0.92); color: white; border-radius: 24px; padding: 26px; box-shadow: 0 20px 40px rgba(15,23,42,0.45);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px;">
+              <h3 style="margin-bottom: 0; font-size: 1.1em; letter-spacing: 0.08em; text-transform: uppercase; color: #22d3ee;">Live AI Reasoning</h3>
+              <span class="ai-chip">Thinking</span>
             </div>
-            <div id="currentAnalysis" style="min-height: 220px; padding: 20px; background: rgba(15, 23, 42, 0.6); border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.25);">
-              <p style="color: #94a3b8; text-align: center;">Waiting for analysis...</p>
+            <div id="currentAnalysis" style="min-height: 240px; padding: 20px; background: rgba(15, 23, 42, 0.75); border-radius: 16px; border: 1px solid rgba(59,130,246,0.35);">
+              <div style="color:#94a3b8; text-align:center;">Waiting for analysis...</div>
             </div>
 
-            <div class="history-card" id="recentHistory">
-              <div class="history-item">
-                <span>Scans completed</span>
-                <span id="historyScans">0</span>
-              </div>
-              <div class="history-item">
-                <span>Signals delivered</span>
-                <span id="historySignals">0</span>
-              </div>
-              <div class="history-item">
-                <span>Mock data usage</span>
-                <span id="historyMock">0</span>
-              </div>
-              <div class="history-item">
-                <span>Skipped scans</span>
-                <span id="historySkipped">0</span>
+            <div style="margin-top:20px;">
+              <h4 style="margin-bottom:10px; letter-spacing:0.08em; font-size:0.8em; text-transform:uppercase; color:#38bdf8;">Session Stats</h4>
+              <div class="history-card" id="recentHistory">
+                <div class="history-item">
+                  <span>Scans completed</span>
+                  <span id="historyScans">0</span>
+                </div>
+                <div class="history-item">
+                  <span>Signals delivered</span>
+                  <span id="historySignals">0</span>
+                </div>
+                <div class="history-item">
+                  <span>Mock data usage</span>
+                  <span id="historyMock">0</span>
+                </div>
+                <div class="history-item">
+                  <span>Skipped scans</span>
+                  <span id="historySkipped">0</span>
+                </div>
               </div>
             </div>
           </div>
@@ -2229,6 +2287,13 @@ app.get('/', (req, res) => {
           '4h': 'Every 4 hours',
           '1d': 'Every 1 day',
           '1w': 'Every 1 week',
+        };
+        const patternLabels = {
+          balanced: 'Balanced weighting',
+          meanReversion: 'Favor RSI/Bollinger reversals',
+          trendFollowing: 'Favor trend & momentum continuation',
+          newsDriven: 'Prefer coins with fresh headlines',
+          custom: 'Custom mix',
         };
 
         function formatIntervalLabel(key) {
@@ -2364,9 +2429,10 @@ app.get('/', (req, res) => {
               document.getElementById('historyMock').textContent = data.stats.mockDataUsage || 0;
               document.getElementById('historySkipped').textContent = data.stats.skippedDueToOverlap || 0;
 
-              document.getElementById('telemetryStatus').textContent =
-                'Telegram: ' + (data.telegramEnabled ? '✅ Enabled' : '⚠️ Disabled') +
-                ' • News: ' + (data.newsEnabled ? '✅ Enabled' : '⚠️ Disabled');
+              const statusMeta = 'Telegram: ' + (data.telegramEnabled ? '✅ Enabled' : '⚠️ Disabled') +
+                ' • News: ' + (data.newsEnabled ? '✅ Enabled' : '⚠️ Disabled') +
+                ' • Pattern: ' + (patternLabels[data.stats.pattern || 'balanced'] || 'Balanced');
+              document.getElementById('telemetryStatus').textContent = statusMeta;
 
               updateSentimentCard(data.stats.greedFear);
               renderHeatmap(data.stats.heatmap);
@@ -2436,10 +2502,10 @@ app.get('/', (req, res) => {
               ];
 
               if (analysis.technicals) {
-                insightDetails.push({ label: 'Daily RSI', value: analysis.technicals.dailyRsi });
-                insightDetails.push({ label: 'Hourly RSI', value: analysis.technicals.hourlyRsi });
-                insightDetails.push({ label: 'Trends', value: analysis.technicals.dailyTrend + ' / ' + analysis.technicals.hourlyTrend });
-                insightDetails.push({ label: 'Momentum', value: analysis.technicals.momentum });
+                insightDetails.push({ label: 'Frames', value: analysis.technicals.frameSnapshot || '—' });
+                if (analysis.technicals.momentum) {
+                  insightDetails.push({ label: 'Momentum', value: analysis.technicals.momentum });
+                }
               }
 
               if (analysis.result) {
@@ -2452,26 +2518,22 @@ app.get('/', (req, res) => {
               }
 
               const insightList = insightDetails.map((item) => {
-                return '<li><span class="ai-tag">' + item.label + '</span>' + item.value + '</li>';
+                return '<div style="margin-bottom:10px;"><div style="font-size:0.7em; letter-spacing:0.1em; text-transform:uppercase; color:#38bdf8;">' + item.label + '</div><div style="color:#e2e8f0;">' + item.value + '</div></div>';
               }).join('');
 
-              currentDiv.innerHTML = \`
-                <div style="color: #60a5fa; font-weight: 600; margin-bottom: 12px;">\${analysis.stage}</div>
-                <div style="color: #e2e8f0; font-size: 1.15em; margin-bottom: 8px;"><strong>\${analysis.symbol}</strong> • \${analysis.name}</div>
-                <div class="live-progress">
-                  <div style="display: flex; justify-content: space-between; align-items: center; color: #cbd5f5; font-size: 0.9em;">
-                    <span>Progress</span>
-                    <span>\${progress}%</span>
-                  </div>
-                  <div class="progress-bar"><div class="progress-fill" style="width: \${progress}%"></div></div>
-                </div>
-                <div class="ai-visual">
-                  <h4>🔍 DeepSeek Evaluation</h4>
-                  <ul class="ai-list">\${insightList}</ul>
-                </div>
-              \`;
+              currentDiv.innerHTML = '<div style="display:flex; flex-direction:column; gap:12px;">' +
+                '<div style="display:flex; justify-content:space-between; align-items:center;"><div style="color:#38bdf8; font-weight:600;">' + (analysis.symbol || '') + ' • ' + (analysis.name || '') + '</div><div style="font-size:0.75em; color:#94a3b8;">' + new Date(analysis.timestamp || Date.now()).toLocaleTimeString() + '</div></div>' +
+                '<div class="live-progress">' +
+                  '<div style="display: flex; justify-content: space-between; align-items: center; color: #cbd5f5; font-size: 0.85em; text-transform:uppercase; letter-spacing:0.08em;">' +
+                    '<span>Pipeline</span>' +
+                    '<span>' + progress + '%</span>' +
+                  '</div>' +
+                  '<div class="progress-bar"><div class="progress-fill" style="width: ' + progress + '%"></div></div>' +
+                '</div>' +
+                '<div style="background: rgba(15,23,42,0.65); border-radius:14px; padding:16px; border:1px solid rgba(59,130,246,0.3);">' + insightList + '</div>' +
+              '</div>';
             } else {
-              currentDiv.innerHTML = '<p style="color: #94a3b8; text-align: center;">No active analysis</p>';
+              currentDiv.innerHTML = '<div style="color: #94a3b8; text-align: center;">No active analysis</div>';
             }
           } catch (error) {
             console.log('Error updating live analysis:', error);
@@ -2525,10 +2587,30 @@ app.get('/', (req, res) => {
             updateLiveAnalysis();
             pollScanProgress();
 
-            const response = await fetch('/scan-now');
+            const scanOptions = {
+              minConfidence: (Number(document.getElementById('confidenceSlider').value) || 65) / 100,
+              include: {
+                buy: document.getElementById('filterBuy').checked,
+                sell: document.getElementById('filterSell').checked,
+                hold: document.getElementById('filterHold').checked,
+              },
+              indicators: {
+                rsi: document.getElementById('useRSI').checked,
+                bollinger: document.getElementById('useBollinger').checked,
+                trend: document.getElementById('useTrend').checked,
+                momentum: document.getElementById('useMomentum').checked,
+                news: document.getElementById('useNews').checked,
+              },
+              pattern: document.getElementById('patternSelect').value,
+            };
+
+            const response = await fetch('/scan-now', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(scanOptions),
+            });
             const data = await response.json();
             updateStats();
-            if (data.heatmap) renderHeatmap(data.heatmap);
             if (data.greedFear) updateSentimentCard(data.greedFear);
 
             if (!data || !data.opportunities || data.opportunities.length === 0) {
@@ -2658,6 +2740,10 @@ app.get('/', (req, res) => {
         setInterval(updateStats, 20000);
         setInterval(pollScanProgress, 3000);
         pollScanProgress();
+
+        function updateConfidenceLabel(value) {
+          document.getElementById('confidenceLabel').textContent = value;
+        }
       </script>
     </body>
     </html>
