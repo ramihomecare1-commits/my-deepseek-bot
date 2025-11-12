@@ -34,19 +34,102 @@ class ProfessionalTradingBot {
     return [
       { symbol: 'BTC', name: 'Bitcoin', id: 'bitcoin' },
       { symbol: 'ETH', name: 'Ethereum', id: 'ethereum' },
+      { symbol: 'USDT', name: 'Tether', id: 'tether' },
       { symbol: 'BNB', name: 'Binance Coin', id: 'binancecoin' },
       { symbol: 'SOL', name: 'Solana', id: 'solana' },
+      { symbol: 'USDC', name: 'USD Coin', id: 'usd-coin' },
       { symbol: 'XRP', name: 'Ripple', id: 'ripple' },
-      { symbol: 'ADA', name: 'Cardano', id: 'cardano' },
-      { symbol: 'AVAX', name: 'Avalanche', id: 'avalanche-2' },
-      { symbol: 'DOT', name: 'Polkadot', id: 'polkadot' },
       { symbol: 'DOGE', name: 'Dogecoin', id: 'dogecoin' },
+      { symbol: 'ADA', name: 'Cardano', id: 'cardano' },
+      { symbol: 'TRX', name: 'TRON', id: 'tron' },
+      { symbol: 'AVAX', name: 'Avalanche', id: 'avalanche-2' },
+      { symbol: 'SHIB', name: 'Shiba Inu', id: 'shiba-inu' },
+      { symbol: 'TON', name: 'Toncoin', id: 'the-open-network' },
       { symbol: 'LINK', name: 'Chainlink', id: 'chainlink' },
+      { symbol: 'DOT', name: 'Polkadot', id: 'polkadot' },
+      { symbol: 'BCH', name: 'Bitcoin Cash', id: 'bitcoin-cash' },
       { symbol: 'MATIC', name: 'Polygon', id: 'matic-network' },
-      { symbol: 'UNI', name: 'Uniswap', id: 'uniswap' },
+      { symbol: 'DAI', name: 'Dai', id: 'dai' },
       { symbol: 'LTC', name: 'Litecoin', id: 'litecoin' },
+      { symbol: 'UNI', name: 'Uniswap', id: 'uniswap' },
+      { symbol: 'NEAR', name: 'NEAR Protocol', id: 'near' },
+      { symbol: 'ICP', name: 'Internet Computer', id: 'internet-computer' },
+      { symbol: 'LEO', name: 'LEO Token', id: 'leo-token' },
+      { symbol: 'ETC', name: 'Ethereum Classic', id: 'ethereum-classic' },
+      { symbol: 'APT', name: 'Aptos', id: 'aptos' },
       { symbol: 'ATOM', name: 'Cosmos', id: 'cosmos' },
-      { symbol: 'XLM', name: 'Stellar', id: 'stellar' }
+      { symbol: 'FIL', name: 'Filecoin', id: 'filecoin' },
+      { symbol: 'CRO', name: 'Cronos', id: 'crypto-com-chain' },
+      { symbol: 'ARB', name: 'Arbitrum', id: 'arbitrum' },
+      { symbol: 'XLM', name: 'Stellar', id: 'stellar' },
+      { symbol: 'VET', name: 'VeChain', id: 'vechain' },
+      { symbol: 'OKB', name: 'OKB', id: 'okb' },
+      { symbol: 'XMR', name: 'Monero', id: 'monero' },
+      { symbol: 'ALGO', name: 'Algorand', id: 'algorand' },
+      { symbol: 'HBAR', name: 'Hedera', id: 'hedera-hashgraph' },
+      { symbol: 'INJ', name: 'Injective', id: 'injective-protocol' },
+      { symbol: 'OP', name: 'Optimism', id: 'optimism' },
+      { symbol: 'QNT', name: 'Quant', id: 'quant-network' },
+      { symbol: 'AAVE', name: 'Aave', id: 'aave' },
+      { symbol: 'GRT', name: 'The Graph', id: 'the-graph' },
+      { symbol: 'RUNE', name: 'THORChain', id: 'thorchain' },
+      { symbol: 'STX', name: 'Stacks', id: 'blockstack' },
+      { symbol: 'MKR', name: 'Maker', id: 'maker' },
+      { symbol: 'SAND', name: 'The Sandbox', id: 'the-sandbox' },
+      { symbol: 'MANA', name: 'Decentraland', id: 'decentraland' },
+      { symbol: 'FTM', name: 'Fantom', id: 'fantom' },
+      { symbol: 'AXS', name: 'Axie Infinity', id: 'axie-infinity' },
+      { symbol: 'THETA', name: 'Theta Network', id: 'theta-token' },
+      { symbol: 'EGLD', name: 'MultiversX', id: 'elrond-erd-2' },
+      { symbol: 'XTZ', name: 'Tezos', id: 'tezos' },
+      { symbol: 'FLOW', name: 'Flow', id: 'flow' },
+      { symbol: 'EOS', name: 'EOS', id: 'eos' },
+      { symbol: 'KCS', name: 'KuCoin Token', id: 'kucoin-shares' },
+      { symbol: 'CHZ', name: 'Chiliz', id: 'chiliz' },
+      { symbol: 'BSV', name: 'Bitcoin SV', id: 'bitcoin-cash-sv' },
+      { symbol: 'ZEC', name: 'Zcash', id: 'zcash' },
+      { symbol: 'KLAY', name: 'Klaytn', id: 'klay-token' },
+      { symbol: 'CAKE', name: 'PancakeSwap', id: 'pancakeswap-token' },
+      { symbol: 'NEO', name: 'Neo', id: 'neo' },
+      { symbol: 'DASH', name: 'Dash', id: 'dash' },
+      { symbol: 'IOTA', name: 'IOTA', id: 'iota' },
+      { symbol: 'LDO', name: 'Lido DAO', id: 'lido-dao' },
+      { symbol: 'CFX', name: 'Conflux', id: 'conflux-token' },
+      { symbol: 'GALA', name: 'Gala', id: 'gala' },
+      { symbol: 'BAT', name: 'Basic Attention Token', id: 'basic-attention-token' },
+      { symbol: 'ZIL', name: 'Zilliqa', id: 'zilliqa' },
+      { symbol: 'ENJ', name: 'Enjin Coin', id: 'enjincoin' },
+      { symbol: 'CRV', name: 'Curve DAO', id: 'curve-dao-token' },
+      { symbol: 'SNX', name: 'Synthetix', id: 'havven' },
+      { symbol: 'MINA', name: 'Mina', id: 'mina-protocol' },
+      { symbol: '1INCH', name: '1inch', id: '1inch' },
+      { symbol: 'FXS', name: 'Frax Share', id: 'frax-share' },
+      { symbol: 'COMP', name: 'Compound', id: 'compound-governance-token' },
+      { symbol: 'HNT', name: 'Helium', id: 'helium' },
+      { symbol: 'ZRX', name: '0x', id: '0x' },
+      { symbol: 'LRC', name: 'Loopring', id: 'loopring' },
+      { symbol: 'IMX', name: 'Immutable X', id: 'immutable-x' },
+      { symbol: 'ONE', name: 'Harmony', id: 'harmony' },
+      { symbol: 'GMX', name: 'GMX', id: 'gmx' },
+      { symbol: 'ROSE', name: 'Oasis Network', id: 'oasis-network' },
+      { symbol: 'WAVES', name: 'Waves', id: 'waves' },
+      { symbol: 'CVX', name: 'Convex Finance', id: 'convex-finance' },
+      { symbol: 'NEXO', name: 'Nexo', id: 'nexo' },
+      { symbol: 'JST', name: 'JUST', id: 'just' },
+      { symbol: 'ZEN', name: 'Horizen', id: 'zencash' },
+      { symbol: 'WOO', name: 'WOO Network', id: 'woo-network' },
+      { symbol: 'YFI', name: 'yearn.finance', id: 'yearn-finance' },
+      { symbol: 'AUDIO', name: 'Audius', id: 'audius' },
+      { symbol: 'SXP', name: 'Solar', id: 'swipe' },
+      { symbol: 'DYDX', name: 'dYdX', id: 'dydx' },
+      { symbol: 'HOT', name: 'Holo', id: 'holotoken' },
+      { symbol: 'ANKR', name: 'Ankr', id: 'ankr' },
+      { symbol: 'CELO', name: 'Celo', id: 'celo' },
+      { symbol: 'BAL', name: 'Balancer', id: 'balancer' },
+      { symbol: 'SKL', name: 'SKALE', id: 'skale' },
+      { symbol: 'QTUM', name: 'Qtum', id: 'qtum' },
+      { symbol: 'SUSHI', name: 'SushiSwap', id: 'sushi' },
+      { symbol: 'OMG', name: 'OMG Network', id: 'omisego' }
     ];
   }
 
@@ -62,13 +145,13 @@ class ProfessionalTradingBot {
     await this.performTechnicalScan();
 
     this.scanInterval = setInterval(async () => {
-      console.log('🔄 Scheduled 5-minute scan triggered');
+      console.log('🔄 Scheduled 1-hour scan triggered');
       await this.performTechnicalScan();
-    }, 5 * 60 * 1000);
+    }, 60 * 60 * 1000); // 1 hour
 
     return {
       status: 'started',
-      interval: '5 minutes',
+      interval: '1 hour',
       coins: this.trackedCoins.length,
       time: new Date()
     };
@@ -238,14 +321,18 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
       };
       this.updateLiveAnalysis();
 
-      const historicalData = await this.getHistoricalData(coin.id, 7);
+      // Fetch both daily and hourly data
+      const dailyData = await this.getHistoricalData(coin.id, 7, 'daily');
+      const hourlyData = await this.getHistoricalData(coin.id, 1, 'hourly');
       
-      if (!historicalData || historicalData.length === 0) {
+      if ((!dailyData || dailyData.length === 0) && (!hourlyData || hourlyData.length === 0)) {
         throw new Error('No historical data available');
       }
 
-      const validData = historicalData.filter(item => item && typeof item.price === 'number' && item.price > 0);
-      if (validData.length < 3) {
+      const validDailyData = dailyData ? dailyData.filter(item => item && typeof item.price === 'number' && item.price > 0) : [];
+      const validHourlyData = hourlyData ? hourlyData.filter(item => item && typeof item.price === 'number' && item.price > 0) : [];
+      
+      if (validDailyData.length < 3 && validHourlyData.length < 3) {
         throw new Error('Insufficient valid price data');
       }
 
@@ -253,43 +340,67 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
       this.currentlyAnalyzing.progress = 40;
       this.updateLiveAnalysis();
 
-      const currentPrice = validData[validData.length - 1].price;
-      const prices = validData.map(d => d.price);
+      // Use hourly data for current price if available, otherwise daily
+      const currentPrice = validHourlyData.length > 0 ? 
+        validHourlyData[validHourlyData.length - 1].price : 
+        validDailyData[validDailyData.length - 1].price;
 
-      this.currentlyAnalyzing.stage = 'Analyzing RSI & Bollinger Bands...';
+      // Calculate indicators for both timeframes
+      const dailyPrices = validDailyData.map(d => d.price);
+      const hourlyPrices = validHourlyData.map(d => d.price);
+
+      this.currentlyAnalyzing.stage = 'Analyzing multiple timeframes...';
       this.currentlyAnalyzing.progress = 60;
       this.updateLiveAnalysis();
       
-      const rsi = this.calculateRSI(prices, 14);
-      const { upperBand, lowerBand } = this.calculateBollingerBands(prices, 20);
-      const supportResistance = this.identifySupportResistance(prices);
-      const trend = this.identifyTrend(prices);
-      const momentum = this.calculateMomentum(prices);
+      // Daily timeframe indicators
+      const dailyRsi = dailyPrices.length >= 14 ? this.calculateRSI(dailyPrices, 14) : 50;
+      const dailyBB = dailyPrices.length >= 20 ? this.calculateBollingerBands(dailyPrices, 20) : { upper: currentPrice * 1.1, lower: currentPrice * 0.9 };
+      const dailySR = this.identifySupportResistance(dailyPrices);
+      const dailyTrend = this.identifyTrend(dailyPrices);
+
+      // Hourly timeframe indicators
+      const hourlyRsi = hourlyPrices.length >= 14 ? this.calculateRSI(hourlyPrices, 14) : 50;
+      const hourlyBB = hourlyPrices.length >= 20 ? this.calculateBollingerBands(hourlyPrices, 20) : { upper: currentPrice * 1.1, lower: currentPrice * 0.9 };
+      const hourlyTrend = this.identifyTrend(hourlyPrices);
+      const momentum = this.calculateMomentum(hourlyPrices.length > 0 ? hourlyPrices : dailyPrices);
 
       const technicalData = {
         symbol: coin.symbol,
         name: coin.name,
         currentPrice: currentPrice,
-        rsi: rsi,
-        bollingerBands: { 
-          upper: upperBand, 
-          lower: lowerBand,
-          position: this.getBollingerPosition(currentPrice, upperBand, lowerBand)
+        daily: {
+          rsi: dailyRsi,
+          bollingerBands: { 
+            upper: dailyBB.upper, 
+            lower: dailyBB.lower,
+            position: this.getBollingerPosition(currentPrice, dailyBB.upper, dailyBB.lower)
+          },
+          supportResistance: dailySR,
+          trend: dailyTrend
         },
-        supportResistance: supportResistance,
-        trend: trend,
+        hourly: {
+          rsi: hourlyRsi,
+          bollingerBands: { 
+            upper: hourlyBB.upper, 
+            lower: hourlyBB.lower,
+            position: this.getBollingerPosition(currentPrice, hourlyBB.upper, hourlyBB.lower)
+          },
+          trend: hourlyTrend
+        },
         momentum: momentum,
-        priceHistory: prices.slice(-10)
+        priceHistory: dailyPrices.slice(-10)
       };
 
       this.currentlyAnalyzing.stage = 'DeepSeek AI analyzing...';
       this.currentlyAnalyzing.progress = 80;
       this.currentlyAnalyzing.technicals = {
-        rsi: rsi.toFixed(1),
-        bollingerPosition: technicalData.bollingerBands.position,
-        support: supportResistance.support.toFixed(2),
-        resistance: supportResistance.resistance.toFixed(2),
-        trend: trend,
+        dailyRsi: dailyRsi.toFixed(1),
+        hourlyRsi: hourlyRsi.toFixed(1),
+        dailyBB: technicalData.daily.bollingerBands.position,
+        hourlyBB: technicalData.hourly.bollingerBands.position,
+        dailyTrend: dailyTrend,
+        hourlyTrend: hourlyTrend,
         momentum: momentum
       };
       this.updateLiveAnalysis();
@@ -314,16 +425,19 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
         symbol: coin.symbol,
         name: coin.name,
         action: aiAnalysis.action,
-        price: `$${currentPrice.toFixed(4)}`,
+        price: `${currentPrice.toFixed(4)}`,
         confidence: aiAnalysis.confidence,
         signal: aiAnalysis.signal,
         reason: aiAnalysis.reason,
         technicals: {
-          rsi: rsi.toFixed(1),
-          bollingerPosition: technicalData.bollingerBands.position,
-          support: `$${supportResistance.support.toFixed(2)}`,
-          resistance: `$${supportResistance.resistance.toFixed(2)}`,
-          trend: trend,
+          dailyRsi: dailyRsi.toFixed(1),
+          hourlyRsi: hourlyRsi.toFixed(1),
+          dailyBollinger: technicalData.daily.bollingerBands.position,
+          hourlyBollinger: technicalData.hourly.bollingerBands.position,
+          support: `${dailySR.support.toFixed(2)}`,
+          resistance: `${dailySR.resistance.toFixed(2)}`,
+          dailyTrend: dailyTrend,
+          hourlyTrend: hourlyTrend,
           momentum: momentum
         },
         insights: aiAnalysis.insights,
@@ -361,10 +475,10 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
     return 'NEUTRAL';
   }
 
-  async getHistoricalData(coinId, days = 7) {
+  async getHistoricalData(coinId, days = 7, interval = 'daily') {
     try {
       const response = await axios.get(
-        `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}&interval=daily`,
+        `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}&interval=${interval}`,
         { 
           timeout: 15000,
           headers: { 'User-Agent': 'TradingBot/1.0' }
@@ -543,17 +657,23 @@ ${opportunity.insights.map(insight => `→ ${insight}`).join('\n')}
     return `PROFESSIONAL TECHNICAL ANALYSIS REQUEST:
 
 CRYPTO: ${technicalData.symbol} - ${technicalData.name}
-CURRENT PRICE: $${technicalData.currentPrice}
+CURRENT PRICE: ${technicalData.currentPrice}
 
-TECHNICAL INDICATORS (Daily):
-- RSI(14): ${technicalData.rsi} ${this.getRSILevel(technicalData.rsi)}
-- Bollinger: ${technicalData.bollingerBands.position}
-- Support: $${technicalData.supportResistance.support}
-- Resistance: $${technicalData.supportResistance.resistance}
-- Trend: ${technicalData.trend}
-- Momentum: ${technicalData.momentum}
+DAILY TIMEFRAME INDICATORS:
+- RSI(14): ${technicalData.daily.rsi} ${this.getRSILevel(technicalData.daily.rsi)}
+- Bollinger: ${technicalData.daily.bollingerBands.position}
+- Support: ${technicalData.daily.supportResistance.support}
+- Resistance: ${technicalData.daily.supportResistance.resistance}
+- Trend: ${technicalData.daily.trend}
 
-Provide JSON:
+HOURLY TIMEFRAME INDICATORS:
+- RSI(14): ${technicalData.hourly.rsi} ${this.getRSILevel(technicalData.hourly.rsi)}
+- Bollinger: ${technicalData.hourly.bollingerBands.position}
+- Trend: ${technicalData.hourly.trend}
+
+MOMENTUM: ${technicalData.momentum}
+
+Analyze both timeframes and provide JSON:
 {
   "action": "BUY|SELL|HOLD",
   "confidence": 0.75,
@@ -589,33 +709,44 @@ Provide JSON:
 
   generateTechnicalAnalysis(technicalData) {
     let action = 'HOLD', confidence = 0.5, reason = '', insights = [];
-    const rsi = technicalData.rsi;
-    const bbPosition = technicalData.bollingerBands.position;
-    const trend = technicalData.trend;
+    
+    // Use daily timeframe data if available
+    const dailyRsi = technicalData.daily ? technicalData.daily.rsi : 50;
+    const dailyBBPosition = technicalData.daily ? technicalData.daily.bollingerBands.position : 'MIDDLE';
+    const dailyTrend = technicalData.daily ? technicalData.daily.trend : 'SIDEWAYS';
+    
+    // Use hourly timeframe data if available
+    const hourlyRsi = technicalData.hourly ? technicalData.hourly.rsi : 50;
+    const hourlyTrend = technicalData.hourly ? technicalData.hourly.trend : 'SIDEWAYS';
 
-    if (rsi < 30 && bbPosition === 'LOWER' && trend === 'BEARISH') {
+    if (dailyRsi < 30 && dailyBBPosition === 'LOWER' && dailyTrend === 'BEARISH') {
       action = 'BUY';
       confidence = 0.75;
-      reason = 'Oversold with Bollinger support and bearish exhaustion';
+      reason = 'Daily oversold with Bollinger support and bearish exhaustion';
       insights = ['Strong reversal potential', 'Risk: Trend continuation', 'Stop below support'];
-    } else if (rsi > 70 && bbPosition === 'UPPER' && trend === 'BULLISH') {
+    } else if (dailyRsi > 70 && dailyBBPosition === 'UPPER' && dailyTrend === 'BULLISH') {
       action = 'SELL';
       confidence = 0.75;
-      reason = 'Overbought at Bollinger resistance';
+      reason = 'Daily overbought at Bollinger resistance';
       insights = ['Profit taking opportunity', 'Risk: Trend continuation', 'Stop above resistance'];
-    } else if (rsi < 35 && trend === 'BULLISH') {
+    } else if (dailyRsi < 35 && dailyTrend === 'BULLISH' && hourlyTrend === 'BULLISH') {
+      action = 'BUY';
+      confidence = 0.70;
+      reason = 'Both timeframes bullish with daily oversold';
+      insights = ['Trend alignment positive', 'Watch for confirmation', 'Stop below recent low'];
+    } else if (hourlyRsi < 30 && hourlyTrend === 'BULLISH') {
       action = 'BUY';
       confidence = 0.65;
-      reason = 'Oversold in bullish trend';
-      insights = ['Trend alignment positive', 'Watch for confirmation', 'Stop below recent low'];
+      reason = 'Hourly oversold in bullish trend';
+      insights = ['Short-term opportunity', 'Confirm with volume', 'Tight stop loss'];
     } else {
       action = 'HOLD';
       confidence = 0.3;
-      reason = 'No clear technical setup';
+      reason = 'No clear technical setup on either timeframe';
       insights = ['Wait for clearer signals', 'Monitor key levels', 'Low conviction'];
     }
 
-    return { action, confidence, reason, insights, signal: `${action} | Technical Analysis` };
+    return { action, confidence, reason, insights, signal: `${action} | Multi-Timeframe Analysis` };
   }
 
   basicTechnicalAnalysis(coin) {
@@ -627,7 +758,17 @@ Provide JSON:
       confidence: 0.1,
       signal: 'HOLD | Data Unavailable',
       reason: 'Technical analysis data not available',
-      technicals: { rsi: 'N/A', bollingerPosition: 'N/A', support: 'N/A', resistance: 'N/A', trend: 'N/A', momentum: 'N/A' },
+      technicals: { 
+        dailyRsi: 'N/A', 
+        hourlyRsi: 'N/A',
+        dailyBollinger: 'N/A',
+        hourlyBollinger: 'N/A', 
+        support: 'N/A', 
+        resistance: 'N/A', 
+        dailyTrend: 'N/A',
+        hourlyTrend: 'N/A',
+        momentum: 'N/A' 
+      },
       insights: ['Data fetch failed'],
       timestamp: new Date()
     };
