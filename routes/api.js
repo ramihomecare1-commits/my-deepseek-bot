@@ -2,6 +2,30 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 
+// In-memory log store (for real-time activity display)
+let activityLogs = [];
+let logIdCounter = 0;
+const MAX_LOGS = 1000; // Keep last 1000 log entries
+
+// Function to add log entry (can be called from bot)
+function addLogEntry(message, level = 'info') {
+  const logEntry = {
+    id: ++logIdCounter,
+    timestamp: new Date().toISOString(),
+    message: message,
+    level: level
+  };
+  
+  activityLogs.push(logEntry);
+  
+  // Keep only last MAX_LOGS entries
+  if (activityLogs.length > MAX_LOGS) {
+    activityLogs = activityLogs.slice(-MAX_LOGS);
+  }
+  
+  return logEntry;
+}
+
 // Health check endpoint (for Render deployment)
 router.get('/health', (req, res) => {
   res.status(200).json({ 
@@ -312,4 +336,20 @@ router.post('/trading-rules', (req, res) => {
   }
 });
 
+// Logs endpoint for real-time activity display
+router.get('/logs', (req, res) => {
+  try {
+    const sinceId = parseInt(req.query.since || 0);
+    const logs = activityLogs.filter(log => log.id > sinceId);
+    res.json({
+      logs: logs,
+      total: activityLogs.length,
+      lastId: logIdCounter
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
+module.exports.addLogEntry = addLogEntry;
