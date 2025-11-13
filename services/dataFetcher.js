@@ -153,7 +153,70 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
   return { data: primaryData, usedMock };
 }
 
-// Historical data fetching with multiple fallbacks
+// Map coin symbols to Binance trading pairs
+const BINANCE_SYMBOL_MAP = {
+  'BTC': 'BTCUSDT', 'ETH': 'ETHUSDT', 'BNB': 'BNBUSDT', 'SOL': 'SOLUSDT',
+  'XRP': 'XRPUSDT', 'DOGE': 'DOGEUSDT', 'ADA': 'ADAUSDT', 'AVAX': 'AVAXUSDT',
+  'LINK': 'LINKUSDT', 'DOT': 'DOTUSDT', 'MATIC': 'MATICUSDT', 'LTC': 'LTCUSDT',
+  'UNI': 'UNIUSDT', 'ATOM': 'ATOMUSDT', 'XLM': 'XLMUSDT', 'ETC': 'ETCUSDT',
+  'XMR': 'XMRUSDT', 'ALGO': 'ALGOUSDT', 'FIL': 'FILUSDT', 'ICP': 'ICPUSDT',
+  'VET': 'VETUSDT', 'EOS': 'EOSUSDT', 'XTZ': 'XTZUSDT', 'AAVE': 'AAVEUSDT',
+  'MKR': 'MKRUSDT', 'GRT': 'GRTUSDT', 'THETA': 'THETAUSDT', 'RUNE': 'RUNEUSDT',
+  'NEO': 'NEOUSDT', 'FTM': 'FTMUSDT'
+};
+
+// Fetch from Binance (FREE, no API key, best data!)
+async function fetchBinanceKlines(symbol, interval, limit) {
+  try {
+    const binanceSymbol = BINANCE_SYMBOL_MAP[symbol];
+    if (!binanceSymbol) {
+      throw new Error(`Symbol ${symbol} not available on Binance`);
+    }
+
+    const response = await axios.get('https://api.binance.com/api/v3/klines', {
+      params: { symbol: binanceSymbol, interval, limit },
+      timeout: 10000,
+    });
+
+    if (response.data && Array.isArray(response.data)) {
+      return response.data.map(([openTime, open, high, low, close]) => ({
+        timestamp: new Date(openTime),
+        price: parseFloat(close),
+      })).filter(item => Number.isFinite(item.price) && item.price > 0);
+    }
+    throw new Error('Invalid Binance response');
+  } catch (error) {
+    throw new Error(`Binance fetch failed: ${error.message}`);
+  }
+}
+
+// Fetch from CryptoCompare (backup with API key)
+async function fetchCryptoCompare(symbol, limit, aggregate = 1) {
+  try {
+    const apiKey = process.env.CRYPTOCOMPARE_API_KEY || '';
+    if (!apiKey) {
+      throw new Error('CryptoCompare API key not configured');
+    }
+
+    const response = await axios.get('https://min-api.cryptocompare.com/data/v2/histohour', {
+      params: { fsym: symbol, tsym: 'USD', limit, aggregate },
+      headers: { authorization: `Apikey ${apiKey}` },
+      timeout: 10000,
+    });
+
+    if (response.data && response.data.Data && Array.isArray(response.data.Data.Data)) {
+      return response.data.Data.Data.map(item => ({
+        timestamp: new Date(item.time * 1000),
+        price: item.close,
+      })).filter(item => Number.isFinite(item.price) && item.price > 0);
+    }
+    throw new Error('Invalid CryptoCompare response');
+  } catch (error) {
+    throw new Error(`CryptoCompare fetch failed: ${error.message}`);
+  }
+}
+
+// Historical data fetching with Binance → CryptoCompare → CoinGecko → CoinPaprika
 async function fetchHistoricalData(coinId, coin, stats, config) {
   let usedMock = false;
   let currentPrice = null;
@@ -166,6 +229,63 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
   }
 
   const fetchData = async (days, interval) => {
+    const symbol = coin?.symbol;
+    
+    // 1. Try Binance FIRST (free, no key, best data!)
+    if (symbol && BINANCE_SYMBOL_MAP[symbol]) {
+      try {
+        let binanceInterval, binanceLimit;
+        if (days === 1) {
+          binanceInterval = '1m';
+          binanceLimit = 720; // 12 hours of minute data
+        } else if (days === 7) {
+          binanceInterval = '1h';
+          binanceLimit = 168; // 7 days of hourly
+        } else {
+          binanceInterval = '1d';
+          binanceLimit = Math.min(days, 365); // Daily data
+        }
+        
+        console.log(`📊 ${symbol}: Fetching ${days}d data from Binance (${binanceInterval})`);
+        const data = await fetchBinanceKlines(symbol, binanceInterval, binanceLimit);
+        if (data.length > 0) {
+          console.log(`✅ ${symbol}: Binance returned ${data.length} data points`);
+          currentPrice = currentPrice || data[data.length - 1].price;
+          return data;
+        }
+      } catch (binanceError) {
+        console.log(`⚠️ ${symbol}: Binance failed - ${binanceError.message}`);
+      }
+    }
+
+    // 2. Try CryptoCompare (backup with API key)
+    if (symbol) {
+      try {
+        let limit, aggregate;
+        if (days === 1) {
+          limit = 720;
+          aggregate = 1; // Minute data (need histominute endpoint)
+        } else if (days === 7) {
+          limit = 168;
+          aggregate = 1; // Hourly
+        } else {
+          limit = days;
+          aggregate = 24; // Daily (aggregate hours)
+        }
+        
+        console.log(`📊 ${symbol}: Trying CryptoCompare...`);
+        const data = await fetchCryptoCompare(symbol, limit, aggregate);
+        if (data.length > 0) {
+          console.log(`✅ ${symbol}: CryptoCompare returned ${data.length} data points`);
+          currentPrice = currentPrice || data[data.length - 1].price;
+          return data;
+        }
+      } catch (ccError) {
+        console.log(`⚠️ ${symbol}: CryptoCompare failed - ${ccError.message}`);
+      }
+    }
+
+    // 3. Fallback to CoinGecko
     try {
       const response = await axios.get(
         `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart`,
@@ -195,7 +315,7 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
 
       throw new Error('Invalid API response structure');
     } catch (error) {
-      // Fallback to CoinPaprika for historical data
+      // 4. Final fallback to CoinPaprika
       if (coin && config.COINPAPRIKA_ENABLED) {
         try {
           const paprikaResponse = await axios.get(
