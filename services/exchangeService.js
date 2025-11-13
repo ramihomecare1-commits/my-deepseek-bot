@@ -2,8 +2,9 @@ const axios = require('axios');
 const crypto = require('crypto');
 
 /**
- * Binance Exchange Service
- * Handles order execution, position management, and trade automation
+ * Exchange Service
+ * Handles order execution (virtual/paper trading or real Binance)
+ * Supports virtual trading mode for testing without real money
  */
 
 // Map coin symbols to Binance trading pairs
@@ -18,19 +19,34 @@ const BINANCE_SYMBOL_MAP = {
   'NEO': 'NEOUSDT', 'FTM': 'FTMUSDT'
 };
 
+// Virtual trading state (in-memory, resets on restart)
+let virtualBalance = parseFloat(process.env.VIRTUAL_STARTING_BALANCE || '10000'); // Default $10,000 virtual balance
+let virtualPositions = {}; // Track virtual positions
+let virtualOrderCounter = 1000000; // Start order IDs from 1,000,000 to distinguish from real orders
+
 /**
- * Check if exchange trading is enabled
+ * Check if exchange trading is enabled (real or virtual)
  */
 function isExchangeTradingEnabled() {
   const apiKey = process.env.BINANCE_API_KEY || '';
   const apiSecret = process.env.BINANCE_API_SECRET || '';
-  const tradingEnabled = process.env.ENABLE_AUTO_TRADING === 'true' || process.env.ENABLE_AUTO_TRADING === '1';
+  const realTradingEnabled = process.env.ENABLE_AUTO_TRADING === 'true' || process.env.ENABLE_AUTO_TRADING === '1';
+  const virtualTradingEnabled = process.env.ENABLE_VIRTUAL_TRADING !== 'false'; // Default to true
+  
+  // Real trading requires API keys
+  const realTrading = realTradingEnabled && apiKey.length > 0 && apiSecret.length > 0;
+  
+  // Virtual trading is default (no API keys needed)
+  const virtualTrading = virtualTradingEnabled;
   
   return {
-    enabled: tradingEnabled && apiKey.length > 0 && apiSecret.length > 0,
+    enabled: realTrading || virtualTrading,
+    mode: realTrading ? 'REAL' : 'VIRTUAL',
+    realTrading: realTrading,
+    virtualTrading: virtualTrading,
     hasApiKey: apiKey.length > 0,
     hasApiSecret: apiSecret.length > 0,
-    tradingEnabled: tradingEnabled
+    virtualBalance: virtualTrading ? virtualBalance : null
   };
 }
 
@@ -105,6 +121,81 @@ async function executeMarketOrder(symbol, side, quantity, apiKey, apiSecret) {
 }
 
 /**
+ * Execute a virtual market order (paper trading - no real money)
+ * @param {string} symbol - Trading pair symbol (e.g., 'BTCUSDT')
+ * @param {string} side - 'BUY' or 'SELL'
+ * @param {number} quantity - Amount to trade
+ * @param {number} price - Current market price
+ * @returns {Promise<Object>} Simulated order result
+ */
+async function executeVirtualMarketOrder(symbol, side, quantity, price) {
+  try {
+    // Simulate small slippage (0.1% for market orders)
+    const slippage = 0.001;
+    const executionPrice = side === 'BUY' 
+      ? price * (1 + slippage)  // Buy slightly higher
+      : price * (1 - slippage); // Sell slightly lower
+    
+    const orderId = virtualOrderCounter++;
+    const cost = quantity * executionPrice;
+    
+    // Update virtual balance and positions
+    if (side === 'BUY') {
+      // Buying: Deduct USDT, add crypto
+      if (virtualBalance < cost) {
+        return {
+          success: false,
+          error: 'Insufficient virtual balance',
+          virtualBalance: virtualBalance,
+          required: cost
+        };
+      }
+      virtualBalance -= cost;
+      const baseAsset = symbol.replace('USDT', '');
+      virtualPositions[baseAsset] = (virtualPositions[baseAsset] || 0) + quantity;
+    } else {
+      // Selling: Add USDT, deduct crypto
+      const baseAsset = symbol.replace('USDT', '');
+      if (!virtualPositions[baseAsset] || virtualPositions[baseAsset] < quantity) {
+        return {
+          success: false,
+          error: `Insufficient ${baseAsset} position`,
+          virtualPosition: virtualPositions[baseAsset] || 0,
+          required: quantity
+        };
+      }
+      virtualBalance += cost;
+      virtualPositions[baseAsset] -= quantity;
+      if (virtualPositions[baseAsset] <= 0) {
+        delete virtualPositions[baseAsset];
+      }
+    }
+    
+    // Simulate order execution delay
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    return {
+      success: true,
+      orderId: orderId,
+      symbol: symbol,
+      side: side,
+      executedQty: quantity,
+      price: executionPrice,
+      status: 'FILLED',
+      mode: 'VIRTUAL',
+      virtualBalance: virtualBalance,
+      virtualPositions: { ...virtualPositions }
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      mode: 'VIRTUAL'
+    };
+  }
+}
+
+/**
  * Get account balance for a specific asset
  * @param {string} asset - Asset symbol (e.g., 'USDT', 'BTC')
  * @param {string} apiKey - Binance API key
@@ -169,13 +260,11 @@ async function executeTakeProfit(trade) {
   if (!config.enabled) {
     return {
       success: false,
-      error: 'Exchange trading not enabled. Set BINANCE_API_KEY, BINANCE_API_SECRET, and ENABLE_AUTO_TRADING=true',
+      error: 'Trading not enabled. Set ENABLE_VIRTUAL_TRADING=true (default) or ENABLE_AUTO_TRADING=true with API keys',
       skipped: true
     };
   }
 
-  const apiKey = process.env.BINANCE_API_KEY;
-  const apiSecret = process.env.BINANCE_API_SECRET;
   const binanceSymbol = BINANCE_SYMBOL_MAP[trade.symbol];
 
   if (!binanceSymbol) {
@@ -200,9 +289,16 @@ async function executeTakeProfit(trade) {
     };
   }
 
-  console.log(`📈 Executing TAKE PROFIT: ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
+  console.log(`📈 Executing TAKE PROFIT (${config.mode}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
   
-  return await executeMarketOrder(binanceSymbol, side, quantity, apiKey, apiSecret);
+  // Use virtual trading if real trading is not enabled
+  if (config.mode === 'VIRTUAL') {
+    return await executeVirtualMarketOrder(binanceSymbol, side, quantity, trade.currentPrice);
+  } else {
+    const apiKey = process.env.BINANCE_API_KEY;
+    const apiSecret = process.env.BINANCE_API_SECRET;
+    return await executeMarketOrder(binanceSymbol, side, quantity, apiKey, apiSecret);
+  }
 }
 
 /**
@@ -216,13 +312,11 @@ async function executeStopLoss(trade) {
   if (!config.enabled) {
     return {
       success: false,
-      error: 'Exchange trading not enabled',
+      error: 'Trading not enabled. Set ENABLE_VIRTUAL_TRADING=true (default) or ENABLE_AUTO_TRADING=true with API keys',
       skipped: true
     };
   }
 
-  const apiKey = process.env.BINANCE_API_KEY;
-  const apiSecret = process.env.BINANCE_API_SECRET;
   const binanceSymbol = BINANCE_SYMBOL_MAP[trade.symbol];
 
   if (!binanceSymbol) {
@@ -247,9 +341,16 @@ async function executeStopLoss(trade) {
     };
   }
 
-  console.log(`🛑 Executing STOP LOSS: ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
+  console.log(`🛑 Executing STOP LOSS (${config.mode}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
   
-  return await executeMarketOrder(binanceSymbol, side, quantity, apiKey, apiSecret);
+  // Use virtual trading if real trading is not enabled
+  if (config.mode === 'VIRTUAL') {
+    return await executeVirtualMarketOrder(binanceSymbol, side, quantity, trade.currentPrice);
+  } else {
+    const apiKey = process.env.BINANCE_API_KEY;
+    const apiSecret = process.env.BINANCE_API_SECRET;
+    return await executeMarketOrder(binanceSymbol, side, quantity, apiKey, apiSecret);
+  }
 }
 
 /**
@@ -263,13 +364,11 @@ async function executeAddPosition(trade) {
   if (!config.enabled) {
     return {
       success: false,
-      error: 'Exchange trading not enabled',
+      error: 'Trading not enabled. Set ENABLE_VIRTUAL_TRADING=true (default) or ENABLE_AUTO_TRADING=true with API keys',
       skipped: true
     };
   }
 
-  const apiKey = process.env.BINANCE_API_KEY;
-  const apiSecret = process.env.BINANCE_API_SECRET;
   const binanceSymbol = BINANCE_SYMBOL_MAP[trade.symbol];
 
   if (!binanceSymbol) {
@@ -294,9 +393,41 @@ async function executeAddPosition(trade) {
     };
   }
 
-  console.log(`💰 Executing ADD POSITION (DCA): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
+  console.log(`💰 Executing ADD POSITION (DCA) (${config.mode}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
   
-  return await executeMarketOrder(binanceSymbol, side, quantity, apiKey, apiSecret);
+  // Use virtual trading if real trading is not enabled
+  if (config.mode === 'VIRTUAL') {
+    return await executeVirtualMarketOrder(binanceSymbol, side, quantity, trade.currentPrice);
+  } else {
+    const apiKey = process.env.BINANCE_API_KEY;
+    const apiSecret = process.env.BINANCE_API_SECRET;
+    return await executeMarketOrder(binanceSymbol, side, quantity, apiKey, apiSecret);
+  }
+}
+
+/**
+ * Get virtual trading balance and positions
+ * @returns {Object} Virtual trading state
+ */
+function getVirtualTradingState() {
+  return {
+    balance: virtualBalance,
+    positions: { ...virtualPositions },
+    totalValue: virtualBalance + Object.keys(virtualPositions).reduce((sum, asset) => {
+      // Note: This is a simplified calculation - in real implementation,
+      // you'd need current prices to calculate total portfolio value
+      return sum;
+    }, 0)
+  };
+}
+
+/**
+ * Reset virtual trading state (for testing)
+ */
+function resetVirtualTrading() {
+  virtualBalance = parseFloat(process.env.VIRTUAL_STARTING_BALANCE || '10000');
+  virtualPositions = {};
+  virtualOrderCounter = 1000000;
 }
 
 module.exports = {
@@ -306,6 +437,8 @@ module.exports = {
   executeAddPosition,
   getBalance,
   calculateQuantity,
+  getVirtualTradingState,
+  resetVirtualTrading,
   BINANCE_SYMBOL_MAP
 };
 

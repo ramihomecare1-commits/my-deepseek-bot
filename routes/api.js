@@ -367,13 +367,18 @@ router.get('/active-trades', (req, res) => {
 // Exchange trading status endpoint
 router.get('/exchange-status', (req, res) => {
   try {
-    const { isExchangeTradingEnabled } = require('../services/exchangeService');
+    const { isExchangeTradingEnabled, getVirtualTradingState } = require('../services/exchangeService');
     const status = isExchangeTradingEnabled();
+    const virtualState = status.virtualTrading ? getVirtualTradingState() : null;
+    
     res.json({
       ...status,
-      message: status.enabled 
-        ? 'Exchange trading is ENABLED - orders will be executed automatically'
-        : 'Exchange trading is DISABLED - set BINANCE_API_KEY, BINANCE_API_SECRET, and ENABLE_AUTO_TRADING=true to enable'
+      virtualState: virtualState,
+      message: status.mode === 'REAL'
+        ? 'Real trading is ENABLED - orders will be executed on Binance with real money'
+        : status.mode === 'VIRTUAL'
+        ? `Virtual trading is ENABLED - orders are simulated (no real money). Balance: $${virtualState?.balance.toFixed(2) || '0'}`
+        : 'Trading is DISABLED - set ENABLE_VIRTUAL_TRADING=true (default) or ENABLE_AUTO_TRADING=true with API keys'
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
