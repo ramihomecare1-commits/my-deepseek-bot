@@ -34,6 +34,9 @@ class ProfessionalTradingBot {
     this.analysisHistory = [];
     this.liveAnalysis = [];
     this.currentlyAnalyzing = null;
+    
+    // Python analysis availability
+    this.pythonAvailable = false;
 
     this.stats = {
       totalScans: 0,

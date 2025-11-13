@@ -6,6 +6,7 @@ const path = require('path');
 const config = require('./config/config');
 const apiRoutes = require('./routes/api');
 const ProfessionalTradingBot = require('./bot/ProfessionalTradingBot');
+const { testPythonSetup } = require('./services/pythonService');
 
 // Initialize app
 const app = express();
@@ -95,16 +96,21 @@ app.use((req, res, next) => {
 let tradingBot = null;
 app.locals.tradingBot = null;
 
-function initializeBotAsync() {
+async function initializeBotAsync() {
   try {
     console.log('🔄 Initializing trading bot...');
+    
+    // Test Python setup (non-blocking, optional)
+    const pythonAvailable = await testPythonSetup();
+    
     tradingBot = new ProfessionalTradingBot();
+    tradingBot.pythonAvailable = pythonAvailable;
     app.locals.tradingBot = tradingBot;
     console.log('✅ Trading bot initialized');
   } catch (error) {
     console.error('❌ Bot initialization error:', error);
     // Create a minimal bot instance to prevent crashes
-    tradingBot = { trackedCoins: [], isRunning: false, getStats: () => ({ trackedCoins: 0 }) };
+    tradingBot = { trackedCoins: [], isRunning: false, pythonAvailable: false, getStats: () => ({ trackedCoins: 0 }) };
     app.locals.tradingBot = tradingBot;
   }
 }
