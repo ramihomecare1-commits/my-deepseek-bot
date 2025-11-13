@@ -943,6 +943,18 @@ class ProfessionalTradingBot {
       return;
     }
 
+    // Check if trade already exists for this symbol (prevent duplicates)
+    const existingTrade = this.activeTrades.find(t => 
+      t.symbol === opportunity.symbol && 
+      t.action === opportunity.action && 
+      (t.status === 'OPEN' || t.status === 'DCA_HIT')
+    );
+    
+    if (existingTrade) {
+      addLogEntry(`Trade already exists for ${opportunity.symbol} (${opportunity.action}). Skipping duplicate.`, 'info');
+      return;
+    }
+
     const tradeId = `${opportunity.symbol}-${Date.now()}`; // Unique ID for the trade
     
     // Parse prices correctly (handle both string and number formats)
@@ -996,15 +1008,32 @@ class ProfessionalTradingBot {
     for (let i = 0; i < this.activeTrades.length; i++) {
       const trade = this.activeTrades[i];
 
-      // Only update OPEN trades
-      if (trade.status !== 'OPEN') {
+      // Only update OPEN or DCA_HIT trades (DCA_HIT trades are still active)
+      if (trade.status !== 'OPEN' && trade.status !== 'DCA_HIT') {
         continue;
       }
 
       try {
         // Fetch latest price for the trade's coin
         const priceResult = await fetchEnhancedPriceData({ symbol: trade.symbol, name: trade.name }, this.priceCache, this.stats, config);
-        const currentPrice = parseFloat(priceResult.data.price.replace(/[^0-9.]/g, ''));
+        
+        // Handle different price formats
+        let currentPrice = 0;
+        if (priceResult && priceResult.data) {
+          const priceValue = priceResult.data.price;
+          if (typeof priceValue === 'number') {
+            currentPrice = priceValue;
+          } else if (typeof priceValue === 'string') {
+            currentPrice = parseFloat(priceValue.replace(/[^0-9.]/g, '')) || 0;
+          }
+        }
+        
+        // If price fetch failed, use last known price and skip update
+        if (!currentPrice || currentPrice === 0) {
+          addLogEntry(`⚠️ ${trade.symbol}: Price fetch failed, using last known price $${trade.currentPrice.toFixed(2)}`, 'warning');
+          continue; // Skip this trade update but don't mark as error
+        }
+        
         trade.currentPrice = currentPrice;
 
         // Calculate P&L first (needed for notifications)
@@ -1047,6 +1076,11 @@ class ProfessionalTradingBot {
               trade.dcaNotified = true; // Mark as notified
             }
           }
+          // Reset DCA_HIT back to OPEN if price moves away from DCA level
+          else if (trade.status === 'DCA_HIT' && currentPrice > trade.addPosition) {
+            trade.status = 'OPEN';
+            trade.dcaNotified = false; // Reset so it can trigger again if price drops back
+          }
         } else if (trade.action === 'SELL') { // Short position logic
           // Check Take Profit for SELL (price drops)
           if (currentPrice <= trade.takeProfit) {
@@ -1072,6 +1106,11 @@ class ProfessionalTradingBot {
               trade.dcaNotified = true;
             }
           }
+          // Reset DCA_HIT back to OPEN if price moves away from DCA level (for SELL)
+          else if (trade.status === 'DCA_HIT' && currentPrice < trade.addPosition) {
+            trade.status = 'OPEN';
+            trade.dcaNotified = false; // Reset so it can trigger again if price rises back
+          }
         }
 
         addLogEntry(`${trade.symbol}: Current Price $${currentPrice.toFixed(2)}, P&L: ${trade.pnlPercent}% (Status: ${trade.status})`, 'info');
@@ -1082,8 +1121,9 @@ class ProfessionalTradingBot {
         }
 
       } catch (error) {
-        addLogEntry(`❌ Failed to update trade for ${trade.symbol}: ${error.message}`, 'error');
-        trade.status = 'ERROR'; // Mark trade as error
+        addLogEntry(`⚠️ Failed to update trade for ${trade.symbol}: ${error.message}. Will retry on next scan.`, 'warning');
+        // Don't mark as ERROR - just skip this update and retry next scan
+        // This handles temporary API failures gracefully
       }
     }
   }
