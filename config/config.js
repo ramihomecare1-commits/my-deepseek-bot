@@ -30,10 +30,10 @@ const SCAN_INTERVAL_OPTIONS = {
 
 // AI Configuration - check multiple possible env var names
 const AI_API_KEY = process.env.API_KEY || process.env.AI_API_KEY || process.env.OPENROUTER_API_KEY || '';
-// Use environment variable for model, or default to a reliable paid model
-// Free models have very strict rate limits (429 errors)
-// Recommended: 'deepseek/deepseek-chat' (very cheap, ~$0.14 per million tokens)
-const AI_MODEL = process.env.AI_MODEL || 'deepseek/deepseek-chat';
+// Use environment variable for model, or default to a FREE model for free API keys
+// Free models: meta-llama/llama-3.1-8b-instruct, mistralai/mistral-7b-instruct, google/gemini-2.0-flash-exp
+// Paid models require credits: deepseek/deepseek-chat (~$0.14 per million tokens)
+const AI_MODEL = process.env.AI_MODEL || 'google/gemini-2.0-flash-exp';
 
 // Notifications behavior
 const ALLOW_MOCK_NOTIFICATIONS = (process.env.ALLOW_MOCK_NOTIFICATIONS || 'false').toLowerCase() === 'true';
