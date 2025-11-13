@@ -12,8 +12,24 @@ async function getAdvancedAnalysis(data) {
     // For full TA-Lib support, switch to 'advanced_analysis.py'
     const pythonScript = path.join(__dirname, '..', 'python', 'simple_analysis.py');
     
+    // Set up environment to find user-installed packages
+    const env = { ...process.env };
+    // Add user site-packages to PYTHONPATH if it exists
+    const os = require('os');
+    const userSitePackages = path.join(os.homedir(), '.local', 'lib', 'python3.*', 'site-packages');
+    // Try to find actual Python user site-packages
+    try {
+      const { execSync } = require('child_process');
+      const pythonUserSite = execSync('python3 -m site --user-site', { encoding: 'utf8', timeout: 5000 }).trim();
+      if (pythonUserSite) {
+        env.PYTHONPATH = (env.PYTHONPATH ? env.PYTHONPATH + ':' : '') + pythonUserSite;
+      }
+    } catch (e) {
+      // Ignore if we can't determine user site-packages
+    }
+    
     // Check if Python is available
-    const python = spawn('python3', [pythonScript]);
+    const python = spawn('python3', [pythonScript], { env });
     
     let resultData = '';
     let errorData = '';
@@ -37,7 +53,15 @@ async function getAdvancedAnalysis(data) {
       if (code !== 0) {
         console.log(`⚠️ Python analysis failed (exit code ${code})`);
         if (errorData) {
-          console.log(`   Error: ${errorData}`);
+          const errorMsg = errorData.trim();
+          console.log(`   Error: ${errorMsg}`);
+          
+          // Check if it's a missing module error
+          if (errorMsg.includes('ModuleNotFoundError') || errorMsg.includes('No module named')) {
+            console.log(`   💡 Python packages not installed on this system`);
+            console.log(`   ✅ Bot will use JavaScript fallback (works perfectly!)`);
+            console.log(`   📝 Note: Python is optional - your bot is fully functional without it`);
+          }
         }
         // Return fallback instead of rejecting
         resolve({
@@ -111,7 +135,10 @@ async function testPythonSetup() {
       return true;
     } else {
       console.log('⚠️ Python analysis not available:', result.error);
-      console.log('   Bot will use JavaScript fallback (still works great!)');
+      console.log('   ✅ Bot will use JavaScript fallback (works perfectly!)');
+      console.log('   📝 Python is optional - your bot is fully functional without it');
+      console.log('   💡 On Render free tier, Python packages may not install correctly');
+      console.log('   🚀 Your bot works great with JavaScript analysis + DeepSeek R1 AI!');
       return false;
     }
   } catch (error) {

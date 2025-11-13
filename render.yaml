@@ -2,7 +2,22 @@ services:
   - type: web
     name: crypto-scanner
     env: node
-    buildCommand: npm install
+    buildCommand: |
+      npm install
+      if command -v python3 &> /dev/null; then
+        echo "🐍 Python3 found: $(python3 --version)"
+        echo "📦 Installing Python packages..."
+        # Try user install first (works on most systems)
+        python3 -m pip install --user --no-cache-dir numpy pandas scipy 2>&1 || \
+        # Fallback: try without --user (might need permissions)
+        (python3 -m pip install --no-cache-dir numpy pandas scipy 2>&1 || \
+        echo "⚠️ Python packages installation failed - bot will use JavaScript fallback (this is OK!)")
+        # Verify installation
+        python3 -c "import numpy; print('✅ numpy installed')" 2>&1 || echo "⚠️ numpy not found"
+        python3 -c "import pandas; print('✅ pandas installed')" 2>&1 || echo "⚠️ pandas not found"
+      else
+        echo "⚠️ Python3 not found - bot will use JavaScript fallback (works perfectly!)"
+      fi
     startCommand: npm start
     healthCheckPath: /health
     plan: free
