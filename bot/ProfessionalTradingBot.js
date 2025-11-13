@@ -483,6 +483,23 @@ class ProfessionalTradingBot {
             analysis.insights = aiResult.insights;
             analysis.signal = aiResult.signal;
             analysis.aiEvaluated = aiResult.aiEvaluated || false;
+            
+            // Add risk management fields from AI
+            if (aiResult.entryPrice) analysis.entryPrice = aiResult.entryPrice;
+            if (aiResult.takeProfit) analysis.takeProfit = aiResult.takeProfit;
+            if (aiResult.stopLoss) analysis.stopLoss = aiResult.stopLoss;
+            if (aiResult.addPosition) analysis.addPosition = aiResult.addPosition;
+            if (aiResult.expectedGainPercent) analysis.expectedGainPercent = aiResult.expectedGainPercent;
+            
+            // If AI didn't provide risk management, calculate it
+            if (!aiResult.entryPrice || !aiResult.takeProfit || !aiResult.stopLoss) {
+              const riskLevels = this.calculateRiskManagement(analysis);
+              analysis.entryPrice = riskLevels.entryPrice;
+              analysis.takeProfit = riskLevels.takeProfit;
+              analysis.stopLoss = riskLevels.stopLoss;
+              analysis.addPosition = riskLevels.addPosition;
+              analysis.expectedGainPercent = riskLevels.expectedGainPercent;
+            }
           }
 
           console.log(`🔍 ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}%) - AI: ${analysis.aiEvaluated ? '✅' : '❌'}`);
@@ -1049,6 +1066,55 @@ class ProfessionalTradingBot {
     // Update minConfidence reference
     this.minConfidence = this.tradingRules.minConfidence;
     return this.tradingRules;
+  }
+
+  calculateRiskManagement(analysis) {
+    const currentPrice = Number(analysis.price.replace(/[^0-9.]/g, '')) || 0;
+    const indicators = analysis.indicators || {};
+    const frames = indicators.frames || {};
+    const action = analysis.action;
+    
+    // Get support and resistance levels
+    const support = Number(indicators.daily?.support) || currentPrice * 0.95;
+    const resistance = Number(indicators.daily?.resistance) || currentPrice * 1.05;
+    
+    // Calculate volatility-based stops (ATR-like)
+    const volatility = currentPrice * 0.05; // 5% default volatility
+    
+    let entryPrice, takeProfit, stopLoss, addPosition, expectedGainPercent;
+    
+    if (action === 'BUY') {
+      // BUY signal
+      entryPrice = currentPrice;
+      stopLoss = Math.max(support * 0.98, currentPrice * 0.96); // 2-4% below
+      takeProfit = Math.min(resistance * 1.02, currentPrice * 1.08); // 6-8% above
+      addPosition = currentPrice * 0.98; // 2% below for DCA
+      expectedGainPercent = ((takeProfit - entryPrice) / entryPrice * 100).toFixed(2);
+      
+    } else if (action === 'SELL') {
+      // SELL signal
+      entryPrice = currentPrice;
+      takeProfit = Math.max(support * 0.98, currentPrice * 0.92); // 6-8% below
+      stopLoss = Math.min(resistance * 1.02, currentPrice * 1.04); // 2-4% above
+      addPosition = currentPrice * 1.02; // 2% above for averaging
+      expectedGainPercent = ((entryPrice - takeProfit) / entryPrice * 100).toFixed(2);
+      
+    } else {
+      // HOLD or unknown
+      entryPrice = currentPrice;
+      takeProfit = currentPrice * 1.05;
+      stopLoss = currentPrice * 0.95;
+      addPosition = currentPrice;
+      expectedGainPercent = 5;
+    }
+    
+    return {
+      entryPrice: Number(entryPrice.toFixed(2)),
+      takeProfit: Number(takeProfit.toFixed(2)),
+      stopLoss: Number(stopLoss.toFixed(2)),
+      addPosition: Number(addPosition.toFixed(2)),
+      expectedGainPercent: Number(expectedGainPercent)
+    };
   }
 
   matchesTradingRules(analysis) {
