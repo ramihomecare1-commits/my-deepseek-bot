@@ -21,6 +21,12 @@ const {
 } = require('../services/notificationService');
 const { getAITechnicalAnalysis, getBatchAIAnalysis } = require('../services/aiService');
 const { detectTradingPatterns } = require('./patternDetection');
+const {
+  isExchangeTradingEnabled,
+  executeTakeProfit,
+  executeStopLoss,
+  executeAddPosition
+} = require('../services/exchangeService');
 
 // Helper function to add log entries (if available)
 let addLogEntry = null;
@@ -1006,6 +1012,11 @@ class ProfessionalTradingBot {
     const stopLoss = parsePrice(opportunity.stopLoss) || currentPrice * 0.95;
     const addPosition = parsePrice(opportunity.addPosition) || currentPrice;
     
+    // Calculate initial quantity based on position size
+    const { calculateQuantity } = require('../services/exchangeService');
+    const positionSizeUSD = parseFloat(process.env.DEFAULT_POSITION_SIZE_USD || '100');
+    const initialQuantity = calculateQuantity(opportunity.symbol, entryPrice, positionSizeUSD);
+    
     const newTrade = {
       tradeId: tradeId,
       symbol: opportunity.symbol,
@@ -1019,6 +1030,7 @@ class ProfessionalTradingBot {
       entryTime: new Date(),
       status: 'OPEN', // OPEN, TP_HIT, SL_HIT, DCA_HIT, CLOSED (manually)
       currentPrice: currentPrice,
+      quantity: initialQuantity, // Track position size
       pnl: 0,
       pnlPercent: 0,
       insights: opportunity.insights || [],
@@ -1085,29 +1097,74 @@ class ProfessionalTradingBot {
 
         if (trade.action === 'BUY') {
           // Check Take Profit for BUY
-          if (currentPrice >= trade.takeProfit) {
-            trade.status = 'TP_HIT';
-            notificationMessage = `✅ TAKE PROFIT HIT: ${trade.symbol} bought at $${trade.entryPrice.toFixed(2)}, sold at $${currentPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
-            notificationLevel = 'success';
-            notificationNeeded = true;
+          if (currentPrice >= trade.takeProfit && trade.status === 'OPEN') {
+            // Execute Take Profit order
+            const tpResult = await executeTakeProfit(trade);
+            if (tpResult.success) {
+              trade.status = 'TP_HIT';
+              trade.executedAt = new Date();
+              trade.executionPrice = tpResult.price || currentPrice;
+              trade.executionOrderId = tpResult.orderId;
+              notificationMessage = `✅ TAKE PROFIT EXECUTED: ${trade.symbol} sold ${tpResult.executedQty} at $${trade.executionPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
+              notificationLevel = 'success';
+              notificationNeeded = true;
+              addLogEntry(`✅ TP EXECUTED: ${trade.symbol} - Order ID: ${tpResult.orderId}`, 'success');
+            } else if (!tpResult.skipped) {
+              // Only log if it's an actual error (not just disabled)
+              trade.status = 'TP_HIT'; // Mark as hit even if execution failed
+              notificationMessage = `✅ TAKE PROFIT HIT (Execution ${tpResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
+              notificationLevel = 'success';
+              notificationNeeded = true;
+              addLogEntry(`⚠️ TP hit but execution failed: ${trade.symbol} - ${tpResult.error}`, 'warning');
+            }
           }
           // Check Stop Loss for BUY
-          else if (currentPrice <= trade.stopLoss) {
-            trade.status = 'SL_HIT';
-            notificationMessage = `❌ STOP LOSS HIT: ${trade.symbol} bought at $${trade.entryPrice.toFixed(2)}, sold at $${currentPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
-            notificationLevel = 'error';
-            notificationNeeded = true;
+          else if (currentPrice <= trade.stopLoss && trade.status === 'OPEN') {
+            // Execute Stop Loss order
+            const slResult = await executeStopLoss(trade);
+            if (slResult.success) {
+              trade.status = 'SL_HIT';
+              trade.executedAt = new Date();
+              trade.executionPrice = slResult.price || currentPrice;
+              trade.executionOrderId = slResult.orderId;
+              notificationMessage = `❌ STOP LOSS EXECUTED: ${trade.symbol} sold ${slResult.executedQty} at $${trade.executionPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
+              notificationLevel = 'error';
+              notificationNeeded = true;
+              addLogEntry(`🛑 SL EXECUTED: ${trade.symbol} - Order ID: ${slResult.orderId}`, 'error');
+            } else if (!slResult.skipped) {
+              trade.status = 'SL_HIT';
+              notificationMessage = `❌ STOP LOSS HIT (Execution ${slResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
+              notificationLevel = 'error';
+              notificationNeeded = true;
+              addLogEntry(`⚠️ SL hit but execution failed: ${trade.symbol} - ${slResult.error}`, 'error');
+            }
           }
           // Check Add Position for BUY
-          else if (currentPrice <= trade.addPosition && trade.addPosition < trade.entryPrice) {
-            // This is a simple DCA trigger, not an actual position modification
-            // A more complex system would adjust entryPrice and quantity
-            if (!trade.dcaNotified) { // Prevent multiple notifications for the same DCA level
-              trade.status = 'DCA_HIT'; // Mark as DCA hit, but trade is still OPEN
-              notificationMessage = `💰 ADD POSITION: ${trade.symbol} dropped to $${currentPrice.toFixed(2)}. Consider averaging down.`;
+          else if (currentPrice <= trade.addPosition && trade.addPosition < trade.entryPrice && !trade.dcaNotified) {
+            // Execute Add Position (DCA) order
+            const dcaResult = await executeAddPosition(trade);
+            if (dcaResult.success) {
+              trade.status = 'DCA_HIT';
+              trade.dcaExecutedAt = new Date();
+              trade.dcaExecutionPrice = dcaResult.price || currentPrice;
+              trade.dcaOrderId = dcaResult.orderId;
+              trade.dcaQuantity = dcaResult.executedQty;
+              // Update average entry price (weighted average)
+              const totalQuantity = (trade.quantity || 1) + dcaResult.executedQty;
+              trade.entryPrice = ((trade.entryPrice * (trade.quantity || 1)) + (dcaResult.price * dcaResult.executedQty)) / totalQuantity;
+              trade.quantity = totalQuantity;
+              notificationMessage = `💰 ADD POSITION EXECUTED: ${trade.symbol} bought ${dcaResult.executedQty} at $${dcaResult.price.toFixed(2)}. New avg entry: $${trade.entryPrice.toFixed(2)}`;
               notificationLevel = 'warning';
               notificationNeeded = true;
-              trade.dcaNotified = true; // Mark as notified
+              trade.dcaNotified = true;
+              addLogEntry(`💰 DCA EXECUTED: ${trade.symbol} - Order ID: ${dcaResult.orderId}`, 'info');
+            } else if (!dcaResult.skipped) {
+              trade.status = 'DCA_HIT';
+              notificationMessage = `💰 ADD POSITION (Execution ${dcaResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)}. Consider averaging down.`;
+              notificationLevel = 'warning';
+              notificationNeeded = true;
+              trade.dcaNotified = true;
+              addLogEntry(`⚠️ DCA hit but execution failed: ${trade.symbol} - ${dcaResult.error}`, 'warning');
             }
           }
           // Reset DCA_HIT back to OPEN if price moves away from DCA level
@@ -1117,27 +1174,73 @@ class ProfessionalTradingBot {
           }
         } else if (trade.action === 'SELL') { // Short position logic
           // Check Take Profit for SELL (price drops)
-          if (currentPrice <= trade.takeProfit) {
-            trade.status = 'TP_HIT';
-            notificationMessage = `✅ TAKE PROFIT HIT (SHORT): ${trade.symbol} shorted at $${trade.entryPrice.toFixed(2)}, covered at $${currentPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
-            notificationLevel = 'success';
-            notificationNeeded = true;
+          if (currentPrice <= trade.takeProfit && trade.status === 'OPEN') {
+            // Execute Take Profit order (cover short)
+            const tpResult = await executeTakeProfit(trade);
+            if (tpResult.success) {
+              trade.status = 'TP_HIT';
+              trade.executedAt = new Date();
+              trade.executionPrice = tpResult.price || currentPrice;
+              trade.executionOrderId = tpResult.orderId;
+              notificationMessage = `✅ TAKE PROFIT EXECUTED (SHORT): ${trade.symbol} covered ${tpResult.executedQty} at $${trade.executionPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
+              notificationLevel = 'success';
+              notificationNeeded = true;
+              addLogEntry(`✅ TP EXECUTED (SHORT): ${trade.symbol} - Order ID: ${tpResult.orderId}`, 'success');
+            } else if (!tpResult.skipped) {
+              trade.status = 'TP_HIT';
+              notificationMessage = `✅ TAKE PROFIT HIT (SHORT, Execution ${tpResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
+              notificationLevel = 'success';
+              notificationNeeded = true;
+              addLogEntry(`⚠️ TP hit but execution failed (SHORT): ${trade.symbol} - ${tpResult.error}`, 'warning');
+            }
           }
           // Check Stop Loss for SELL (price rises)
-          else if (currentPrice >= trade.stopLoss) {
-            trade.status = 'SL_HIT';
-            notificationMessage = `❌ STOP LOSS HIT (SHORT): ${trade.symbol} shorted at $${trade.entryPrice.toFixed(2)}, covered at $${currentPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
-            notificationLevel = 'error';
-            notificationNeeded = true;
+          else if (currentPrice >= trade.stopLoss && trade.status === 'OPEN') {
+            // Execute Stop Loss order (cover short)
+            const slResult = await executeStopLoss(trade);
+            if (slResult.success) {
+              trade.status = 'SL_HIT';
+              trade.executedAt = new Date();
+              trade.executionPrice = slResult.price || currentPrice;
+              trade.executionOrderId = slResult.orderId;
+              notificationMessage = `❌ STOP LOSS EXECUTED (SHORT): ${trade.symbol} covered ${slResult.executedQty} at $${trade.executionPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
+              notificationLevel = 'error';
+              notificationNeeded = true;
+              addLogEntry(`🛑 SL EXECUTED (SHORT): ${trade.symbol} - Order ID: ${slResult.orderId}`, 'error');
+            } else if (!slResult.skipped) {
+              trade.status = 'SL_HIT';
+              notificationMessage = `❌ STOP LOSS HIT (SHORT, Execution ${slResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
+              notificationLevel = 'error';
+              notificationNeeded = true;
+              addLogEntry(`⚠️ SL hit but execution failed (SHORT): ${trade.symbol} - ${slResult.error}`, 'error');
+            }
           }
           // Check Add Position for SELL (price rises)
-          else if (currentPrice >= trade.addPosition && trade.addPosition > trade.entryPrice) {
-            if (!trade.dcaNotified) {
+          else if (currentPrice >= trade.addPosition && trade.addPosition > trade.entryPrice && !trade.dcaNotified) {
+            // Execute Add Position (DCA) order (short more)
+            const dcaResult = await executeAddPosition(trade);
+            if (dcaResult.success) {
               trade.status = 'DCA_HIT';
-              notificationMessage = `💰 ADD POSITION (SHORT): ${trade.symbol} rose to $${currentPrice.toFixed(2)}. Consider averaging up.`;
+              trade.dcaExecutedAt = new Date();
+              trade.dcaExecutionPrice = dcaResult.price || currentPrice;
+              trade.dcaOrderId = dcaResult.orderId;
+              trade.dcaQuantity = dcaResult.executedQty;
+              // Update average entry price (weighted average for short)
+              const totalQuantity = (trade.quantity || 1) + dcaResult.executedQty;
+              trade.entryPrice = ((trade.entryPrice * (trade.quantity || 1)) + (dcaResult.price * dcaResult.executedQty)) / totalQuantity;
+              trade.quantity = totalQuantity;
+              notificationMessage = `💰 ADD POSITION EXECUTED (SHORT): ${trade.symbol} shorted ${dcaResult.executedQty} more at $${dcaResult.price.toFixed(2)}. New avg entry: $${trade.entryPrice.toFixed(2)}`;
               notificationLevel = 'warning';
               notificationNeeded = true;
               trade.dcaNotified = true;
+              addLogEntry(`💰 DCA EXECUTED (SHORT): ${trade.symbol} - Order ID: ${dcaResult.orderId}`, 'info');
+            } else if (!dcaResult.skipped) {
+              trade.status = 'DCA_HIT';
+              notificationMessage = `💰 ADD POSITION (SHORT, Execution ${dcaResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)}. Consider averaging up.`;
+              notificationLevel = 'warning';
+              notificationNeeded = true;
+              trade.dcaNotified = true;
+              addLogEntry(`⚠️ DCA hit but execution failed (SHORT): ${trade.symbol} - ${dcaResult.error}`, 'warning');
             }
           }
           // Reset DCA_HIT back to OPEN if price moves away from DCA level (for SELL)

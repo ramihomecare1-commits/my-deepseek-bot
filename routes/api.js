@@ -364,5 +364,21 @@ router.get('/active-trades', (req, res) => {
   }
 });
 
+// Exchange trading status endpoint
+router.get('/exchange-status', (req, res) => {
+  try {
+    const { isExchangeTradingEnabled } = require('../services/exchangeService');
+    const status = isExchangeTradingEnabled();
+    res.json({
+      ...status,
+      message: status.enabled 
+        ? 'Exchange trading is ENABLED - orders will be executed automatically'
+        : 'Exchange trading is DISABLED - set BINANCE_API_KEY, BINANCE_API_SECRET, and ENABLE_AUTO_TRADING=true to enable'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
 module.exports.addLogEntry = addLogEntry;
