@@ -183,4 +183,14 @@ router.get('/environment', (req, res) => {
   });
 });
 
+router.get('/trading-rules', (req, res) => {
+  try {
+    const { tradingBot } = req.app.locals;
+    const rules = tradingBot.getTradingRules();
+    res.json(rules);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

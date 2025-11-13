@@ -646,6 +646,60 @@ class ProfessionalTradingBot {
   async sendTestNotification() {
     return await sendTestNotification(config);
   }
+
+  getTradingRules() {
+    return {
+      minConfidence: this.minConfidence,
+      confidenceThreshold: (this.minConfidence * 100).toFixed(0) + '%',
+      patterns: {
+        buy: [
+          'RSI < 30 (oversold) + Bollinger Lower Band',
+          'RSI < 35 + Bullish Trend on Daily & Hourly',
+          'Price at Support Level + Bullish Momentum',
+          'Fibonacci 61.8% or 78.6% retracement + Bullish reversal',
+          'Multiple timeframe alignment (Weekly/Daily/4H all bullish)'
+        ],
+        sell: [
+          'RSI > 70 (overbought) + Bollinger Upper Band',
+          'RSI > 55 + Bearish Trend',
+          'Price at Resistance Level + Bearish Momentum',
+          'Fibonacci 23.6% or 38.2% retracement + Bearish reversal',
+          'Strong downward momentum across timeframes'
+        ],
+        hold: [
+          'RSI between 30-70 (neutral zone)',
+          'No clear trend direction',
+          'Price consolidating between support/resistance',
+          'Confidence below threshold',
+          'Mixed signals across timeframes'
+        ]
+      },
+      indicators: {
+        rsi: {
+          oversold: '< 30',
+          neutral: '30-70',
+          overbought: '> 70'
+        },
+        bollinger: {
+          lower: 'Price near lower band (potential support)',
+          middle: 'Price in middle (neutral)',
+          upper: 'Price near upper band (potential resistance)'
+        },
+        fibonacci: {
+          levels: ['23.6%', '38.2%', '50.0%', '61.8%', '78.6%'],
+          support: '61.8% and 78.6% are key support levels',
+          resistance: '23.6% and 38.2% are key resistance levels'
+        },
+        supportResistance: {
+          support: 'Lowest price in recent 20 periods',
+          resistance: 'Highest price in recent 20 periods',
+          breakout: 'Price breaking above resistance (bullish) or below support (bearish)'
+        }
+      },
+      timeframes: ['10m', '1h', '4h', '1d', '1w'],
+      cooldown: '30 minutes between notifications for same coin'
+    };
+  }
 }
 
 module.exports = ProfessionalTradingBot;

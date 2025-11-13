@@ -85,6 +85,46 @@ function calculateMomentum(prices) {
   return 'NEUTRAL';
 }
 
+// Calculate Fibonacci retracement levels
+function calculateFibonacciRetracement(high, low) {
+  const diff = high - low;
+  return {
+    level0: high,           // 100% (high)
+    level236: high - (diff * 0.236),  // 23.6%
+    level382: high - (diff * 0.382),  // 38.2%
+    level500: high - (diff * 0.500),  // 50.0%
+    level618: high - (diff * 0.618),  // 61.8%
+    level786: high - (diff * 0.786),  // 78.6%
+    level100: low,          // 100% (low)
+  };
+}
+
+// Calculate Fibonacci from price array (finds high and low)
+function calculateFibonacciFromPrices(prices, period = 20) {
+  if (prices.length < 2) {
+    const price = prices[0] || 100;
+    return calculateFibonacciRetracement(price * 1.1, price * 0.9);
+  }
+  
+  const recentPrices = prices.slice(-period);
+  const high = Math.max(...recentPrices);
+  const low = Math.min(...recentPrices);
+  
+  return calculateFibonacciRetracement(high, low);
+}
+
+// Find current price position relative to Fibonacci levels
+function getFibonacciPosition(currentPrice, fibLevels) {
+  if (currentPrice >= fibLevels.level0) return 'ABOVE_100';
+  if (currentPrice >= fibLevels.level236) return '23.6-100';
+  if (currentPrice >= fibLevels.level382) return '38.2-23.6';
+  if (currentPrice >= fibLevels.level500) return '50.0-38.2';
+  if (currentPrice >= fibLevels.level618) return '61.8-50.0';
+  if (currentPrice >= fibLevels.level786) return '78.6-61.8';
+  if (currentPrice >= fibLevels.level100) return '100-78.6';
+  return 'BELOW_100';
+}
+
 module.exports = {
   calculateRSI,
   calculateBollingerBands,
@@ -92,5 +132,8 @@ module.exports = {
   identifyTrend,
   getBollingerPosition,
   calculateMomentum,
+  calculateFibonacciRetracement,
+  calculateFibonacciFromPrices,
+  getFibonacciPosition,
   placeholderBollinger
 };

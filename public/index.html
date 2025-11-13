@@ -561,8 +561,8 @@
           <button class="btn-success" onclick="startAutoScan()">🚀 Start Auto-Scan</button>
           <button class="btn-danger" onclick="stopAutoScan()">🛑 Stop Auto-Scan</button>
           <button class="btn-primary" onclick="manualScan()">🔍 Scan Now</button>
-          <button class="btn-telegram" onclick="testTelegram()">📱 Test Telegram</button>
-          <button class="btn-secondary" onclick="viewHistory()">📊 View History</button>
+          <button class="btn-telegram" onclick="testTelegram(event)">📱 Test Telegram</button>
+          <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
         </div>
         
         <div class="status-card">
@@ -571,6 +571,78 @@
           <div id="nextScan">Next scan: Not scheduled</div>
           <div class="status-meta" id="telemetryStatus">
             Telegram: ✅ Enabled | CoinPaprika: ✅ | CoinMarketCap: ✅
+          </div>
+        </div>
+      </div>
+
+      <!-- Trading Rules Panel -->
+      <div id="rulesPanel" style="display:none; background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9)); padding: 28px; border-radius: 20px; margin-bottom: 28px; border: 1px solid rgba(148,163,184,0.2);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <h3 style="color: #0f172a; font-size: 1.5em; font-weight: 700;">⚙️ Trading Rules & Patterns</h3>
+          <button onclick="toggleRules()" style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">✕ Close</button>
+        </div>
+        
+        <div id="rulesContent" style="color: #0f172a;">
+          <div style="margin-bottom: 24px;">
+            <h4 style="color: #6366f1; margin-bottom: 12px; font-size: 1.2em;">📊 Confidence Threshold</h4>
+            <div style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #6366f1;">
+              <div style="font-size: 1.5em; font-weight: 700; color: #0f172a;" id="confidenceThreshold">65%</div>
+              <div style="color: #64748b; margin-top: 4px;">Minimum confidence required to trigger an opportunity</div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px;">
+            <div>
+              <h4 style="color: #22c55e; margin-bottom: 12px; font-size: 1.1em;">🟢 BUY Patterns</h4>
+              <div id="buyPatterns" style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #22c55e;">
+                <ul style="list-style: none; padding: 0; margin: 0;">
+                  <li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">Loading...</li>
+                </ul>
+              </div>
+            </div>
+            <div>
+              <h4 style="color: #ef4444; margin-bottom: 12px; font-size: 1.1em;">🔴 SELL Patterns</h4>
+              <div id="sellPatterns" style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #ef4444;">
+                <ul style="list-style: none; padding: 0; margin: 0;">
+                  <li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">Loading...</li>
+                </ul>
+              </div>
+            </div>
+            <div>
+              <h4 style="color: #f59e0b; margin-bottom: 12px; font-size: 1.1em;">🟡 HOLD Patterns</h4>
+              <div id="holdPatterns" style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #f59e0b;">
+                <ul style="list-style: none; padding: 0; margin: 0;">
+                  <li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">Loading...</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
+            <div>
+              <h4 style="color: #6366f1; margin-bottom: 8px; font-size: 1em;">📈 RSI Levels</h4>
+              <div id="rsiRules" style="background: white; padding: 12px; border-radius: 8px; font-size: 0.9em;">
+                Loading...
+              </div>
+            </div>
+            <div>
+              <h4 style="color: #6366f1; margin-bottom: 8px; font-size: 1em;">📊 Bollinger Bands</h4>
+              <div id="bollingerRules" style="background: white; padding: 12px; border-radius: 8px; font-size: 0.9em;">
+                Loading...
+              </div>
+            </div>
+            <div>
+              <h4 style="color: #6366f1; margin-bottom: 8px; font-size: 1em;">🔢 Fibonacci Levels</h4>
+              <div id="fibonacciRules" style="background: white; padding: 12px; border-radius: 8px; font-size: 0.9em;">
+                Loading...
+              </div>
+            </div>
+            <div>
+              <h4 style="color: #6366f1; margin-bottom: 8px; font-size: 1em;">📉 Support/Resistance</h4>
+              <div id="supportResistanceRules" style="background: white; padding: 12px; border-radius: 8px; font-size: 0.9em;">
+                Loading...
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -638,11 +710,28 @@
     
     async function testTelegram() {
       try {
+        const button = event.target;
+        button.disabled = true;
+        button.textContent = '⏳ Testing...';
+        
         const response = await fetch(API_BASE + '/test-telegram', { method: 'POST' });
         const result = await response.json();
-        alert(result.message);
+        
+        if (result.success) {
+          alert('✅ ' + result.message);
+        } else {
+          alert('❌ ' + (result.message || 'Failed to send test notification'));
+          if (result.configStatus) {
+            console.log('Config status:', result.configStatus);
+          }
+        }
+        
+        button.disabled = false;
+        button.textContent = '📱 Test Telegram';
       } catch (error) {
-        alert('Error testing Telegram: ' + error.message);
+        alert('❌ Error testing Telegram: ' + error.message);
+        event.target.disabled = false;
+        event.target.textContent = '📱 Test Telegram';
       }
     }
 
@@ -822,6 +911,84 @@
         }
       } catch (error) {
         console.log('Error updating AI evaluation:', error);
+      }
+    }
+
+    async function changeInterval(interval) {
+      try {
+        const response = await fetch(API_BASE + '/auto-scan-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ interval })
+        });
+        const result = await response.json();
+        if (result.success) {
+          console.log('Interval changed to:', interval);
+        }
+      } catch (error) {
+        console.error('Error changing interval:', error);
+      }
+    }
+
+    function viewHistory() {
+      alert('History feature coming soon!');
+    }
+
+    // Trading Rules functions
+    function toggleRules() {
+      const panel = document.getElementById('rulesPanel');
+      if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        loadTradingRules();
+      } else {
+        panel.style.display = 'none';
+      }
+    }
+
+    async function loadTradingRules() {
+      try {
+        const response = await fetch(API_BASE + '/trading-rules');
+        const rules = await response.json();
+        
+        // Update confidence threshold
+        document.getElementById('confidenceThreshold').textContent = rules.confidenceThreshold;
+        
+        // Update patterns
+        document.getElementById('buyPatterns').innerHTML = '<ul style="list-style: none; padding: 0; margin: 0;">' +
+          rules.patterns.buy.map(p => `<li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">✓ ${p}</li>`).join('') + '</ul>';
+        
+        document.getElementById('sellPatterns').innerHTML = '<ul style="list-style: none; padding: 0; margin: 0;">' +
+          rules.patterns.sell.map(p => `<li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">✓ ${p}</li>`).join('') + '</ul>';
+        
+        document.getElementById('holdPatterns').innerHTML = '<ul style="list-style: none; padding: 0; margin: 0;">' +
+          rules.patterns.hold.map(p => `<li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">✓ ${p}</li>`).join('') + '</ul>';
+        
+        // Update indicators
+        document.getElementById('rsiRules').innerHTML = `
+          <div><strong>Oversold:</strong> ${rules.indicators.rsi.oversold}</div>
+          <div><strong>Neutral:</strong> ${rules.indicators.rsi.neutral}</div>
+          <div><strong>Overbought:</strong> ${rules.indicators.rsi.overbought}</div>
+        `;
+        
+        document.getElementById('bollingerRules').innerHTML = `
+          <div><strong>Lower:</strong> ${rules.indicators.bollinger.lower}</div>
+          <div><strong>Middle:</strong> ${rules.indicators.bollinger.middle}</div>
+          <div><strong>Upper:</strong> ${rules.indicators.bollinger.upper}</div>
+        `;
+        
+        document.getElementById('fibonacciRules').innerHTML = `
+          <div><strong>Levels:</strong> ${rules.indicators.fibonacci.levels.join(', ')}</div>
+          <div style="margin-top: 8px; color: #22c55e;"><strong>Support:</strong> ${rules.indicators.fibonacci.support}</div>
+          <div style="color: #ef4444;"><strong>Resistance:</strong> ${rules.indicators.fibonacci.resistance}</div>
+        `;
+        
+        document.getElementById('supportResistanceRules').innerHTML = `
+          <div><strong>Support:</strong> ${rules.indicators.supportResistance.support}</div>
+          <div><strong>Resistance:</strong> ${rules.indicators.supportResistance.resistance}</div>
+          <div style="margin-top: 8px;"><strong>Breakout:</strong> ${rules.indicators.supportResistance.breakout}</div>
+        `;
+      } catch (error) {
+        console.error('Error loading trading rules:', error);
       }
     }
 
