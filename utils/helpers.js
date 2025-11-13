@@ -1,7 +1,7 @@
 // Simple sleep util
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Get top 100 coins data
+// Get top 25 coins data (reduced for stability)
 function getTop100Coins() {
   return [
     { symbol: 'BTC', name: 'Bitcoin', id: 'bitcoin', coinmarketcap_id: '1', coinpaprika_id: 'btc-bitcoin' },
@@ -24,7 +24,6 @@ function getTop100Coins() {
     { symbol: 'DAI', name: 'Dai', id: 'dai', coinmarketcap_id: '4943', coinpaprika_id: 'dai-dai' },
     { symbol: 'LTC', name: 'Litecoin', id: 'litecoin', coinmarketcap_id: '2', coinpaprika_id: 'ltc-litecoin' },
     { symbol: 'UNI', name: 'Uniswap', id: 'uniswap', coinmarketcap_id: '7083', coinpaprika_id: 'uni-uniswap' },
-    // Add remaining coins from original list...
     { symbol: 'ATOM', name: 'Cosmos', id: 'cosmos', coinmarketcap_id: '3794', coinpaprika_id: 'atom-cosmos' },
     { symbol: 'XLM', name: 'Stellar', id: 'stellar', coinmarketcap_id: '512', coinpaprika_id: 'xlm-stellar' },
     { symbol: 'ETC', name: 'Ethereum Classic', id: 'ethereum-classic', coinmarketcap_id: '1321', coinpaprika_id: 'etc-ethereum-classic' },
@@ -48,58 +47,8 @@ function getTop100Coins() {
     { symbol: 'BAT', name: 'Basic Attention Token', id: 'basic-attention-token', coinmarketcap_id: '1697', coinpaprika_id: 'bat-basic-attention-token' },
     { symbol: 'ZEC', name: 'Zcash', id: 'zcash', coinmarketcap_id: '1437', coinpaprika_id: 'zec-zcash' },
     { symbol: 'DASH', name: 'Dash', id: 'dash', coinmarketcap_id: '131', coinpaprika_id: 'dash-dash' },
-    { symbol: 'ENJ', name: 'Enjin Coin', id: 'enjincoin', coinmarketcap_id: '2130', coinpaprika_id: 'enj-enjincoin' },
-    { symbol: 'COMP', name: 'Compound', id: 'compound-governance-token', coinmarketcap_id: '5692', coinpaprika_id: 'comp-compound' },
-    { symbol: 'YFI', name: 'yearn.finance', id: 'yearn-finance', coinmarketcap_id: '5864', coinpaprika_id: 'yfi-yearn-finance' },
-    { symbol: 'SNX', name: 'Synthetix', id: 'havven', coinmarketcap_id: '2586', coinpaprika_id: 'snx-synthetix-network-token' },
-    { symbol: 'SUSHI', name: 'SushiSwap', id: 'sushi', coinmarketcap_id: '6758', coinpaprika_id: 'sushi-sushiswap' },
-    { symbol: 'CRV', name: 'Curve DAO Token', id: 'curve-dao-token', coinmarketcap_id: '6538', coinpaprika_id: 'crv-curve-dao-token' },
-    { symbol: 'KSM', name: 'Kusama', id: 'kusama', coinmarketcap_id: '5034', coinpaprika_id: 'ksm-kusama' },
-    { symbol: 'ZIL', name: 'Zilliqa', id: 'zilliqa', coinmarketcap_id: '2469', coinpaprika_id: 'zil-zilliqa' },
-    { symbol: 'NEAR', name: 'NEAR Protocol', id: 'near', coinmarketcap_id: '6535', coinpaprika_id: 'near-near-protocol' },
-    { symbol: 'CELO', name: 'Celo', id: 'celo', coinmarketcap_id: '5567', coinpaprika_id: 'celo-celo' },
-    { symbol: 'CHZ', name: 'Chiliz', id: 'chiliz', coinmarketcap_id: '4066', coinpaprika_id: 'chz-chiliz' },
-    { symbol: 'QTUM', name: 'Qtum', id: 'qtum', coinmarketcap_id: '1684', coinpaprika_id: 'qtum-qtum' },
-    { symbol: 'HNT', name: 'Helium', id: 'helium', coinmarketcap_id: '5665', coinpaprika_id: 'hnt-helium' },
-    { symbol: 'BTT', name: 'BitTorrent', id: 'bittorrent', coinmarketcap_id: '16086', coinpaprika_id: 'btt-bittorrent' },
-    { symbol: 'ONE', name: 'Harmony', id: 'harmony', coinmarketcap_id: '3945', coinpaprika_id: 'one-harmony' },
-    { symbol: 'IOTA', name: 'IOTA', id: 'iota', coinmarketcap_id: '1720', coinpaprika_id: 'miota-iota' },
-    { symbol: 'EGLD', name: 'MultiversX', id: 'elrond-erd-2', coinmarketcap_id: '6892', coinpaprika_id: 'egld-elrond' },
-    { symbol: 'RVN', name: 'Ravencoin', id: 'ravencoin', coinmarketcap_id: '2577', coinpaprika_id: 'rvn-ravencoin' },
-    { symbol: 'SC', name: 'Siacoin', id: 'siacoin', coinmarketcap_id: '1042', coinpaprika_id: 'sc-siacoin' },
-    { symbol: 'ZEN', name: 'Horizen', id: 'zencash', coinmarketcap_id: '1698', coinpaprika_id: 'zen-horizen' },
-    { symbol: 'ONT', name: 'Ontology', id: 'ontology', coinmarketcap_id: '2566', coinpaprika_id: 'ont-ontology' },
-    { symbol: 'IOST', name: 'IOST', id: 'iostoken', coinmarketcap_id: '2405', coinpaprika_id: 'iost-iost' },
-    { symbol: 'STORJ', name: 'Storj', id: 'storj', coinmarketcap_id: '1772', coinpaprika_id: 'storj-storj' },
-    { symbol: 'RSR', name: 'Reserve Rights', id: 'reserve-rights-token', coinmarketcap_id: '3964', coinpaprika_id: 'rsr-reserve-rights' },
-    { symbol: 'ANKR', name: 'Ankr', id: 'ankr', coinmarketcap_id: '3783', coinpaprika_id: 'ankr-ankr' },
-    { symbol: 'OCEAN', name: 'Ocean Protocol', id: 'ocean-protocol', coinmarketcap_id: '3911', coinpaprika_id: 'ocean-ocean-protocol' },
-    { symbol: 'CKB', name: 'Nervos Network', id: 'nervos-network', coinmarketcap_id: '4948', coinpaprika_id: 'ckb-nervos-network' },
-    { symbol: 'AR', name: 'Arweave', id: 'arweave', coinmarketcap_id: '5632', coinpaprika_id: 'ar-arweave' },
-    { symbol: 'DGB', name: 'DigiByte', id: 'digibyte', coinmarketcap_id: '109', coinpaprika_id: 'dgb-digibyte' },
-    { symbol: 'LSK', name: 'Lisk', id: 'lisk', coinmarketcap_id: '1214', coinpaprika_id: 'lsk-lisk' },
-    { symbol: 'REP', name: 'Augur', id: 'augur', coinmarketcap_id: '1104', coinpaprika_id: 'rep-augur' },
-    { symbol: 'BAND', name: 'Band Protocol', id: 'band-protocol', coinmarketcap_id: '4679', coinpaprika_id: 'band-band-protocol' },
-    { symbol: 'NANO', name: 'Nano', id: 'nano', coinmarketcap_id: '1567', coinpaprika_id: 'nano-nano' },
-    { symbol: 'UMA', name: 'UMA', id: 'uma', coinmarketcap_id: '5617', coinpaprika_id: 'uma-uma' },
-    { symbol: 'SXP', name: 'Swipe', id: 'swipe', coinmarketcap_id: '4279', coinpaprika_id: 'sxp-swipe' },
-    { symbol: 'FET', name: 'Fetch.ai', id: 'fetch-ai', coinmarketcap_id: '3773', coinpaprika_id: 'fet-fetch' },
-    { symbol: 'CEL', name: 'Celsius', id: 'celsius-degree-token', coinmarketcap_id: '2700', coinpaprika_id: 'cel-celsius' },
-    { symbol: 'RLC', name: 'iExec RLC', id: 'rlc', coinmarketcap_id: '1637', coinpaprika_id: 'rlc-iexec-rlc' },
-    { symbol: 'OXT', name: 'Orchid', id: 'orchid-protocol', coinmarketcap_id: '5026', coinpaprika_id: 'oxt-orchid' },
-    { symbol: 'CTSI', name: 'Cartesi', id: 'cartesi', coinmarketcap_id: '5444', coinpaprika_id: 'ctsi-cartesi' },
-    { symbol: 'NU', name: 'NuCypher', id: 'nucypher', coinmarketcap_id: '4761', coinpaprika_id: 'nu-nucypher' },
-    { symbol: 'DODO', name: 'DODO', id: 'dodo', coinmarketcap_id: '7224', coinpaprika_id: 'dodo-dodo' },
-    { symbol: 'POLY', name: 'Polymath', id: 'polymath', coinmarketcap_id: '2496', coinpaprika_id: 'poly-polymath' },
-    { symbol: 'MLN', name: 'Enzyme', id: 'melon', coinmarketcap_id: '1552', coinpaprika_id: 'mln-enzyme' },
-    { symbol: 'AUDIO', name: 'Audius', id: 'audius', coinmarketcap_id: '7455', coinpaprika_id: 'audio-audius' },
-    { symbol: 'SRM', name: 'Serum', id: 'serum', coinmarketcap_id: '6187', coinpaprika_id: 'srm-serum' },
-    { symbol: 'COCOS', name: 'Cocos-BCX', id: 'cocos-bcx', coinmarketcap_id: '4276', coinpaprika_id: 'cocos-cocos-bcx' },
-    { symbol: 'TRB', name: 'Tellor', id: 'tellor', coinmarketcap_id: '4944', coinpaprika_id: 'trb-tellor' },
-    { symbol: 'MDT', name: 'Measurable Data Token', id: 'measurable-data-token', coinmarketcap_id: '2348', coinpaprika_id: 'mdt-measurable-data-token' },
-    { symbol: 'WTC', name: 'Waltonchain', id: 'waltonchain', coinmarketcap_id: '1925', coinpaprika_id: 'wtc-waltonchain' },
-    { symbol: 'GXC', name: 'GXChain', id: 'gxchain', coinmarketcap_id: '1750', coinpaprika_id: 'gxc-gxchain' },
-    { symbol: 'MTL', name: 'Metal', id: 'metal', coinmarketcap_id: '1788', coinpaprika_id: 'mtl-metal' }
+    { symbol: 'ENJ', name: 'Enjin Coin', id: 'enjincoin', coinmarketcap_id: '2130', coinpaprika_id: 'enj-enjincoin' }
+    // Limited to top 25 coins for stability
   ];
 }
 

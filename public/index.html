@@ -771,6 +771,24 @@
     let scanInFlight = false;
     let progressPollInterval = null;
     
+    async function updateProgress() {
+      try {
+        const response = await fetch(API_BASE + '/scan-progress');
+        const progress = await response.json();
+        
+        if (progress && progress.running) {
+          const percent = progress.percent || 0;
+          document.getElementById('scanProgressText').textContent = percent + '%';
+          document.getElementById('scanProgressFill').style.width = percent + '%';
+          document.getElementById('scanProgressContainer').style.display = 'block';
+        } else {
+          document.getElementById('scanProgressContainer').style.display = 'none';
+        }
+      } catch (error) {
+        console.log('Error updating progress:', error);
+      }
+    }
+    
     // API endpoints
     const API_BASE = '/api';
     
@@ -831,11 +849,24 @@
       try {
         document.getElementById('results').innerHTML = '<div class="no-opportunities"><div class="loading-spinner" style="width: 40px; height: 40px; border: 4px solid rgba(100, 116, 139, 0.2); border-top-color: #6366f1; border-radius: 999px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div><h3>🔍 Scanning...</h3></div>';
         
+        // Show progress bar
+        document.getElementById('scanProgressContainer').style.display = 'block';
+        
+        // Start polling progress
+        if (progressPollInterval) clearInterval(progressPollInterval);
+        progressPollInterval = setInterval(updateProgress, 1000);
+        
         const response = await fetch(API_BASE + '/scan-now', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
         const data = await response.json();
+        
+        // Stop polling
+        if (progressPollInterval) {
+          clearInterval(progressPollInterval);
+          progressPollInterval = null;
+        }
         
         if (!data || !data.opportunities || data.opportunities.length === 0) {
           document.getElementById('results').innerHTML = '<div class="no-opportunities"><h3>📭 No High-Confidence Opportunities</h3><p>Scanned ' + (data.analyzedCoins || 0) + ' coins</p></div>';

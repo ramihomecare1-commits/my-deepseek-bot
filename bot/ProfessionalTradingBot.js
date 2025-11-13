@@ -360,21 +360,22 @@ class ProfessionalTradingBot {
           }
 
           // Collect data for batch AI (only real data)
-          if (!analysis.usesMockData && analysis.frames && Object.keys(analysis.frames).length > 0) {
+          // Always collect if we have frames, even if usesMockData (for testing)
+          if (analysis.frames && Object.keys(analysis.frames).length > 0) {
+            const priceValue = typeof analysis.price === 'string' 
+              ? parseFloat(analysis.price.replace('$', '').replace(/,/g, '')) 
+              : analysis.price || currentPrice;
+            
             allCoinsData.push({
               symbol: coin.symbol,
               name: coin.name,
-              currentPrice: parseFloat(analysis.price.replace('$', '').replace(/,/g, '')) || currentPrice,
+              currentPrice: priceValue,
               frames: analysis.frames,
               dataSource: analysis.dataSource || 'CoinGecko',
             });
-            console.log(`📊 Collected data for AI: ${coin.symbol} (${Object.keys(analysis.frames).length} timeframes)`);
+            console.log(`📊 Collected data for AI: ${coin.symbol} (${Object.keys(analysis.frames).length} timeframes, price: $${priceValue})`);
           } else {
-            if (analysis.usesMockData) {
-              console.log(`⏭️ Skipping ${coin.symbol} for AI (using mock data)`);
-            } else if (!analysis.frames || Object.keys(analysis.frames).length === 0) {
-              console.log(`⏭️ Skipping ${coin.symbol} for AI (no frame data)`);
-            }
+            console.log(`⏭️ Skipping ${coin.symbol} for AI (no frame data available)`);
           }
 
           this.scanProgress.processed += 1;
