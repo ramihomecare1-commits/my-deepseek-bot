@@ -33,6 +33,12 @@ async function sendTelegramNotification(opportunity, lastNotificationTime, stats
   }
 
   try {
+    // Escape Markdown special characters to prevent parsing errors
+    const escapeMarkdown = (text) => {
+      if (!text) return 'N/A';
+      return String(text).replace(/[_*\[\]()~`>#+\-=|{}.!]/g, '\\$&');
+    };
+
     const actionEmoji =
       opportunity.action === 'BUY'
         ? '🟢'
@@ -63,6 +69,10 @@ async function sendTelegramNotification(opportunity, lastNotificationTime, stats
 `;
     }
 
+    // Escape user-generated content (AI reason and insights)
+    const safeReason = escapeMarkdown(opportunity.reason);
+    const safeInsights = opportunity.insights.map(insight => escapeMarkdown(insight));
+
     const message = `${actionEmoji} *${opportunity.action} SIGNAL DETECTED*
 
 *Coin:* ${opportunity.name} (${opportunity.symbol})
@@ -85,9 +95,9 @@ async function sendTelegramNotification(opportunity, lastNotificationTime, stats
 • Momentum (10m): ${frame10m.momentum || indicators.momentum}
 ${globalMetricsText}
 💡 *Key Insights:*
-${opportunity.insights.map((insight) => `→ ${insight}`).join('\n')}
+${safeInsights.map((insight) => `→ ${insight}`).join('\n')}
 
-📝 *Reason:* ${opportunity.reason}
+📝 *Reason:* ${safeReason}
 
 ⏰ Detected: ${new Date(opportunity.timestamp).toLocaleString()}`;
 
