@@ -108,6 +108,9 @@ async function initializeBotAsync() {
     tradingBot.pythonAvailable = pythonAvailable;
     app.locals.tradingBot = tradingBot;
     
+    // Start independent trades update timer (runs every 30 seconds, regardless of scans)
+    tradingBot.startTradesUpdateTimer();
+    
     // Add log entry about Python status
     try {
       const { addLogEntry } = require('./routes/api');
