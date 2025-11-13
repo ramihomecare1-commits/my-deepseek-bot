@@ -38,3 +38,6 @@ coverage/
 dist/
 build/
 
+# Old/archived files
+server.js.old
+

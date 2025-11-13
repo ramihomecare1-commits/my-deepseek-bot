@@ -2,7 +2,7 @@
   "name": "deepseek-bot",
   "version": "1.0.0",
   "scripts": {
-    "start": "node server.js",
+    "start": "node app.js",
     "build": "npm install"
   },
   "dependencies": {

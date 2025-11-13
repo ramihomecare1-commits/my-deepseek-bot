@@ -11,6 +11,51 @@ const ProfessionalTradingBot = require('./bot/ProfessionalTradingBot');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Environment validation
+function validateEnvironment() {
+  const warnings = [];
+  if (!process.env.API_KEY) {
+    warnings.push('⚠️  API_KEY not set - AI analysis will use deterministic fallback');
+  }
+  if (!config.TELEGRAM_ENABLED) {
+    warnings.push('⚠️  Telegram credentials not configured - notifications disabled');
+  }
+  if (!config.NEWS_ENABLED) {
+    warnings.push('⚠️  CRYPTOPANIC_API_KEY not set - news features disabled');
+  }
+  if (warnings.length > 0) {
+    console.log('\n📋 Environment Configuration:');
+    warnings.forEach((w) => console.log(w));
+    console.log('');
+  }
+}
+validateEnvironment();
+
+// Simple rate limiter
+const rateLimitStore = new Map();
+function createRateLimiter(windowMs = 60000, maxRequests = 100) {
+  return (req, res, next) => {
+    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+    const now = Date.now();
+    const windowStart = now - windowMs;
+
+    if (!rateLimitStore.has(ip)) {
+      rateLimitStore.set(ip, []);
+    }
+
+    const requests = rateLimitStore.get(ip);
+    const validRequests = requests.filter((time) => time > windowStart);
+    rateLimitStore.set(ip, validRequests);
+
+    if (validRequests.length >= maxRequests) {
+      return res.status(429).json({ error: 'Too many requests' });
+    }
+
+    validRequests.push(now);
+    next();
+  };
+}
+
 // Ensure fetch exists (Node 18+/polyfill)
 let fetchFn = global.fetch;
 if (!fetchFn) {
@@ -21,6 +66,14 @@ const fetch = fetchFn;
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Rate limiting (skip for health check and root)
+app.use((req, res, next) => {
+  if (req.path === '/health' || req.path === '/') {
+    return next();
+  }
+  return createRateLimiter(60000, 100)(req, res, next);
+});
 
 // Initialize trading bot
 const tradingBot = new ProfessionalTradingBot();
@@ -111,9 +164,17 @@ app.use((req, res) => {
 
 // Start server
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🎯 Crypto Trading Scanner running on port ${PORT}`);
-  console.log('📊 Professional trading scanner initialized');
-  console.log('🌐 Multi-API support enabled');
+  console.log(`\n🚀 Professional Crypto Scanner`);
+  console.log(`📡 Server running on port ${PORT}`);
+  console.log('📊 Strategy: RSI + Bollinger + Support/Resistance + Momentum + AI overlay');
+  console.log(`⏰ Auto-scan: ${tradingBot.selectedIntervalKey} intervals`);
+  console.log(`🎯 Coins: ${tradingBot.trackedCoins.length}`);
+  console.log(`📱 Telegram: ${config.TELEGRAM_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
+  console.log(`📰 News: ${config.NEWS_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
+  console.log(`🤖 AI: ${config.AI_API_KEY ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
+  console.log('🔔 Test Telegram: POST /api/test-telegram');
+  console.log('🌐 Web UI: http://localhost:' + PORT);
+  console.log('');
 });
 
 // Graceful shutdown

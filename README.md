@@ -224,11 +224,25 @@ Currently tracks the top 100 cryptocurrencies by market cap. The list is defined
 ### Project Structure
 ```
 my-deepseek-bot/
-├── server.js          # Main application file
-├── package.json       # Dependencies
-├── .env.example      # Environment variable template
-├── README.md         # This file
-└── .gitignore        # Git ignore rules
+├── app.js                    # Main application entry point
+├── package.json              # Dependencies
+├── .env.example             # Environment variable template
+├── README.md                # This file
+├── bot/                     # Trading bot logic
+│   ├── ProfessionalTradingBot.js
+│   └── indicators.js
+├── routes/                  # API routes
+│   └── api.js
+├── services/                # Service modules
+│   ├── aiService.js
+│   ├── dataFetcher.js
+│   └── notificationService.js
+├── config/                  # Configuration
+│   └── config.js
+├── utils/                   # Utility functions
+│   └── helpers.js
+└── public/                  # Static web files
+    └── index.html
 ```
 
 ### Adding New Indicators
