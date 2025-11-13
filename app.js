@@ -100,11 +100,12 @@ async function initializeBotAsync() {
   try {
     console.log('🔄 Initializing trading bot...');
     
-    // Test Python setup (non-blocking, optional)
-    const pythonAvailable = await testPythonSetup();
+    // Python disabled for Render deployment (Node.js environment limitation)
+    // Bot uses JavaScript + DeepSeek R1 AI (works perfectly!)
+    console.log('ℹ️ Using JavaScript analysis + DeepSeek R1 AI');
     
     tradingBot = new ProfessionalTradingBot();
-    tradingBot.pythonAvailable = pythonAvailable;
+    tradingBot.pythonAvailable = false;
     app.locals.tradingBot = tradingBot;
     console.log('✅ Trading bot initialized');
   } catch (error) {

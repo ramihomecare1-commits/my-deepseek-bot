@@ -2,10 +2,7 @@ services:
   - type: web
     name: crypto-scanner
     env: node
-    buildCommand: |
-      npm install
-      python3 -m pip install --upgrade pip
-      python3 -m pip install numpy pandas scipy
+    buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /health
     plan: free
