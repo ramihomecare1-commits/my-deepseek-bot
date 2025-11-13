@@ -80,7 +80,11 @@ router.get('/live-analysis', (req, res) => {
   try {
     const { tradingBot } = req.app.locals;
     const liveAnalysis = tradingBot.getLiveAnalysis();
-    res.json(liveAnalysis);
+    const batchAIResults = tradingBot.getBatchAIResults();
+    res.json({
+      ...liveAnalysis,
+      batchAI: batchAIResults,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

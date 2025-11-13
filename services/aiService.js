@@ -215,8 +215,140 @@ function generateTechnicalAnalysis(technicalData) {
   };
 }
 
+// Batch AI analysis - sends all coins at once to reduce API calls
+async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
+  if (!allCoinsData || allCoinsData.length === 0) {
+    return {};
+  }
+
+  try {
+    const prompt = createBatchAnalysisPrompt(allCoinsData, globalMetrics, options);
+
+    const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+      model: config.AI_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 2000, // More tokens for batch analysis
+      temperature: 0.1,
+    }, {
+      headers: {
+        Authorization: `Bearer ${config.AI_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
+        'X-Title': 'Technical Analysis Bot',
+      },
+    });
+
+    if (!response.data) throw new Error('AI API failed');
+    return parseBatchAIResponse(response.data.choices[0].message.content, allCoinsData);
+  } catch (error) {
+    console.log('⚠️ Batch AI analysis failed, using deterministic fallback:', error.message);
+    return generateBatchAnalysis(allCoinsData);
+  }
+}
+
+function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
+  let globalMetricsText = '';
+  if (globalMetrics && globalMetrics.coinpaprika) {
+    const gm = globalMetrics.coinpaprika;
+    globalMetricsText = `GLOBAL MARKET CONTEXT:
+- Total Market Cap: $${(gm.market_cap_usd / 1e12).toFixed(2)}T
+- 24h Volume: $${(gm.volume_24h_usd / 1e9).toFixed(2)}B  
+- BTC Dominance: ${gm.bitcoin_dominance_percentage}%
+- Total Cryptocurrencies: ${gm.cryptocurrencies_number}
+
+`;
+  }
+
+  const coinsSummary = allCoinsData.map((coin, idx) => {
+    const frames = coin.frames || {};
+    const frame1d = frames['1d'] || {};
+    const frame1h = frames['1h'] || {};
+    
+    return `${idx + 1}. ${coin.symbol} (${coin.name}) - Price: $${coin.currentPrice}
+   Daily: RSI ${frame1d.rsi || 'N/A'}, Trend ${frame1d.trend || 'N/A'}, BB ${frame1d.bollingerPosition || 'N/A'}
+   Hourly: RSI ${frame1h.rsi || 'N/A'}, Trend ${frame1h.trend || 'N/A'}, Momentum ${frame1h.momentum || 'N/A'}`;
+  }).join('\n\n');
+
+  return `BATCH CRYPTO TECHNICAL ANALYSIS REQUEST:
+
+${globalMetricsText}Analyze ${allCoinsData.length} cryptocurrencies and provide trading signals.
+
+COINS TO ANALYZE:
+${coinsSummary}
+
+For each coin, provide:
+1. Action: BUY, SELL, or HOLD
+2. Confidence: 0.0 to 1.0
+3. Brief reason (1 sentence)
+4. Top 2-3 insights
+
+Respond with JSON array:
+[
+  {
+    "symbol": "BTC",
+    "action": "BUY|SELL|HOLD",
+    "confidence": 0.75,
+    "reason": "...",
+    "insights": ["...", "..."]
+  },
+  ...
+]`;
+}
+
+function parseBatchAIResponse(aiResponse, allCoinsData) {
+  try {
+    const jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const results = {};
+      
+      parsed.forEach((item) => {
+        if (item.symbol) {
+          results[item.symbol] = {
+            action: item.action || 'HOLD',
+            confidence: Math.min(Math.max(item.confidence || 0.5, 0.1), 0.95),
+            reason: item.reason || 'AI analysis completed',
+            insights: item.insights || ['Analysis provided'],
+            signal: `${item.action} | AI Batch Analysis`,
+            aiEvaluated: true,
+          };
+        }
+      });
+      
+      // Fill in missing coins with HOLD
+      allCoinsData.forEach((coin) => {
+        if (!results[coin.symbol]) {
+          results[coin.symbol] = {
+            action: 'HOLD',
+            confidence: 0.3,
+            reason: 'No AI evaluation provided',
+            insights: ['Waiting for analysis'],
+            signal: 'HOLD | Pending',
+            aiEvaluated: false,
+          };
+        }
+      });
+      
+      return results;
+    }
+    throw new Error('Invalid AI response format');
+  } catch (error) {
+    console.log('⚠️ Failed to parse batch AI response:', error.message);
+    return generateBatchAnalysis(allCoinsData);
+  }
+}
+
+function generateBatchAnalysis(allCoinsData) {
+  const results = {};
+  allCoinsData.forEach((coin) => {
+    results[coin.symbol] = generateTechnicalAnalysis(coin);
+  });
+  return results;
+}
+
 module.exports = {
   getAITechnicalAnalysis,
+  getBatchAIAnalysis,
   createTechnicalAnalysisPrompt,
   parseTechnicalAIResponse,
   generateTechnicalAnalysis

@@ -19,7 +19,7 @@ const {
   sendTelegramNotification,
   sendTestNotification 
 } = require('../services/notificationService');
-const { getAITechnicalAnalysis } = require('../services/aiService');
+const { getAITechnicalAnalysis, getBatchAIAnalysis } = require('../services/aiService');
 
 class ProfessionalTradingBot {
   constructor() {
@@ -69,6 +69,11 @@ class ProfessionalTradingBot {
       coinmarketcap: null,
       coinpaprika: null,
       lastUpdated: null
+    };
+    this.lastBatchAIResults = {
+      results: {},
+      timestamp: null,
+      coinsAnalyzed: 0,
     };
   }
 
@@ -263,7 +268,11 @@ class ProfessionalTradingBot {
       let analyzedCount = 0;
       let mockDataUsed = 0;
       const heatmapEntries = [];
+      const allCoinsData = []; // Collect all coin data for batch AI
+      const analysisResults = new Map(); // Store analysis results to avoid re-computation
 
+      // Step 1: Collect all coin technical data
+      console.log('📊 Step 1: Collecting technical data for all coins...');
       for (const coin of this.trackedCoins) {
         try {
           const analysis = await this.analyzeWithTechnicalIndicators(coin, { 
@@ -272,7 +281,8 @@ class ProfessionalTradingBot {
           });
           analyzedCount += 1;
 
-          console.log(`🔍 ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}%) - Mock: ${analysis.usesMockData} - Source: ${analysis.dataSource}`);
+          // Store analysis result
+          analysisResults.set(coin.symbol, analysis);
 
           if (analysis.usesMockData) {
             mockDataUsed += 1;
@@ -282,6 +292,77 @@ class ProfessionalTradingBot {
             heatmapEntries.push(analysis.heatmapEntry);
           }
 
+          // Collect data for batch AI (only real data)
+          if (!analysis.usesMockData && analysis.frames) {
+            allCoinsData.push({
+              symbol: coin.symbol,
+              name: coin.name,
+              currentPrice: analysis.price,
+              frames: analysis.frames,
+              dataSource: analysis.dataSource || 'CoinGecko',
+            });
+          }
+
+          this.scanProgress.processed += 1;
+          this.scanProgress.percent = Math.min(
+            Math.round((this.scanProgress.processed / this.trackedCoins.length) * 60), // 60% for data collection
+            60,
+          );
+        } catch (error) {
+          console.log(`❌ ${coin.symbol}: Data collection failed - ${error.message}`);
+          this.stats.apiErrors += 1;
+          this.scanProgress.processed += 1;
+        }
+
+        await sleep(config.API_DELAY);
+      }
+
+      // Step 2: Send all data to AI at once (batch analysis)
+      console.log(`🤖 Step 2: Sending ${allCoinsData.length} coins to AI for batch analysis...`);
+      this.currentlyAnalyzing = {
+        symbol: 'BATCH',
+        name: 'Batch AI Analysis',
+        stage: `Analyzing ${allCoinsData.length} coins with AI...`,
+        timestamp: new Date(),
+        progress: 70,
+      };
+      this.updateLiveAnalysis();
+
+      let batchAIResults = {};
+      if (allCoinsData.length > 0 && config.AI_API_KEY) {
+        try {
+          batchAIResults = await getBatchAIAnalysis(allCoinsData, this.globalMetrics, options);
+          console.log(`✅ Batch AI analysis completed for ${Object.keys(batchAIResults).length} coins`);
+          this.currentlyAnalyzing.stage = `AI evaluation complete - ${Object.keys(batchAIResults).length} coins analyzed`;
+          this.currentlyAnalyzing.progress = 85;
+        } catch (error) {
+          console.log(`⚠️ Batch AI failed: ${error.message}`);
+          this.currentlyAnalyzing.stage = `AI analysis failed, using fallback`;
+        }
+      } else {
+        console.log('⚠️ Skipping AI analysis (no API key or no data)');
+      }
+
+      // Step 3: Merge AI results with stored technical analysis
+      console.log('🔄 Step 3: Merging AI results with technical analysis...');
+      for (const coin of this.trackedCoins) {
+        try {
+          const analysis = analysisResults.get(coin.symbol);
+          if (!analysis) continue;
+
+          // Merge AI results if available
+          if (batchAIResults[coin.symbol]) {
+            const aiResult = batchAIResults[coin.symbol];
+            analysis.action = aiResult.action;
+            analysis.confidence = aiResult.confidence;
+            analysis.reason = aiResult.reason;
+            analysis.insights = aiResult.insights;
+            analysis.signal = aiResult.signal;
+            analysis.aiEvaluated = aiResult.aiEvaluated || false;
+          }
+
+          console.log(`🔍 ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}%) - AI: ${analysis.aiEvaluated ? '✅' : '❌'}`);
+
           // Only add real opportunities with valid data
           if (analysis.confidence >= this.minConfidence && !analysis.usesMockData) {
             if (!this.applyScanFilters(analysis, options)) {
@@ -290,26 +371,23 @@ class ProfessionalTradingBot {
             }
             opportunities.push(analysis);
             console.log(`✅ ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}% confidence) - ADDED TO OPPORTUNITIES`);
-          } else {
-            if (analysis.usesMockData) {
-              console.log(`❌ ${coin.symbol}: Using mock data - skipping notification`);
-            } else {
-              console.log(`❌ ${coin.symbol}: Confidence too low (${(analysis.confidence * 100).toFixed(0)}% < ${(this.minConfidence * 100).toFixed(0)}%)`);
-            }
           }
         } catch (error) {
-          console.log(`❌ ${coin.symbol}: Analysis failed - ${error.message}`);
-          this.stats.apiErrors += 1;
-        } finally {
-          this.scanProgress.processed += 1;
-          this.scanProgress.percent = Math.min(
-            Math.round((this.scanProgress.processed / this.scanProgress.total) * 100),
-            100,
-          );
+          console.log(`❌ ${coin.symbol}: Merge failed - ${error.message}`);
         }
-
-        await sleep(config.API_DELAY);
       }
+
+      this.scanProgress.percent = 100;
+
+      // Store batch AI results for UI display
+      this.lastBatchAIResults = {
+        results: batchAIResults,
+        timestamp: new Date(),
+        coinsAnalyzed: allCoinsData.length,
+      };
+
+      this.currentlyAnalyzing = null;
+      this.updateLiveAnalysis();
 
       opportunities.sort((a, b) => b.confidence - a.confidence);
 
@@ -467,6 +545,14 @@ class ProfessionalTradingBot {
       currentlyAnalyzing: this.currentlyAnalyzing,
       recentAnalysis: this.liveAnalysis.slice(0, 10),
       timestamp: new Date(),
+    };
+  }
+
+  getBatchAIResults() {
+    return this.lastBatchAIResults || {
+      results: {},
+      timestamp: null,
+      coinsAnalyzed: 0,
     };
   }
 
