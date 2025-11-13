@@ -869,6 +869,9 @@
           clearInterval(progressPollInterval);
           progressPollInterval = null;
         }
+        // Make sure the bar shows completion before hiding
+        document.getElementById('scanProgressText').textContent = '100%';
+        document.getElementById('scanProgressFill').style.width = '100%';
         
         if (!data || !data.opportunities || data.opportunities.length === 0) {
           document.getElementById('results').innerHTML = '<div class="no-opportunities"><h3>📭 No High-Confidence Opportunities</h3><p>Scanned ' + (data.analyzedCoins || 0) + ' coins</p></div>';

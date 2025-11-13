@@ -17,12 +17,20 @@ async function getAITechnicalAnalysis(technicalData, options = {}) {
         'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
         'X-Title': 'Technical Analysis Bot',
       },
+      timeout: 30000,
     });
 
+    console.log(`🛰️ OpenRouter response status: ${response.status}`);
     if (!response.data) throw new Error('AI API failed');
     return parseTechnicalAIResponse(response.data.choices[0].message.content, technicalData);
   } catch (error) {
-    console.log('⚠️ AI analysis failed, using deterministic fallback:', error.message);
+    if (error.response) {
+      console.log(`⚠️ AI API error: ${error.response.status} ${error.response.statusText}`);
+      console.log('Details:', JSON.stringify(error.response.data).slice(0, 500));
+    } else {
+      console.log('⚠️ AI analysis failed:', error.message);
+    }
+    console.log('↩️ Falling back to deterministic analysis');
     return generateTechnicalAnalysis(technicalData);
   }
 }
@@ -236,12 +244,20 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
         'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
         'X-Title': 'Technical Analysis Bot',
       },
+      timeout: 45000,
     });
 
+    console.log(`🛰️ OpenRouter batch status: ${response.status}`);
     if (!response.data) throw new Error('AI API failed');
     return parseBatchAIResponse(response.data.choices[0].message.content, allCoinsData);
   } catch (error) {
-    console.log('⚠️ Batch AI analysis failed, using deterministic fallback:', error.message);
+    if (error.response) {
+      console.log(`⚠️ Batch AI error: ${error.response.status} ${error.response.statusText}`);
+      console.log('Details:', JSON.stringify(error.response.data).slice(0, 500));
+    } else {
+      console.log('⚠️ Batch AI analysis failed:', error.message);
+    }
+    console.log('↩️ Falling back to deterministic batch analysis');
     return generateBatchAnalysis(allCoinsData);
   }
 }

@@ -514,11 +514,20 @@ class ProfessionalTradingBot {
       if (config.TELEGRAM_ENABLED && opportunities.length > 0) {
         console.log(`📱 Sending Telegram notifications for ${opportunities.length} opportunities...`);
         for (const opp of opportunities) {
-          // Only send notifications for real data, not mock data
-          if (!opp.usesMockData) {
-            await sendTelegramNotification(opp, this.lastNotificationTime, this.stats, this.greedFearIndex, this.globalMetrics);
-            await sleep(1500);
+          const allowMock = config.ALLOW_MOCK_NOTIFICATIONS;
+          if (opp.usesMockData && !allowMock) {
+            console.log(`⏭️ Skipping Telegram for ${opp.symbol} (mock data). Set ALLOW_MOCK_NOTIFICATIONS=true to send anyway.`);
+            continue;
           }
+          await sendTelegramNotification(
+            opp,
+            this.lastNotificationTime,
+            this.stats,
+            this.greedFearIndex,
+            this.globalMetrics,
+            { force: allowMock }
+          );
+          await sleep(1500);
         }
       }
 

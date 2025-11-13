@@ -29,12 +29,16 @@ const SCAN_INTERVAL_OPTIONS = {
 const AI_API_KEY = process.env.API_KEY || process.env.AI_API_KEY || process.env.OPENROUTER_API_KEY || '';
 const AI_MODEL = 'deepseek/deepseek-r1:free';
 
+// Notifications behavior
+const ALLOW_MOCK_NOTIFICATIONS = (process.env.ALLOW_MOCK_NOTIFICATIONS || 'false').toLowerCase() === 'true';
+
 // Log configuration status
 console.log('🔧 Configuration Status:');
 console.log(`   Telegram: ${TELEGRAM_ENABLED ? 'ENABLED' : 'DISABLED'}`);
 console.log(`   CoinMarketCap: ${COINMARKETCAP_ENABLED ? 'ENABLED' : 'DISABLED'}`);
 console.log(`   News: ${NEWS_ENABLED ? 'ENABLED' : 'DISABLED'}`);
 console.log(`   AI: ${AI_API_KEY ? 'ENABLED' : 'DISABLED'}`);
+console.log(`   Mock Notifications: ${ALLOW_MOCK_NOTIFICATIONS ? 'ALLOWED' : 'BLOCKED'}`);
 
 module.exports = {
   COINMARKETCAP_API_KEY,
@@ -49,5 +53,6 @@ module.exports = {
   NOTIFICATION_COOLDOWN_MS,
   SCAN_INTERVAL_OPTIONS,
   AI_API_KEY,
-  AI_MODEL
+  AI_MODEL,
+  ALLOW_MOCK_NOTIFICATIONS
 };
