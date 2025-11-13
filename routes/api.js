@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 
 // Health check endpoint (for Render deployment)
 router.get('/health', (req, res) => {
@@ -8,6 +9,96 @@ router.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
+});
+
+// Diagnostics endpoint
+router.get('/diagnostics', async (req, res) => {
+  const config = require('../config/config');
+  
+  const diagnostics = {
+    timestamp: new Date().toISOString(),
+    environment: {
+      API_KEY: !!process.env.API_KEY,
+      AI_API_KEY: !!process.env.AI_API_KEY,
+      OPENROUTER_API_KEY: !!process.env.OPENROUTER_API_KEY,
+      TELEGRAM_BOT_TOKEN: !!process.env.TELEGRAM_BOT_TOKEN,
+      TELEGRAM_CHAT_ID: !!process.env.TELEGRAM_CHAT_ID,
+      ALLOW_MOCK_NOTIFICATIONS: process.env.ALLOW_MOCK_NOTIFICATIONS || 'false'
+    },
+    config: {
+      AI_API_KEY_PRESENT: !!config.AI_API_KEY,
+      AI_API_KEY_LENGTH: config.AI_API_KEY ? config.AI_API_KEY.length : 0,
+      AI_MODEL: config.AI_MODEL,
+      TELEGRAM_ENABLED: config.TELEGRAM_ENABLED,
+      ALLOW_MOCK_NOTIFICATIONS: config.ALLOW_MOCK_NOTIFICATIONS
+    },
+    tests: {}
+  };
+  
+  // Test AI API
+  if (config.AI_API_KEY) {
+    try {
+      const aiResponse = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+        model: config.AI_MODEL,
+        messages: [{ role: 'user', content: 'Say "test successful"' }],
+        max_tokens: 20,
+        temperature: 0.1,
+      }, {
+        headers: {
+          Authorization: `Bearer ${config.AI_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
+          'X-Title': 'Technical Analysis Bot',
+        },
+        timeout: 10000,
+      });
+      
+      diagnostics.tests.ai = {
+        status: 'success',
+        responseStatus: aiResponse.status,
+        message: 'AI API is working correctly'
+      };
+    } catch (error) {
+      diagnostics.tests.ai = {
+        status: 'failed',
+        error: error.message,
+        responseStatus: error.response?.status,
+        responseData: error.response?.data ? JSON.stringify(error.response.data).substring(0, 200) : null
+      };
+    }
+  } else {
+    diagnostics.tests.ai = {
+      status: 'skipped',
+      message: 'AI_API_KEY not configured'
+    };
+  }
+  
+  // Test Telegram
+  if (config.TELEGRAM_ENABLED) {
+    try {
+      const telegramUrl = `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/getMe`;
+      const telegramResponse = await axios.get(telegramUrl, { timeout: 5000 });
+      
+      diagnostics.tests.telegram = {
+        status: 'success',
+        botUsername: telegramResponse.data.result?.username,
+        message: 'Telegram bot is configured correctly'
+      };
+    } catch (error) {
+      diagnostics.tests.telegram = {
+        status: 'failed',
+        error: error.message,
+        responseStatus: error.response?.status
+      };
+    }
+  } else {
+    diagnostics.tests.telegram = {
+      status: 'skipped',
+      message: 'Telegram credentials not configured'
+    };
+  }
+  
+  res.json(diagnostics);
 });
 
 // API routes

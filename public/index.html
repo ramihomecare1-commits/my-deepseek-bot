@@ -563,6 +563,7 @@
           <button class="btn-primary" onclick="manualScan()">🔍 Scan Now</button>
           <button class="btn-telegram" onclick="testTelegram(event)">📱 Test Telegram</button>
           <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
+          <button class="btn-secondary" onclick="runDiagnostics()">🔧 Diagnostics</button>
         </div>
         
         <div class="status-card">
@@ -816,6 +817,58 @@
         alert('❌ Error testing Telegram: ' + error.message);
         event.target.disabled = false;
         event.target.textContent = '📱 Test Telegram';
+      }
+    }
+
+    async function runDiagnostics() {
+      try {
+        const response = await fetch(API_BASE + '/diagnostics');
+        const data = await response.json();
+        
+        // Format the diagnostics output
+        let message = '🔍 SYSTEM DIAGNOSTICS\n\n';
+        
+        // Environment variables
+        message += '📋 Environment Variables:\n';
+        message += `   API_KEY: ${data.environment.API_KEY ? '✅' : '❌'}\n`;
+        message += `   AI_API_KEY: ${data.environment.AI_API_KEY ? '✅' : '❌'}\n`;
+        message += `   OPENROUTER_API_KEY: ${data.environment.OPENROUTER_API_KEY ? '✅' : '❌'}\n`;
+        message += `   TELEGRAM_BOT_TOKEN: ${data.environment.TELEGRAM_BOT_TOKEN ? '✅' : '❌'}\n`;
+        message += `   TELEGRAM_CHAT_ID: ${data.environment.TELEGRAM_CHAT_ID ? '✅' : '❌'}\n`;
+        message += `   ALLOW_MOCK_NOTIFICATIONS: ${data.environment.ALLOW_MOCK_NOTIFICATIONS}\n\n`;
+        
+        // Config status
+        message += '⚙️ Configuration:\n';
+        message += `   AI API Key: ${data.config.AI_API_KEY_PRESENT ? '✅ Present (' + data.config.AI_API_KEY_LENGTH + ' chars)' : '❌ Missing'}\n`;
+        message += `   AI Model: ${data.config.AI_MODEL}\n`;
+        message += `   Telegram: ${data.config.TELEGRAM_ENABLED ? '✅ Enabled' : '❌ Disabled'}\n\n`;
+        
+        // Test results
+        message += '🧪 API Tests:\n';
+        message += `   AI API: ${data.tests.ai.status === 'success' ? '✅ ' + data.tests.ai.message : data.tests.ai.status === 'skipped' ? '⏭️ ' + data.tests.ai.message : '❌ ' + data.tests.ai.error}\n`;
+        message += `   Telegram: ${data.tests.telegram.status === 'success' ? '✅ ' + data.tests.telegram.message + ' (@' + data.tests.telegram.botUsername + ')' : data.tests.telegram.status === 'skipped' ? '⏭️ ' + data.tests.telegram.message : '❌ ' + data.tests.telegram.error}\n\n`;
+        
+        // Recommendations
+        if (data.tests.ai.status !== 'success' || data.tests.telegram.status !== 'success') {
+          message += '💡 RECOMMENDATIONS:\n';
+          if (data.tests.ai.status !== 'success') {
+            message += '   • Set AI_API_KEY or OPENROUTER_API_KEY in environment\n';
+            message += '   • Get your key from: https://openrouter.ai/keys\n';
+          }
+          if (data.tests.telegram.status !== 'success') {
+            message += '   • Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID\n';
+            message += '   • Create bot: Talk to @BotFather on Telegram\n';
+            message += '   • Get chat ID: Talk to @userinfobot on Telegram\n';
+          }
+        }
+        
+        // Show in alert (for quick view) and console (for details)
+        alert(message);
+        console.log('Full diagnostics:', data);
+        
+      } catch (error) {
+        alert('❌ Error running diagnostics: ' + error.message);
+        console.error('Diagnostics error:', error);
       }
     }
 
