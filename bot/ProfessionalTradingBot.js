@@ -47,6 +47,7 @@ class ProfessionalTradingBot {
       skippedDueToOverlap: 0,
       coinmarketcapUsage: 0,
       coinpaprikaUsage: 0,
+      aiCalls: 0,  // Track AI API calls
     };
 
     this.lastNotificationTime = {};
@@ -359,14 +360,21 @@ class ProfessionalTradingBot {
           }
 
           // Collect data for batch AI (only real data)
-          if (!analysis.usesMockData && analysis.frames) {
+          if (!analysis.usesMockData && analysis.frames && Object.keys(analysis.frames).length > 0) {
             allCoinsData.push({
               symbol: coin.symbol,
               name: coin.name,
-              currentPrice: analysis.price,
+              currentPrice: parseFloat(analysis.price.replace('$', '').replace(/,/g, '')) || currentPrice,
               frames: analysis.frames,
               dataSource: analysis.dataSource || 'CoinGecko',
             });
+            console.log(`📊 Collected data for AI: ${coin.symbol} (${Object.keys(analysis.frames).length} timeframes)`);
+          } else {
+            if (analysis.usesMockData) {
+              console.log(`⏭️ Skipping ${coin.symbol} for AI (using mock data)`);
+            } else if (!analysis.frames || Object.keys(analysis.frames).length === 0) {
+              console.log(`⏭️ Skipping ${coin.symbol} for AI (no frame data)`);
+            }
           }
 
           this.scanProgress.processed += 1;
@@ -397,16 +405,24 @@ class ProfessionalTradingBot {
       let batchAIResults = {};
       if (allCoinsData.length > 0 && config.AI_API_KEY) {
         try {
+          console.log(`🤖 Calling AI API with ${allCoinsData.length} coins...`);
           batchAIResults = await getBatchAIAnalysis(allCoinsData, this.globalMetrics, options);
+          this.stats.aiCalls += 1; // Track AI API call
           console.log(`✅ Batch AI analysis completed for ${Object.keys(batchAIResults).length} coins`);
+          console.log(`📊 AI API calls this session: ${this.stats.aiCalls}`);
           this.currentlyAnalyzing.stage = `AI evaluation complete - ${Object.keys(batchAIResults).length} coins analyzed`;
           this.currentlyAnalyzing.progress = 85;
         } catch (error) {
           console.log(`⚠️ Batch AI failed: ${error.message}`);
+          console.error('Full AI error:', error);
           this.currentlyAnalyzing.stage = `AI analysis failed, using fallback`;
         }
       } else {
-        console.log('⚠️ Skipping AI analysis (no API key or no data)');
+        if (!config.AI_API_KEY) {
+          console.log('⚠️ Skipping AI analysis - API_KEY not configured');
+        } else if (allCoinsData.length === 0) {
+          console.log(`⚠️ Skipping AI analysis - no valid coin data collected (${analyzedCount} coins analyzed, all using mock data?)`);
+        }
       }
 
       // Step 3: Merge AI results with stored technical analysis
@@ -623,8 +639,37 @@ class ProfessionalTradingBot {
       // Combine patterns from different timeframes
       const allPatterns = [...patterns, ...hourlyPatterns];
 
-      // Calculate technical indicators (simplified - you may have existing logic)
+      // Calculate technical indicators for all timeframes
       const frames = this.prepareTimeframeSeries(minuteData || [], hourlyData || [], dailyData || []);
+      
+      // Calculate indicators for each timeframe (format expected by AI)
+      const framesWithIndicators = {};
+      for (const [timeframe, series] of Object.entries(frames)) {
+        if (series && series.length > 0) {
+          const prices = series.map(s => s.price || s);
+          const rsi = calculateRSI(prices, 14);
+          const bollinger = calculateBollingerBands(prices, 20, 2);
+          const trend = identifyTrend(prices);
+          const momentum = calculateMomentum(prices);
+          
+          // Calculate Bollinger position
+          const currentPrice = prices[prices.length - 1];
+          const bbPosition = bollinger ? 
+            ((currentPrice - bollinger.lower) / (bollinger.upper - bollinger.lower) * 100) : null;
+          const bollingerPosition = bbPosition < 20 ? 'LOWER' : bbPosition > 80 ? 'UPPER' : 'MIDDLE';
+          
+          framesWithIndicators[timeframe] = {
+            rsi: rsi ? rsi.toFixed(2) : 'N/A',
+            bollingerPosition: bollingerPosition,
+            trend: trend,
+            momentum: momentum,
+            price: currentPrice,
+            support: Math.min(...prices.slice(-20)), // Support from last 20 periods
+            resistance: Math.max(...prices.slice(-20)), // Resistance from last 20 periods
+            series: series
+          };
+        }
+      }
       
       // Build analysis result with patterns
       const analysis = {
@@ -640,11 +685,12 @@ class ProfessionalTradingBot {
         usesMockData: usesMockData || historicalMock,
         dataSource: dataSource,
         patterns: allPatterns,
+        frames: framesWithIndicators, // Add frames at top level for AI
         indicators: {
-          frames: frames,
-          daily: {},
-          hourly: {},
-          momentum: 'NEUTRAL'
+          frames: framesWithIndicators,
+          daily: framesWithIndicators['1d'] || {},
+          hourly: framesWithIndicators['1h'] || {},
+          momentum: framesWithIndicators['1h']?.momentum || 'NEUTRAL'
         },
         heatmapEntry: null
       };

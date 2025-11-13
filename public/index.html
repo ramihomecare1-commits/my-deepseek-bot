@@ -891,6 +891,11 @@
           document.getElementById('totalOpps').textContent = data.stats.totalOpportunities || 0;
           document.getElementById('paprikaCalls').textContent = data.stats.apiUsage?.coinpaprika || 0;
           document.getElementById('cmcCalls').textContent = data.stats.apiUsage?.coinmarketcap || 0;
+          document.getElementById('aiCalls').textContent = data.stats.aiCalls || 0;
+          
+          // Update coins analyzed from batch AI or stats
+          const batchAI = data.batchAI || {};
+          document.getElementById('coinsAnalyzed').textContent = batchAI.coinsAnalyzed || data.stats.totalScans * (data.stats.trackedCoins || 0) || 0;
         }
       } catch (error) {
         console.log('Error updating stats:', error);
