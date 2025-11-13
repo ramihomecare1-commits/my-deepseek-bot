@@ -854,7 +854,9 @@
         
         // Start polling progress
         if (progressPollInterval) clearInterval(progressPollInterval);
-        progressPollInterval = setInterval(updateProgress, 1000);
+        // Kick an immediate update so we don't get stuck at 60% between polls
+        await updateProgress();
+        progressPollInterval = setInterval(updateProgress, 800);
         
         const response = await fetch(API_BASE + '/scan-now', {
           method: 'POST',
