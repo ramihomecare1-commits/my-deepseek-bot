@@ -47,64 +47,12 @@ async function fetchGlobalMetrics(globalMetrics, stats, coinmarketcapEnabled, co
 }
 
 // Enhanced price data fetching with multiple APIs
+// Priority: CoinMarketCap (authenticated, higher limits) → CoinGecko → CoinPaprika
 async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
   let primaryData = null;
   let usedMock = false;
 
-  // Try CoinGecko first
-  try {
-    const priceResponse = await axios.get(
-      `https://api.coingecko.com/api/v3/simple/price`,
-      {
-        params: { 
-          ids: coin.id, 
-          vs_currencies: 'usd', 
-          include_market_cap: true, 
-          include_24hr_vol: true, 
-          include_24hr_change: true 
-        },
-        timeout: 10000,
-      },
-    );
-    
-    if (priceResponse.data && priceResponse.data[coin.id]) {
-      primaryData = {
-        price: priceResponse.data[coin.id].usd,
-        market_cap: priceResponse.data[coin.id].usd_market_cap,
-        volume_24h: priceResponse.data[coin.id].usd_24h_vol,
-        change_24h: priceResponse.data[coin.id].usd_24h_change,
-        source: 'coingecko'
-      };
-      priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
-    }
-  } catch (error) {
-    console.log(`⚠️ ${coin.symbol}: CoinGecko price fetch failed`);
-  }
-
-  // Fallback to CoinPaprika
-  if (!primaryData && config.COINPAPRIKA_ENABLED) {
-    try {
-      const paprikaResponse = await axios.get(
-        `https://api.coinpaprika.com/v1/tickers/${coin.coinpaprika_id}`,
-        { timeout: 10000 }
-      );
-      
-      if (paprikaResponse.data) {
-        primaryData = {
-          price: paprikaResponse.data.quotes.USD.price,
-          market_cap: paprikaResponse.data.quotes.USD.market_cap,
-          volume_24h: paprikaResponse.data.quotes.USD.volume_24h,
-          change_24h: paprikaResponse.data.quotes.USD.percent_change_24h,
-          source: 'coinpaprika'
-        };
-        stats.coinpaprikaUsage++;
-      }
-    } catch (error) {
-      console.log(`⚠️ ${coin.symbol}: CoinPaprika price fetch failed`);
-    }
-  }
-
-  // Fallback to CoinMarketCap if available
+  // Try CoinMarketCap FIRST (if API key available)
   if (!primaryData && config.COINMARKETCAP_ENABLED) {
     try {
       const cmcResponse = await axios.get(
@@ -128,9 +76,66 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
           source: 'coinmarketcap'
         };
         stats.coinmarketcapUsage++;
+        priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
+        console.log(`✅ ${coin.symbol}: CoinMarketCap price: $${primaryData.price.toFixed(2)}`);
       }
     } catch (error) {
-      console.log(`⚠️ ${coin.symbol}: CoinMarketCap price fetch failed`);
+      console.log(`⚠️ ${coin.symbol}: CoinMarketCap price fetch failed - ${error.message}`);
+    }
+  }
+
+  // Fallback to CoinGecko
+  if (!primaryData) {
+    try {
+      const priceResponse = await axios.get(
+        `https://api.coingecko.com/api/v3/simple/price`,
+        {
+          params: { 
+            ids: coin.id, 
+            vs_currencies: 'usd', 
+            include_market_cap: true, 
+            include_24hr_vol: true, 
+            include_24hr_change: true 
+          },
+          timeout: 10000,
+        },
+      );
+      
+      if (priceResponse.data && priceResponse.data[coin.id]) {
+        primaryData = {
+          price: priceResponse.data[coin.id].usd,
+          market_cap: priceResponse.data[coin.id].usd_market_cap,
+          volume_24h: priceResponse.data[coin.id].usd_24h_vol,
+          change_24h: priceResponse.data[coin.id].usd_24h_change,
+          source: 'coingecko'
+        };
+        priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
+      }
+    } catch (error) {
+      console.log(`⚠️ ${coin.symbol}: CoinGecko price fetch failed`);
+    }
+  }
+
+  // Fallback to CoinPaprika
+  if (!primaryData && config.COINPAPRIKA_ENABLED) {
+    try {
+      const paprikaResponse = await axios.get(
+        `https://api.coinpaprika.com/v1/tickers/${coin.coinpaprika_id}`,
+        { timeout: 10000 }
+      );
+      
+      if (paprikaResponse.data) {
+        primaryData = {
+          price: paprikaResponse.data.quotes.USD.price,
+          market_cap: paprikaResponse.data.quotes.USD.market_cap,
+          volume_24h: paprikaResponse.data.quotes.USD.volume_24h,
+          change_24h: paprikaResponse.data.quotes.USD.percent_change_24h,
+          source: 'coinpaprika'
+        };
+        stats.coinpaprikaUsage++;
+      }
+    } catch (error) {
+      console.log(`⚠️ ${coin.symbol}: CoinPaprika price fetch failed`);
     }
   }
 
