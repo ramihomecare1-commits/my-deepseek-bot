@@ -238,10 +238,14 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
       const prompt = createBatchAnalysisPrompt(allCoinsData, globalMetrics, options);
 
       console.log(`🤖 AI API attempt ${attempt}/${maxRetries}...`);
+      // Calculate tokens needed: ~100 tokens per coin for response
+      const estimatedTokens = Math.min(allCoinsData.length * 150, 8000);
+      console.log(`📊 Requesting ${estimatedTokens} max tokens for ${allCoinsData.length} coins`);
+      
       const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
         model: config.AI_MODEL,
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 2000, // More tokens for batch analysis
+        max_tokens: estimatedTokens, // Dynamic based on coin count
         temperature: 0.1,
       }, {
         headers: {
@@ -345,9 +349,71 @@ Respond with JSON array:
 
 function parseBatchAIResponse(aiResponse, allCoinsData) {
   try {
-    const jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
+    console.log(`📝 AI Response preview: ${aiResponse.substring(0, 500)}...`);
+    console.log(`📏 AI Response length: ${aiResponse.length} chars`);
+    
+    // Try to extract JSON array
+    let jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
+    
+    if (!jsonMatch) {
+      console.log('⚠️ No JSON array found in response, trying to find partial JSON...');
+      // Sometimes the response is just the array without markdown
+      if (aiResponse.trim().startsWith('[')) {
+        jsonMatch = [aiResponse.trim()];
+      }
+    }
+    
     if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
+      let jsonStr = jsonMatch[0];
+      
+      // Try to fix common JSON issues
+      // 1. Remove trailing commas before ] or }
+      jsonStr = jsonStr.replace(/,(\s*[\]}])/g, '$1');
+      
+      // 2. If JSON is incomplete (no closing bracket), try to fix it
+      const openBrackets = (jsonStr.match(/\[/g) || []).length;
+      const closeBrackets = (jsonStr.match(/\]/g) || []).length;
+      if (openBrackets > closeBrackets) {
+        console.log(`⚠️ Incomplete JSON detected (${openBrackets} [ vs ${closeBrackets} ]). Attempting to fix...`);
+        // Try to close incomplete objects/arrays
+        const openBraces = (jsonStr.match(/\{/g) || []).length;
+        const closeBraces = (jsonStr.match(/\}/g) || []).length;
+        for (let i = 0; i < (openBraces - closeBraces); i++) {
+          jsonStr += '}';
+        }
+        for (let i = 0; i < (openBrackets - closeBrackets); i++) {
+          jsonStr += ']';
+        }
+      }
+      
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch (parseError) {
+        console.log(`⚠️ JSON parse failed: ${parseError.message}`);
+        console.log(`📄 Problematic JSON (first 1000 chars): ${jsonStr.substring(0, 1000)}`);
+        
+        // Last resort: try to extract complete objects manually
+        const objects = [];
+        const objRegex = /\{\s*"symbol"\s*:\s*"([^"]+)"[\s\S]*?\}/g;
+        let match;
+        while ((match = objRegex.exec(jsonStr)) !== null) {
+          try {
+            const obj = JSON.parse(match[0]);
+            objects.push(obj);
+          } catch (e) {
+            // Skip invalid objects
+          }
+        }
+        
+        if (objects.length > 0) {
+          console.log(`✅ Extracted ${objects.length} valid objects from malformed JSON`);
+          parsed = objects;
+        } else {
+          throw parseError;
+        }
+      }
+      
       const results = {};
       
       parsed.forEach((item) => {
@@ -362,6 +428,8 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
           };
         }
       });
+      
+      console.log(`✅ Successfully parsed ${Object.keys(results).length} AI evaluations`);
       
       // Fill in missing coins with HOLD
       allCoinsData.forEach((coin) => {
@@ -379,9 +447,10 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
       
       return results;
     }
-    throw new Error('Invalid AI response format');
+    throw new Error('Invalid AI response format - no JSON array found');
   } catch (error) {
-    console.log('⚠️ Failed to parse batch AI response:', error.message);
+    console.log('❌ Failed to parse batch AI response:', error.message);
+    console.log('📄 Raw response (first 2000 chars):', aiResponse.substring(0, 2000));
     return generateBatchAnalysis(allCoinsData);
   }
 }
