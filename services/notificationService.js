@@ -14,8 +14,8 @@ async function sendTelegramNotification(opportunity, lastNotificationTime, stats
     return false;
   }
 
-  // PREVENT TEST COIN NOTIFICATIONS
-  if (opportunity.symbol === 'TEST' || opportunity.name.includes('Test') || opportunity.usesMockData) {
+  // PREVENT TEST COIN NOTIFICATIONS (unless forced)
+  if (!force && (opportunity.symbol === 'TEST' || opportunity.name.includes('Test') || opportunity.usesMockData)) {
     console.log(`⏭️ Skipping notification for test/mock data: ${opportunity.symbol}`);
     return false;
   }

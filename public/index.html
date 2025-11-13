@@ -635,6 +635,10 @@
                   <input type="checkbox" id="buyRequireTrend" style="margin-right: 8px;">
                   <span>Require Bullish Trend</span>
                 </label>
+                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <input type="checkbox" id="buyRequirePattern" style="margin-right: 8px;">
+                  <span>Require Trading Pattern (Channels, H&S, etc.)</span>
+                </label>
                 <div style="margin-top: 12px;">
                   <label style="display: block; margin-bottom: 4px; font-size: 0.9em;">Min Timeframe Alignment:</label>
                   <input type="number" id="buyTimeframeAlignment" min="1" max="5" value="2" style="width: 60px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
@@ -673,6 +677,10 @@
                   <input type="checkbox" id="sellRequireTrend" style="margin-right: 8px;">
                   <span>Require Bearish Trend</span>
                 </label>
+                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <input type="checkbox" id="sellRequirePattern" style="margin-right: 8px;">
+                  <span>Require Trading Pattern (Channels, H&S, etc.)</span>
+                </label>
                 <div style="margin-top: 12px;">
                   <label style="display: block; margin-bottom: 4px; font-size: 0.9em;">Min Timeframe Alignment:</label>
                   <input type="number" id="sellTimeframeAlignment" min="1" max="5" value="2" style="width: 60px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
@@ -702,32 +710,6 @@
             </div>
           </div>
 
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
-            <div>
-              <h4 style="color: #6366f1; margin-bottom: 8px; font-size: 1em;">📈 RSI Levels</h4>
-              <div id="rsiRules" style="background: white; padding: 12px; border-radius: 8px; font-size: 0.9em;">
-                Loading...
-              </div>
-            </div>
-            <div>
-              <h4 style="color: #6366f1; margin-bottom: 8px; font-size: 1em;">📊 Bollinger Bands</h4>
-              <div id="bollingerRules" style="background: white; padding: 12px; border-radius: 8px; font-size: 0.9em;">
-                Loading...
-              </div>
-            </div>
-            <div>
-              <h4 style="color: #6366f1; margin-bottom: 8px; font-size: 1em;">🔢 Fibonacci Levels</h4>
-              <div id="fibonacciRules" style="background: white; padding: 12px; border-radius: 8px; font-size: 0.9em;">
-                Loading...
-              </div>
-            </div>
-            <div>
-              <h4 style="color: #6366f1; margin-bottom: 8px; font-size: 1em;">📉 Support/Resistance</h4>
-              <div id="supportResistanceRules" style="background: white; padding: 12px; border-radius: 8px; font-size: 0.9em;">
-                Loading...
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -860,10 +842,24 @@
           return;
         }
 
-        // Render opportunities...
+        // Render opportunities with patterns
         let html = '';
         data.opportunities.forEach((opp) => {
-          // Opportunity rendering logic here
+          let patternsHTML = '';
+          if (opp.patterns && opp.patterns.length > 0) {
+            patternsHTML = '<div style="margin-top: 12px; padding: 12px; background: rgba(99, 102, 241, 0.1); border-radius: 8px;">' +
+              '<div style="font-weight: 600; margin-bottom: 8px; color: #6366f1;">📊 Detected Patterns:</div>' +
+              opp.patterns.map(p => {
+                const signalColor = p.signal === 'BULLISH' ? '#22c55e' : p.signal === 'BEARISH' ? '#ef4444' : '#f59e0b';
+                return `<div style="padding: 6px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">
+                  <span style="font-weight: 600;">${p.pattern.replace(/_/g, ' ')}</span> 
+                  <span style="color: ${signalColor}; font-size: 0.9em;">(${p.type})</span>
+                  <span style="float: right; color: #64748b; font-size: 0.85em;">${(p.confidence * 100).toFixed(0)}%</span>
+                </div>`;
+              }).join('') +
+              '</div>';
+          }
+          
           html += '<div class="opportunity ' + opp.action.toLowerCase() + '">' +
             '<div class="coin-header">' +
               '<div class="coin-name">' + opp.name + ' (' + opp.symbol + ')</div>' +
@@ -873,6 +869,9 @@
               '<div class="price-box"><div class="value">' + opp.price + '</div><div>Current Price</div></div>' +
               '<div class="confidence-box"><div class="value">' + (opp.confidence * 100).toFixed(0) + '%</div><div>Confidence</div></div>' +
             '</div>' +
+            patternsHTML +
+            (opp.insights && opp.insights.length > 0 ? '<div class="reason-box" style="margin-top: 12px;"><strong>Insights:</strong><ul class="insights-list"><li>' + 
+              opp.insights.join('</li><li>') + '</li></ul></div>' : '') +
             '</div>';
         });
 
@@ -1067,6 +1066,7 @@
           document.getElementById('buyRequireSupport').checked = rules.patterns.buy.requireSupportLevel || false;
           document.getElementById('buyRequireFibonacci').checked = rules.patterns.buy.requireFibonacciSupport || false;
           document.getElementById('buyRequireTrend').checked = rules.patterns.buy.requireBullishTrend || false;
+          document.getElementById('buyRequirePattern').checked = rules.patterns.buy.requirePattern || false;
           document.getElementById('buyTimeframeAlignment').value = rules.patterns.buy.minTimeframeAlignment || 2;
         }
         
@@ -1077,33 +1077,10 @@
           document.getElementById('sellRequireResistance').checked = rules.patterns.sell.requireResistanceLevel || false;
           document.getElementById('sellRequireFibonacci').checked = rules.patterns.sell.requireFibonacciResistance || false;
           document.getElementById('sellRequireTrend').checked = rules.patterns.sell.requireBearishTrend || false;
+          document.getElementById('sellRequirePattern').checked = rules.patterns.sell.requirePattern || false;
           document.getElementById('sellTimeframeAlignment').value = rules.patterns.sell.minTimeframeAlignment || 2;
         }
         
-        // Update indicators
-        document.getElementById('rsiRules').innerHTML = `
-          <div><strong>Oversold:</strong> ${rules.indicators.rsi.oversold}</div>
-          <div><strong>Neutral:</strong> ${rules.indicators.rsi.neutral}</div>
-          <div><strong>Overbought:</strong> ${rules.indicators.rsi.overbought}</div>
-        `;
-        
-        document.getElementById('bollingerRules').innerHTML = `
-          <div><strong>Lower:</strong> ${rules.indicators.bollinger.lower}</div>
-          <div><strong>Middle:</strong> ${rules.indicators.bollinger.middle}</div>
-          <div><strong>Upper:</strong> ${rules.indicators.bollinger.upper}</div>
-        `;
-        
-        document.getElementById('fibonacciRules').innerHTML = `
-          <div><strong>Levels:</strong> ${rules.indicators.fibonacci.levels.join(', ')}</div>
-          <div style="margin-top: 8px; color: #22c55e;"><strong>Support:</strong> ${rules.indicators.fibonacci.support}</div>
-          <div style="color: #ef4444;"><strong>Resistance:</strong> ${rules.indicators.fibonacci.resistance}</div>
-        `;
-        
-        document.getElementById('supportResistanceRules').innerHTML = `
-          <div><strong>Support:</strong> ${rules.indicators.supportResistance.support}</div>
-          <div><strong>Resistance:</strong> ${rules.indicators.supportResistance.resistance}</div>
-          <div style="margin-top: 8px;"><strong>Breakout:</strong> ${rules.indicators.supportResistance.breakout}</div>
-        `;
       } catch (error) {
         console.error('Error loading trading rules:', error);
       }
@@ -1155,6 +1132,7 @@
               requireSupportLevel: document.getElementById('buyRequireSupport').checked,
               requireFibonacciSupport: document.getElementById('buyRequireFibonacci').checked,
               requireBullishTrend: document.getElementById('buyRequireTrend').checked,
+              requirePattern: document.getElementById('buyRequirePattern').checked,
               minTimeframeAlignment: parseInt(document.getElementById('buyTimeframeAlignment').value)
             },
             sell: {
@@ -1164,6 +1142,7 @@
               requireResistanceLevel: document.getElementById('sellRequireResistance').checked,
               requireFibonacciResistance: document.getElementById('sellRequireFibonacci').checked,
               requireBearishTrend: document.getElementById('sellRequireTrend').checked,
+              requirePattern: document.getElementById('sellRequirePattern').checked,
               minTimeframeAlignment: parseInt(document.getElementById('sellTimeframeAlignment').value)
             }
           }

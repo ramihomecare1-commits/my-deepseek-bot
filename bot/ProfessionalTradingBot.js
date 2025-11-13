@@ -20,6 +20,7 @@ const {
   sendTestNotification 
 } = require('../services/notificationService');
 const { getAITechnicalAnalysis, getBatchAIAnalysis } = require('../services/aiService');
+const { detectTradingPatterns } = require('./patternDetection');
 
 class ProfessionalTradingBot {
   constructor() {
@@ -114,6 +115,7 @@ class ProfessionalTradingBot {
           requireSupportLevel: false,
           requireFibonacciSupport: false,
           requireBullishTrend: false,
+          requirePattern: false,  // Require trading pattern (H&S, channels, etc.)
           minTimeframeAlignment: 2  // At least 2 timeframes must align
         },
         sell: {
@@ -123,8 +125,17 @@ class ProfessionalTradingBot {
           requireResistanceLevel: false,
           requireFibonacciResistance: false,
           requireBearishTrend: false,
+          requirePattern: false,  // Require trading pattern
           minTimeframeAlignment: 2
         }
+      },
+      patternDetection: {
+        enabled: true,
+        parallelChannels: true,
+        headAndShoulders: true,
+        triangles: true,
+        wedges: true,
+        doubleTopBottom: true
       }
     };
     
@@ -565,11 +576,109 @@ class ProfessionalTradingBot {
       const priceResult = await fetchEnhancedPriceData(coin, this.priceCache, this.stats, config);
       const usesMockData = priceResult.usedMock;
       const dataSource = priceResult.data.source;
+      const currentPrice = priceResult.data.price;
 
-      // ... rest of analysis logic using imported services
+      // Fetch historical data for pattern detection
+      this.currentlyAnalyzing.stage = 'Fetching historical data...';
+      this.currentlyAnalyzing.progress = 30;
+      this.updateLiveAnalysis();
 
-      // Placeholder return for structure
-      return this.basicTechnicalAnalysis(coin, true);
+      const historicalData = await fetchHistoricalData(coin.id, coin, this.stats, config);
+      const { dailyData, hourlyData, minuteData, usedMock: historicalMock } = historicalData;
+
+      // Detect trading patterns (if enabled)
+      let patterns = [];
+      let hourlyPatterns = [];
+      
+      if (this.tradingRules.patternDetection && this.tradingRules.patternDetection.enabled) {
+        this.currentlyAnalyzing.stage = 'Detecting trading patterns...';
+        this.currentlyAnalyzing.progress = 50;
+        this.updateLiveAnalysis();
+
+        // Detect all patterns once, then filter based on enabled types
+        const allDailyPatterns = detectTradingPatterns(dailyData || []);
+        const allHourlyPatterns = detectTradingPatterns(hourlyData || []);
+        
+        // Filter daily patterns based on enabled types
+        if (this.tradingRules.patternDetection.parallelChannels) {
+          patterns.push(...allDailyPatterns.filter(p => p.pattern === 'PARALLEL_CHANNEL'));
+        }
+        if (this.tradingRules.patternDetection.headAndShoulders) {
+          patterns.push(...allDailyPatterns.filter(p => p.pattern.includes('HEAD_AND_SHOULDERS')));
+        }
+        if (this.tradingRules.patternDetection.triangles) {
+          patterns.push(...allDailyPatterns.filter(p => p.pattern === 'TRIANGLE'));
+        }
+        if (this.tradingRules.patternDetection.wedges) {
+          patterns.push(...allDailyPatterns.filter(p => p.pattern === 'WEDGE'));
+        }
+        if (this.tradingRules.patternDetection.doubleTopBottom) {
+          patterns.push(...allDailyPatterns.filter(p => p.pattern.includes('DOUBLE')));
+        }
+        
+        // Add hourly patterns (all types if pattern detection is enabled)
+        hourlyPatterns = allHourlyPatterns;
+      }
+
+      // Combine patterns from different timeframes
+      const allPatterns = [...patterns, ...hourlyPatterns];
+
+      // Calculate technical indicators (simplified - you may have existing logic)
+      const frames = this.prepareTimeframeSeries(minuteData || [], hourlyData || [], dailyData || []);
+      
+      // Build analysis result with patterns
+      const analysis = {
+        symbol: coin.symbol,
+        name: coin.name,
+        action: 'HOLD',
+        price: `$${currentPrice.toFixed(2)}`,
+        confidence: 0.5,
+        signal: 'HOLD | Technical Analysis',
+        reason: 'Analysis completed',
+        insights: [],
+        timestamp: new Date(),
+        usesMockData: usesMockData || historicalMock,
+        dataSource: dataSource,
+        patterns: allPatterns,
+        indicators: {
+          frames: frames,
+          daily: {},
+          hourly: {},
+          momentum: 'NEUTRAL'
+        },
+        heatmapEntry: null
+      };
+
+      // Add pattern insights and adjust confidence based on patterns
+      if (allPatterns.length > 0) {
+        allPatterns.forEach(pattern => {
+          analysis.insights.push(`${pattern.pattern.replace(/_/g, ' ')} detected (${pattern.type}) - ${pattern.signal} signal`);
+          
+          // Boost confidence if pattern matches signal
+          if (pattern.signal === 'BULLISH' && analysis.action === 'BUY') {
+            analysis.confidence = Math.min(0.95, analysis.confidence + (pattern.confidence * 0.2));
+          } else if (pattern.signal === 'BEARISH' && analysis.action === 'SELL') {
+            analysis.confidence = Math.min(0.95, analysis.confidence + (pattern.confidence * 0.2));
+          }
+        });
+        
+        // If pattern detection is required, check if we have matching patterns
+        if (this.tradingRules.patterns.buy.requirePattern && analysis.action === 'BUY') {
+          const bullishPatterns = allPatterns.filter(p => p.signal === 'BULLISH');
+          if (bullishPatterns.length === 0) {
+            analysis.confidence = 0.3; // Lower confidence if pattern required but not found
+          }
+        }
+        
+        if (this.tradingRules.patterns.sell.requirePattern && analysis.action === 'SELL') {
+          const bearishPatterns = allPatterns.filter(p => p.signal === 'BEARISH');
+          if (bearishPatterns.length === 0) {
+            analysis.confidence = 0.3; // Lower confidence if pattern required but not found
+          }
+        }
+      }
+
+      return analysis;
       
     } catch (error) {
       console.log(`❌ Technical analysis failed for ${coin.symbol}:`, error.message);
@@ -772,6 +881,9 @@ class ProfessionalTradingBot {
     if (this.tradingRules.patterns.buy.requireBullishTrend) {
       patterns.push('Bullish Trend');
     }
+    if (this.tradingRules.patterns.buy.requirePattern) {
+      patterns.push('Trading Pattern Required (Channels, H&S, etc.)');
+    }
     if (this.tradingRules.patterns.buy.minTimeframeAlignment > 1) {
       patterns.push(`${this.tradingRules.patterns.buy.minTimeframeAlignment}+ timeframes aligned`);
     }
@@ -794,6 +906,9 @@ class ProfessionalTradingBot {
     }
     if (this.tradingRules.patterns.sell.requireBearishTrend) {
       patterns.push('Bearish Trend');
+    }
+    if (this.tradingRules.patterns.sell.requirePattern) {
+      patterns.push('Trading Pattern Required (Channels, H&S, etc.)');
     }
     if (this.tradingRules.patterns.sell.minTimeframeAlignment > 1) {
       patterns.push(`${this.tradingRules.patterns.sell.minTimeframeAlignment}+ timeframes aligned`);
@@ -828,6 +943,9 @@ class ProfessionalTradingBot {
       if (newRules.patterns.sell) {
         this.tradingRules.patterns.sell = { ...this.tradingRules.patterns.sell, ...newRules.patterns.sell };
       }
+    }
+    if (newRules.patternDetection) {
+      this.tradingRules.patternDetection = { ...this.tradingRules.patternDetection, ...newRules.patternDetection };
     }
     // Update minConfidence reference
     this.minConfidence = this.tradingRules.minConfidence;
@@ -876,10 +994,16 @@ class ProfessionalTradingBot {
         if (bullishFrames >= buyRules.minTimeframeAlignment) matches++;
       }
       
+      // Check pattern requirement
+      if (buyRules.requirePattern) {
+        const bullishPatterns = (analysis.patterns || []).filter(p => p.signal === 'BULLISH');
+        if (bullishPatterns.length > 0) matches++;
+      }
+      
       // If no specific requirements, allow through
       if (!buyRules.requireRSIOversold && !buyRules.requireBollingerLower && 
           !buyRules.requireSupportLevel && !buyRules.requireFibonacciSupport && 
-          !buyRules.requireBullishTrend) {
+          !buyRules.requireBullishTrend && !buyRules.requirePattern) {
         return true;
       }
       
@@ -913,9 +1037,15 @@ class ProfessionalTradingBot {
         if (bearishFrames >= sellRules.minTimeframeAlignment) matches++;
       }
       
+      // Check pattern requirement
+      if (sellRules.requirePattern) {
+        const bearishPatterns = (analysis.patterns || []).filter(p => p.signal === 'BEARISH');
+        if (bearishPatterns.length > 0) matches++;
+      }
+      
       if (!sellRules.requireRSIOverbought && !sellRules.requireBollingerUpper && 
           !sellRules.requireResistanceLevel && !sellRules.requireFibonacciResistance && 
-          !sellRules.requireBearishTrend) {
+          !sellRules.requireBearishTrend && !sellRules.requirePattern) {
         return true;
       }
       
