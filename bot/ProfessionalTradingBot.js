@@ -28,7 +28,7 @@ class ProfessionalTradingBot {
     this.scanInProgress = false;
 
     this.trackedCoins = getTop100Coins();
-    this.minConfidence = 0.65;
+    this.minConfidence = 0.65; // Will be synced with tradingRules.minConfidence
 
     this.analysisHistory = [];
     this.liveAnalysis = [];
@@ -75,6 +75,61 @@ class ProfessionalTradingBot {
       timestamp: null,
       coinsAnalyzed: 0,
     };
+    
+    // Customizable trading rules
+    this.tradingRules = {
+      minConfidence: 0.65,
+      enabledIndicators: {
+        rsi: true,
+        bollinger: true,
+        supportResistance: true,
+        fibonacci: true,
+        momentum: true,
+        trend: true
+      },
+      rsi: {
+        oversold: 30,
+        overbought: 70,
+        neutralMin: 30,
+        neutralMax: 70
+      },
+      bollinger: {
+        lowerThreshold: 0.2,  // Position < 0.2 = lower band
+        upperThreshold: 0.8   // Position > 0.8 = upper band
+      },
+      fibonacci: {
+        enabled: true,
+        supportLevels: [0.618, 0.786],  // 61.8% and 78.6%
+        resistanceLevels: [0.236, 0.382] // 23.6% and 38.2%
+      },
+      supportResistance: {
+        lookbackPeriod: 20,
+        breakoutThreshold: 0.02  // 2% breakout
+      },
+      patterns: {
+        buy: {
+          enabled: true,
+          requireRSIOversold: true,
+          requireBollingerLower: false,
+          requireSupportLevel: false,
+          requireFibonacciSupport: false,
+          requireBullishTrend: false,
+          minTimeframeAlignment: 2  // At least 2 timeframes must align
+        },
+        sell: {
+          enabled: true,
+          requireRSIOverbought: true,
+          requireBollingerUpper: false,
+          requireResistanceLevel: false,
+          requireFibonacciResistance: false,
+          requireBearishTrend: false,
+          minTimeframeAlignment: 2
+        }
+      }
+    };
+    
+    // Sync minConfidence
+    this.minConfidence = this.tradingRules.minConfidence;
   }
 
   setAutoScanInterval(key) {
@@ -364,9 +419,14 @@ class ProfessionalTradingBot {
           console.log(`🔍 ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}%) - AI: ${analysis.aiEvaluated ? '✅' : '❌'}`);
 
           // Only add real opportunities with valid data
-          if (analysis.confidence >= this.minConfidence && !analysis.usesMockData) {
+          if (analysis.confidence >= this.tradingRules.minConfidence && !analysis.usesMockData) {
             if (!this.applyScanFilters(analysis, options)) {
               console.log(`🚫 ${coin.symbol}: Filtered out by scan filters`);
+              continue;
+            }
+            // Apply custom trading rules
+            if (!this.matchesTradingRules(analysis)) {
+              console.log(`🚫 ${coin.symbol}: Does not match custom trading rules`);
               continue;
             }
             opportunities.push(analysis);
@@ -649,25 +709,19 @@ class ProfessionalTradingBot {
 
   getTradingRules() {
     return {
-      minConfidence: this.minConfidence,
-      confidenceThreshold: (this.minConfidence * 100).toFixed(0) + '%',
+      ...this.tradingRules,
+      confidenceThreshold: (this.tradingRules.minConfidence * 100).toFixed(0) + '%',
       patterns: {
-        buy: [
-          'RSI < 30 (oversold) + Bollinger Lower Band',
-          'RSI < 35 + Bullish Trend on Daily & Hourly',
-          'Price at Support Level + Bullish Momentum',
-          'Fibonacci 61.8% or 78.6% retracement + Bullish reversal',
-          'Multiple timeframe alignment (Weekly/Daily/4H all bullish)'
-        ],
-        sell: [
-          'RSI > 70 (overbought) + Bollinger Upper Band',
-          'RSI > 55 + Bearish Trend',
-          'Price at Resistance Level + Bearish Momentum',
-          'Fibonacci 23.6% or 38.2% retracement + Bearish reversal',
-          'Strong downward momentum across timeframes'
-        ],
+        buy: {
+          ...this.tradingRules.patterns.buy,
+          description: this.getBuyPatternsDescription()
+        },
+        sell: {
+          ...this.tradingRules.patterns.sell,
+          description: this.getSellPatternsDescription()
+        },
         hold: [
-          'RSI between 30-70 (neutral zone)',
+          'RSI between ' + this.tradingRules.rsi.neutralMin + '-' + this.tradingRules.rsi.neutralMax + ' (neutral zone)',
           'No clear trend direction',
           'Price consolidating between support/resistance',
           'Confidence below threshold',
@@ -676,29 +730,199 @@ class ProfessionalTradingBot {
       },
       indicators: {
         rsi: {
-          oversold: '< 30',
-          neutral: '30-70',
-          overbought: '> 70'
+          oversold: '< ' + this.tradingRules.rsi.oversold,
+          neutral: this.tradingRules.rsi.neutralMin + '-' + this.tradingRules.rsi.neutralMax,
+          overbought: '> ' + this.tradingRules.rsi.overbought
         },
         bollinger: {
-          lower: 'Price near lower band (potential support)',
+          lower: 'Price near lower band (position < ' + (this.tradingRules.bollinger.lowerThreshold * 100) + '%)',
           middle: 'Price in middle (neutral)',
-          upper: 'Price near upper band (potential resistance)'
+          upper: 'Price near upper band (position > ' + (this.tradingRules.bollinger.upperThreshold * 100) + '%)'
         },
         fibonacci: {
           levels: ['23.6%', '38.2%', '50.0%', '61.8%', '78.6%'],
-          support: '61.8% and 78.6% are key support levels',
-          resistance: '23.6% and 38.2% are key resistance levels'
+          support: this.tradingRules.fibonacci.supportLevels.map(l => (l * 100).toFixed(1) + '%').join(' and ') + ' are key support levels',
+          resistance: this.tradingRules.fibonacci.resistanceLevels.map(l => (l * 100).toFixed(1) + '%').join(' and ') + ' are key resistance levels'
         },
         supportResistance: {
-          support: 'Lowest price in recent 20 periods',
-          resistance: 'Highest price in recent 20 periods',
+          support: 'Lowest price in recent ' + this.tradingRules.supportResistance.lookbackPeriod + ' periods',
+          resistance: 'Highest price in recent ' + this.tradingRules.supportResistance.lookbackPeriod + ' periods',
           breakout: 'Price breaking above resistance (bullish) or below support (bearish)'
         }
       },
       timeframes: ['10m', '1h', '4h', '1d', '1w'],
       cooldown: '30 minutes between notifications for same coin'
     };
+  }
+
+  getBuyPatternsDescription() {
+    const patterns = [];
+    if (this.tradingRules.patterns.buy.requireRSIOversold) {
+      patterns.push(`RSI < ${this.tradingRules.rsi.oversold} (oversold)`);
+    }
+    if (this.tradingRules.patterns.buy.requireBollingerLower) {
+      patterns.push('Bollinger Lower Band');
+    }
+    if (this.tradingRules.patterns.buy.requireSupportLevel) {
+      patterns.push('Price at Support Level');
+    }
+    if (this.tradingRules.patterns.buy.requireFibonacciSupport) {
+      patterns.push('Fibonacci Support Level');
+    }
+    if (this.tradingRules.patterns.buy.requireBullishTrend) {
+      patterns.push('Bullish Trend');
+    }
+    if (this.tradingRules.patterns.buy.minTimeframeAlignment > 1) {
+      patterns.push(`${this.tradingRules.patterns.buy.minTimeframeAlignment}+ timeframes aligned`);
+    }
+    return patterns.length > 0 ? patterns : ['Default buy patterns'];
+  }
+
+  getSellPatternsDescription() {
+    const patterns = [];
+    if (this.tradingRules.patterns.sell.requireRSIOverbought) {
+      patterns.push(`RSI > ${this.tradingRules.rsi.overbought} (overbought)`);
+    }
+    if (this.tradingRules.patterns.sell.requireBollingerUpper) {
+      patterns.push('Bollinger Upper Band');
+    }
+    if (this.tradingRules.patterns.sell.requireResistanceLevel) {
+      patterns.push('Price at Resistance Level');
+    }
+    if (this.tradingRules.patterns.sell.requireFibonacciResistance) {
+      patterns.push('Fibonacci Resistance Level');
+    }
+    if (this.tradingRules.patterns.sell.requireBearishTrend) {
+      patterns.push('Bearish Trend');
+    }
+    if (this.tradingRules.patterns.sell.minTimeframeAlignment > 1) {
+      patterns.push(`${this.tradingRules.patterns.sell.minTimeframeAlignment}+ timeframes aligned`);
+    }
+    return patterns.length > 0 ? patterns : ['Default sell patterns'];
+  }
+
+  setTradingRules(newRules) {
+    // Merge new rules with existing, keeping defaults for missing values
+    if (newRules.minConfidence !== undefined) {
+      this.tradingRules.minConfidence = Math.max(0.1, Math.min(0.99, newRules.minConfidence));
+    }
+    if (newRules.enabledIndicators) {
+      this.tradingRules.enabledIndicators = { ...this.tradingRules.enabledIndicators, ...newRules.enabledIndicators };
+    }
+    if (newRules.rsi) {
+      this.tradingRules.rsi = { ...this.tradingRules.rsi, ...newRules.rsi };
+    }
+    if (newRules.bollinger) {
+      this.tradingRules.bollinger = { ...this.tradingRules.bollinger, ...newRules.bollinger };
+    }
+    if (newRules.fibonacci) {
+      this.tradingRules.fibonacci = { ...this.tradingRules.fibonacci, ...newRules.fibonacci };
+    }
+    if (newRules.supportResistance) {
+      this.tradingRules.supportResistance = { ...this.tradingRules.supportResistance, ...newRules.supportResistance };
+    }
+    if (newRules.patterns) {
+      if (newRules.patterns.buy) {
+        this.tradingRules.patterns.buy = { ...this.tradingRules.patterns.buy, ...newRules.patterns.buy };
+      }
+      if (newRules.patterns.sell) {
+        this.tradingRules.patterns.sell = { ...this.tradingRules.patterns.sell, ...newRules.patterns.sell };
+      }
+    }
+    // Update minConfidence reference
+    this.minConfidence = this.tradingRules.minConfidence;
+    return this.tradingRules;
+  }
+
+  matchesTradingRules(analysis) {
+    const rules = this.tradingRules;
+    const indicators = analysis.indicators || {};
+    const frames = indicators.frames || {};
+    
+    // Check if action type is enabled
+    if (analysis.action === 'BUY' && !rules.patterns.buy.enabled) return false;
+    if (analysis.action === 'SELL' && !rules.patterns.sell.enabled) return false;
+    
+    if (analysis.action === 'BUY') {
+      const buyRules = rules.patterns.buy;
+      let matches = 0;
+      
+      // Check RSI requirement
+      if (buyRules.requireRSIOversold) {
+        const dailyRSI = Number(indicators.daily?.rsi) || 50;
+        if (dailyRSI < rules.rsi.oversold) matches++;
+      }
+      
+      // Check Bollinger requirement
+      if (buyRules.requireBollingerLower) {
+        if (indicators.daily?.bollingerPosition === 'LOWER') matches++;
+      }
+      
+      // Check support level
+      if (buyRules.requireSupportLevel) {
+        // Would need price comparison logic here
+        matches++; // Placeholder
+      }
+      
+      // Check Fibonacci
+      if (buyRules.requireFibonacciSupport) {
+        // Would need Fibonacci position check
+        matches++; // Placeholder
+      }
+      
+      // Check trend alignment
+      if (buyRules.requireBullishTrend) {
+        const bullishFrames = Object.values(frames).filter(f => f.trend === 'BULLISH').length;
+        if (bullishFrames >= buyRules.minTimeframeAlignment) matches++;
+      }
+      
+      // If no specific requirements, allow through
+      if (!buyRules.requireRSIOversold && !buyRules.requireBollingerLower && 
+          !buyRules.requireSupportLevel && !buyRules.requireFibonacciSupport && 
+          !buyRules.requireBullishTrend) {
+        return true;
+      }
+      
+      // Require at least one match if any requirements are set
+      return matches > 0;
+    }
+    
+    if (analysis.action === 'SELL') {
+      const sellRules = rules.patterns.sell;
+      let matches = 0;
+      
+      if (sellRules.requireRSIOverbought) {
+        const dailyRSI = Number(indicators.daily?.rsi) || 50;
+        if (dailyRSI > rules.rsi.overbought) matches++;
+      }
+      
+      if (sellRules.requireBollingerUpper) {
+        if (indicators.daily?.bollingerPosition === 'UPPER') matches++;
+      }
+      
+      if (sellRules.requireResistanceLevel) {
+        matches++; // Placeholder
+      }
+      
+      if (sellRules.requireFibonacciResistance) {
+        matches++; // Placeholder
+      }
+      
+      if (sellRules.requireBearishTrend) {
+        const bearishFrames = Object.values(frames).filter(f => f.trend === 'BEARISH').length;
+        if (bearishFrames >= sellRules.minTimeframeAlignment) matches++;
+      }
+      
+      if (!sellRules.requireRSIOverbought && !sellRules.requireBollingerUpper && 
+          !sellRules.requireResistanceLevel && !sellRules.requireFibonacciResistance && 
+          !sellRules.requireBearishTrend) {
+        return true;
+      }
+      
+      return matches > 0;
+    }
+    
+    return true; // HOLD always passes
   }
 }
 

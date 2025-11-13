@@ -579,15 +579,26 @@
       <div id="rulesPanel" style="display:none; background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9)); padding: 28px; border-radius: 20px; margin-bottom: 28px; border: 1px solid rgba(148,163,184,0.2);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
           <h3 style="color: #0f172a; font-size: 1.5em; font-weight: 700;">⚙️ Trading Rules & Patterns</h3>
-          <button onclick="toggleRules()" style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">✕ Close</button>
+          <div style="display: flex; gap: 10px;">
+            <button id="editRulesBtn" onclick="toggleEditMode()" style="background: #6366f1; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">✏️ Edit Rules</button>
+            <button onclick="toggleRules()" style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">✕ Close</button>
+          </div>
         </div>
         
         <div id="rulesContent" style="color: #0f172a;">
           <div style="margin-bottom: 24px;">
             <h4 style="color: #6366f1; margin-bottom: 12px; font-size: 1.2em;">📊 Confidence Threshold</h4>
-            <div style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #6366f1;">
+            <div id="confidenceDisplay" style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #6366f1;">
               <div style="font-size: 1.5em; font-weight: 700; color: #0f172a;" id="confidenceThreshold">65%</div>
               <div style="color: #64748b; margin-top: 4px;">Minimum confidence required to trigger an opportunity</div>
+            </div>
+            <div id="confidenceEdit" style="display:none; background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #6366f1;">
+              <label style="display: block; margin-bottom: 8px; font-weight: 600;">Confidence Threshold (%):</label>
+              <input type="range" id="confidenceSlider" min="10" max="95" value="65" step="5" style="width: 100%; margin-bottom: 8px;" oninput="updateConfidenceDisplay(this.value)">
+              <div style="display: flex; justify-content: space-between;">
+                <span id="confidenceValue" style="font-size: 1.2em; font-weight: 700; color: #6366f1;">65%</span>
+                <span style="color: #64748b; font-size: 0.9em;">10% - 95%</span>
+              </div>
             </div>
           </div>
 
@@ -599,6 +610,36 @@
                   <li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">Loading...</li>
                 </ul>
               </div>
+              <div id="buyPatternsEdit" style="display:none; background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #22c55e; margin-top: 12px;">
+                <label style="display: flex; align-items: center; margin-bottom: 12px;">
+                  <input type="checkbox" id="buyEnabled" checked style="margin-right: 8px;">
+                  <span>Enable BUY signals</span>
+                </label>
+                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <input type="checkbox" id="buyRequireRSI" checked style="margin-right: 8px;">
+                  <span>Require RSI Oversold</span>
+                </label>
+                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <input type="checkbox" id="buyRequireBollinger" style="margin-right: 8px;">
+                  <span>Require Bollinger Lower</span>
+                </label>
+                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <input type="checkbox" id="buyRequireSupport" style="margin-right: 8px;">
+                  <span>Require Support Level</span>
+                </label>
+                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <input type="checkbox" id="buyRequireFibonacci" style="margin-right: 8px;">
+                  <span>Require Fibonacci Support</span>
+                </label>
+                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <input type="checkbox" id="buyRequireTrend" style="margin-right: 8px;">
+                  <span>Require Bullish Trend</span>
+                </label>
+                <div style="margin-top: 12px;">
+                  <label style="display: block; margin-bottom: 4px; font-size: 0.9em;">Min Timeframe Alignment:</label>
+                  <input type="number" id="buyTimeframeAlignment" min="1" max="5" value="2" style="width: 60px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
+                </div>
+              </div>
             </div>
             <div>
               <h4 style="color: #ef4444; margin-bottom: 12px; font-size: 1.1em;">🔴 SELL Patterns</h4>
@@ -607,6 +648,36 @@
                   <li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">Loading...</li>
                 </ul>
               </div>
+              <div id="sellPatternsEdit" style="display:none; background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #ef4444; margin-top: 12px;">
+                <label style="display: flex; align-items: center; margin-bottom: 12px;">
+                  <input type="checkbox" id="sellEnabled" checked style="margin-right: 8px;">
+                  <span>Enable SELL signals</span>
+                </label>
+                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <input type="checkbox" id="sellRequireRSI" checked style="margin-right: 8px;">
+                  <span>Require RSI Overbought</span>
+                </label>
+                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <input type="checkbox" id="sellRequireBollinger" style="margin-right: 8px;">
+                  <span>Require Bollinger Upper</span>
+                </label>
+                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <input type="checkbox" id="sellRequireResistance" style="margin-right: 8px;">
+                  <span>Require Resistance Level</span>
+                </label>
+                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <input type="checkbox" id="sellRequireFibonacci" style="margin-right: 8px;">
+                  <span>Require Fibonacci Resistance</span>
+                </label>
+                <label style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <input type="checkbox" id="sellRequireTrend" style="margin-right: 8px;">
+                  <span>Require Bearish Trend</span>
+                </label>
+                <div style="margin-top: 12px;">
+                  <label style="display: block; margin-bottom: 4px; font-size: 0.9em;">Min Timeframe Alignment:</label>
+                  <input type="number" id="sellTimeframeAlignment" min="1" max="5" value="2" style="width: 60px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
+                </div>
+              </div>
             </div>
             <div>
               <h4 style="color: #f59e0b; margin-bottom: 12px; font-size: 1.1em;">🟡 HOLD Patterns</h4>
@@ -614,6 +685,19 @@
                 <ul style="list-style: none; padding: 0; margin: 0;">
                   <li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">Loading...</li>
                 </ul>
+              </div>
+            </div>
+          </div>
+          
+          <div id="saveRulesSection" style="display:none; margin-top: 24px; padding: 20px; background: white; border-radius: 12px; border: 2px solid #6366f1;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h4 style="color: #6366f1; margin-bottom: 4px;">Save Your Changes</h4>
+                <p style="color: #64748b; font-size: 0.9em; margin: 0;">Your custom rules will be applied to all future scans</p>
+              </div>
+              <div style="display: flex; gap: 10px;">
+                <button onclick="saveTradingRules()" style="background: #22c55e; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">💾 Save Rules</button>
+                <button onclick="cancelEdit()" style="background: #64748b; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">Cancel</button>
               </div>
             </div>
           </div>
@@ -945,23 +1029,56 @@
       }
     }
 
+    let currentRules = null;
+    let editMode = false;
+
     async function loadTradingRules() {
       try {
         const response = await fetch(API_BASE + '/trading-rules');
         const rules = await response.json();
+        currentRules = rules;
         
         // Update confidence threshold
+        const confidencePercent = parseInt(rules.confidenceThreshold);
         document.getElementById('confidenceThreshold').textContent = rules.confidenceThreshold;
+        document.getElementById('confidenceSlider').value = confidencePercent;
+        document.getElementById('confidenceValue').textContent = rules.confidenceThreshold;
         
         // Update patterns
+        const buyPatterns = rules.patterns.buy.description || rules.patterns.buy;
+        const sellPatterns = rules.patterns.sell.description || rules.patterns.sell;
+        const buyList = Array.isArray(buyPatterns) ? buyPatterns : [buyPatterns];
+        const sellList = Array.isArray(sellPatterns) ? sellPatterns : [sellPatterns];
+        
         document.getElementById('buyPatterns').innerHTML = '<ul style="list-style: none; padding: 0; margin: 0;">' +
-          rules.patterns.buy.map(p => `<li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">✓ ${p}</li>`).join('') + '</ul>';
+          buyList.map(p => `<li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">✓ ${p}</li>`).join('') + '</ul>';
         
         document.getElementById('sellPatterns').innerHTML = '<ul style="list-style: none; padding: 0; margin: 0;">' +
-          rules.patterns.sell.map(p => `<li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">✓ ${p}</li>`).join('') + '</ul>';
+          sellList.map(p => `<li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">✓ ${p}</li>`).join('') + '</ul>';
         
         document.getElementById('holdPatterns').innerHTML = '<ul style="list-style: none; padding: 0; margin: 0;">' +
           rules.patterns.hold.map(p => `<li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">✓ ${p}</li>`).join('') + '</ul>';
+        
+        // Update edit form values
+        if (rules.patterns && rules.patterns.buy) {
+          document.getElementById('buyEnabled').checked = rules.patterns.buy.enabled !== false;
+          document.getElementById('buyRequireRSI').checked = rules.patterns.buy.requireRSIOversold || false;
+          document.getElementById('buyRequireBollinger').checked = rules.patterns.buy.requireBollingerLower || false;
+          document.getElementById('buyRequireSupport').checked = rules.patterns.buy.requireSupportLevel || false;
+          document.getElementById('buyRequireFibonacci').checked = rules.patterns.buy.requireFibonacciSupport || false;
+          document.getElementById('buyRequireTrend').checked = rules.patterns.buy.requireBullishTrend || false;
+          document.getElementById('buyTimeframeAlignment').value = rules.patterns.buy.minTimeframeAlignment || 2;
+        }
+        
+        if (rules.patterns && rules.patterns.sell) {
+          document.getElementById('sellEnabled').checked = rules.patterns.sell.enabled !== false;
+          document.getElementById('sellRequireRSI').checked = rules.patterns.sell.requireRSIOverbought || false;
+          document.getElementById('sellRequireBollinger').checked = rules.patterns.sell.requireBollingerUpper || false;
+          document.getElementById('sellRequireResistance').checked = rules.patterns.sell.requireResistanceLevel || false;
+          document.getElementById('sellRequireFibonacci').checked = rules.patterns.sell.requireFibonacciResistance || false;
+          document.getElementById('sellRequireTrend').checked = rules.patterns.sell.requireBearishTrend || false;
+          document.getElementById('sellTimeframeAlignment').value = rules.patterns.sell.minTimeframeAlignment || 2;
+        }
         
         // Update indicators
         document.getElementById('rsiRules').innerHTML = `
@@ -990,6 +1107,91 @@
       } catch (error) {
         console.error('Error loading trading rules:', error);
       }
+    }
+
+    function toggleEditMode() {
+      editMode = !editMode;
+      const btn = document.getElementById('editRulesBtn');
+      
+      if (editMode) {
+        btn.textContent = '👁️ View Mode';
+        btn.style.background = '#64748b';
+        document.getElementById('confidenceDisplay').style.display = 'none';
+        document.getElementById('confidenceEdit').style.display = 'block';
+        document.getElementById('buyPatterns').style.display = 'none';
+        document.getElementById('buyPatternsEdit').style.display = 'block';
+        document.getElementById('sellPatterns').style.display = 'none';
+        document.getElementById('sellPatternsEdit').style.display = 'block';
+        document.getElementById('saveRulesSection').style.display = 'block';
+      } else {
+        btn.textContent = '✏️ Edit Rules';
+        btn.style.background = '#6366f1';
+        document.getElementById('confidenceDisplay').style.display = 'block';
+        document.getElementById('confidenceEdit').style.display = 'none';
+        document.getElementById('buyPatterns').style.display = 'block';
+        document.getElementById('buyPatternsEdit').style.display = 'none';
+        document.getElementById('sellPatterns').style.display = 'block';
+        document.getElementById('sellPatternsEdit').style.display = 'none';
+        document.getElementById('saveRulesSection').style.display = 'none';
+        loadTradingRules(); // Reload to show current values
+      }
+    }
+
+    function updateConfidenceDisplay(value) {
+      document.getElementById('confidenceValue').textContent = value + '%';
+    }
+
+    async function saveTradingRules() {
+      try {
+        const confidence = parseInt(document.getElementById('confidenceSlider').value) / 100;
+        
+        const newRules = {
+          minConfidence: confidence,
+          patterns: {
+            buy: {
+              enabled: document.getElementById('buyEnabled').checked,
+              requireRSIOversold: document.getElementById('buyRequireRSI').checked,
+              requireBollingerLower: document.getElementById('buyRequireBollinger').checked,
+              requireSupportLevel: document.getElementById('buyRequireSupport').checked,
+              requireFibonacciSupport: document.getElementById('buyRequireFibonacci').checked,
+              requireBullishTrend: document.getElementById('buyRequireTrend').checked,
+              minTimeframeAlignment: parseInt(document.getElementById('buyTimeframeAlignment').value)
+            },
+            sell: {
+              enabled: document.getElementById('sellEnabled').checked,
+              requireRSIOverbought: document.getElementById('sellRequireRSI').checked,
+              requireBollingerUpper: document.getElementById('sellRequireBollinger').checked,
+              requireResistanceLevel: document.getElementById('sellRequireResistance').checked,
+              requireFibonacciResistance: document.getElementById('sellRequireFibonacci').checked,
+              requireBearishTrend: document.getElementById('sellRequireTrend').checked,
+              minTimeframeAlignment: parseInt(document.getElementById('sellTimeframeAlignment').value)
+            }
+          }
+        };
+
+        const response = await fetch(API_BASE + '/trading-rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newRules)
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+          alert('✅ Trading rules saved successfully!');
+          toggleEditMode(); // Switch back to view mode
+          loadTradingRules(); // Reload to show updated rules
+        } else {
+          alert('❌ Error saving rules: ' + (result.error || 'Unknown error'));
+        }
+      } catch (error) {
+        alert('❌ Error saving rules: ' + error.message);
+        console.error('Error saving trading rules:', error);
+      }
+    }
+
+    function cancelEdit() {
+      toggleEditMode();
     }
 
     // Initialize

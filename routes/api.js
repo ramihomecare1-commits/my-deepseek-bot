@@ -193,4 +193,22 @@ router.get('/trading-rules', (req, res) => {
   }
 });
 
+router.post('/trading-rules', (req, res) => {
+  try {
+    const { tradingBot } = req.app.locals;
+    const newRules = req.body;
+    const updatedRules = tradingBot.setTradingRules(newRules);
+    res.json({
+      success: true,
+      message: 'Trading rules updated successfully',
+      rules: updatedRules
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
