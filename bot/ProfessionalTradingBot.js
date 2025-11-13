@@ -312,17 +312,17 @@ class ProfessionalTradingBot {
 
     const startTime = Date.now();
     this.scanInProgress = true;
-    this.scanProgress = {
-      running: true,
-      processed: 0,
-      total: this.trackedCoins.length,
-      percent: 0,
-      interval: this.selectedIntervalKey,
-      startedAt: new Date(),
-      params: options,
-    };
-
+    
     try {
+      this.scanProgress = {
+        running: true,
+        processed: 0,
+        total: this.trackedCoins.length,
+        percent: 0,
+        interval: this.selectedIntervalKey,
+        startedAt: new Date(),
+        params: options,
+      };
       // Fetch global metrics at the start of each scan
       await this.ensureGreedFearIndex();
       await this.fetchGlobalMetrics();

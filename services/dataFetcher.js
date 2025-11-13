@@ -18,7 +18,11 @@ async function fetchGlobalMetrics(globalMetrics, stats, coinmarketcapEnabled, co
         cryptocurrencies_number: paprikaResponse.data.cryptocurrencies_number,
         last_updated: paprikaResponse.data.last_updated
       };
-      stats.coinpaprikaUsage++;
+      if (stats && typeof stats.coinpaprikaUsage === 'number') {
+        stats.coinpaprikaUsage++;
+      } else if (stats) {
+        stats.coinpaprikaUsage = 1;
+      }
     }
   } catch (error) {
     console.log('⚠️ CoinPaprika global metrics fetch failed:', error.message);
@@ -35,7 +39,11 @@ async function fetchGlobalMetrics(globalMetrics, stats, coinmarketcapEnabled, co
       });
       if (cmcResponse.data && cmcResponse.data.data) {
         globalMetrics.coinmarketcap = cmcResponse.data.data;
-        stats.coinmarketcapUsage++;
+        if (stats && typeof stats.coinmarketcapUsage === 'number') {
+          stats.coinmarketcapUsage++;
+        } else if (stats) {
+          stats.coinmarketcapUsage = 1;
+        }
       }
     } catch (error) {
       console.log('⚠️ CoinMarketCap global metrics fetch failed:', error.message);
@@ -97,7 +105,11 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
           change_24h: paprikaResponse.data.quotes.USD.percent_change_24h,
           source: 'coinpaprika'
         };
-        stats.coinpaprikaUsage++;
+        if (stats && typeof stats.coinpaprikaUsage === 'number') {
+          stats.coinpaprikaUsage++;
+        } else if (stats) {
+          stats.coinpaprikaUsage = 1;
+        }
       }
     } catch (error) {
       console.log(`⚠️ ${coin.symbol}: CoinPaprika price fetch failed`);
@@ -127,7 +139,11 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
           change_24h: cmcData.quote.USD.percent_change_24h,
           source: 'coinmarketcap'
         };
-        stats.coinmarketcapUsage++;
+        if (stats && typeof stats.coinmarketcapUsage === 'number') {
+          stats.coinmarketcapUsage++;
+        } else if (stats) {
+          stats.coinmarketcapUsage = 1;
+        }
       }
     } catch (error) {
       console.log(`⚠️ ${coin.symbol}: CoinMarketCap price fetch failed`);
@@ -213,7 +229,11 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
               }))
               .filter((item) => Number.isFinite(item.price) && item.price > 0);
 
-            stats.coinpaprikaUsage++;
+            if (stats && typeof stats.coinpaprikaUsage === 'number') {
+              stats.coinpaprikaUsage++;
+            } else if (stats) {
+              stats.coinpaprikaUsage = 1;
+            }
             return prices;
           }
         } catch (paprikaError) {
