@@ -27,7 +27,10 @@ const SCAN_INTERVAL_OPTIONS = {
 
 // AI Configuration - check multiple possible env var names
 const AI_API_KEY = process.env.API_KEY || process.env.AI_API_KEY || process.env.OPENROUTER_API_KEY || '';
-const AI_MODEL = 'deepseek/deepseek-r1:free';
+// Use environment variable for model, or default to a reliable paid model
+// Free models have very strict rate limits (429 errors)
+// Recommended: 'deepseek/deepseek-chat' (very cheap, ~$0.14 per million tokens)
+const AI_MODEL = process.env.AI_MODEL || 'deepseek/deepseek-chat';
 
 // Notifications behavior
 const ALLOW_MOCK_NOTIFICATIONS = (process.env.ALLOW_MOCK_NOTIFICATIONS || 'false').toLowerCase() === 'true';

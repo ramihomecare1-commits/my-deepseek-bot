@@ -229,37 +229,69 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
     return {};
   }
 
-  try {
-    const prompt = createBatchAnalysisPrompt(allCoinsData, globalMetrics, options);
+  // Retry logic for rate limits
+  const maxRetries = 3;
+  let lastError = null;
 
-    const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-      model: config.AI_MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 2000, // More tokens for batch analysis
-      temperature: 0.1,
-    }, {
-      headers: {
-        Authorization: `Bearer ${config.AI_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
-        'X-Title': 'Technical Analysis Bot',
-      },
-      timeout: 45000,
-    });
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const prompt = createBatchAnalysisPrompt(allCoinsData, globalMetrics, options);
 
-    console.log(`🛰️ OpenRouter batch status: ${response.status}`);
-    if (!response.data) throw new Error('AI API failed');
-    return parseBatchAIResponse(response.data.choices[0].message.content, allCoinsData);
-  } catch (error) {
-    if (error.response) {
-      console.log(`⚠️ Batch AI error: ${error.response.status} ${error.response.statusText}`);
-      console.log('Details:', JSON.stringify(error.response.data).slice(0, 500));
-    } else {
-      console.log('⚠️ Batch AI analysis failed:', error.message);
+      console.log(`🤖 AI API attempt ${attempt}/${maxRetries}...`);
+      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+        model: config.AI_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 2000, // More tokens for batch analysis
+        temperature: 0.1,
+      }, {
+        headers: {
+          Authorization: `Bearer ${config.AI_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
+          'X-Title': 'Technical Analysis Bot',
+        },
+        timeout: 45000,
+      });
+
+      console.log(`✅ OpenRouter batch status: ${response.status}`);
+      if (!response.data) throw new Error('AI API failed');
+      return parseBatchAIResponse(response.data.choices[0].message.content, allCoinsData);
+      
+    } catch (error) {
+      lastError = error;
+      
+      if (error.response) {
+        const status = error.response.status;
+        console.log(`⚠️ Batch AI error (attempt ${attempt}/${maxRetries}): ${status} ${error.response.statusText}`);
+        console.log('Details:', JSON.stringify(error.response.data).slice(0, 500));
+        
+        // Handle rate limiting (429)
+        if (status === 429 && attempt < maxRetries) {
+          const waitTime = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
+          console.log(`⏳ Rate limited. Waiting ${waitTime}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          continue; // Retry
+        }
+        
+        // For other errors, don't retry
+        if (status !== 429) {
+          break;
+        }
+      } else {
+        console.log(`⚠️ Batch AI analysis failed (attempt ${attempt}/${maxRetries}):`, error.message);
+        break; // Network errors - don't retry
+      }
     }
-    console.log('↩️ Falling back to deterministic batch analysis');
-    return generateBatchAnalysis(allCoinsData);
   }
+  
+  // All retries failed
+  console.log('❌ All AI API attempts failed. Falling back to deterministic analysis.');
+  if (lastError?.response?.status === 429) {
+    console.log('💡 TIP: Free AI models have strict rate limits. Consider using a paid model:');
+    console.log('   Set AI_MODEL=deepseek/deepseek-chat (~$0.14 per million tokens)');
+  }
+  console.log('↩️ Using fallback analysis...');
+  return generateBatchAnalysis(allCoinsData);
 }
 
 function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
