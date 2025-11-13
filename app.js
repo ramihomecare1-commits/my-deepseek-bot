@@ -63,13 +63,29 @@ if (!fetchFn) {
 }
 const fetch = fetchFn;
 
+// Health check FIRST - before any middleware (critical for Render)
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    service: 'crypto-scanner',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Rate limiting (skip for health check and root)
 app.use((req, res, next) => {
-  if (req.path === '/health' || req.path === '/') {
+  if (req.path === '/health' || req.path === '/api/health' || req.path === '/') {
     return next();
   }
   return createRateLimiter(60000, 100)(req, res, next);
@@ -90,25 +106,6 @@ try {
 
 // API routes
 app.use('/api', apiRoutes);
-
-// Simple health check (must respond quickly for Render)
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'healthy',
-    service: 'crypto-scanner',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-  });
-});
-
-// Also add health check to API routes
-app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-  });
-});
 
 // Simple root route
 app.get('/', (req, res) => {
@@ -179,19 +176,30 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// Start server
+// Start server IMMEDIATELY - this must happen fast for Render
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🚀 Professional Crypto Scanner`);
-  console.log(`📡 Server running on port ${PORT}`);
-  console.log('📊 Strategy: RSI + Bollinger + Support/Resistance + Momentum + AI overlay');
-  console.log(`⏰ Auto-scan: ${tradingBot.selectedIntervalKey} intervals`);
-  console.log(`🎯 Coins: ${tradingBot.trackedCoins.length}`);
-  console.log(`📱 Telegram: ${config.TELEGRAM_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
-  console.log(`📰 News: ${config.NEWS_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
-  console.log(`🤖 AI: ${config.AI_API_KEY ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
-  console.log('🔔 Test Telegram: POST /api/test-telegram');
-  console.log('🌐 Web UI: http://localhost:' + PORT);
-  console.log('');
+  // Log immediately - don't wait for anything
+  console.log(`\n✅ Server listening on port ${PORT}`);
+  console.log(`✅ Health check: http://localhost:${PORT}/health`);
+  
+  // Log additional info asynchronously (non-blocking)
+  setImmediate(() => {
+    console.log(`\n🚀 Professional Crypto Scanner`);
+    console.log(`📡 Server running on port ${PORT}`);
+    
+    if (tradingBot && tradingBot.trackedCoins) {
+      console.log('📊 Strategy: RSI + Bollinger + Support/Resistance + Momentum + AI overlay');
+      console.log(`⏰ Auto-scan: ${tradingBot.selectedIntervalKey} intervals`);
+      console.log(`🎯 Coins: ${tradingBot.trackedCoins.length}`);
+      console.log(`📱 Telegram: ${config.TELEGRAM_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
+      console.log(`📰 News: ${config.NEWS_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
+      console.log(`🤖 AI: ${config.AI_API_KEY ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
+    }
+    
+    console.log('🔔 Test Telegram: POST /api/test-telegram');
+    console.log('🌐 Web UI: http://localhost:' + PORT);
+    console.log('');
+  });
 });
 
 // Graceful shutdown
