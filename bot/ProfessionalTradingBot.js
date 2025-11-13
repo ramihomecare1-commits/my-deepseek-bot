@@ -394,6 +394,11 @@ class ProfessionalTradingBot {
 
       // Step 2: Send all data to AI at once (batch analysis)
       console.log(`🤖 Step 2: Sending ${allCoinsData.length} coins to AI for batch analysis...`);
+      
+      // Update progress to 70% for AI analysis
+      this.scanProgress.percent = 70;
+      this.scanProgress.stage = 'AI Analysis';
+      
       this.currentlyAnalyzing = {
         symbol: 'BATCH',
         name: 'Batch AI Analysis',
@@ -407,27 +412,42 @@ class ProfessionalTradingBot {
       if (allCoinsData.length > 0 && config.AI_API_KEY) {
         try {
           console.log(`🤖 Calling AI API with ${allCoinsData.length} coins...`);
+          console.log(`🔑 AI API Key present: ${config.AI_API_KEY ? 'YES' : 'NO'}`);
+          console.log(`📊 Coins to analyze: ${allCoinsData.map(c => c.symbol).join(', ')}`);
+          
+          // Update progress during AI call
+          this.scanProgress.percent = 75;
+          
           batchAIResults = await getBatchAIAnalysis(allCoinsData, this.globalMetrics, options);
           this.stats.aiCalls += 1; // Track AI API call
           console.log(`✅ Batch AI analysis completed for ${Object.keys(batchAIResults).length} coins`);
           console.log(`📊 AI API calls this session: ${this.stats.aiCalls}`);
           this.currentlyAnalyzing.stage = `AI evaluation complete - ${Object.keys(batchAIResults).length} coins analyzed`;
           this.currentlyAnalyzing.progress = 85;
+          this.scanProgress.percent = 85;
         } catch (error) {
           console.log(`⚠️ Batch AI failed: ${error.message}`);
           console.error('Full AI error:', error);
+          console.error('Error stack:', error.stack);
           this.currentlyAnalyzing.stage = `AI analysis failed, using fallback`;
+          this.scanProgress.percent = 80; // Still update progress even on error
         }
       } else {
         if (!config.AI_API_KEY) {
           console.log('⚠️ Skipping AI analysis - API_KEY not configured');
+          console.log(`   Check environment variable: AI_API_KEY`);
         } else if (allCoinsData.length === 0) {
-          console.log(`⚠️ Skipping AI analysis - no valid coin data collected (${analyzedCount} coins analyzed, all using mock data?)`);
+          console.log(`⚠️ Skipping AI analysis - no valid coin data collected`);
+          console.log(`   Analyzed ${analyzedCount} coins, but none had frame data`);
+          console.log(`   Check if coins are using mock data or if data collection is failing`);
         }
+        this.scanProgress.percent = 80; // Update progress even if skipping
       }
 
       // Step 3: Merge AI results with stored technical analysis
       console.log('🔄 Step 3: Merging AI results with technical analysis...');
+      this.scanProgress.percent = 90;
+      this.scanProgress.stage = 'Merging Results';
       for (const coin of this.trackedCoins) {
         try {
           const analysis = analysisResults.get(coin.symbol);

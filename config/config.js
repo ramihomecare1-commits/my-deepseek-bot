@@ -25,8 +25,8 @@ const SCAN_INTERVAL_OPTIONS = {
   '1w': 7 * 24 * 60 * 60 * 1000,
 };
 
-// AI Configuration
-const AI_API_KEY = process.env.API_KEY || '';
+// AI Configuration - check multiple possible env var names
+const AI_API_KEY = process.env.API_KEY || process.env.AI_API_KEY || process.env.OPENROUTER_API_KEY || '';
 const AI_MODEL = 'deepseek/deepseek-r1:free';
 
 // Log configuration status
