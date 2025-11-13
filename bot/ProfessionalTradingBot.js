@@ -39,6 +39,7 @@ class ProfessionalTradingBot {
     this.isRunning = false;
     this.scanTimer = null;
     this.scanInProgress = false;
+    this.tradesUpdateTimer = null; // Separate timer for active trades updates
 
     this.trackedCoins = getTop100Coins();
     this.minConfidence = 0.65; // Will be synced with tradingRules.minConfidence
@@ -296,6 +297,9 @@ class ProfessionalTradingBot {
     this.isRunning = true;
     console.log('🚀 Starting automated technical analysis scan');
 
+    // Start the trades update timer (independent of scans)
+    this.startTradesUpdateTimer();
+
     await this.performTechnicalScan();
     this.scheduleNextScan();
 
@@ -313,8 +317,40 @@ class ProfessionalTradingBot {
       clearTimeout(this.scanTimer);
       this.scanTimer = null;
     }
+    this.stopTradesUpdateTimer(); // Stop trades updates when scan stops
     console.log('🛑 Auto-scan stopped');
     return { status: 'stopped', time: new Date() };
+  }
+
+  // Start separate timer for active trades updates (every 30 seconds)
+  startTradesUpdateTimer() {
+    // Clear any existing timer
+    if (this.tradesUpdateTimer) {
+      clearInterval(this.tradesUpdateTimer);
+    }
+
+    // Update immediately on start
+    this.updateActiveTrades().catch(err => {
+      console.log(`⚠️ Initial trades update failed: ${err.message}`);
+    });
+
+    // Then update every 30 seconds
+    this.tradesUpdateTimer = setInterval(async () => {
+      if (this.activeTrades.length > 0) {
+        await this.updateActiveTrades();
+      }
+    }, 30000); // 30 seconds
+
+    console.log('⏰ Active trades update timer started (30s interval)');
+  }
+
+  // Stop the trades update timer
+  stopTradesUpdateTimer() {
+    if (this.tradesUpdateTimer) {
+      clearInterval(this.tradesUpdateTimer);
+      this.tradesUpdateTimer = null;
+      console.log('⏰ Active trades update timer stopped');
+    }
   }
 
   // Main technical scan method
