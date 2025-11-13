@@ -13,7 +13,10 @@ const CRYPTOPANIC_API_KEY = process.env.CRYPTOPANIC_API_KEY || '';
 const NEWS_ENABLED = Boolean(CRYPTOPANIC_API_KEY);
 
 // Rate limiting
-const API_DELAY = Number(process.env.API_DELAY_MS || 1000);
+// Increased to 3000ms (3 seconds) to avoid 429 rate limit errors
+// Free CoinGecko: 10-30 requests/minute = need 2-6 second delays
+// Free CoinPaprika: ~13 requests/minute sustained
+const API_DELAY = Number(process.env.API_DELAY_MS || 3000);
 const NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000;
 
 // Scan intervals
