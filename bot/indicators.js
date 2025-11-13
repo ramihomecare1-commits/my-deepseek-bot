@@ -1,46 +1,62 @@
 // Technical indicator calculations
-// RSI using Wilder's Smoothing Method (matches TradingView standard)
+// RSI using Wilder's Smoothing Method (matches TradingView standard exactly)
 function calculateRSI(prices, period = 14) {
-  if (prices.length < period + 1) return 50;
-
-  // Calculate price changes
-  const changes = [];
-  for (let i = 1; i < prices.length; i++) {
-    changes.push(prices[i] - prices[i - 1]);
+  // Need at least period + 1 prices to calculate RSI
+  if (!prices || prices.length < period + 1) {
+    return null;
   }
 
-  // Initial average gain and loss (first period)
-  let avgGain = 0;
-  let avgLoss = 0;
+  // Ensure all prices are numbers and valid
+  const validPrices = prices
+    .map(p => typeof p === 'number' ? p : parseFloat(p))
+    .filter(p => !isNaN(p) && isFinite(p) && p > 0);
+  
+  if (validPrices.length < period + 1) {
+    return null;
+  }
+
+  // Calculate price changes (deltas)
+  const deltas = [];
+  for (let i = 1; i < validPrices.length; i++) {
+    deltas.push(validPrices[i] - validPrices[i - 1]);
+  }
+
+  // Separate gains and losses
+  const gains = deltas.map(delta => delta > 0 ? delta : 0);
+  const losses = deltas.map(delta => delta < 0 ? -delta : 0);
+
+  // Calculate initial average gain and loss (simple average of first period)
+  let sumGain = 0;
+  let sumLoss = 0;
   
   for (let i = 0; i < period; i++) {
-    if (changes[i] > 0) {
-      avgGain += changes[i];
-    } else {
-      avgLoss -= changes[i]; // Make loss positive
-    }
+    sumGain += gains[i];
+    sumLoss += losses[i];
   }
   
-  avgGain = avgGain / period;
-  avgLoss = avgLoss / period;
+  let avgGain = sumGain / period;
+  let avgLoss = sumLoss / period;
 
   // Apply Wilder's smoothing for remaining periods
-  for (let i = period; i < changes.length; i++) {
-    const change = changes[i];
-    const gain = change > 0 ? change : 0;
-    const loss = change < 0 ? -change : 0;
-    
-    // Wilder's smoothing: newAvg = (oldAvg * (period - 1) + newValue) / period
-    avgGain = (avgGain * (period - 1) + gain) / period;
-    avgLoss = (avgLoss * (period - 1) + loss) / period;
+  // Formula: newAvg = (oldAvg * (period - 1) + newValue) / period
+  for (let i = period; i < deltas.length; i++) {
+    avgGain = (avgGain * (period - 1) + gains[i]) / period;
+    avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
   }
 
   // Calculate RSI
-  if (avgLoss === 0) return 100;
+  // RSI = 100 - (100 / (1 + RS))
+  // RS = Average Gain / Average Loss
+  if (avgLoss === 0) {
+    // If no losses, RSI is 100
+    return 100.0;
+  }
+  
   const rs = avgGain / avgLoss;
   const rsi = 100 - (100 / (1 + rs));
   
-  // Round to 2 decimal places to match TradingView precision
+  // Round to 2 decimal places (TradingView precision)
+  // Use proper rounding to match TradingView exactly
   return Math.round(rsi * 100) / 100;
 }
 

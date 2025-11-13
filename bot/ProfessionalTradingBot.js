@@ -818,7 +818,8 @@ class ProfessionalTradingBot {
           }
           
           // Calculate RSI using Wilder's method (matches TradingView standard)
-          const rsi = calculateRSI(prices, 14);
+          // Ensure we have enough data points (RSI(14) needs at least 15 prices)
+          const rsi = prices.length >= 15 ? calculateRSI(prices, 14) : null;
           const bollinger = calculateBollingerBands(prices, 20, 2);
           const trend = identifyTrend(prices);
           const momentum = calculateMomentum(prices);
@@ -830,7 +831,7 @@ class ProfessionalTradingBot {
           const bollingerPosition = bbPosition < 20 ? 'LOWER' : bbPosition > 80 ? 'UPPER' : 'MIDDLE';
           
           framesWithIndicators[timeframe] = {
-            rsi: rsi ? rsi.toFixed(2) : 'N/A',
+            rsi: (rsi !== null && rsi !== undefined) ? Number(rsi).toFixed(2) : 'N/A',
             bollingerPosition: bollingerPosition,
             trend: trend,
             momentum: momentum,
