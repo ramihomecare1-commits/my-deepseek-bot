@@ -1,6 +1,6 @@
 // Technical indicator calculations
 function calculateRSI(prices, period = 14) {
-  if (prices.length < period + 1) return 50;
+  if (!prices || !Array.isArray(prices) || prices.length < period + 1) return 50;
 
   let gains = 0;
   let losses = 0;
