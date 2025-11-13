@@ -41,10 +41,11 @@ const ALLOW_MOCK_NOTIFICATIONS = (process.env.ALLOW_MOCK_NOTIFICATIONS || 'false
 // Log configuration status
 console.log('🔧 Configuration Status:');
 console.log(`   Telegram: ${TELEGRAM_ENABLED ? 'ENABLED' : 'DISABLED'}`);
-console.log(`   CoinMarketCap: ${COINMARKETCAP_ENABLED ? 'ENABLED' : 'DISABLED'}`);
+console.log(`   CoinMarketCap: ${COINMARKETCAP_ENABLED ? 'ENABLED ✅' : 'DISABLED ❌ (Set COINMARKETCAP_API_KEY)'}`);
 console.log(`   News: ${NEWS_ENABLED ? 'ENABLED' : 'DISABLED'}`);
 console.log(`   AI: ${AI_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log(`   Mock Notifications: ${ALLOW_MOCK_NOTIFICATIONS ? 'ALLOWED' : 'BLOCKED'}`);
+console.log(`   API Delay: ${API_DELAY}ms between requests`);
 
 module.exports = {
   COINMARKETCAP_API_KEY,
