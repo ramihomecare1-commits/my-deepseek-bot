@@ -1,15 +1,42 @@
 #!/usr/bin/env python3
 """
 Advanced Technical Analysis Service
-Uses TA-Lib for professional-grade indicators
+Uses TA-Lib for professional-grade indicators (if available)
+Falls back to pandas/numpy if TA-Lib not installed
 Called by Node.js bot for enhanced analysis
 """
 
 import sys
 import json
 import numpy as np
-import talib
+import pandas as pd
 from scipy.signal import find_peaks
+
+# Try to import TA-Lib (optional)
+try:
+    import talib
+    TALIB_AVAILABLE = True
+except ImportError:
+    TALIB_AVAILABLE = False
+    print("⚠️ TA-Lib not available, using pandas fallback", file=sys.stderr)
+
+def calculate_rsi_pandas(prices, period=14):
+    """Calculate RSI using pandas (fallback)"""
+    df = pd.DataFrame({'price': prices})
+    delta = df['price'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.values
+
+def calculate_sma_pandas(prices, period=20):
+    """Calculate SMA using pandas"""
+    return pd.Series(prices).rolling(window=period).mean().values
+
+def calculate_ema_pandas(prices, period=12):
+    """Calculate EMA using pandas"""
+    return pd.Series(prices).ewm(span=period, adjust=False).mean().values
 
 def calculate_advanced_indicators(data):
     """
@@ -31,9 +58,14 @@ def calculate_advanced_indicators(data):
             return {'error': 'Need at least 30 data points'}
         
         # Advanced RSI (multiple periods)
-        rsi_14 = talib.RSI(prices, timeperiod=14)
-        rsi_7 = talib.RSI(prices, timeperiod=7)
-        rsi_21 = talib.RSI(prices, timeperiod=21)
+        if TALIB_AVAILABLE:
+            rsi_14 = talib.RSI(prices, timeperiod=14)
+            rsi_7 = talib.RSI(prices, timeperiod=7)
+            rsi_21 = talib.RSI(prices, timeperiod=21)
+        else:
+            rsi_14 = calculate_rsi_pandas(prices, 14)
+            rsi_7 = calculate_rsi_pandas(prices, 7)
+            rsi_21 = calculate_rsi_pandas(prices, 21)
         
         # MACD (Moving Average Convergence Divergence)
         macd, macd_signal, macd_hist = talib.MACD(prices, 

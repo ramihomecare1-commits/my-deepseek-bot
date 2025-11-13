@@ -8,7 +8,9 @@ const path = require('path');
  */
 async function getAdvancedAnalysis(data) {
   return new Promise((resolve, reject) => {
-    const pythonScript = path.join(__dirname, '..', 'python', 'advanced_analysis.py');
+    // Use simple_analysis.py (works without TA-Lib)
+    // For full TA-Lib support, switch to 'advanced_analysis.py'
+    const pythonScript = path.join(__dirname, '..', 'python', 'simple_analysis.py');
     
     // Check if Python is available
     const python = spawn('python3', [pythonScript]);
