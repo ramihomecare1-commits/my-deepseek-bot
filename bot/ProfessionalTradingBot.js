@@ -359,9 +359,20 @@ class ProfessionalTradingBot {
             heatmapEntries.push(analysis.heatmapEntry);
           }
 
-          // Collect data for batch AI (only real data)
-          // Always collect if we have frames, even if usesMockData (for testing)
-          if (analysis.frames && Object.keys(analysis.frames).length > 0) {
+          // Collect data for batch AI
+          // Check if we have valid frame data
+          const hasFrames = analysis.frames && typeof analysis.frames === 'object';
+          const frameCount = hasFrames ? Object.keys(analysis.frames).length : 0;
+          
+          console.log(`🔍 ${coin.symbol} analysis check:`, {
+            hasFrames: !!hasFrames,
+            frameCount: frameCount,
+            usesMockData: analysis.usesMockData,
+            dataSource: analysis.dataSource,
+            confidence: analysis.confidence
+          });
+          
+          if (hasFrames && frameCount > 0) {
             const priceValue = typeof analysis.price === 'string' 
               ? parseFloat(analysis.price.replace('$', '').replace(/,/g, '')) 
               : analysis.price || currentPrice;
@@ -373,9 +384,9 @@ class ProfessionalTradingBot {
               frames: analysis.frames,
               dataSource: analysis.dataSource || 'CoinGecko',
             });
-            console.log(`📊 Collected data for AI: ${coin.symbol} (${Object.keys(analysis.frames).length} timeframes, price: $${priceValue})`);
+            console.log(`✅ Collected data for AI: ${coin.symbol} (${frameCount} timeframes, price: $${priceValue})`);
           } else {
-            console.log(`⏭️ Skipping ${coin.symbol} for AI (no frame data available)`);
+            console.log(`⏭️ Skipping ${coin.symbol} for AI - reason:`, !hasFrames ? 'no frames object' : frameCount === 0 ? 'empty frames' : 'unknown');
           }
 
           this.scanProgress.processed += 1;
@@ -393,7 +404,17 @@ class ProfessionalTradingBot {
       }
 
       // Step 2: Send all data to AI at once (batch analysis)
-      console.log(`🤖 Step 2: Sending ${allCoinsData.length} coins to AI for batch analysis...`);
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(`🤖 Step 2: AI BATCH ANALYSIS`);
+      console.log(`${'='.repeat(60)}`);
+      console.log(`📊 Analyzed ${analyzedCount} coins total`);
+      console.log(`📊 Collected ${allCoinsData.length} coins with valid frame data for AI`);
+      console.log(`🔑 AI API Key configured: ${config.AI_API_KEY ? 'YES' : 'NO'}`);
+      console.log(`🤖 AI Model: ${config.AI_MODEL}`);
+      if (allCoinsData.length > 0) {
+        console.log(`📋 Coins ready for AI: ${allCoinsData.map(c => c.symbol).join(', ')}`);
+      }
+      console.log(`${'='.repeat(60)}\n`);
       
       // Update progress to 70% for AI analysis
       this.scanProgress.percent = 70;
@@ -851,6 +872,8 @@ class ProfessionalTradingBot {
       timestamp: new Date(),
       usesMockData,
       news: [],
+      frames: {}, // Add top-level frames property (empty but defined)
+      patterns: [], // Add empty patterns array
       indicators: {
         momentum: 'N/A',
         frames: {},
