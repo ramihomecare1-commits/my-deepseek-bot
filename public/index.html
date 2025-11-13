@@ -60,6 +60,7 @@
     .api-badge.coingecko { background: rgba(139, 69, 255, 0.15); color: #8b45ff; }
     .api-badge.coinpaprika { background: rgba(14, 165, 233, 0.15); color: #0ea5e9; }
     .api-badge.coinmarketcap { background: rgba(34, 197, 94, 0.15); color: #16a34a; }
+    .api-badge.python { background: rgba(255, 193, 7, 0.15); color: #f59e0b; }
     .api-badge.disabled { background: rgba(148, 163, 184, 0.15); color: #64748b; }
     .stats-grid {
       display: grid;
@@ -559,6 +560,7 @@
           <div class="api-badge coingecko">CoinGecko ✅</div>
           <div class="api-badge coinpaprika">CoinPaprika ✅</div>
           <div class="api-badge coinmarketcap">CoinMarketCap ✅</div>
+          <div class="api-badge python" id="pythonStatus">Python ⏳</div>
         </div>
       </div>
 
@@ -1003,6 +1005,18 @@
           // Update coins analyzed from batch AI or stats
           const batchAI = data.batchAI || {};
           document.getElementById('coinsAnalyzed').textContent = batchAI.coinsAnalyzed || data.stats.totalScans * (data.stats.trackedCoins || 0) || 0;
+          
+          // Update Python status
+          const pythonStatusEl = document.getElementById('pythonStatus');
+          if (pythonStatusEl) {
+            if (data.pythonAvailable) {
+              pythonStatusEl.textContent = 'Python ✅';
+              pythonStatusEl.className = 'api-badge python';
+            } else {
+              pythonStatusEl.textContent = 'Python ❌ (JS)';
+              pythonStatusEl.className = 'api-badge python disabled';
+            }
+          }
         }
       } catch (error) {
         console.log('Error updating stats:', error);

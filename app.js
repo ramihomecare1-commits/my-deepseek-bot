@@ -100,14 +100,34 @@ async function initializeBotAsync() {
   try {
     console.log('🔄 Initializing trading bot...');
     
-    // Python disabled for Render deployment (Node.js environment limitation)
-    // Bot uses JavaScript + DeepSeek R1 AI (works perfectly!)
-    console.log('ℹ️ Using JavaScript analysis + DeepSeek R1 AI');
+    // Test Python setup (non-blocking, optional)
+    console.log('🐍 Testing Python setup...');
+    const pythonAvailable = await testPythonSetup();
     
     tradingBot = new ProfessionalTradingBot();
-    tradingBot.pythonAvailable = false;
+    tradingBot.pythonAvailable = pythonAvailable;
     app.locals.tradingBot = tradingBot;
-    console.log('✅ Trading bot initialized');
+    
+    // Add log entry about Python status
+    try {
+      const { addLogEntry } = require('./routes/api');
+      if (pythonAvailable) {
+        addLogEntry('Bot initialized with Python support ✅', 'success');
+        addLogEntry('Using Python + JavaScript for technical analysis', 'info');
+      } else {
+        addLogEntry('Bot initialized (using JavaScript analysis)', 'info');
+        addLogEntry('Python not available - using JavaScript fallback', 'warning');
+      }
+    } catch (e) {
+      // Logging not available yet, ignore
+    }
+    
+    if (pythonAvailable) {
+      console.log('✅ Trading bot initialized with Python support');
+    } else {
+      console.log('✅ Trading bot initialized (using JavaScript analysis)');
+      console.log('ℹ️ Python not available - using JavaScript fallback (works perfectly!)');
+    }
   } catch (error) {
     console.error('❌ Bot initialization error:', error);
     // Create a minimal bot instance to prevent crashes

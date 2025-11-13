@@ -348,6 +348,7 @@ class ProfessionalTradingBot {
       
       addLogEntry('Technical scan started', 'info');
       addLogEntry(`Scanning ${this.trackedCoins.length} coins`, 'info');
+      addLogEntry(`Analysis engine: ${this.pythonAvailable ? 'Python + JavaScript' : 'JavaScript'}`, 'info');
 
       const opportunities = [];
       let analyzedCount = 0;
