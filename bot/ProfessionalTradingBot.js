@@ -1056,6 +1056,11 @@ class ProfessionalTradingBot {
     const indicators = analysis.indicators || {};
     const frames = indicators.frames || {};
     
+    // Filter out HOLD signals - we only want actionable BUY/SELL opportunities
+    if (analysis.action === 'HOLD') {
+      return false;
+    }
+    
     // Check if action type is enabled
     if (analysis.action === 'BUY' && !rules.patterns.buy.enabled) return false;
     if (analysis.action === 'SELL' && !rules.patterns.sell.enabled) return false;

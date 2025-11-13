@@ -246,34 +246,7 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
   const fetchData = async (days, interval) => {
     const symbol = coin?.symbol;
     
-    // 1. Try CryptoCompare FIRST (with API key - more reliable for Render)
-    if (symbol) {
-      try {
-        let limit, aggregate;
-        if (days === 1) {
-          limit = 720;
-          aggregate = 1; // Minute data (need histominute endpoint)
-        } else if (days === 7) {
-          limit = 168;
-          aggregate = 1; // Hourly
-        } else {
-          limit = days;
-          aggregate = 24; // Daily (aggregate hours)
-        }
-        
-        console.log(`📊 ${symbol}: Fetching ${days}d data from CryptoCompare...`);
-        const data = await fetchCryptoCompare(symbol, limit, aggregate);
-        if (data.length > 0) {
-          console.log(`✅ ${symbol}: CryptoCompare returned ${data.length} data points`);
-          currentPrice = currentPrice || data[data.length - 1].price;
-          return data;
-        }
-      } catch (ccError) {
-        console.log(`⚠️ ${symbol}: CryptoCompare failed - ${ccError.message}`);
-      }
-    }
-
-    // 2. Try Binance (backup - may be blocked in some regions)
+    // 1. Try Binance FIRST (best free data!)
     if (symbol && BINANCE_SYMBOL_MAP[symbol]) {
       try {
         let binanceInterval, binanceLimit;
@@ -288,18 +261,43 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
           binanceLimit = Math.min(days, 365); // Daily data
         }
         
-        console.log(`📊 ${symbol}: Trying Binance (${binanceInterval})...`);
+        console.log(`📊 ${symbol}: Trying Binance first (${binanceInterval})...`);
         const data = await fetchBinanceKlines(symbol, binanceInterval, binanceLimit);
         if (data.length > 0) {
-          console.log(`✅ ${symbol}: Binance returned ${data.length} data points`);
+          console.log(`✅ ${symbol}: Binance SUCCESS - ${data.length} data points`);
           currentPrice = currentPrice || data[data.length - 1].price;
           return data;
         }
       } catch (binanceError) {
-        // Silently skip 451 errors (geo-blocking)
-        if (!binanceError.message.includes('451')) {
-          console.log(`⚠️ ${symbol}: Binance failed - ${binanceError.message}`);
+        // Log all Binance errors to show attempts
+        console.log(`⚠️ ${symbol}: Binance failed - ${binanceError.message}`);
+      }
+    }
+
+    // 2. Fallback to CryptoCompare (with API key)
+    if (symbol) {
+      try {
+        let limit, aggregate;
+        if (days === 1) {
+          limit = 720;
+          aggregate = 1; // Minute data
+        } else if (days === 7) {
+          limit = 168;
+          aggregate = 1; // Hourly
+        } else {
+          limit = days;
+          aggregate = 24; // Daily
         }
+        
+        console.log(`📊 ${symbol}: Fetching ${days}d data from CryptoCompare...`);
+        const data = await fetchCryptoCompare(symbol, limit, aggregate);
+        if (data.length > 0) {
+          console.log(`✅ ${symbol}: CryptoCompare returned ${data.length} data points`);
+          currentPrice = currentPrice || data[data.length - 1].price;
+          return data;
+        }
+      } catch (ccError) {
+        console.log(`⚠️ ${symbol}: CryptoCompare failed - ${ccError.message}`);
       }
     }
 
