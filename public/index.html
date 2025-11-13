@@ -926,19 +926,62 @@
     let analysisUpdateInterval = null;
     let scanInFlight = false;
     let progressPollInterval = null;
+    let progressBarHideTimeout = null;
+    let lastProgressState = { running: false, percent: 0 };
     
     async function updateProgress() {
       try {
         const response = await fetch(API_BASE + '/scan-progress');
         const progress = await response.json();
         
-        if (progress && progress.running) {
-          const percent = progress.percent || 0;
-          document.getElementById('scanProgressText').textContent = percent + '%';
-          document.getElementById('scanProgressFill').style.width = percent + '%';
+        if (!progress) {
+          return;
+        }
+        
+        const percent = progress.percent || 0;
+        const isRunning = progress.running || false;
+        
+        // Always update the progress values
+        document.getElementById('scanProgressText').textContent = percent + '%';
+        document.getElementById('scanProgressFill').style.width = percent + '%';
+        
+        // Show progress bar if scan is running
+        if (isRunning) {
+          // Clear any pending hide timeout
+          if (progressBarHideTimeout) {
+            clearTimeout(progressBarHideTimeout);
+            progressBarHideTimeout = null;
+          }
           document.getElementById('scanProgressContainer').style.display = 'block';
-        } else {
+          lastProgressState = { running: true, percent: percent };
+        } 
+        // If scan just completed (was running, now not running, and at 100%)
+        else if (lastProgressState.running && !isRunning && percent >= 100) {
+          // Show 100% for a moment before hiding
+          document.getElementById('scanProgressContainer').style.display = 'block';
+          document.getElementById('scanProgressText').textContent = '100%';
+          document.getElementById('scanProgressFill').style.width = '100%';
+          
+          // Hide after 1 second delay to show completion
+          if (progressBarHideTimeout) {
+            clearTimeout(progressBarHideTimeout);
+          }
+          progressBarHideTimeout = setTimeout(() => {
+            document.getElementById('scanProgressContainer').style.display = 'none';
+            progressBarHideTimeout = null;
+          }, 1000);
+          
+          lastProgressState = { running: false, percent: 100 };
+        }
+        // If scan is not running and wasn't running before, keep hidden
+        else if (!isRunning && !lastProgressState.running) {
+          // Only hide if we're sure it's not running
+          if (progressBarHideTimeout) {
+            clearTimeout(progressBarHideTimeout);
+            progressBarHideTimeout = null;
+          }
           document.getElementById('scanProgressContainer').style.display = 'none';
+          lastProgressState = { running: false, percent: 0 };
         }
       } catch (error) {
         console.log('Error updating progress:', error);
@@ -1057,8 +1100,17 @@
       try {
         document.getElementById('results').innerHTML = '<div class="no-opportunities"><div class="loading-spinner" style="width: 40px; height: 40px; border: 4px solid rgba(100, 116, 139, 0.2); border-top-color: #6366f1; border-radius: 999px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div><h3>🔍 Scanning...</h3></div>';
         
+        // Reset progress state for new scan
+        lastProgressState = { running: false, percent: 0 };
+        if (progressBarHideTimeout) {
+          clearTimeout(progressBarHideTimeout);
+          progressBarHideTimeout = null;
+        }
+        
         // Show progress bar
         document.getElementById('scanProgressContainer').style.display = 'block';
+        document.getElementById('scanProgressText').textContent = '0%';
+        document.getElementById('scanProgressFill').style.width = '0%';
         
         // Start polling progress
         if (progressPollInterval) clearInterval(progressPollInterval);
@@ -1077,9 +1129,22 @@
           clearInterval(progressPollInterval);
           progressPollInterval = null;
         }
+        
+        // Update progress state to reflect completion
+        lastProgressState = { running: false, percent: 100 };
+        
         // Make sure the bar shows completion before hiding
         document.getElementById('scanProgressText').textContent = '100%';
         document.getElementById('scanProgressFill').style.width = '100%';
+        
+        // Hide progress bar after 1 second to show completion
+        if (progressBarHideTimeout) {
+          clearTimeout(progressBarHideTimeout);
+        }
+        progressBarHideTimeout = setTimeout(() => {
+          document.getElementById('scanProgressContainer').style.display = 'none';
+          progressBarHideTimeout = null;
+        }, 1000);
         
         if (!data || !data.opportunities || data.opportunities.length === 0) {
           document.getElementById('results').innerHTML = '<div class="no-opportunities"><h3>📭 No High-Confidence Opportunities</h3><p>Scanned ' + (data.analyzedCoins || 0) + ' coins</p></div>';
