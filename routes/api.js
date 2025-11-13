@@ -353,5 +353,16 @@ router.get('/logs', (req, res) => {
   }
 });
 
+// Active trades endpoint
+router.get('/active-trades', (req, res) => {
+  try {
+    const { tradingBot } = req.app.locals;
+    const activeTrades = tradingBot.getActiveTrades();
+    res.json(activeTrades);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
 module.exports.addLogEntry = addLogEntry;

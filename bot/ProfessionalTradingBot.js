@@ -93,6 +93,9 @@ class ProfessionalTradingBot {
       coinsAnalyzed: 0,
     };
     
+    // Active trades management
+    this.activeTrades = []; // Stores currently open or recently closed trades
+    
     // Customizable trading rules
     this.tradingRules = {
       minConfidence: 0.65,
@@ -339,6 +342,9 @@ class ProfessionalTradingBot {
     };
 
     try {
+      // First, update any existing active trades
+      await this.updateActiveTrades();
+      
       // Fetch global metrics at the start of each scan
       await this.ensureGreedFearIndex();
       await this.fetchGlobalMetrics();
@@ -601,6 +607,10 @@ class ProfessionalTradingBot {
             this.globalMetrics,
             { force: allowMock }
           );
+          // Add the opportunity as an active trade if it's a BUY/SELL signal
+          if (opp.action === 'BUY' || opp.action === 'SELL') {
+            this.addActiveTrade(opp);
+          }
           await sleep(1500);
         }
       }
@@ -924,6 +934,163 @@ class ProfessionalTradingBot {
 
   getScanHistory() {
     return this.analysisHistory.slice(0, 10);
+  }
+
+  // New method: Add a new opportunity as an active trade
+  addActiveTrade(opportunity) {
+    if (opportunity.action === 'HOLD') {
+      addLogEntry(`Attempted to add HOLD signal for ${opportunity.symbol} as active trade, skipping.`, 'warning');
+      return;
+    }
+
+    const tradeId = `${opportunity.symbol}-${Date.now()}`; // Unique ID for the trade
+    
+    // Parse prices correctly (handle both string and number formats)
+    const parsePrice = (price) => {
+      if (typeof price === 'number') return price;
+      if (typeof price === 'string') {
+        return parseFloat(price.replace(/[^0-9.]/g, '')) || 0;
+      }
+      return 0;
+    };
+    
+    const currentPrice = parsePrice(opportunity.price);
+    const entryPrice = parsePrice(opportunity.entryPrice) || currentPrice;
+    const takeProfit = parsePrice(opportunity.takeProfit) || currentPrice * 1.05;
+    const stopLoss = parsePrice(opportunity.stopLoss) || currentPrice * 0.95;
+    const addPosition = parsePrice(opportunity.addPosition) || currentPrice;
+    
+    const newTrade = {
+      tradeId: tradeId,
+      symbol: opportunity.symbol,
+      name: opportunity.name,
+      action: opportunity.action,
+      entryPrice: entryPrice,
+      takeProfit: takeProfit,
+      stopLoss: stopLoss,
+      addPosition: addPosition,
+      expectedGainPercent: opportunity.expectedGainPercent || 5,
+      entryTime: new Date(),
+      status: 'OPEN', // OPEN, TP_HIT, SL_HIT, DCA_HIT, CLOSED (manually)
+      currentPrice: currentPrice,
+      pnl: 0,
+      pnlPercent: 0,
+      insights: opportunity.insights || [],
+      reason: opportunity.reason || '',
+      dataSource: opportunity.dataSource || 'unknown',
+    };
+
+    this.activeTrades.push(newTrade);
+    addLogEntry(`NEW TRADE: ${newTrade.action} ${newTrade.symbol} at $${newTrade.entryPrice.toFixed(2)} (TP: $${newTrade.takeProfit.toFixed(2)}, SL: $${newTrade.stopLoss.toFixed(2)})`, 'success');
+    // TODO: Send Telegram notification for new trade opened
+  }
+
+  // New method: Update existing active trades
+  async updateActiveTrades() {
+    if (this.activeTrades.length === 0) {
+      return;
+    }
+
+    addLogEntry(`Updating ${this.activeTrades.length} active trades...`, 'info');
+
+    for (let i = 0; i < this.activeTrades.length; i++) {
+      const trade = this.activeTrades[i];
+
+      // Only update OPEN trades
+      if (trade.status !== 'OPEN') {
+        continue;
+      }
+
+      try {
+        // Fetch latest price for the trade's coin
+        const priceResult = await fetchEnhancedPriceData({ symbol: trade.symbol, name: trade.name }, this.priceCache, this.stats, config);
+        const currentPrice = parseFloat(priceResult.data.price.replace(/[^0-9.]/g, ''));
+        trade.currentPrice = currentPrice;
+
+        // Calculate P&L first (needed for notifications)
+        if (trade.action === 'BUY') {
+          trade.pnl = currentPrice - trade.entryPrice;
+          trade.pnlPercent = (trade.pnl / trade.entryPrice * 100).toFixed(2);
+        } else if (trade.action === 'SELL') { // Short position
+          trade.pnl = trade.entryPrice - currentPrice;
+          trade.pnlPercent = (trade.pnl / trade.entryPrice * 100).toFixed(2);
+        }
+
+        let notificationNeeded = false;
+        let notificationMessage = '';
+        let notificationLevel = 'info';
+
+        if (trade.action === 'BUY') {
+          // Check Take Profit for BUY
+          if (currentPrice >= trade.takeProfit) {
+            trade.status = 'TP_HIT';
+            notificationMessage = `✅ TAKE PROFIT HIT: ${trade.symbol} bought at $${trade.entryPrice.toFixed(2)}, sold at $${currentPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
+            notificationLevel = 'success';
+            notificationNeeded = true;
+          }
+          // Check Stop Loss for BUY
+          else if (currentPrice <= trade.stopLoss) {
+            trade.status = 'SL_HIT';
+            notificationMessage = `❌ STOP LOSS HIT: ${trade.symbol} bought at $${trade.entryPrice.toFixed(2)}, sold at $${currentPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
+            notificationLevel = 'error';
+            notificationNeeded = true;
+          }
+          // Check Add Position for BUY
+          else if (currentPrice <= trade.addPosition && trade.addPosition < trade.entryPrice) {
+            // This is a simple DCA trigger, not an actual position modification
+            // A more complex system would adjust entryPrice and quantity
+            if (!trade.dcaNotified) { // Prevent multiple notifications for the same DCA level
+              trade.status = 'DCA_HIT'; // Mark as DCA hit, but trade is still OPEN
+              notificationMessage = `💰 ADD POSITION: ${trade.symbol} dropped to $${currentPrice.toFixed(2)}. Consider averaging down.`;
+              notificationLevel = 'warning';
+              notificationNeeded = true;
+              trade.dcaNotified = true; // Mark as notified
+            }
+          }
+        } else if (trade.action === 'SELL') { // Short position logic
+          // Check Take Profit for SELL (price drops)
+          if (currentPrice <= trade.takeProfit) {
+            trade.status = 'TP_HIT';
+            notificationMessage = `✅ TAKE PROFIT HIT (SHORT): ${trade.symbol} shorted at $${trade.entryPrice.toFixed(2)}, covered at $${currentPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
+            notificationLevel = 'success';
+            notificationNeeded = true;
+          }
+          // Check Stop Loss for SELL (price rises)
+          else if (currentPrice >= trade.stopLoss) {
+            trade.status = 'SL_HIT';
+            notificationMessage = `❌ STOP LOSS HIT (SHORT): ${trade.symbol} shorted at $${trade.entryPrice.toFixed(2)}, covered at $${currentPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
+            notificationLevel = 'error';
+            notificationNeeded = true;
+          }
+          // Check Add Position for SELL (price rises)
+          else if (currentPrice >= trade.addPosition && trade.addPosition > trade.entryPrice) {
+            if (!trade.dcaNotified) {
+              trade.status = 'DCA_HIT';
+              notificationMessage = `💰 ADD POSITION (SHORT): ${trade.symbol} rose to $${currentPrice.toFixed(2)}. Consider averaging up.`;
+              notificationLevel = 'warning';
+              notificationNeeded = true;
+              trade.dcaNotified = true;
+            }
+          }
+        }
+
+        addLogEntry(`${trade.symbol}: Current Price $${currentPrice.toFixed(2)}, P&L: ${trade.pnlPercent}% (Status: ${trade.status})`, 'info');
+
+        if (notificationNeeded) {
+          addLogEntry(notificationMessage, notificationLevel);
+          // TODO: Send Telegram notification for status change
+        }
+
+      } catch (error) {
+        addLogEntry(`❌ Failed to update trade for ${trade.symbol}: ${error.message}`, 'error');
+        trade.status = 'ERROR'; // Mark trade as error
+      }
+    }
+  }
+
+  // New method: Get active trades
+  getActiveTrades() {
+    return this.activeTrades.filter(trade => trade.status === 'OPEN' || trade.status === 'DCA_HIT'); // Only show open or DCA triggered trades in dashboard
   }
 
   applyScanFilters(analysis, options) {
