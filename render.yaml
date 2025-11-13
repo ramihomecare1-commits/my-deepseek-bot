@@ -6,6 +6,10 @@ services:
     startCommand: npm start
     healthCheckPath: /health
     plan: free
+    # Increase health check timeout for slow free tier instances
+    healthCheckMaxRetries: 3
+    healthCheckInterval: 30
+    healthCheckTimeout: 10
     envVars:
       - key: NODE_ENV
         value: production

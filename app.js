@@ -91,17 +91,22 @@ app.use((req, res, next) => {
   return createRateLimiter(60000, 100)(req, res, next);
 });
 
-// Initialize trading bot (non-blocking for fast startup)
-let tradingBot;
-try {
-  tradingBot = new ProfessionalTradingBot();
-  app.locals.tradingBot = tradingBot;
-  console.log('✅ Trading bot initialized');
-} catch (error) {
-  console.error('❌ Bot initialization error:', error);
-  // Create a minimal bot instance to prevent crashes
-  tradingBot = { trackedCoins: [], isRunning: false };
-  app.locals.tradingBot = tradingBot;
+// Initialize trading bot AFTER server starts (non-blocking for ultra-fast startup)
+let tradingBot = null;
+app.locals.tradingBot = null;
+
+function initializeBotAsync() {
+  try {
+    console.log('🔄 Initializing trading bot...');
+    tradingBot = new ProfessionalTradingBot();
+    app.locals.tradingBot = tradingBot;
+    console.log('✅ Trading bot initialized');
+  } catch (error) {
+    console.error('❌ Bot initialization error:', error);
+    // Create a minimal bot instance to prevent crashes
+    tradingBot = { trackedCoins: [], isRunning: false, getStats: () => ({ trackedCoins: 0 }) };
+    app.locals.tradingBot = tradingBot;
+  }
 }
 
 // API routes
@@ -181,15 +186,21 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   // Log immediately - don't wait for anything
   console.log(`\n✅ Server listening on port ${PORT}`);
   console.log(`✅ Health check: http://localhost:${PORT}/health`);
+  console.log(`✅ Server ready for health checks`);
+  
+  // Initialize bot AFTER server is listening (non-blocking)
+  setImmediate(() => {
+    initializeBotAsync();
+  });
   
   // Log additional info asynchronously (non-blocking)
-  setImmediate(() => {
+  setTimeout(() => {
     console.log(`\n🚀 Professional Crypto Scanner`);
     console.log(`📡 Server running on port ${PORT}`);
     
-    if (tradingBot && tradingBot.trackedCoins) {
+    if (tradingBot && tradingBot.trackedCoins && tradingBot.trackedCoins.length) {
       console.log('📊 Strategy: RSI + Bollinger + Support/Resistance + Momentum + AI overlay');
-      console.log(`⏰ Auto-scan: ${tradingBot.selectedIntervalKey} intervals`);
+      console.log(`⏰ Auto-scan: ${tradingBot.selectedIntervalKey || '1h'} intervals`);
       console.log(`🎯 Coins: ${tradingBot.trackedCoins.length}`);
       console.log(`📱 Telegram: ${config.TELEGRAM_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
       console.log(`📰 News: ${config.NEWS_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
@@ -199,7 +210,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log('🔔 Test Telegram: POST /api/test-telegram');
     console.log('🌐 Web UI: http://localhost:' + PORT);
     console.log('');
-  });
+  }, 100);
 });
 
 // Graceful shutdown
