@@ -22,6 +22,18 @@ const {
 const { getAITechnicalAnalysis, getBatchAIAnalysis } = require('../services/aiService');
 const { detectTradingPatterns } = require('./patternDetection');
 
+// Helper function to add log entries (if available)
+let addLogEntry = null;
+try {
+  const apiRoutes = require('../routes/api');
+  addLogEntry = apiRoutes.addLogEntry;
+} catch (e) {
+  // Logging not available, use console fallback
+  addLogEntry = (message, level = 'info') => {
+    console.log(`[${level.toUpperCase()}] ${message}`);
+  };
+}
+
 class ProfessionalTradingBot {
   constructor() {
     this.isRunning = false;
@@ -333,6 +345,9 @@ class ProfessionalTradingBot {
       
       console.log(`\n🎯 TECHNICAL SCAN STARTED: ${new Date().toLocaleString()}`);
       console.log(`🌐 Global Metrics: CoinPaprika ${this.globalMetrics.coinpaprika ? '✅' : '❌'}, CoinMarketCap ${this.globalMetrics.coinmarketcap ? '✅' : '❌'}`);
+      
+      addLogEntry('Technical scan started', 'info');
+      addLogEntry(`Scanning ${this.trackedCoins.length} coins`, 'info');
 
       const opportunities = [];
       let analyzedCount = 0;
@@ -343,6 +358,7 @@ class ProfessionalTradingBot {
 
       // Step 1: Collect all coin technical data
       console.log('📊 Step 1: Collecting technical data for all coins...');
+      addLogEntry('Step 1: Collecting technical data for all coins...', 'info');
       for (const coin of this.trackedCoins) {
         try {
           const analysis = await this.analyzeWithTechnicalIndicators(coin, { 
@@ -419,6 +435,8 @@ class ProfessionalTradingBot {
       }
       console.log(`${'='.repeat(60)}\n`);
       
+      addLogEntry(`Step 2: AI batch analysis - ${allCoinsData.length} coins ready`, 'info');
+      
       // Update progress to 70% for AI analysis
       this.scanProgress.percent = 70;
       this.scanProgress.stage = 'AI Analysis';
@@ -439,6 +457,8 @@ class ProfessionalTradingBot {
           console.log(`🔑 AI API Key present: ${config.AI_API_KEY ? 'YES' : 'NO'}`);
           console.log(`📊 Coins to analyze: ${allCoinsData.map(c => c.symbol).join(', ')}`);
           
+          addLogEntry(`Calling AI API with ${allCoinsData.length} coins...`, 'info');
+          
           // Update progress during AI call
           this.scanProgress.percent = 75;
           
@@ -446,6 +466,9 @@ class ProfessionalTradingBot {
           this.stats.aiCalls += 1; // Track AI API call
           console.log(`✅ Batch AI analysis completed for ${Object.keys(batchAIResults).length} coins`);
           console.log(`📊 AI API calls this session: ${this.stats.aiCalls}`);
+          
+          addLogEntry(`AI analysis completed for ${Object.keys(batchAIResults).length} coins`, 'success');
+          
           this.currentlyAnalyzing.stage = `AI evaluation complete - ${Object.keys(batchAIResults).length} coins analyzed`;
           this.currentlyAnalyzing.progress = 85;
           this.scanProgress.percent = 85;
@@ -453,6 +476,9 @@ class ProfessionalTradingBot {
           console.log(`⚠️ Batch AI failed: ${error.message}`);
           console.error('Full AI error:', error);
           console.error('Error stack:', error.stack);
+          
+          addLogEntry(`AI analysis failed: ${error.message}`, 'error');
+          
           this.currentlyAnalyzing.stage = `AI analysis failed, using fallback`;
           this.scanProgress.percent = 80; // Still update progress even on error
         }
@@ -460,16 +486,19 @@ class ProfessionalTradingBot {
         if (!config.AI_API_KEY) {
           console.log('⚠️ Skipping AI analysis - API_KEY not configured');
           console.log(`   Check environment variable: AI_API_KEY`);
+          addLogEntry('Skipping AI analysis - API key not configured', 'warning');
         } else if (allCoinsData.length === 0) {
           console.log(`⚠️ Skipping AI analysis - no valid coin data collected`);
           console.log(`   Analyzed ${analyzedCount} coins, but none had frame data`);
           console.log(`   Check if coins are using mock data or if data collection is failing`);
+          addLogEntry('Skipping AI analysis - no valid coin data', 'warning');
         }
         this.scanProgress.percent = 80; // Update progress even if skipping
       }
 
       // Step 3: Merge AI results with stored technical analysis
       console.log('🔄 Step 3: Merging AI results with technical analysis...');
+      addLogEntry('Step 3: Merging AI results with technical analysis...', 'info');
       this.scanProgress.percent = 90;
       this.scanProgress.stage = 'Merging Results';
       for (const coin of this.trackedCoins) {
@@ -520,13 +549,16 @@ class ProfessionalTradingBot {
             }
             opportunities.push(analysis);
             console.log(`✅ ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}% confidence) - ADDED TO OPPORTUNITIES`);
+            addLogEntry(`${coin.symbol}: ${analysis.action} signal detected (${(analysis.confidence * 100).toFixed(0)}% confidence)`, 'success');
           }
         } catch (error) {
           console.log(`❌ ${coin.symbol}: Merge failed - ${error.message}`);
+          addLogEntry(`${coin.symbol}: Merge failed - ${error.message}`, 'error');
         }
       }
 
       this.scanProgress.percent = 100;
+      addLogEntry(`Scan complete: ${opportunities.length} opportunities found`, opportunities.length > 0 ? 'success' : 'info');
 
       // Store batch AI results for UI display
       this.lastBatchAIResults = {
