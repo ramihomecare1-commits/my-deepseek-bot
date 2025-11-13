@@ -47,12 +47,37 @@ async function fetchGlobalMetrics(globalMetrics, stats, coinmarketcapEnabled, co
 }
 
 // Enhanced price data fetching with multiple APIs
-// Priority: CoinMarketCap (authenticated, higher limits) → CoinGecko → CoinPaprika
+// Priority: Binance (FREE, real-time exchange data) → CoinMarketCap → CoinGecko → CoinPaprika
 async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
   let primaryData = null;
   let usedMock = false;
 
-  // Try CoinMarketCap FIRST (if API key available)
+  // Try Binance FIRST (FREE, no API key, real-time exchange prices!)
+  if (!primaryData && coin.symbol && BINANCE_SYMBOL_MAP[coin.symbol]) {
+    try {
+      const binanceData = await fetchBinancePrice(coin.symbol);
+      if (binanceData && binanceData.price) {
+        primaryData = {
+          price: binanceData.price,
+          volume_24h: binanceData.volume_24h,
+          change_24h: binanceData.change_24h,
+          high_24h: binanceData.high_24h,
+          low_24h: binanceData.low_24h,
+          source: 'binance'
+        };
+        priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
+        console.log(`✅ ${coin.symbol}: Binance price: $${primaryData.price.toFixed(2)}`);
+      }
+    } catch (error) {
+      // Silently skip - will try other sources
+      // Only log if it's not a geo-block (451) error
+      if (!error.message.includes('geo-blocked')) {
+        console.log(`⚠️ ${coin.symbol}: Binance price fetch failed - ${error.message}`);
+      }
+    }
+  }
+
+  // Fallback to CoinMarketCap (if API key available)
   if (!primaryData && config.COINMARKETCAP_ENABLED) {
     try {
       const cmcResponse = await axios.get(
@@ -164,6 +189,54 @@ const BINANCE_SYMBOL_MAP = {
   'MKR': 'MKRUSDT', 'GRT': 'GRTUSDT', 'THETA': 'THETAUSDT', 'RUNE': 'RUNEUSDT',
   'NEO': 'NEOUSDT', 'FTM': 'FTMUSDT'
 };
+
+// Fetch current price from Binance (FREE, no API key, real-time exchange data!)
+async function fetchBinancePrice(symbol) {
+  try {
+    const binanceSymbol = BINANCE_SYMBOL_MAP[symbol];
+    if (!binanceSymbol) {
+      throw new Error(`Symbol ${symbol} not available on Binance`);
+    }
+
+    // Try with proxy if SCRAPER_API_KEY is set (bypasses geo-blocking)
+    const scraperApiKey = process.env.SCRAPER_API_KEY || '';
+    let url = 'https://api.binance.com/api/v3/ticker/24hr';
+    let params = { symbol: binanceSymbol };
+    
+    if (scraperApiKey) {
+      // Route through ScraperAPI to bypass geo-restrictions
+      url = `http://api.scraperapi.com`;
+      params = {
+        api_key: scraperApiKey,
+        url: `https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSymbol}`,
+      };
+    }
+
+    const response = await axios.get(url, {
+      params,
+      timeout: 10000,
+    });
+
+    const data = scraperApiKey ? response.data : response.data;
+    if (data && data.lastPrice) {
+      return {
+        price: parseFloat(data.lastPrice),
+        volume_24h: parseFloat(data.volume || 0),
+        change_24h: parseFloat(data.priceChangePercent || 0),
+        high_24h: parseFloat(data.highPrice || 0),
+        low_24h: parseFloat(data.lowPrice || 0),
+        source: 'binance'
+      };
+    }
+    throw new Error('Invalid Binance ticker response');
+  } catch (error) {
+    // Silently skip 451 errors (geo-blocking) - will try other sources
+    if (error.response && error.response.status === 451) {
+      throw new Error('Binance geo-blocked');
+    }
+    throw new Error(`Binance price fetch failed: ${error.message}`);
+  }
+}
 
 // Fetch from Binance (FREE, no API key, best data!)
 async function fetchBinanceKlines(symbol, interval, limit) {
