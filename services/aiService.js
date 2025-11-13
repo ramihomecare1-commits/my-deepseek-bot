@@ -238,8 +238,8 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
       const prompt = createBatchAnalysisPrompt(allCoinsData, globalMetrics, options);
 
       console.log(`🤖 AI API attempt ${attempt}/${maxRetries}...`);
-      // Calculate tokens needed: ~100 tokens per coin for response
-      const estimatedTokens = Math.min(allCoinsData.length * 150, 8000);
+      // Calculate tokens needed: ~200 tokens per coin for response (with risk management)
+      const estimatedTokens = Math.min(allCoinsData.length * 200, 8000);
       console.log(`📊 Requesting ${estimatedTokens} max tokens for ${allCoinsData.length} coins`);
       
       const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
@@ -323,7 +323,7 @@ function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
 
   return `BATCH CRYPTO TECHNICAL ANALYSIS REQUEST:
 
-${globalMetricsText}Analyze ${allCoinsData.length} cryptocurrencies and provide trading signals.
+${globalMetricsText}Analyze ${allCoinsData.length} cryptocurrencies and provide trading signals with RISK MANAGEMENT.
 
 COINS TO ANALYZE:
 ${coinsSummary}
@@ -333,6 +333,16 @@ For each coin, provide:
 2. Confidence: 0.0 to 1.0
 3. Brief reason (1 sentence)
 4. Top 2-3 insights
+5. RISK MANAGEMENT LEVELS:
+   - entryPrice: Best entry price
+   - takeProfit: Target profit level
+   - stopLoss: Stop loss level
+   - addPosition: DCA/Average down level (below entry for BUY, above for SELL)
+   - expectedGainPercent: Expected gain % (positive number)
+
+Calculate levels based on support/resistance and volatility.
+For BUY: stopLoss < entryPrice < takeProfit
+For SELL: takeProfit < entryPrice < stopLoss
 
 Respond with JSON array:
 [
@@ -341,7 +351,12 @@ Respond with JSON array:
     "action": "BUY|SELL|HOLD",
     "confidence": 0.75,
     "reason": "...",
-    "insights": ["...", "..."]
+    "insights": ["...", "..."],
+    "entryPrice": 50000,
+    "takeProfit": 55000,
+    "stopLoss": 48000,
+    "addPosition": 49000,
+    "expectedGainPercent": 10
   },
   ...
 ]`;

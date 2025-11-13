@@ -73,14 +73,37 @@ async function sendTelegramNotification(opportunity, lastNotificationTime, stats
     const safeReason = escapeMarkdown(opportunity.reason);
     const safeInsights = opportunity.insights.map(insight => escapeMarkdown(insight));
 
+    // Calculate risk/reward ratio
+    let riskManagementText = '';
+    if (opportunity.entryPrice && opportunity.takeProfit && opportunity.stopLoss) {
+      const entry = Number(opportunity.entryPrice);
+      const tp = Number(opportunity.takeProfit);
+      const sl = Number(opportunity.stopLoss);
+      const expectedGain = opportunity.expectedGainPercent || 0;
+      
+      const potentialGain = Math.abs(tp - entry);
+      const potentialLoss = Math.abs(entry - sl);
+      const riskRewardRatio = potentialLoss > 0 ? (potentialGain / potentialLoss).toFixed(2) : 'N/A';
+      
+      riskManagementText = `
+💰 *RISK MANAGEMENT:*
+• Entry Price: $${entry.toFixed(2)}
+• Take Profit: $${tp.toFixed(2)}
+• Stop Loss: $${sl.toFixed(2)}
+${opportunity.addPosition ? `• Add Position (DCA): $${Number(opportunity.addPosition).toFixed(2)}` : ''}
+• Expected Gain: ${expectedGain}%
+• Risk/Reward: 1:${riskRewardRatio}
+`;
+    }
+
     const message = `${actionEmoji} *${opportunity.action} SIGNAL DETECTED*
 
 *Coin:* ${opportunity.name} (${opportunity.symbol})
-*Price:* ${opportunity.price}
+*Current Price:* ${opportunity.price}
 *Confidence:* ${confidencePercent}%
 *Data Source:* ${opportunity.dataSource || 'CoinGecko'}
 *Market Sentiment:* ${sentiment}
-
+${riskManagementText}
 📊 *Technical Snapshot:*
 • Daily RSI: ${indicators.daily.rsi}
 • Hourly RSI: ${indicators.hourly.rsi}
