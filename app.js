@@ -75,21 +75,38 @@ app.use((req, res, next) => {
   return createRateLimiter(60000, 100)(req, res, next);
 });
 
-// Initialize trading bot
-const tradingBot = new ProfessionalTradingBot();
-
-// Make bot available to routes
-app.locals.tradingBot = tradingBot;
+// Initialize trading bot (non-blocking for fast startup)
+let tradingBot;
+try {
+  tradingBot = new ProfessionalTradingBot();
+  app.locals.tradingBot = tradingBot;
+  console.log('✅ Trading bot initialized');
+} catch (error) {
+  console.error('❌ Bot initialization error:', error);
+  // Create a minimal bot instance to prevent crashes
+  tradingBot = { trackedCoins: [], isRunning: false };
+  app.locals.tradingBot = tradingBot;
+}
 
 // API routes
 app.use('/api', apiRoutes);
 
-// Simple health check
+// Simple health check (must respond quickly for Render)
 app.get('/health', (req, res) => {
-  res.json({
+  res.status(200).json({
     status: 'healthy',
     service: 'crypto-scanner',
-    time: new Date(),
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
+// Also add health check to API routes
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
   });
 });
 

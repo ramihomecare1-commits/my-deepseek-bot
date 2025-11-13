@@ -1,6 +1,15 @@
 const express = require('express');
 const router = express.Router();
 
+// Health check endpoint (for Render deployment)
+router.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 // API routes
 router.post('/start-scan', async (req, res) => {
   try {
