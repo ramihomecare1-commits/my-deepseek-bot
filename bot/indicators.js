@@ -1,21 +1,47 @@
 // Technical indicator calculations
+// RSI using Wilder's Smoothing Method (matches TradingView standard)
 function calculateRSI(prices, period = 14) {
   if (prices.length < period + 1) return 50;
 
-  let gains = 0;
-  let losses = 0;
-  for (let i = 1; i <= period; i += 1) {
-    const change = prices[prices.length - i] - prices[prices.length - i - 1];
-    if (change > 0) gains += change;
-    else losses -= change;
+  // Calculate price changes
+  const changes = [];
+  for (let i = 1; i < prices.length; i++) {
+    changes.push(prices[i] - prices[i - 1]);
   }
 
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
-  if (avgLoss === 0) return 100;
+  // Initial average gain and loss (first period)
+  let avgGain = 0;
+  let avgLoss = 0;
+  
+  for (let i = 0; i < period; i++) {
+    if (changes[i] > 0) {
+      avgGain += changes[i];
+    } else {
+      avgLoss -= changes[i]; // Make loss positive
+    }
+  }
+  
+  avgGain = avgGain / period;
+  avgLoss = avgLoss / period;
 
+  // Apply Wilder's smoothing for remaining periods
+  for (let i = period; i < changes.length; i++) {
+    const change = changes[i];
+    const gain = change > 0 ? change : 0;
+    const loss = change < 0 ? -change : 0;
+    
+    // Wilder's smoothing: newAvg = (oldAvg * (period - 1) + newValue) / period
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+  }
+
+  // Calculate RSI
+  if (avgLoss === 0) return 100;
   const rs = avgGain / avgLoss;
-  return 100 - 100 / (1 + rs);
+  const rsi = 100 - (100 / (1 + rs));
+  
+  // Round to 2 decimal places to match TradingView precision
+  return Math.round(rsi * 100) / 100;
 }
 
 function calculateBollingerBands(prices, period = 20, multiplier = 2) {

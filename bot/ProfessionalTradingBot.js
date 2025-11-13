@@ -750,7 +750,31 @@ class ProfessionalTradingBot {
       const framesWithIndicators = {};
       for (const [timeframe, series] of Object.entries(frames)) {
         if (series && series.length > 0) {
-          const prices = series.map(s => s.price || s);
+          // Extract close prices (TradingView RSI uses close prices)
+          const prices = series.map(s => {
+            // Handle different data formats
+            if (typeof s === 'number') return s;
+            if (s.price) return s.price;
+            if (s.close) return s.close;
+            return s;
+          }).filter(p => p && !isNaN(p) && p > 0);
+          
+          if (prices.length < 15) {
+            // Need at least 15 data points for RSI(14)
+            framesWithIndicators[timeframe] = {
+              rsi: 'N/A',
+              bollingerPosition: 'MIDDLE',
+              trend: 'SIDEWAYS',
+              momentum: 'NEUTRAL',
+              price: prices[prices.length - 1] || 0,
+              support: prices.length > 0 ? Math.min(...prices) : 0,
+              resistance: prices.length > 0 ? Math.max(...prices) : 0,
+              series: series
+            };
+            continue;
+          }
+          
+          // Calculate RSI using Wilder's method (matches TradingView standard)
           const rsi = calculateRSI(prices, 14);
           const bollinger = calculateBollingerBands(prices, 20, 2);
           const trend = identifyTrend(prices);
@@ -770,7 +794,8 @@ class ProfessionalTradingBot {
             price: currentPrice,
             support: Math.min(...prices.slice(-20)), // Support from last 20 periods
             resistance: Math.max(...prices.slice(-20)), // Resistance from last 20 periods
-            series: series
+            series: series,
+            dataPoints: prices.length // For debugging
           };
         }
       }
