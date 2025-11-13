@@ -39,12 +39,19 @@ const AI_MODEL = process.env.AI_MODEL || 'deepseek/deepseek-r1';
 // Notifications behavior
 const ALLOW_MOCK_NOTIFICATIONS = (process.env.ALLOW_MOCK_NOTIFICATIONS || 'false').toLowerCase() === 'true';
 
+// Proxy configuration for bypassing geo-restrictions
+const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
+const SCRAPER_API_ENABLED = SCRAPER_API_KEY.length > 0;
+
 // Log configuration status
 console.log('🔧 Configuration Status:');
 console.log(`   Telegram: ${TELEGRAM_ENABLED ? 'ENABLED' : 'DISABLED'}`);
 console.log(`   CoinMarketCap: ${COINMARKETCAP_ENABLED ? 'ENABLED ✅' : 'DISABLED ❌ (Set COINMARKETCAP_API_KEY)'}`);
+console.log(`   CryptoCompare: ${process.env.CRYPTOCOMPARE_API_KEY ? 'ENABLED ✅' : 'DISABLED ❌'}`);
+console.log(`   ScraperAPI Proxy: ${SCRAPER_API_ENABLED ? 'ENABLED ✅ (Bypasses geo-blocks)' : 'DISABLED ❌'}`);
 console.log(`   News: ${NEWS_ENABLED ? 'ENABLED' : 'DISABLED'}`);
-console.log(`   AI: ${AI_API_KEY ? 'ENABLED' : 'DISABLED'}`);
+console.log(`   AI Model: ${AI_MODEL}`);
+console.log(`   AI Key: ${AI_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log(`   Mock Notifications: ${ALLOW_MOCK_NOTIFICATIONS ? 'ALLOWED' : 'BLOCKED'}`);
 console.log(`   API Delay: ${API_DELAY}ms between requests`);
 

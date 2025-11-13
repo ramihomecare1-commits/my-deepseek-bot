@@ -173,13 +173,28 @@ async function fetchBinanceKlines(symbol, interval, limit) {
       throw new Error(`Symbol ${symbol} not available on Binance`);
     }
 
-    const response = await axios.get('https://api.binance.com/api/v3/klines', {
-      params: { symbol: binanceSymbol, interval, limit },
-      timeout: 10000,
+    // Try with proxy if SCRAPER_API_KEY is set (bypasses geo-blocking)
+    const scraperApiKey = process.env.SCRAPER_API_KEY || '';
+    let url = 'https://api.binance.com/api/v3/klines';
+    let params = { symbol: binanceSymbol, interval, limit };
+    
+    if (scraperApiKey) {
+      // Route through ScraperAPI to bypass geo-restrictions
+      url = `http://api.scraperapi.com`;
+      params = {
+        api_key: scraperApiKey,
+        url: `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${interval}&limit=${limit}`,
+      };
+    }
+
+    const response = await axios.get(url, {
+      params,
+      timeout: 15000,
     });
 
-    if (response.data && Array.isArray(response.data)) {
-      return response.data.map(([openTime, open, high, low, close]) => ({
+    const data = scraperApiKey ? response.data : response.data;
+    if (data && Array.isArray(data)) {
+      return data.map(([openTime, open, high, low, close]) => ({
         timestamp: new Date(openTime),
         price: parseFloat(close),
       })).filter(item => Number.isFinite(item.price) && item.price > 0);
