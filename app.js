@@ -108,6 +108,9 @@ async function initializeBotAsync() {
     // Start independent trades update timer (runs every 1 minute, regardless of scans)
     tradingBot.startTradesUpdateTimer();
     
+    // Start two-tier AI monitoring - runs every minute with v3 + R1 escalation
+    tradingBot.startMonitoringTimer();
+    
     // Add log entry
     try {
       const { addLogEntry } = require('./routes/api');

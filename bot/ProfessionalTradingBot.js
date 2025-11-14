@@ -24,6 +24,7 @@ const { getAITechnicalAnalysis, getBatchAIAnalysis } = require('../services/aiSe
 const { fetchCryptoNews } = require('../services/newsService');
 const { detectTradingPatterns } = require('./patternDetection');
 const { storeAIEvaluation, retrieveRelatedData } = require('../services/dataStorageService');
+const monitoringService = require('../services/monitoringService');
 const {
   isExchangeTradingEnabled,
   executeTakeProfit,
@@ -50,6 +51,7 @@ class ProfessionalTradingBot {
     this.scanTimer = null;
     this.scanInProgress = false;
     this.tradesUpdateTimer = null; // Separate timer for active trades updates
+    this.monitoringTimer = null; // Two-tier AI monitoring timer
 
     this.trackedCoins = getTop100Coins();
     this.minConfidence = 0.65; // Will be synced with tradingRules.minConfidence
@@ -471,6 +473,185 @@ class ProfessionalTradingBot {
       this.tradesUpdateTimer = null;
       console.log('⏰ Active trades update timer stopped');
     }
+  }
+
+  // Start two-tier AI monitoring timer (every 1 minute)
+  // This uses free v3 model to continuously monitor for opportunities
+  // Escalates to premium R1 model when high-confidence opportunities detected
+  startMonitoringTimer() {
+    if (!config.MONITORING_ENABLED) {
+      console.log('🔇 Two-tier AI monitoring disabled in config');
+      return;
+    }
+
+    if (this.monitoringTimer) {
+      console.log('👀 Monitoring timer already running, skipping duplicate initialization');
+      return;
+    }
+
+    if (!config.AI_API_KEY) {
+      console.log('⚠️ AI_API_KEY not configured - monitoring disabled');
+      return;
+    }
+
+    console.log('🤖 Starting Two-Tier AI Monitoring System');
+    console.log(`   Free Model (v3): ${config.MONITORING_MODEL}`);
+    console.log(`   Premium Model (R1): ${config.AI_MODEL}`);
+    console.log(`   Interval: ${config.MONITORING_INTERVAL / 1000}s`);
+    console.log(`   Escalation Threshold: ${(config.ESCALATION_THRESHOLD * 100).toFixed(0)}%`);
+
+    // Flag to prevent concurrent monitoring
+    this.isMonitoring = false;
+
+    // Run monitoring on interval
+    this.monitoringTimer = setInterval(async () => {
+      if (this.isMonitoring) {
+        console.log('⏭️ Skipping monitoring - previous check still in progress');
+        return;
+      }
+
+      this.isMonitoring = true;
+      try {
+        await this.runMonitoringCycle();
+      } catch (error) {
+        console.log(`⚠️ Monitoring error: ${error.message}`);
+      } finally {
+        this.isMonitoring = false;
+      }
+    }, config.MONITORING_INTERVAL);
+
+    console.log('👀 Two-tier AI monitoring started!');
+  }
+
+  stopMonitoringTimer() {
+    if (this.monitoringTimer) {
+      clearInterval(this.monitoringTimer);
+      this.monitoringTimer = null;
+      console.log('🛑 Monitoring timer stopped');
+    }
+  }
+
+  async runMonitoringCycle() {
+    try {
+      // Monitor top coins with recent price changes
+      const coinsToMonitor = this.trackedCoins.slice(0, 20); // Top 20 coins
+      
+      console.log(`👀 Monitoring ${coinsToMonitor.length} coins for opportunities...`);
+
+      for (const coin of coinsToMonitor) {
+        try {
+          // Fetch current price data
+          const priceData = await fetchEnhancedPriceData(coin.symbol, coin.id);
+          
+          if (!priceData) continue;
+
+          const coinData = {
+            symbol: coin.symbol,
+            name: coin.name,
+            id: coin.id,
+            currentPrice: priceData.currentPrice,
+            priceChange24h: priceData.priceChange24h,
+            volume24h: priceData.volume24h,
+          };
+
+          // Monitor with v3
+          const result = await monitoringService.monitorCoin(coinData);
+
+          if (result && result.r1Decision) {
+            // R1 was triggered and made a decision
+            if (result.r1Decision.decision === 'CONFIRMED') {
+              console.log(`✅ R1 CONFIRMED opportunity for ${coin.symbol}!`);
+              
+              // Execute trade if paper trading is enabled
+              if (this.tradingRules.paperTradingEnabled) {
+                await this.executePaperTrade({
+                  symbol: coin.symbol,
+                  action: result.r1Decision.action,
+                  price: coinData.currentPrice,
+                  reason: result.r1Decision.reason,
+                  confidence: result.r1Decision.confidence,
+                  stopLoss: result.r1Decision.stopLoss,
+                  takeProfit: result.r1Decision.takeProfit,
+                  source: 'monitoring'
+                });
+              }
+            } else {
+              console.log(`❌ R1 rejected ${coin.symbol}: ${result.r1Decision.reason}`);
+            }
+          } else if (result && result.v3Analysis) {
+            // v3 analyzed but didn't escalate
+            console.log(`📊 v3 monitored ${coin.symbol}: ${result.v3Analysis.signal} (${(result.v3Analysis.confidence * 100).toFixed(0)}%)`);
+          }
+
+          // Small delay between coins
+          await sleep(1000);
+
+        } catch (error) {
+          console.log(`⚠️ Error monitoring ${coin.symbol}:`, error.message);
+        }
+      }
+
+      console.log('✅ Monitoring cycle complete');
+
+    } catch (error) {
+      console.log('⚠️ Monitoring cycle error:', error.message);
+    }
+  }
+
+  async executePaperTrade(tradeData) {
+    try {
+      const { symbol, action, price, reason, confidence, stopLoss, takeProfit, source } = tradeData;
+
+      // Calculate position size based on portfolio
+      const portfolioValue = this.getPortfolioValue();
+      const positionSize = portfolioValue * 0.02; // 2% of portfolio
+      const quantity = positionSize / price;
+
+      const trade = {
+        id: `${Date.now()}_${symbol}`,
+        symbol,
+        action,
+        entryPrice: price,
+        quantity,
+        positionSize,
+        stopLoss: price * (1 - stopLoss / 100),
+        takeProfit: price * (1 + takeProfit / 100),
+        reason,
+        confidence,
+        source,
+        timestamp: new Date(),
+        status: 'ACTIVE'
+      };
+
+      this.activeTrades.push(trade);
+      await saveTrades(this.activeTrades);
+
+      console.log(`📝 Paper trade executed: ${action} ${symbol} @ $${price}`);
+      console.log(`   Position: ${quantity.toFixed(4)} units ($${positionSize.toFixed(2)})`);
+      console.log(`   Stop Loss: $${trade.stopLoss.toFixed(2)}`);
+      console.log(`   Take Profit: $${trade.takeProfit.toFixed(2)}`);
+
+      // Send notification
+      await sendTelegramMessage(`📝 Paper Trade Executed
+
+${action} ${symbol} @ $${price}
+Position: ${quantity.toFixed(4)} units
+Size: $${positionSize.toFixed(2)}
+Stop Loss: $${trade.stopLoss.toFixed(2)} (-${stopLoss}%)
+Take Profit: $${trade.takeProfit.toFixed(2)} (+${takeProfit}%)
+
+Reason: ${reason}
+Confidence: ${(confidence * 100).toFixed(0)}%
+Source: ${source}`);
+
+    } catch (error) {
+      console.log('⚠️ Error executing paper trade:', error.message);
+    }
+  }
+
+  getPortfolioValue() {
+    // Simple mock for now - should integrate with actual portfolio
+    return 10000; // $10k default
   }
 
   // Start portfolio rebalancing automation

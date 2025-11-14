@@ -38,6 +38,14 @@ const AI_API_KEY = process.env.API_KEY || process.env.AI_API_KEY || process.env.
 // Free models: google/gemini-2.0-flash-exp, meta-llama/llama-3.1-8b-instruct
 const AI_MODEL = process.env.AI_MODEL || 'deepseek/deepseek-r1';
 
+// Two-Tier Monitoring Configuration
+const MONITORING_ENABLED = (process.env.MONITORING_ENABLED || 'true').toLowerCase() === 'true';
+const MONITORING_MODEL = process.env.MONITORING_MODEL || 'deepseek/deepseek-chat'; // Free v3
+const MONITORING_INTERVAL = Number(process.env.MONITORING_INTERVAL || 60000); // 1 minute
+const ESCALATION_THRESHOLD = Number(process.env.ESCALATION_THRESHOLD || 0.70); // 70% confidence
+const VOLATILITY_THRESHOLD = Number(process.env.VOLATILITY_THRESHOLD || 3.0); // 3% price change
+const VOLUME_SPIKE_THRESHOLD = Number(process.env.VOLUME_SPIKE_THRESHOLD || 2.0); // 2x volume
+
 // Notifications behavior
 const ALLOW_MOCK_NOTIFICATIONS = (process.env.ALLOW_MOCK_NOTIFICATIONS || 'false').toLowerCase() === 'true';
 
@@ -52,10 +60,17 @@ console.log(`   CoinMarketCap: ${COINMARKETCAP_ENABLED ? 'ENABLED ✅' : 'DISABL
 console.log(`   CryptoCompare: ${process.env.CRYPTOCOMPARE_API_KEY ? 'ENABLED ✅' : 'DISABLED ❌'}`);
 console.log(`   ScraperAPI Proxy: ${SCRAPER_API_ENABLED ? 'ENABLED ✅ (Bypasses geo-blocks)' : 'DISABLED ❌'}`);
 console.log(`   News: ENABLED ✅ (Free public APIs: CryptoCompare${NEWSAPI_KEY ? ' + NewsAPI.org' : ''})`);
-console.log(`   AI Model: ${AI_MODEL}`);
+console.log(`   AI Model (Premium): ${AI_MODEL}`);
 console.log(`   AI Key: ${AI_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log(`   Mock Notifications: ${ALLOW_MOCK_NOTIFICATIONS ? 'ALLOWED' : 'BLOCKED'}`);
 console.log(`   API Delay: ${API_DELAY}ms between requests`);
+console.log('');
+console.log('🤖 Two-Tier AI Monitoring:');
+console.log(`   Monitoring: ${MONITORING_ENABLED ? 'ENABLED ✅' : 'DISABLED ❌'}`);
+console.log(`   Free Model (v3): ${MONITORING_MODEL}`);
+console.log(`   Monitoring Interval: ${MONITORING_INTERVAL / 1000}s`);
+console.log(`   Escalation Threshold: ${(ESCALATION_THRESHOLD * 100).toFixed(0)}%`);
+console.log(`   Volatility Trigger: ${VOLATILITY_THRESHOLD}%`);
 
 module.exports = {
   COINMARKETCAP_API_KEY,
@@ -71,5 +86,12 @@ module.exports = {
   SCAN_INTERVAL_OPTIONS,
   AI_API_KEY,
   AI_MODEL,
-  ALLOW_MOCK_NOTIFICATIONS
+  ALLOW_MOCK_NOTIFICATIONS,
+  // Two-Tier Monitoring
+  MONITORING_ENABLED,
+  MONITORING_MODEL,
+  MONITORING_INTERVAL,
+  ESCALATION_THRESHOLD,
+  VOLATILITY_THRESHOLD,
+  VOLUME_SPIKE_THRESHOLD
 };
