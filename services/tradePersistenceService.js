@@ -28,27 +28,52 @@ async function ensureDataDir() {
 async function loadTrades() {
   try {
     await ensureDataDir();
+    
+    // Check if file exists
+    try {
+      await fs.access(TRADES_FILE);
+      console.log(`📂 Trades file found at: ${TRADES_FILE}`);
+    } catch (accessError) {
+      console.log(`📂 Trades file does not exist at: ${TRADES_FILE}`);
+      console.log(`📂 Data directory: ${DATA_DIR}`);
+      return [];
+    }
+    
     const data = await fs.readFile(TRADES_FILE, 'utf8');
+    console.log(`📂 Trades file size: ${data.length} bytes`);
+    
+    if (!data || data.trim().length === 0) {
+      console.log('⚠️ Trades file is empty');
+      return [];
+    }
+    
     const trades = JSON.parse(data);
+    console.log(`📂 Parsed ${Array.isArray(trades) ? trades.length : 0} trades from file`);
     
     // Validate and convert dates
     if (Array.isArray(trades)) {
-      return trades.map(trade => {
+      const validTrades = trades.map(trade => {
         // Convert ISO date strings back to Date objects
         if (trade.entryTime && typeof trade.entryTime === 'string') {
           trade.entryTime = new Date(trade.entryTime);
         }
         return trade;
-      });
+      }).filter(trade => trade && trade.symbol); // Filter out invalid trades
+      
+      console.log(`✅ Loaded ${validTrades.length} valid trades`);
+      return validTrades;
     }
     
+    console.log('⚠️ Trades file does not contain an array');
     return [];
   } catch (error) {
     if (error.code === 'ENOENT') {
       // File doesn't exist yet, return empty array
+      console.log(`📂 Trades file not found: ${TRADES_FILE}`);
       return [];
     }
-    console.error('Error loading trades:', error);
+    console.error('❌ Error loading trades:', error);
+    console.error('Error details:', error.message);
     return [];
   }
 }
@@ -71,10 +96,14 @@ async function saveTrades(trades) {
       return tradeCopy;
     });
     
-    await fs.writeFile(TRADES_FILE, JSON.stringify(tradesToSave, null, 2), 'utf8');
+    const jsonData = JSON.stringify(tradesToSave, null, 2);
+    await fs.writeFile(TRADES_FILE, jsonData, 'utf8');
+    console.log(`💾 Saved ${tradesToSave.length} trades to ${TRADES_FILE} (${jsonData.length} bytes)`);
     return true;
   } catch (error) {
-    console.error('Error saving trades:', error);
+    console.error('❌ Error saving trades:', error);
+    console.error('Error details:', error.message);
+    console.error('File path:', TRADES_FILE);
     return false;
   }
 }

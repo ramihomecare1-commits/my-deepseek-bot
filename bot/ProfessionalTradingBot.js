@@ -175,29 +175,47 @@ class ProfessionalTradingBot {
    */
   async initialize() {
     try {
+      console.log('🔄 Starting bot initialization...');
+      
       // Load portfolio state
       await loadPortfolio();
       addLogEntry('Portfolio state loaded', 'success');
+      console.log('✅ Portfolio state loaded');
       
       // Load saved trades
+      console.log('📂 Attempting to load saved trades...');
       const savedTrades = await loadTrades();
+      console.log(`📂 loadTrades() returned: ${savedTrades ? savedTrades.length : 0} trades`);
+      
       if (savedTrades && savedTrades.length > 0) {
         this.activeTrades = savedTrades;
+        console.log(`✅ Restored ${savedTrades.length} active trades from storage`);
         addLogEntry(`Restored ${savedTrades.length} active trades from storage`, 'success');
+        
+        // Log trade details
+        savedTrades.forEach(trade => {
+          console.log(`  - ${trade.symbol} (${trade.action}) - Entry: $${trade.entryPrice?.toFixed(2) || 'N/A'}, Status: ${trade.status}`);
+        });
         
         // Immediately update trades with current prices (don't wait for timer)
         addLogEntry('Updating restored trades with current prices...', 'info');
+        console.log('🔄 Updating restored trades with current prices...');
         await this.updateActiveTrades();
         addLogEntry('Trades updated with current market prices', 'success');
+        console.log('✅ Trades updated with current market prices');
         
         // Recalculate portfolio metrics from restored trades
         await recalculateFromTrades(this.activeTrades);
         addLogEntry('Portfolio metrics recalculated from restored trades', 'info');
+        console.log('✅ Portfolio metrics recalculated');
       } else {
+        console.log('⚠️ No saved trades found or empty array returned');
+        console.log(`   savedTrades value: ${JSON.stringify(savedTrades)}`);
         addLogEntry('No saved trades found, starting fresh', 'info');
       }
     } catch (error) {
-      console.error('Error initializing bot:', error);
+      console.error('❌ Error initializing bot:', error);
+      console.error('Error stack:', error.stack);
       addLogEntry(`Error initializing: ${error.message}`, 'error');
     }
   }
