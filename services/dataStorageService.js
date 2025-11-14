@@ -47,14 +47,18 @@ async function initMongoDB() {
  */
 async function storeAIEvaluation(evaluation) {
   try {
-    if (!useMongoDB) {
+    if (!useMongoDB || !mongoDb) {
       const connected = await initMongoDB();
-      if (!connected) {
+      if (!connected || !mongoDb) {
         console.log('⚠️ Cannot store AI evaluation - MongoDB not available');
         return false;
       }
     }
 
+    if (!mongoDb) {
+      console.log('⚠️ Cannot store AI evaluation - MongoDB connection not established');
+      return false;
+    }
     const collection = mongoDb.collection('aiEvaluations');
     
     const doc = {
@@ -90,14 +94,18 @@ async function storeAIEvaluation(evaluation) {
  */
 async function storeNews(news) {
   try {
-    if (!useMongoDB) {
+    if (!useMongoDB || !mongoDb) {
       const connected = await initMongoDB();
-      if (!connected) {
+      if (!connected || !mongoDb) {
         console.log('⚠️ Cannot store news - MongoDB not available');
         return false;
       }
     }
 
+    if (!mongoDb) {
+      console.log('⚠️ Cannot store news - MongoDB connection not established');
+      return false;
+    }
     const collection = mongoDb.collection('newsArticles');
     
     // Check if article already exists (by URL to avoid duplicates)
@@ -147,11 +155,15 @@ async function storeNewsBatch(newsArray) {
   }
 
   try {
-    if (!useMongoDB) {
+    if (!useMongoDB || !mongoDb) {
       const connected = await initMongoDB();
-      if (!connected) return;
+      if (!connected || !mongoDb) return;
     }
 
+    if (!mongoDb) {
+      console.log('⚠️ Cannot store news batch - MongoDB connection not established');
+      return;
+    }
     const collection = mongoDb.collection('newsArticles');
     const operations = [];
 
@@ -216,9 +228,9 @@ async function storeNewsBatch(newsArray) {
  */
 async function retrieveRelatedData(options) {
   try {
-    if (!useMongoDB) {
+    if (!useMongoDB || !mongoDb) {
       const connected = await initMongoDB();
-      if (!connected) {
+      if (!connected || !mongoDb) {
         return { evaluations: [], news: [] };
       }
     }
@@ -233,6 +245,9 @@ async function retrieveRelatedData(options) {
     };
 
     // Retrieve AI evaluations
+    if (!mongoDb) {
+      return { evaluations: [], news: [] };
+    }
     const evalCollection = mongoDb.collection('aiEvaluations');
     const evalQuery = {
       timestamp: { $gte: cutoffDate }
@@ -294,11 +309,14 @@ async function retrieveRelatedData(options) {
  */
 async function linkNewsToTrade(newsUrl, tradeId) {
   try {
-    if (!useMongoDB) {
+    if (!useMongoDB || !mongoDb) {
       const connected = await initMongoDB();
-      if (!connected) return false;
+      if (!connected || !mongoDb) return false;
     }
 
+    if (!mongoDb) {
+      return false;
+    }
     const collection = mongoDb.collection('newsArticles');
     await collection.updateOne(
       { url: newsUrl },
@@ -319,13 +337,16 @@ async function linkNewsToTrade(newsUrl, tradeId) {
  */
 async function getStorageStats() {
   try {
-    if (!useMongoDB) {
+    if (!useMongoDB || !mongoDb) {
       const connected = await initMongoDB();
-      if (!connected) {
+      if (!connected || !mongoDb) {
         return { evaluations: 0, news: 0 };
       }
     }
 
+    if (!mongoDb) {
+      return { evaluations: 0, news: 0 };
+    }
     const evalCollection = mongoDb.collection('aiEvaluations');
     const newsCollection = mongoDb.collection('newsArticles');
 
