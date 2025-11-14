@@ -27,7 +27,7 @@ async function fetchCryptoCompareNews(symbol, limit = 5) {
         lang: 'EN',
         sortOrder: 'latest'
       },
-      timeout: 10000,
+      timeout: 15000, // Increased timeout for news API
     });
 
     if (response.data && response.data.Data && Array.isArray(response.data.Data)) {
@@ -61,7 +61,10 @@ async function fetchCryptoCompareNews(symbol, limit = 5) {
 
     return { source: 'cryptocompare', articles: [], total: 0 };
   } catch (error) {
-    console.log(`⚠️ CryptoCompare news fetch failed: ${error.message}`);
+    // Silently fail for timeouts - don't spam logs
+    if (!error.message.includes('timeout')) {
+      console.log(`⚠️ CryptoCompare news fetch failed: ${error.message}`);
+    }
     return { source: 'cryptocompare', articles: [], total: 0, error: error.message };
   }
 }
@@ -94,7 +97,7 @@ async function fetchNewsAPI(symbol, limit = 5) {
         pageSize: limit,
         apiKey: apiKey
       },
-      timeout: 10000,
+      timeout: 15000, // Increased timeout for news API
     });
 
     if (response.data && response.data.articles && Array.isArray(response.data.articles)) {

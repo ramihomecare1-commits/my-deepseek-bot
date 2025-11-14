@@ -1513,13 +1513,18 @@ class ProfessionalTradingBot {
         };
       }));
 
-      // Fetch news for each trade
+      // Fetch news for each trade (with timeout protection)
       const tradesWithNews = await Promise.all(tradesForAI.map(async (trade) => {
         try {
-          const news = await fetchCryptoNews(trade.symbol, 3);
+          // Add timeout wrapper to prevent hanging
+          const newsPromise = fetchCryptoNews(trade.symbol, 3);
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('News fetch timeout')), 5000)
+          );
+          const news = await Promise.race([newsPromise, timeoutPromise]);
           return { ...trade, news };
         } catch (error) {
-          console.log(`⚠️ News fetch failed for ${trade.symbol}: ${error.message}`);
+          // Silently fail - news is optional
           return { ...trade, news: { articles: [], total: 0 } };
         }
       }));
@@ -1537,6 +1542,10 @@ ${tradesWithNews.map((t, i) => {
     newsText = '\n- Recent News: No significant news found';
   }
   
+  // Safely handle pnlPercent - might be undefined or not a number
+  const pnlPercent = typeof t.pnlPercent === 'number' ? t.pnlPercent : 0;
+  const pnlText = `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%`;
+  
   return `
 Trade ${i + 1}: ${t.symbol} (${t.name})
 - Action: ${t.action}
@@ -1544,7 +1553,7 @@ Trade ${i + 1}: ${t.symbol} (${t.name})
 - Current Price: $${t.currentPrice.toFixed(2)}
 - Take Profit: $${t.takeProfit.toFixed(2)}
 - Stop Loss: $${t.stopLoss.toFixed(2)}
-- Current P&L: ${t.pnlPercent >= 0 ? '+' : ''}${t.pnlPercent.toFixed(2)}%
+- Current P&L: ${pnlText}
 - Status: ${t.status}${newsText}
 `;
 }).join('\n')}
@@ -1600,7 +1609,8 @@ Return JSON array format:
           
           // Find the corresponding trade
           const trade = openTrades.find(t => t.symbol === symbol);
-          const pnl = trade ? `${trade.pnlPercent >= 0 ? '+' : ''}${trade.pnlPercent.toFixed(2)}%` : 'N/A';
+          const pnlPercent = trade && typeof trade.pnlPercent === 'number' ? trade.pnlPercent : 0;
+          const pnl = trade ? `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%` : 'N/A';
           
           // Add to log
           addLogEntry(
