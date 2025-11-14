@@ -2349,106 +2349,106 @@ Return JSON array format:
       
       // Store evaluation in database
       if (trade) {
-              // Store AI evaluation with limited context to prevent MongoDB size issues
-              storeAIEvaluation({
-                symbol: symbol,
-                tradeId: trade.symbol, // Use symbol as trade identifier
-                type: 'trade_evaluation',
-                data: {
-                  recommendation: recommendation,
-                  confidence: rec.confidence || 0,
-                  reason: reason,
-                  pnlPercent: pnlPercent
-                },
-                model: config.AI_MODEL,
-                context: {
-                  news: tradeData?.news?.articles?.slice(0, 5) || [], // Only last 5 articles
-                  // Don't include historicalData - it's too large
-                }
-              }).catch(err => {
-                console.error(`⚠️ Failed to store trade evaluation for ${symbol}:`, err.message);
-              });
-            }
-            
-            // Add to log
-            addLogEntry(
-              `📊 ${symbol} AI Re-evaluation: ${recommendation} (${confidence.toFixed(0)}%) - ${reason}`,
-              recommendation === 'CLOSE' ? 'warning' : 'info'
-            );
-            
-            // Execute AI recommendations
-            if (trade && recommendation !== 'HOLD') {
-              try {
-                if (recommendation === 'ADJUST') {
-                  // Adjust take profit and/or stop loss
-                  let adjusted = false;
-                  if (rec.newTakeProfit && typeof rec.newTakeProfit === 'number' && rec.newTakeProfit > 0) {
-                    const oldTP = trade.takeProfit;
-                    trade.takeProfit = rec.newTakeProfit;
-                    adjusted = true;
-                    addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${rec.newTakeProfit.toFixed(2)}`, 'info');
-                    telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${rec.newTakeProfit.toFixed(2)}\n`;
-                  }
-                  if (rec.newStopLoss && typeof rec.newStopLoss === 'number' && rec.newStopLoss > 0) {
-                    const oldSL = trade.stopLoss;
-                    trade.stopLoss = rec.newStopLoss;
-                    adjusted = true;
-                    addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${rec.newStopLoss.toFixed(2)}`, 'info');
-                    telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${rec.newStopLoss.toFixed(2)}\n`;
-                  }
-                  if (adjusted) {
-                    await saveTrades(this.activeTrades);
-                    addLogEntry(`✅ ${symbol}: Trade parameters updated by AI`, 'success');
-                  }
-                } else if (recommendation === 'CLOSE') {
-                  // Check if DCA is still available - warn AI if it should have suggested DCA
-                  if (trade.dcaCount < 5 && pnlPercent < 0) {
-                    addLogEntry(`⚠️ ${symbol}: AI recommended CLOSE but DCA still available (${5 - trade.dcaCount} remaining). Consider DCA instead.`, 'warning');
-                    telegramMessage += `   ⚠️ Note: DCA still available (${5 - trade.dcaCount} remaining)\n`;
-                  }
-                  
-                  // Close the trade
-                  const closeResult = await this.closeTradeByAI(trade, reason, confidence);
-                  if (closeResult.success) {
-                    addLogEntry(`🔴 ${symbol}: Trade closed by AI - ${reason}`, 'warning');
-                    telegramMessage += `   ✅ Trade closed at $${closeResult.closePrice.toFixed(2)}\n`;
-                  } else {
-                    addLogEntry(`⚠️ ${symbol}: AI close recommendation failed - ${closeResult.error}`, 'warning');
-                    telegramMessage += `   ⚠️ Close failed: ${closeResult.error}\n`;
-                  }
-                }
-              } catch (execError) {
-                console.error(`❌ Error executing AI recommendation for ${symbol}:`, execError);
-                addLogEntry(`❌ ${symbol}: Failed to execute AI recommendation - ${execError.message}`, 'error');
-              }
-            }
-            
-            // Add to Telegram message
-            const emoji = recommendation === 'CLOSE' ? '🔴' : recommendation === 'ADJUST' ? '🟡' : '🟢';
-            telegramMessage += `${emoji} *${symbol}* - ${recommendation}\n`;
-            telegramMessage += `   P&L: ${pnl} | Confidence: ${confidence.toFixed(0)}%\n`;
-            telegramMessage += `   ${reason}\n\n`;
+        // Store AI evaluation with limited context to prevent MongoDB size issues
+        storeAIEvaluation({
+          symbol: symbol,
+          tradeId: trade.symbol, // Use symbol as trade identifier
+          type: 'trade_evaluation',
+          data: {
+            recommendation: recommendation,
+            confidence: rec.confidence || 0,
+            reason: reason,
+            pnlPercent: pnlPercent
+          },
+          model: config.AI_MODEL,
+          context: {
+            news: tradeData?.news?.articles?.slice(0, 5) || [], // Only last 5 articles
+            // Don't include historicalData - it's too large
           }
-          
-          // Send to Telegram
-          console.log('📤 Sending re-evaluation to Telegram...');
-          console.log(`📝 Message length: ${telegramMessage.length} characters`);
-          addLogEntry('📤 Sending re-evaluation results to Telegram...', 'info');
-          try {
-            const sent = await sendTelegramMessage(telegramMessage);
-            if (sent) {
-              console.log('✅ AI re-evaluation sent to Telegram successfully');
-              addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
+        }).catch(err => {
+          console.error(`⚠️ Failed to store trade evaluation for ${symbol}:`, err.message);
+        });
+      }
+      
+      // Add to log
+      addLogEntry(
+        `📊 ${symbol} AI Re-evaluation: ${recommendation} (${confidence.toFixed(0)}%) - ${reason}`,
+        recommendation === 'CLOSE' ? 'warning' : 'info'
+      );
+      
+      // Execute AI recommendations
+      if (trade && recommendation !== 'HOLD') {
+        try {
+          if (recommendation === 'ADJUST') {
+            // Adjust take profit and/or stop loss
+            let adjusted = false;
+            if (rec.newTakeProfit && typeof rec.newTakeProfit === 'number' && rec.newTakeProfit > 0) {
+              const oldTP = trade.takeProfit;
+              trade.takeProfit = rec.newTakeProfit;
+              adjusted = true;
+              addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${rec.newTakeProfit.toFixed(2)}`, 'info');
+              telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${rec.newTakeProfit.toFixed(2)}\n`;
+            }
+            if (rec.newStopLoss && typeof rec.newStopLoss === 'number' && rec.newStopLoss > 0) {
+              const oldSL = trade.stopLoss;
+              trade.stopLoss = rec.newStopLoss;
+              adjusted = true;
+              addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${rec.newStopLoss.toFixed(2)}`, 'info');
+              telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${rec.newStopLoss.toFixed(2)}\n`;
+            }
+            if (adjusted) {
+              await saveTrades(this.activeTrades);
+              addLogEntry(`✅ ${symbol}: Trade parameters updated by AI`, 'success');
+            }
+          } else if (recommendation === 'CLOSE') {
+            // Check if DCA is still available - warn AI if it should have suggested DCA
+            if (trade.dcaCount < 5 && pnlPercent < 0) {
+              addLogEntry(`⚠️ ${symbol}: AI recommended CLOSE but DCA still available (${5 - trade.dcaCount} remaining). Consider DCA instead.`, 'warning');
+              telegramMessage += `   ⚠️ Note: DCA still available (${5 - trade.dcaCount} remaining)\n`;
+            }
+            
+            // Close the trade
+            const closeResult = await this.closeTradeByAI(trade, reason, confidence);
+            if (closeResult.success) {
+              addLogEntry(`🔴 ${symbol}: Trade closed by AI - ${reason}`, 'warning');
+              telegramMessage += `   ✅ Trade closed at $${closeResult.closePrice.toFixed(2)}\n`;
             } else {
-              console.log('⚠️ Failed to send re-evaluation to Telegram');
-              addLogEntry('⚠️ Failed to send re-evaluation to Telegram', 'warning');
+              addLogEntry(`⚠️ ${symbol}: AI close recommendation failed - ${closeResult.error}`, 'warning');
+              telegramMessage += `   ⚠️ Close failed: ${closeResult.error}\n`;
             }
-          } catch (telegramError) {
-            console.error('❌ Telegram error:', telegramError);
-            addLogEntry(`⚠️ Failed to send re-evaluation to Telegram: ${telegramError.message}`, 'warning');
           }
-          
-          return recommendations;
+        } catch (execError) {
+          console.error(`❌ Error executing AI recommendation for ${symbol}:`, execError);
+          addLogEntry(`❌ ${symbol}: Failed to execute AI recommendation - ${execError.message}`, 'error');
+        }
+      }
+      
+      // Add to Telegram message
+      const emoji = recommendation === 'CLOSE' ? '🔴' : recommendation === 'ADJUST' ? '🟡' : '🟢';
+      telegramMessage += `${emoji} *${symbol}* - ${recommendation}\n`;
+      telegramMessage += `   P&L: ${pnl} | Confidence: ${confidence.toFixed(0)}%\n`;
+      telegramMessage += `   ${reason}\n\n`;
+    }
+    
+    // Send to Telegram
+    console.log('📤 Sending re-evaluation to Telegram...');
+    console.log(`📝 Message length: ${telegramMessage.length} characters`);
+    addLogEntry('📤 Sending re-evaluation results to Telegram...', 'info');
+    try {
+      const sent = await sendTelegramMessage(telegramMessage);
+      if (sent) {
+        console.log('✅ AI re-evaluation sent to Telegram successfully');
+        addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
+      } else {
+        console.log('⚠️ Failed to send re-evaluation to Telegram');
+        addLogEntry('⚠️ Failed to send re-evaluation to Telegram', 'warning');
+      }
+    } catch (telegramError) {
+      console.error('❌ Telegram error:', telegramError);
+      addLogEntry(`⚠️ Failed to send re-evaluation to Telegram: ${telegramError.message}`, 'warning');
+    }
+    
+    return allRecommendations;
         } catch (parseError) {
           console.error('❌ Failed to parse AI recommendations:', parseError.message);
           console.error('AI response preview:', aiContent.substring(0, 500));
