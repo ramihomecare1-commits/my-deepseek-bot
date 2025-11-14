@@ -921,7 +921,10 @@
       </div>
 
       <div>
-        <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">💰 Active Trades</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+          <h3 style="margin: 0; color: #0f172a; font-size: 1.5em; font-weight: 700;">💰 Active Trades</h3>
+          <button id="evaluateTradesBtn" onclick="evaluateTradesWithAI()" style="padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9em; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s;" onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.2)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)';">🤖 AI Re-evaluate Trades</button>
+        </div>
         <div id="active-trades-container" class="active-trades-container">
           <div class="no-active-trades">
             <h3>No Active Trades</h3>
@@ -1228,7 +1231,7 @@
                   '<div><strong>Win Rate:</strong> <span style="color: ' + (opp.backtest.winRate >= 50 ? '#22c55e' : '#ef4444') + ';">' + opp.backtest.winRate.toFixed(1) + '%</span></div>' +
                   '<div><strong>Trades:</strong> ' + (opp.backtest.totalTrades || 0) + '</div>' +
                   '<div><strong>Avg Return:</strong> <span style="color: ' + (opp.backtest.avgReturn >= 0 ? '#22c55e' : '#ef4444') + ';">' + (opp.backtest.avgReturn >= 0 ? '+' : '') + opp.backtest.avgReturn.toFixed(2) + '%</span></div>' +
-                  '<div><strong>Profit Factor:</strong> ' + opp.backtest.profitFactor.toFixed(2) + '</div>' +
+                  '<div><strong>Profit Factor:</strong> <span style="color: ' + (opp.backtest.profitFactor >= 1.5 ? '#22c55e' : opp.backtest.profitFactor >= 1.0 ? '#f59e0b' : '#ef4444') + '; font-weight: 700;">' + opp.backtest.profitFactor.toFixed(2) + '</span> ' + (opp.backtest.profitFactor >= 1.5 ? '✅' : opp.backtest.profitFactor >= 1.0 ? '⚠️' : '❌') + '</div>' +
                   '<div><strong>Max Drawdown:</strong> <span style="color: #ef4444;">' + opp.backtest.maxDrawdown.toFixed(2) + '%</span></div>' +
                   '<div><strong>Data Points:</strong> ' + (opp.backtest.dataPoints || 0) + '</div>' +
                 '</div>' +
@@ -1741,6 +1744,55 @@
     updateStats();
     updateAIEvaluation();
     updateActiveTradesDisplay(); // Initial load of active trades
+
+    // AI Trade Re-evaluation function
+    async function evaluateTradesWithAI() {
+      const btn = document.getElementById('evaluateTradesBtn');
+      const originalText = btn.textContent;
+      
+      try {
+        btn.disabled = true;
+        btn.textContent = '⏳ Evaluating...';
+        btn.style.opacity = '0.6';
+        
+        const response = await fetch(API_BASE + '/evaluate-trades', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          btn.textContent = '✅ Evaluation Sent!';
+          btn.style.background = 'linear-gradient(135deg, #22c55e, #16a34a)';
+          
+          // Show success message
+          alert(`✅ AI Re-evaluation Complete!\n\n${result.message || 'Evaluation results sent to Telegram'}`);
+          
+          setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.background = 'linear-gradient(135deg, #6366f1, #8b5cf6)';
+          }, 3000);
+        } else {
+          throw new Error(result.error || 'Evaluation failed');
+        }
+      } catch (error) {
+        console.error('Evaluation error:', error);
+        btn.textContent = '❌ Error';
+        btn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+        alert(`❌ Evaluation Failed: ${error.message}`);
+        
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.style.background = 'linear-gradient(135deg, #6366f1, #8b5cf6)';
+        }, 3000);
+      } finally {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+      }
+    }
     updatePortfolioDisplay(); // Initial load of portfolio
     setInterval(updateStats, 30000);
     setInterval(updateAIEvaluation, 5000); // Update AI display every 5 seconds

@@ -20,6 +20,7 @@ const {
   sendTestNotification 
 } = require('../services/notificationService');
 const { getAITechnicalAnalysis, getBatchAIAnalysis } = require('../services/aiService');
+const { fetchCryptoNews } = require('../services/newsService');
 const { detectTradingPatterns } = require('./patternDetection');
 const {
   isExchangeTradingEnabled,
@@ -519,12 +520,38 @@ class ProfessionalTradingBot {
         await sleep(config.API_DELAY);
       }
 
+      // Step 2a: Fetch news for all coins before AI analysis
+      if (allCoinsData.length > 0) {
+        console.log('📰 Fetching news for coins...');
+        addLogEntry('Fetching recent news for analysis...', 'info');
+        const newsPromises = allCoinsData.map(async (coin, index) => {
+          // Add small delay to avoid rate limits
+          await sleep(index * 200); // 200ms between requests
+          try {
+            const news = await fetchCryptoNews(coin.symbol, 5);
+            coin.news = news;
+            return news;
+          } catch (error) {
+            console.log(`⚠️ News fetch failed for ${coin.symbol}: ${error.message}`);
+            coin.news = { articles: [], total: 0 };
+            return null;
+          }
+        });
+        await Promise.all(newsPromises);
+        const newsCount = allCoinsData.filter(c => c.news && c.news.articles && c.news.articles.length > 0).length;
+        console.log(`✅ Fetched news for ${newsCount}/${allCoinsData.length} coins`);
+      }
+      
       // Step 2: Send all data to AI at once (batch analysis)
       console.log(`\n${'='.repeat(60)}`);
       console.log(`🤖 Step 2: AI BATCH ANALYSIS`);
       console.log(`${'='.repeat(60)}`);
       console.log(`📊 Analyzed ${analyzedCount} coins total`);
       console.log(`📊 Collected ${allCoinsData.length} coins with valid frame data for AI`);
+      if (allCoinsData.length > 0) {
+        const newsCount = allCoinsData.filter(c => c.news && c.news.articles && c.news.articles.length > 0).length;
+        console.log(`📰 News fetched for ${newsCount} coins`);
+      }
       console.log(`🔑 AI API Key configured: ${config.AI_API_KEY ? 'YES' : 'NO'}`);
       console.log(`🤖 AI Model: ${config.AI_MODEL}`);
       if (allCoinsData.length > 0) {
@@ -664,7 +691,19 @@ class ProfessionalTradingBot {
                   maxDrawdown: backtestResult.maxDrawdown,
                   dataPoints: backtestResult.dataPoints
                 };
-                addLogEntry(`✅ ${coin.symbol}: Backtest complete - ${backtestResult.winRate.toFixed(1)}% win rate (${backtestResult.totalTrades} trades)`, 'success');
+                
+                // Filter by profit factor: Only accept trades with profit factor > 1.5 OR win rate > 50%
+                const minProfitFactor = 1.5;
+                const minWinRate = 50;
+                const isProfitable = backtestResult.profitFactor > minProfitFactor || backtestResult.winRate > minWinRate;
+                
+                if (!isProfitable) {
+                  console.log(`🚫 ${coin.symbol}: Filtered out - Profit Factor: ${backtestResult.profitFactor.toFixed(2)}, Win Rate: ${backtestResult.winRate.toFixed(1)}%`);
+                  addLogEntry(`🚫 ${coin.symbol}: Filtered (PF: ${backtestResult.profitFactor.toFixed(2)}, WR: ${backtestResult.winRate.toFixed(1)}%)`, 'warning');
+                  continue; // Skip this opportunity
+                }
+                
+                addLogEntry(`✅ ${coin.symbol}: Backtest complete - ${backtestResult.winRate.toFixed(1)}% win rate, PF: ${backtestResult.profitFactor.toFixed(2)} (${backtestResult.totalTrades} trades)`, 'success');
           } else {
                 analysis.backtest = {
                   error: backtestResult.error || 'Backtest failed',
@@ -1474,10 +1513,31 @@ class ProfessionalTradingBot {
         };
       }));
 
-      // Create AI prompt for trade re-evaluation
-      const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${tradesForAI.length} open trades and provide your recommendation for each:
+      // Fetch news for each trade
+      const tradesWithNews = await Promise.all(tradesForAI.map(async (trade) => {
+        try {
+          const news = await fetchCryptoNews(trade.symbol, 3);
+          return { ...trade, news };
+        } catch (error) {
+          console.log(`⚠️ News fetch failed for ${trade.symbol}: ${error.message}`);
+          return { ...trade, news: { articles: [], total: 0 } };
+        }
+      }));
 
-${tradesForAI.map((t, i) => `
+      // Create AI prompt for trade re-evaluation
+      const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${tradesWithNews.length} open trades and provide your recommendation for each.
+IMPORTANT: Consider both technical analysis AND recent news sentiment when making recommendations.
+
+${tradesWithNews.map((t, i) => {
+  let newsText = '';
+  if (t.news && t.news.articles && t.news.articles.length > 0) {
+    const newsItems = t.news.articles.slice(0, 3).map(n => `    - ${n.title} (${n.source})`).join('\n');
+    newsText = `\n- Recent News:\n${newsItems}`;
+  } else {
+    newsText = '\n- Recent News: No significant news found';
+  }
+  
+  return `
 Trade ${i + 1}: ${t.symbol} (${t.name})
 - Action: ${t.action}
 - Entry Price: $${t.entryPrice.toFixed(2)}
@@ -1485,8 +1545,9 @@ Trade ${i + 1}: ${t.symbol} (${t.name})
 - Take Profit: $${t.takeProfit.toFixed(2)}
 - Stop Loss: $${t.stopLoss.toFixed(2)}
 - Current P&L: ${t.pnlPercent >= 0 ? '+' : ''}${t.pnlPercent.toFixed(2)}%
-- Status: ${t.status}
-`).join('\n')}
+- Status: ${t.status}${newsText}
+`;
+}).join('\n')}
 
 For each trade, provide:
 1. Recommendation: HOLD, CLOSE, or ADJUST
@@ -1527,20 +1588,46 @@ Return JSON array format:
       if (jsonMatch) {
         const recommendations = JSON.parse(jsonMatch[0]);
         
-        recommendations.forEach((rec) => {
+        // Build Telegram message
+        let telegramMessage = `🤖 *AI Trade Re-evaluation*\n\n`;
+        telegramMessage += `📊 *${openTrades.length} Open Trade${openTrades.length > 1 ? 's' : ''} Analyzed*\n\n`;
+        
+        recommendations.forEach((rec, index) => {
           const symbol = rec.symbol;
           const recommendation = rec.recommendation || 'HOLD';
           const confidence = (rec.confidence || 0) * 100;
           const reason = rec.reason || 'No reason provided';
           
+          // Find the corresponding trade
+          const trade = openTrades.find(t => t.symbol === symbol);
+          const pnl = trade ? `${trade.pnlPercent >= 0 ? '+' : ''}${trade.pnlPercent.toFixed(2)}%` : 'N/A';
+          
+          // Add to log
           addLogEntry(
             `📊 ${symbol} AI Re-evaluation: ${recommendation} (${confidence.toFixed(0)}%) - ${reason}`,
             recommendation === 'CLOSE' ? 'warning' : 'info'
           );
+          
+          // Add to Telegram message
+          const emoji = recommendation === 'CLOSE' ? '🔴' : recommendation === 'ADJUST' ? '🟡' : '🟢';
+          telegramMessage += `${emoji} *${symbol}* - ${recommendation}\n`;
+          telegramMessage += `   P&L: ${pnl} | Confidence: ${confidence.toFixed(0)}%\n`;
+          telegramMessage += `   ${reason}\n\n`;
         });
+        
+        // Send to Telegram
+        try {
+          await sendTelegramNotification(telegramMessage);
+          addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
+        } catch (telegramError) {
+          addLogEntry(`⚠️ Failed to send re-evaluation to Telegram: ${telegramError.message}`, 'warning');
+        }
+        
+        return recommendations;
       }
     } catch (error) {
       addLogEntry(`⚠️ AI re-evaluation failed: ${error.message}`, 'warning');
+      throw error;
     }
   }
 
@@ -1768,18 +1855,24 @@ Return JSON array format:
     let entryPrice, takeProfit, stopLoss, addPosition, expectedGainPercent;
     
     if (action === 'BUY') {
-      // BUY signal
+      // BUY signal - Improved risk/reward ratio (target 3:1 or better)
       entryPrice = currentPrice;
-      stopLoss = Math.max(support * 0.98, currentPrice * 0.96); // 2-4% below
-      takeProfit = Math.min(resistance * 1.02, currentPrice * 1.08); // 6-8% above
+      stopLoss = Math.max(support * 0.98, currentPrice * 0.97); // 2-3% below (tighter stop)
+      // Target 3:1 risk/reward: if stop is 3%, take profit should be 9%+
+      const riskPercent = ((entryPrice - stopLoss) / entryPrice) * 100;
+      const targetReward = riskPercent * 3; // 3:1 risk/reward
+      takeProfit = Math.min(resistance * 1.02, currentPrice * (1 + targetReward / 100)); // 9-12% above
       addPosition = currentPrice * 0.98; // 2% below for DCA
       expectedGainPercent = ((takeProfit - entryPrice) / entryPrice * 100).toFixed(2);
       
     } else if (action === 'SELL') {
-      // SELL signal
+      // SELL signal - Improved risk/reward ratio (target 3:1 or better)
       entryPrice = currentPrice;
-      takeProfit = Math.max(support * 0.98, currentPrice * 0.92); // 6-8% below
-      stopLoss = Math.min(resistance * 1.02, currentPrice * 1.04); // 2-4% above
+      stopLoss = Math.min(resistance * 1.02, currentPrice * 1.03); // 2-3% above (tighter stop)
+      // Target 3:1 risk/reward: if stop is 3%, take profit should be 9%+
+      const riskPercent = ((stopLoss - entryPrice) / entryPrice) * 100;
+      const targetReward = riskPercent * 3; // 3:1 risk/reward
+      takeProfit = Math.max(support * 0.98, currentPrice * (1 - targetReward / 100)); // 9-12% below
       addPosition = currentPrice * 1.02; // 2% above for averaging
       expectedGainPercent = ((entryPrice - takeProfit) / entryPrice * 100).toFixed(2);
       

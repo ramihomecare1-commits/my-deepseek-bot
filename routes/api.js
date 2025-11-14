@@ -395,5 +395,44 @@ router.get('/exchange-status', (req, res) => {
   }
 });
 
+// AI Trade Re-evaluation endpoint
+router.post('/evaluate-trades', async (req, res) => {
+  try {
+    const { tradingBot } = req.app.locals;
+    
+    if (!tradingBot) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Trading bot not initialized' 
+      });
+    }
+
+    const openTrades = tradingBot.getActiveTrades();
+    
+    if (!openTrades || openTrades.length === 0) {
+      return res.json({ 
+        success: false, 
+        error: 'No open trades to evaluate',
+        message: 'No active trades found'
+      });
+    }
+
+    // Trigger AI re-evaluation (this will send to Telegram)
+    const recommendations = await tradingBot.reevaluateOpenTradesWithAI();
+    
+    res.json({ 
+      success: true, 
+      message: `Re-evaluated ${openTrades.length} trade(s). Results sent to Telegram.`,
+      recommendations: recommendations || []
+    });
+  } catch (error) {
+    console.error('Evaluation error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Failed to evaluate trades' 
+    });
+  }
+});
+
 module.exports = router;
 module.exports.addLogEntry = addLogEntry;

@@ -10,7 +10,9 @@ const TELEGRAM_ENABLED = Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID);
 
 // News configuration
 const CRYPTOPANIC_API_KEY = process.env.CRYPTOPANIC_API_KEY || '';
-const NEWS_ENABLED = Boolean(CRYPTOPANIC_API_KEY);
+const NEWSAPI_KEY = process.env.NEWSAPI_KEY || ''; // Optional: NewsAPI.org key for additional news sources
+const NEWS_ENABLED = Boolean(CRYPTOPANIC_API_KEY); // Legacy: CryptoPanic (optional)
+// Note: News is now fetched from free public APIs (CryptoCompare + optional NewsAPI.org)
 
 // Rate limiting
 // Increased to 3000ms (3 seconds) to avoid 429 rate limit errors
@@ -49,7 +51,7 @@ console.log(`   Telegram: ${TELEGRAM_ENABLED ? 'ENABLED' : 'DISABLED'}`);
 console.log(`   CoinMarketCap: ${COINMARKETCAP_ENABLED ? 'ENABLED ✅' : 'DISABLED ❌ (Set COINMARKETCAP_API_KEY)'}`);
 console.log(`   CryptoCompare: ${process.env.CRYPTOCOMPARE_API_KEY ? 'ENABLED ✅' : 'DISABLED ❌'}`);
 console.log(`   ScraperAPI Proxy: ${SCRAPER_API_ENABLED ? 'ENABLED ✅ (Bypasses geo-blocks)' : 'DISABLED ❌'}`);
-console.log(`   News: ${NEWS_ENABLED ? 'ENABLED' : 'DISABLED'}`);
+console.log(`   News: ENABLED ✅ (Free public APIs: CryptoCompare${NEWSAPI_KEY ? ' + NewsAPI.org' : ''})`);
 console.log(`   AI Model: ${AI_MODEL}`);
 console.log(`   AI Key: ${AI_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log(`   Mock Notifications: ${ALLOW_MOCK_NOTIFICATIONS ? 'ALLOWED' : 'BLOCKED'}`);

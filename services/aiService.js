@@ -340,9 +340,18 @@ function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
     const frame1d = frames['1d'] || {};
     const frame1h = frames['1h'] || {};
     
+    // Include news if available
+    let newsText = '';
+    if (coin.news && coin.news.articles && coin.news.articles.length > 0) {
+      const recentNews = coin.news.articles.slice(0, 3).map(n => `  - ${n.title} (${n.source})`).join('\n');
+      newsText = `\n   Recent News:\n${recentNews}`;
+    } else {
+      newsText = '\n   Recent News: No significant news found';
+    }
+    
     return `${idx + 1}. ${coin.symbol} (${coin.name}) - Price: $${coin.currentPrice}
    Daily: RSI ${frame1d.rsi || 'N/A'}, Trend ${frame1d.trend || 'N/A'}, BB ${frame1d.bollingerPosition || 'N/A'}
-   Hourly: RSI ${frame1h.rsi || 'N/A'}, Trend ${frame1h.trend || 'N/A'}, Momentum ${frame1h.momentum || 'N/A'}`;
+   Hourly: RSI ${frame1h.rsi || 'N/A'}, Trend ${frame1h.trend || 'N/A'}, Momentum ${frame1h.momentum || 'N/A'}${newsText}`;
   }).join('\n\n');
 
   return `BATCH CRYPTO TECHNICAL ANALYSIS REQUEST:
@@ -352,11 +361,14 @@ ${globalMetricsText}Analyze ${allCoinsData.length} cryptocurrencies and provide 
 COINS TO ANALYZE:
 ${coinsSummary}
 
+IMPORTANT: Consider both technical indicators AND recent news sentiment when making recommendations.
+News can significantly impact price movements - factor this into your analysis.
+
 For each coin, provide:
 1. Action: BUY, SELL, or HOLD
 2. Confidence: 0.0 to 1.0
-3. Brief reason (1 sentence)
-4. Top 2-3 insights
+3. Brief reason (1 sentence) - mention if news influenced the decision
+4. Top 2-3 insights (include news impact if relevant)
 5. RISK MANAGEMENT LEVELS:
    - entryPrice: Best entry price
    - takeProfit: Target profit level
