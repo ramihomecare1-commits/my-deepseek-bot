@@ -48,10 +48,12 @@ On Render, the filesystem is **ephemeral** - files are wiped on every deployment
 5. Version: **5.5 or later**
 6. Copy the connection string
 
-It will look like:
+It will look like this (template format):
 ```
-mongodb+srv://tradingbot:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+mongodb+srv://USERNAME:PASSWORD@CLUSTER.mongodb.net/?retryWrites=true&w=majority
 ```
+
+**Note:** Replace `USERNAME`, `PASSWORD`, and `CLUSTER` with your actual values from MongoDB Atlas.
 
 ### Step 6: Add to Render Environment Variables
 
@@ -62,7 +64,8 @@ mongodb+srv://tradingbot:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true
 5. Key: `MONGODB_URI`
 6. Value: Paste your connection string
    - **Important:** Replace `<password>` with your actual password
-   - Example: `mongodb+srv://tradingbot:MyPassword123@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority`
+   - **Format:** `mongodb+srv://USERNAME:PASSWORD@CLUSTER.mongodb.net/?retryWrites=true&w=majority`
+   - **Example format (NOT a real connection string):** `mongodb+srv://yourusername:yourpassword@cluster0.abc123.mongodb.net/?retryWrites=true&w=majority`
 7. Click "Save Changes"
 8. Redeploy your service
 
