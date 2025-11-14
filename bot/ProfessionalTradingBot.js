@@ -35,15 +35,22 @@ const { loadTrades, saveTrades } = require('../services/tradePersistenceService'
 const { loadPortfolio, recalculateFromTrades, getPortfolioStats } = require('../services/portfolioService');
 
 // Helper function to add log entries (if available)
-let addLogEntry = null;
-try {
-  const apiRoutes = require('../routes/api');
-  addLogEntry = apiRoutes.addLogEntry;
-} catch (e) {
-  // Logging not available, use console fallback
-  addLogEntry = (message, level = 'info') => {
-    console.log(`[${level.toUpperCase()}] ${message}`);
-  };
+// Note: We can't require routes/api here as it might cause circular dependency
+// Instead, we'll get it lazily when needed
+let addLogEntryFn = null;
+function addLogEntry(message, level = 'info') {
+  if (!addLogEntryFn) {
+    try {
+      const apiRoutes = require('../routes/api');
+      addLogEntryFn = apiRoutes.addLogEntry;
+    } catch (e) {
+      // Logging not available, use console fallback
+      addLogEntryFn = (msg, lvl) => {
+        console.log(`[${lvl.toUpperCase()}] ${msg}`);
+      };
+    }
+  }
+  return addLogEntryFn(message, level);
 }
 
 class ProfessionalTradingBot {
