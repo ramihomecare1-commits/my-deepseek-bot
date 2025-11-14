@@ -375,7 +375,7 @@ class ProfessionalTradingBot {
     return { status: 'stopped', time: new Date() };
   }
 
-  // Start separate timer for active trades updates (every 30 seconds)
+  // Start separate timer for active trades updates (every 1 minute)
   // This runs COMPLETELY INDEPENDENTLY of the scanner - starts when bot initializes
   startTradesUpdateTimer() {
     // Clear any existing timer
@@ -388,14 +388,14 @@ class ProfessionalTradingBot {
       console.log(`⚠️ Initial trades update failed: ${err.message}`);
     });
 
-    // Then update every 30 seconds - runs independently of scans
+    // Then update every 1 minute - runs independently of scans
     this.tradesUpdateTimer = setInterval(async () => {
       if (this.activeTrades.length > 0) {
         await this.updateActiveTrades();
       }
-    }, 30000); // 30 seconds
+    }, 60000); // 1 minute
 
-    console.log('⏰ Active trades update timer started (30s interval, independent of scans)');
+    console.log('⏰ Active trades update timer started (1min interval, independent of scans)');
   }
 
   // Stop the trades update timer (manual stop only - not called automatically)

@@ -30,7 +30,7 @@ async function fetchGlobalMetrics(globalMetrics, stats, coinmarketcapEnabled, co
 }
 
 // Enhanced price data fetching with multiple APIs
-// Priority: Binance (FREE, real-time exchange data) → CoinMarketCap
+// Priority: Binance → MEXC → Gate.io → CoinMarketCap
 async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
   let primaryData = null;
   let usedMock = false;
@@ -40,23 +40,67 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
     try {
       const binanceData = await fetchBinancePrice(coin.symbol);
       if (binanceData && binanceData.price) {
-        primaryData = {
+      primaryData = {
           price: binanceData.price,
           volume_24h: binanceData.volume_24h,
           change_24h: binanceData.change_24h,
           high_24h: binanceData.high_24h,
           low_24h: binanceData.low_24h,
           source: 'binance'
-        };
-        priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
+      };
+      priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
         console.log(`✅ ${coin.symbol}: Binance price: $${primaryData.price.toFixed(2)}`);
-      }
-    } catch (error) {
+    }
+  } catch (error) {
       // Silently skip - will try other sources
       // Only log if it's not a geo-block (451) error
       if (!error.message.includes('geo-blocked')) {
         console.log(`⚠️ ${coin.symbol}: Binance price fetch failed - ${error.message}`);
       }
+    }
+  }
+
+  // Fallback to MEXC (FREE, no API key, good rate limits)
+  if (!primaryData && coin.symbol && EXCHANGE_SYMBOL_MAP[coin.symbol]) {
+    try {
+      const mexcData = await fetchMEXCPrice(coin.symbol);
+      if (mexcData && mexcData.price) {
+        primaryData = {
+          price: mexcData.price,
+          volume_24h: mexcData.volume_24h,
+          change_24h: mexcData.change_24h,
+          high_24h: mexcData.high_24h,
+          low_24h: mexcData.low_24h,
+          source: 'mexc'
+        };
+        priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
+        console.log(`✅ ${coin.symbol}: MEXC price: $${primaryData.price.toFixed(2)}`);
+      }
+    } catch (error) {
+      // Silently skip - will try other sources
+      console.log(`⚠️ ${coin.symbol}: MEXC price fetch failed - ${error.message}`);
+    }
+  }
+
+  // Fallback to Gate.io (FREE, no API key, good rate limits)
+  if (!primaryData && coin.symbol && EXCHANGE_SYMBOL_MAP[coin.symbol]) {
+    try {
+      const gateData = await fetchGateIOPrice(coin.symbol);
+      if (gateData && gateData.price) {
+        primaryData = {
+          price: gateData.price,
+          volume_24h: gateData.volume_24h,
+          change_24h: gateData.change_24h,
+          high_24h: gateData.high_24h,
+          low_24h: gateData.low_24h,
+          source: 'gateio'
+        };
+        priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
+        console.log(`✅ ${coin.symbol}: Gate.io price: $${primaryData.price.toFixed(2)}`);
+      }
+    } catch (error) {
+      // Silently skip - will try other sources
+      console.log(`⚠️ ${coin.symbol}: Gate.io price fetch failed - ${error.message}`);
     }
   }
 
@@ -109,7 +153,8 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
 }
 
 // Map coin symbols to Binance trading pairs
-const BINANCE_SYMBOL_MAP = {
+// Symbol mapping for exchanges (all use SYMBOLUSDT format)
+const EXCHANGE_SYMBOL_MAP = {
   'BTC': 'BTCUSDT', 'ETH': 'ETHUSDT', 'BNB': 'BNBUSDT', 'SOL': 'SOLUSDT',
   'XRP': 'XRPUSDT', 'DOGE': 'DOGEUSDT', 'ADA': 'ADAUSDT', 'AVAX': 'AVAXUSDT',
   'LINK': 'LINKUSDT', 'DOT': 'DOTUSDT', 'MATIC': 'MATICUSDT', 'LTC': 'LTCUSDT',
@@ -119,6 +164,9 @@ const BINANCE_SYMBOL_MAP = {
   'MKR': 'MKRUSDT', 'GRT': 'GRTUSDT', 'THETA': 'THETAUSDT', 'RUNE': 'RUNEUSDT',
   'NEO': 'NEOUSDT', 'FTM': 'FTMUSDT'
 };
+
+// Keep BINANCE_SYMBOL_MAP for backward compatibility
+const BINANCE_SYMBOL_MAP = EXCHANGE_SYMBOL_MAP;
 
 // Fetch current price from Binance (FREE, no API key, real-time exchange data!)
 async function fetchBinancePrice(symbol) {
@@ -208,6 +256,125 @@ async function fetchBinanceKlines(symbol, interval, limit) {
   }
 }
 
+// Fetch current price from MEXC (FREE, no API key, 2000 klines per request!)
+async function fetchMEXCPrice(symbol) {
+  try {
+    const mexcSymbol = EXCHANGE_SYMBOL_MAP[symbol];
+    if (!mexcSymbol) {
+      throw new Error(`Symbol ${symbol} not available on MEXC`);
+    }
+
+    const response = await axios.get('https://api.mexc.com/api/v3/ticker/24hr', {
+      params: { symbol: mexcSymbol },
+      timeout: 10000,
+    });
+
+    if (response.data && response.data.lastPrice) {
+      return {
+        price: parseFloat(response.data.lastPrice),
+        volume_24h: parseFloat(response.data.volume || 0),
+        change_24h: parseFloat(response.data.priceChangePercent || 0),
+        high_24h: parseFloat(response.data.highPrice || 0),
+        low_24h: parseFloat(response.data.lowPrice || 0),
+        source: 'mexc'
+      };
+    }
+    throw new Error('Invalid MEXC ticker response');
+  } catch (error) {
+    throw new Error(`MEXC price fetch failed: ${error.message}`);
+  }
+}
+
+// Fetch current price from Gate.io (FREE, no API key, 1000 klines per request!)
+async function fetchGateIOPrice(symbol) {
+  try {
+    const gateSymbol = EXCHANGE_SYMBOL_MAP[symbol];
+    if (!gateSymbol) {
+      throw new Error(`Symbol ${symbol} not available on Gate.io`);
+    }
+
+    const response = await axios.get('https://api.gateio.ws/api/v4/spot/tickers', {
+      params: { currency_pair: gateSymbol },
+      timeout: 10000,
+    });
+
+    if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+      const data = response.data[0];
+      return {
+        price: parseFloat(data.last || 0),
+        volume_24h: parseFloat(data.quote_volume || 0),
+        change_24h: parseFloat(data.change_percentage || 0),
+        high_24h: parseFloat(data.high_24h || 0),
+        low_24h: parseFloat(data.low_24h || 0),
+        source: 'gateio'
+      };
+    }
+    throw new Error('Invalid Gate.io ticker response');
+  } catch (error) {
+    throw new Error(`Gate.io price fetch failed: ${error.message}`);
+  }
+}
+
+// Fetch klines from MEXC (FREE, up to 2000 klines per request!)
+async function fetchMEXCKlines(symbol, interval, limit) {
+  try {
+    const mexcSymbol = EXCHANGE_SYMBOL_MAP[symbol];
+    if (!mexcSymbol) {
+      throw new Error(`Symbol ${symbol} not available on MEXC`);
+    }
+
+    // MEXC interval mapping
+    const mexcInterval = interval === '1m' ? '1m' : interval === '1h' ? '1h' : '1d';
+    
+    const response = await axios.get('https://api.mexc.com/api/v3/klines', {
+      params: { symbol: mexcSymbol, interval: mexcInterval, limit: Math.min(limit, 2000) },
+      timeout: 15000,
+    });
+
+    if (response.data && Array.isArray(response.data)) {
+      return response.data.map(([openTime, open, high, low, close]) => ({
+        timestamp: new Date(openTime),
+        price: parseFloat(close),
+      })).filter(item => Number.isFinite(item.price) && item.price > 0);
+    }
+    throw new Error('Invalid MEXC response');
+  } catch (error) {
+    throw new Error(`MEXC fetch failed: ${error.message}`);
+  }
+}
+
+// Fetch klines from Gate.io (FREE, up to 1000 klines per request!)
+async function fetchGateIOKlines(symbol, interval, limit) {
+  try {
+    const gateSymbol = EXCHANGE_SYMBOL_MAP[symbol];
+    if (!gateSymbol) {
+      throw new Error(`Symbol ${symbol} not available on Gate.io`);
+    }
+
+    // Gate.io interval mapping (1m, 1h, 1d)
+    const gateInterval = interval === '1m' ? '1m' : interval === '1h' ? '1h' : '1d';
+    
+    const response = await axios.get('https://api.gateio.ws/api/v4/spot/candlesticks', {
+      params: { 
+        currency_pair: gateSymbol, 
+        interval: gateInterval, 
+        limit: Math.min(limit, 1000) 
+      },
+      timeout: 15000,
+    });
+
+    if (response.data && Array.isArray(response.data)) {
+      return response.data.map(([timestamp, volume, close, high, low, open]) => ({
+        timestamp: new Date(parseInt(timestamp) * 1000),
+        price: parseFloat(close),
+      })).filter(item => Number.isFinite(item.price) && item.price > 0);
+    }
+    throw new Error('Invalid Gate.io response');
+  } catch (error) {
+    throw new Error(`Gate.io fetch failed: ${error.message}`);
+  }
+}
+
 // Fetch from CryptoCompare (backup with API key)
 async function fetchCryptoCompare(symbol, limit, aggregate = 1) {
   try {
@@ -234,7 +401,7 @@ async function fetchCryptoCompare(symbol, limit, aggregate = 1) {
   }
 }
 
-// Historical data fetching with Binance → CryptoCompare
+// Historical data fetching with Binance → MEXC → Gate.io → CryptoCompare
 async function fetchHistoricalData(coinId, coin, stats, config) {
   let usedMock = false;
   let currentPrice = null;
@@ -277,7 +444,61 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
       }
     }
 
-    // 2. Fallback to CryptoCompare (with API key)
+    // 2. Fallback to MEXC (FREE, 2000 klines per request, excellent for 5 years!)
+    if (symbol && EXCHANGE_SYMBOL_MAP[symbol]) {
+      try {
+        let mexcInterval, mexcLimit;
+        if (days === 1) {
+          mexcInterval = '1m';
+          mexcLimit = 720; // 12 hours of minute data
+        } else if (days === 7) {
+          mexcInterval = '1h';
+          mexcLimit = 168; // 7 days of hourly
+        } else {
+          mexcInterval = '1d';
+          mexcLimit = Math.min(days, 2000); // MEXC supports up to 2000 klines!
+        }
+        
+        console.log(`📊 ${symbol}: Trying MEXC (${mexcInterval})...`);
+        const data = await fetchMEXCKlines(symbol, mexcInterval, mexcLimit);
+        if (data.length > 0) {
+          console.log(`✅ ${symbol}: MEXC SUCCESS - ${data.length} data points`);
+          currentPrice = currentPrice || data[data.length - 1].price;
+          return data;
+        }
+      } catch (mexcError) {
+        console.log(`⚠️ ${symbol}: MEXC failed - ${mexcError.message}`);
+      }
+    }
+
+    // 3. Fallback to Gate.io (FREE, 1000 klines per request)
+    if (symbol && EXCHANGE_SYMBOL_MAP[symbol]) {
+      try {
+        let gateInterval, gateLimit;
+        if (days === 1) {
+          gateInterval = '1m';
+          gateLimit = 720; // 12 hours of minute data
+        } else if (days === 7) {
+          gateInterval = '1h';
+          gateLimit = 168; // 7 days of hourly
+        } else {
+          gateInterval = '1d';
+          gateLimit = Math.min(days, 1000); // Gate.io supports up to 1000 klines
+        }
+        
+        console.log(`📊 ${symbol}: Trying Gate.io (${gateInterval})...`);
+        const data = await fetchGateIOKlines(symbol, gateInterval, gateLimit);
+        if (data.length > 0) {
+          console.log(`✅ ${symbol}: Gate.io SUCCESS - ${data.length} data points`);
+          currentPrice = currentPrice || data[data.length - 1].price;
+          return data;
+        }
+      } catch (gateError) {
+        console.log(`⚠️ ${symbol}: Gate.io failed - ${gateError.message}`);
+      }
+    }
+
+    // 4. Fallback to CryptoCompare (with API key)
     if (symbol) {
       try {
         let limit, aggregate;
@@ -305,7 +526,7 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
     }
 
     // CoinGecko and CoinPaprika removed due to rate limiting issues
-    throw new Error('No data source available (Binance and CryptoCompare failed)');
+    throw new Error('No data source available (Binance, MEXC, Gate.io, and CryptoCompare failed)');
   };
 
   try {
@@ -426,7 +647,82 @@ async function fetchLongTermHistoricalData(coin) {
     }
   }
 
-  // 2. Try CryptoCompare (excellent for long-term data with API key)
+  // 2. Try MEXC (excellent for long-term - 2000 klines per request = only 1 request for 5 years!)
+  if (symbol && EXCHANGE_SYMBOL_MAP[symbol]) {
+    try {
+      console.log(`📊 ${symbol}: Fetching 5 years from MEXC (single request)...`);
+      const data = await fetchMEXCKlines(symbol, '1d', 2000); // MEXC supports up to 2000!
+      
+      if (data.length >= 365) { // At least 1 year
+        console.log(`✅ ${symbol}: MEXC long-term data - ${data.length} days (${(data.length / 365).toFixed(1)} years)`);
+        return data;
+      }
+    } catch (error) {
+      console.log(`⚠️ ${symbol}: MEXC long-term failed - ${error.message}`);
+    }
+  }
+
+  // 3. Try Gate.io (good for long-term - 1000 klines per request = 2 requests for 5 years)
+  if (symbol && EXCHANGE_SYMBOL_MAP[symbol]) {
+    try {
+      console.log(`📊 ${symbol}: Fetching 5 years from Gate.io (2 requests)...`);
+      const allData = [];
+      const now = Date.now();
+      const fiveYearsAgo = now - (days * 24 * 60 * 60 * 1000);
+      
+      // Gate.io max is 1000 candles per request
+      // We need 2 requests to get 5 years (1825 days)
+      for (let batch = 0; batch < 2; batch++) {
+        const batchEnd = now - (batch * 1000 * 24 * 60 * 60 * 1000);
+        const batchStart = Math.max(batchEnd - (1000 * 24 * 60 * 60 * 1000), fiveYearsAgo);
+        
+        try {
+          const response = await axios.get('https://api.gateio.ws/api/v4/spot/candlesticks', {
+            params: {
+              currency_pair: EXCHANGE_SYMBOL_MAP[symbol],
+              interval: '1d',
+              limit: 1000,
+              to: Math.floor(batchEnd / 1000),
+              from: Math.floor(batchStart / 1000)
+            },
+            timeout: 15000,
+          });
+          
+          if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+            const batchData = response.data.map(([timestamp, volume, close]) => ({
+              timestamp: new Date(parseInt(timestamp) * 1000),
+              price: parseFloat(close),
+            })).filter(item => Number.isFinite(item.price) && item.price > 0);
+            
+            allData.push(...batchData);
+            
+            // If we got less than 1000, we've reached the end
+            if (response.data.length < 1000) break;
+          }
+          
+          // Small delay between requests
+          if (batch < 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (batchError) {
+          if (batch === 0) throw batchError; // If first batch fails, throw error
+          break; // Otherwise, use what we have
+        }
+      }
+      
+      // Sort by timestamp (oldest first)
+      allData.sort((a, b) => a.timestamp - b.timestamp);
+      
+      if (allData.length >= 365) { // At least 1 year
+        console.log(`✅ ${symbol}: Gate.io long-term data - ${allData.length} days (${(allData.length / 365).toFixed(1)} years)`);
+        return allData;
+      }
+    } catch (error) {
+      console.log(`⚠️ ${symbol}: Gate.io long-term failed - ${error.message}`);
+    }
+  }
+
+  // 4. Try CryptoCompare (excellent for long-term data with API key)
   if (symbol && process.env.CRYPTOCOMPARE_API_KEY) {
     try {
       // CryptoCompare can get daily data for long periods

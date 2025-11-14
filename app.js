@@ -105,7 +105,7 @@ async function initializeBotAsync() {
     // Initialize bot: Load saved trades and portfolio state
     await tradingBot.initialize();
     
-    // Start independent trades update timer (runs every 30 seconds, regardless of scans)
+    // Start independent trades update timer (runs every 1 minute, regardless of scans)
     tradingBot.startTradesUpdateTimer();
     
     // Add log entry
