@@ -713,7 +713,7 @@ class ProfessionalTradingBot {
           );
           // Add the opportunity as an active trade if it's a BUY/SELL signal
           if (opp.action === 'BUY' || opp.action === 'SELL') {
-            this.addActiveTrade(opp);
+            await this.addActiveTrade(opp);
           }
           await sleep(1500);
         }
@@ -1045,7 +1045,7 @@ class ProfessionalTradingBot {
   }
 
   // New method: Add a new opportunity as an active trade
-  addActiveTrade(opportunity) {
+  async addActiveTrade(opportunity) {
     if (opportunity.action === 'HOLD') {
       addLogEntry(`Attempted to add HOLD signal for ${opportunity.symbol} as active trade, skipping.`, 'warning');
       return;
