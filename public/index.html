@@ -1055,7 +1055,16 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
+        
+        if (!response.ok) {
+          throw new Error(`Scan request failed: ${response.status} ${response.statusText}`);
+        }
+        
         const data = await response.json();
+        
+        if (!data) {
+          throw new Error('Invalid response from server');
+        }
         
         // Stop polling
         if (progressPollInterval) {
@@ -1079,7 +1088,7 @@
           progressBarHideTimeout = null;
         }, 1000);
         
-        if (!data || !data.opportunities || data.opportunities.length === 0) {
+        if (!data.opportunities || data.opportunities.length === 0) {
           document.getElementById('results').innerHTML = '<div class="no-opportunities"><h3>📭 No High-Confidence Opportunities</h3><p>Scanned ' + (data.analyzedCoins || 0) + ' coins</p></div>';
           return;
         }
@@ -1140,7 +1149,14 @@
         document.getElementById('results').innerHTML = html;
       } catch (error) {
         console.error('Scan error:', error);
-        document.getElementById('results').innerHTML = '<div class="no-opportunities" style="color: #ef4444;"><h3>❌ Scan Failed</h3><p>Please try again</p></div>';
+        // Stop polling on error
+        if (progressPollInterval) {
+          clearInterval(progressPollInterval);
+          progressPollInterval = null;
+        }
+        // Hide progress bar
+        document.getElementById('scanProgressContainer').style.display = 'none';
+        document.getElementById('results').innerHTML = '<div class="no-opportunities" style="color: #ef4444;"><h3>❌ Scan Failed</h3><p>' + (error.message || 'Please try again') + '</p></div>';
       }
     }
 

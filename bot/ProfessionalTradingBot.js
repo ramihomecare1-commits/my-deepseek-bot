@@ -890,6 +890,9 @@ class ProfessionalTradingBot {
       const analysis = {
         symbol: coin.symbol,
         name: coin.name,
+        id: coin.id, // Store coin ID for price fetching
+        coinmarketcap_id: coin.coinmarketcap_id,
+        coinpaprika_id: coin.coinpaprika_id,
         action: 'HOLD',
         price: `$${currentPrice.toFixed(2)}`,
         confidence: 0.5,
@@ -1053,6 +1056,15 @@ class ProfessionalTradingBot {
     const positionSizeUSD = parseFloat(process.env.DEFAULT_POSITION_SIZE_USD || '100');
     const initialQuantity = calculateQuantity(opportunity.symbol, entryPrice, positionSizeUSD);
     
+    // Store coin data for proper price fetching
+    const coinData = {
+      symbol: opportunity.symbol,
+      name: opportunity.name,
+      id: opportunity.id || opportunity.name?.toLowerCase(),
+      coinmarketcap_id: opportunity.coinmarketcap_id,
+      coinpaprika_id: opportunity.coinpaprika_id
+    };
+    
     const newTrade = {
       tradeId: tradeId,
       symbol: opportunity.symbol,
@@ -1072,6 +1084,10 @@ class ProfessionalTradingBot {
       insights: opportunity.insights || [],
       reason: opportunity.reason || '',
       dataSource: opportunity.dataSource || 'unknown',
+      coinData: coinData, // Store full coin data for price fetching
+      coinId: coinData.id,
+      coinmarketcap_id: coinData.coinmarketcap_id,
+      coinpaprika_id: coinData.coinpaprika_id
     };
 
     this.activeTrades.push(newTrade);
@@ -1096,8 +1112,15 @@ class ProfessionalTradingBot {
       }
 
       try {
-        // Fetch latest price for the trade's coin
-        const priceResult = await fetchEnhancedPriceData({ symbol: trade.symbol, name: trade.name }, this.priceCache, this.stats, config);
+        // Fetch latest price for the trade's coin - use stored coin data if available
+        const coinData = trade.coinData || { 
+          symbol: trade.symbol, 
+          name: trade.name,
+          id: trade.coinId,
+          coinmarketcap_id: trade.coinmarketcap_id,
+          coinpaprika_id: trade.coinpaprika_id
+        };
+        const priceResult = await fetchEnhancedPriceData(coinData, this.priceCache, this.stats, config);
         
         // Handle different price formats
         let currentPrice = 0;
@@ -1110,10 +1133,27 @@ class ProfessionalTradingBot {
           }
         }
         
+        // Validate price is reasonable (prevent wrong coin data)
+        const minPrice = 0.0001; // Minimum reasonable price
+        const maxPrice = 1000000; // Maximum reasonable price
+        if (currentPrice < minPrice || currentPrice > maxPrice) {
+          addLogEntry(`⚠️ ${trade.symbol}: Invalid price fetched ($${currentPrice}), using last known price $${trade.currentPrice.toFixed(2)}`, 'warning');
+          continue; // Skip this trade update
+        }
+        
         // If price fetch failed, use last known price and skip update
         if (!currentPrice || currentPrice === 0) {
           addLogEntry(`⚠️ ${trade.symbol}: Price fetch failed, using last known price $${trade.currentPrice.toFixed(2)}`, 'warning');
           continue; // Skip this trade update but don't mark as error
+        }
+        
+        // Additional validation: price shouldn't change by more than 50% in one update (likely wrong coin)
+        if (trade.currentPrice && trade.currentPrice > 0) {
+          const priceChangePercent = Math.abs((currentPrice - trade.currentPrice) / trade.currentPrice) * 100;
+          if (priceChangePercent > 50) {
+            addLogEntry(`⚠️ ${trade.symbol}: Suspicious price change (${priceChangePercent.toFixed(1)}%), using last known price $${trade.currentPrice.toFixed(2)}`, 'warning');
+            continue; // Skip this update
+          }
         }
         
         trade.currentPrice = currentPrice;

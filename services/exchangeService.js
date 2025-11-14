@@ -21,7 +21,8 @@ const BINANCE_SYMBOL_MAP = {
 
 // Virtual trading state (in-memory, resets on restart)
 let virtualBalance = parseFloat(process.env.VIRTUAL_STARTING_BALANCE || '10000'); // Default $10,000 virtual balance
-let virtualPositions = {}; // Track virtual positions
+let virtualPositions = {}; // Track long positions (positive = we own)
+let virtualShorts = {}; // Track short positions (positive = we owe/short)
 let virtualOrderCounter = 1000000; // Start order IDs from 1,000,000 to distinguish from real orders
 
 /**
@@ -140,34 +141,56 @@ async function executeVirtualMarketOrder(symbol, side, quantity, price) {
     const cost = quantity * executionPrice;
     
     // Update virtual balance and positions
+    const baseAsset = symbol.replace('USDT', '');
+    
     if (side === 'BUY') {
-      // Buying: Deduct USDT, add crypto
-      if (virtualBalance < cost) {
-        return {
-          success: false,
-          error: 'Insufficient virtual balance',
-          virtualBalance: virtualBalance,
-          required: cost
-        };
+      // Buying: Could be opening long OR covering short
+      if (virtualShorts[baseAsset] && virtualShorts[baseAsset] > 0) {
+        // Covering a short position
+        const coverAmount = Math.min(quantity, virtualShorts[baseAsset]);
+        virtualShorts[baseAsset] -= coverAmount;
+        if (virtualShorts[baseAsset] <= 0) {
+          delete virtualShorts[baseAsset];
+        }
+        // Pay to cover (deduct USDT)
+        if (virtualBalance < cost) {
+          return {
+            success: false,
+            error: 'Insufficient virtual balance to cover short',
+            virtualBalance: virtualBalance,
+            required: cost
+          };
+        }
+        virtualBalance -= cost;
+      } else {
+        // Opening a long position
+        if (virtualBalance < cost) {
+          return {
+            success: false,
+            error: 'Insufficient virtual balance',
+            virtualBalance: virtualBalance,
+            required: cost
+          };
+        }
+        virtualBalance -= cost;
+        virtualPositions[baseAsset] = (virtualPositions[baseAsset] || 0) + quantity;
       }
-      virtualBalance -= cost;
-      const baseAsset = symbol.replace('USDT', '');
-      virtualPositions[baseAsset] = (virtualPositions[baseAsset] || 0) + quantity;
     } else {
-      // Selling: Add USDT, deduct crypto
-      const baseAsset = symbol.replace('USDT', '');
-      if (!virtualPositions[baseAsset] || virtualPositions[baseAsset] < quantity) {
-        return {
-          success: false,
-          error: `Insufficient ${baseAsset} position`,
-          virtualPosition: virtualPositions[baseAsset] || 0,
-          required: quantity
-        };
-      }
-      virtualBalance += cost;
-      virtualPositions[baseAsset] -= quantity;
-      if (virtualPositions[baseAsset] <= 0) {
-        delete virtualPositions[baseAsset];
+      // Selling: Could be closing long OR opening short
+      if (virtualPositions[baseAsset] && virtualPositions[baseAsset] > 0) {
+        // Closing a long position
+        const sellAmount = Math.min(quantity, virtualPositions[baseAsset]);
+        virtualPositions[baseAsset] -= sellAmount;
+        if (virtualPositions[baseAsset] <= 0) {
+          delete virtualPositions[baseAsset];
+        }
+        // Get USDT from sale
+        virtualBalance += cost;
+      } else {
+        // Opening a short position (we don't own it, so we short it)
+        virtualShorts[baseAsset] = (virtualShorts[baseAsset] || 0) + quantity;
+        // Get USDT from short sale
+        virtualBalance += cost;
       }
     }
     
@@ -427,6 +450,7 @@ function getVirtualTradingState() {
 function resetVirtualTrading() {
   virtualBalance = parseFloat(process.env.VIRTUAL_STARTING_BALANCE || '10000');
   virtualPositions = {};
+  virtualShorts = {};
   virtualOrderCounter = 1000000;
 }
 
