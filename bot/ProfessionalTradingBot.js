@@ -1545,6 +1545,35 @@ class ProfessionalTradingBot {
       }
     }
     
+    // Move closed trades (TP_HIT, SL_HIT) from activeTrades to closedTrades
+    const closedTradesToMove = this.activeTrades.filter(t => t.status === 'TP_HIT' || t.status === 'SL_HIT');
+    if (closedTradesToMove.length > 0) {
+      for (const trade of closedTradesToMove) {
+        const closedTrade = {
+          ...trade,
+          closedAt: trade.executedAt || new Date(),
+          closePrice: trade.executionPrice || trade.currentPrice,
+          closeReason: trade.status === 'TP_HIT' ? 'Take Profit Hit' : 'Stop Loss Hit',
+          finalPnl: trade.pnl,
+          finalPnlPercent: trade.pnlPercent
+        };
+        this.closedTrades.push(closedTrade);
+      }
+      
+      // Remove closed trades from active trades
+      this.activeTrades = this.activeTrades.filter(t => t.status !== 'TP_HIT' && t.status !== 'SL_HIT');
+      
+      // Keep only last 100 closed trades in memory
+      if (this.closedTrades.length > 100) {
+        this.closedTrades = this.closedTrades.slice(-100);
+      }
+      
+      // Save closed trades
+      await this.saveClosedTrades();
+      
+      console.log(`✅ Moved ${closedTradesToMove.length} closed trade(s) to closedTrades`);
+    }
+    
     // Save trades to disk after updates
     await saveTrades(this.activeTrades);
     
@@ -2058,6 +2087,14 @@ Return JSON array format:
 
   getActiveTrades() {
     return this.activeTrades.filter(trade => trade.status === 'OPEN' || trade.status === 'DCA_HIT'); // Only show open or DCA triggered trades in dashboard
+  }
+
+  /**
+   * Get closed trades for display
+   * @returns {Array} Array of closed trade objects
+   */
+  getClosedTrades() {
+    return this.closedTrades || [];
   }
 
   applyScanFilters(analysis, options) {
