@@ -71,22 +71,101 @@ async function storeAIEvaluation(evaluation) {
     }
     const collection = mongoDb.collection('aiEvaluations');
     
+    // Limit context data to prevent MongoDB 16MB document size limit
+    const MAX_NEWS_ARTICLES = 5; // Only store last 5 articles
+    const MAX_CONTEXT_SIZE = 10000; // Max characters for context summary
+    
+    let limitedContext = {};
+    if (evaluation.context) {
+      // Limit news articles
+      if (evaluation.context.news && Array.isArray(evaluation.context.news)) {
+        limitedContext.news = evaluation.context.news
+          .slice(0, MAX_NEWS_ARTICLES)
+          .map(article => ({
+            title: article.title?.substring(0, 200) || '',
+            source: article.source || '',
+            publishedAt: article.publishedAt || null
+            // Don't store full content - too large
+          }));
+      }
+      
+      // Don't store full historical data - it's too large
+      // Only store summary if needed
+      if (evaluation.context.historicalData) {
+        limitedContext.historicalData = {
+          hasData: true,
+          // Don't store actual arrays - they can be huge
+          summary: 'Historical data available'
+        };
+      }
+      
+      // Limit total context size
+      const contextString = JSON.stringify(limitedContext);
+      if (contextString.length > MAX_CONTEXT_SIZE) {
+        // Truncate further if still too large
+        limitedContext = {
+          news: limitedContext.news?.slice(0, 3) || [],
+          historicalData: { hasData: true, summary: 'Data truncated due to size' }
+        };
+      }
+    }
+    
     const doc = {
       symbol: evaluation.symbol,
       tradeId: evaluation.tradeId || null,
       type: evaluation.type, // 'trade_evaluation', 'coin_analysis', 'batch_analysis'
       data: evaluation.data,
       model: evaluation.model || 'unknown',
-      context: evaluation.context || [], // News, historical data, etc.
+      context: limitedContext, // Limited context to prevent size issues
       timestamp: new Date(),
       createdAt: new Date()
     };
+
+    // Check document size before inserting (MongoDB limit is 16MB)
+    const docSize = JSON.stringify(doc).length;
+    if (docSize > 15 * 1024 * 1024) { // 15MB safety margin
+      console.error(`⚠️ Document too large (${(docSize / 1024 / 1024).toFixed(2)}MB) - skipping storage for ${evaluation.symbol}`);
+      // Store minimal version
+      const minimalDoc = {
+        symbol: evaluation.symbol,
+        tradeId: evaluation.tradeId || null,
+        type: evaluation.type,
+        data: evaluation.data,
+        model: evaluation.model || 'unknown',
+        timestamp: new Date(),
+        createdAt: new Date()
+      };
+      await collection.insertOne(minimalDoc);
+      console.log(`💾 Stored minimal AI evaluation for ${evaluation.symbol}${evaluation.tradeId ? ` (trade: ${evaluation.tradeId})` : ''} (context removed due to size)`);
+      return true;
+    }
 
     await collection.insertOne(doc);
     console.log(`💾 Stored AI evaluation for ${evaluation.symbol}${evaluation.tradeId ? ` (trade: ${evaluation.tradeId})` : ''}`);
     return true;
   } catch (error) {
     console.error('❌ Error storing AI evaluation:', error);
+    // If it's a size error, try storing minimal version
+    if (error.message && error.message.includes('out of range')) {
+      try {
+        const collection = mongoDb.collection('aiEvaluations');
+        const minimalDoc = {
+          symbol: evaluation.symbol,
+          tradeId: evaluation.tradeId || null,
+          type: evaluation.type,
+          data: evaluation.data,
+          model: evaluation.model || 'unknown',
+          timestamp: new Date(),
+          createdAt: new Date()
+        };
+        await collection.insertOne(minimalDoc);
+        console.log(`💾 Stored minimal AI evaluation for ${evaluation.symbol} (context removed due to size error)`);
+        return true;
+      } catch (retryError) {
+        console.error('❌ Failed to store minimal evaluation:', retryError.message);
+        return false;
+      }
+    }
     return false;
   }
 }

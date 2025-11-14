@@ -711,14 +711,15 @@ class ProfessionalTradingBot {
           for (const coin of allCoinsData) {
             if (batchAIResults[coin.symbol]) {
               const aiResult = batchAIResults[coin.symbol];
+              // Store AI evaluation with limited context to prevent MongoDB size issues
               storeAIEvaluation({
                 symbol: coin.symbol,
                 type: 'coin_analysis',
                 data: aiResult,
                 model: config.AI_MODEL,
                 context: {
-                  news: coin.news?.articles || [],
-                  historicalData: coin.historicalData || { evaluations: [], news: [] }
+                  news: coin.news?.articles?.slice(0, 5) || [], // Only last 5 articles
+                  // Don't include historicalData - it's too large
                 }
               }).catch(err => {
                 console.error(`⚠️ Failed to store evaluation for ${coin.symbol}:`, err.message);
@@ -2025,6 +2026,7 @@ Return JSON array format:
             
             // Store evaluation in database
             if (trade) {
+              // Store AI evaluation with limited context to prevent MongoDB size issues
               storeAIEvaluation({
                 symbol: symbol,
                 tradeId: trade.symbol, // Use symbol as trade identifier
@@ -2037,8 +2039,8 @@ Return JSON array format:
                 },
                 model: config.AI_MODEL,
                 context: {
-                  news: tradeData?.news?.articles || [],
-                  historicalData: tradeData?.historicalData || { evaluations: [], news: [] }
+                  news: tradeData?.news?.articles?.slice(0, 5) || [], // Only last 5 articles
+                  // Don't include historicalData - it's too large
                 }
               }).catch(err => {
                 console.error(`⚠️ Failed to store trade evaluation for ${symbol}:`, err.message);
