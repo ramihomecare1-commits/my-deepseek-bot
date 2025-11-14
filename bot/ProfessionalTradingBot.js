@@ -23,6 +23,7 @@ const {
 const { getAITechnicalAnalysis, getBatchAIAnalysis } = require('../services/aiService');
 const { fetchCryptoNews } = require('../services/newsService');
 const { detectTradingPatterns } = require('./patternDetection');
+const { storeAIEvaluation, retrieveRelatedData } = require('../services/dataStorageService');
 const {
   isExchangeTradingEnabled,
   executeTakeProfit,
@@ -590,6 +591,26 @@ class ProfessionalTradingBot {
           
           batchAIResults = await getBatchAIAnalysis(allCoinsData, this.globalMetrics, options);
           this.stats.aiCalls += 1; // Track AI API call
+          
+          // Store AI evaluations in database
+          for (const coin of allCoinsData) {
+            if (batchAIResults[coin.symbol]) {
+              const aiResult = batchAIResults[coin.symbol];
+              storeAIEvaluation({
+                symbol: coin.symbol,
+                type: 'coin_analysis',
+                data: aiResult,
+                model: config.AI_MODEL,
+                context: {
+                  news: coin.news?.articles || [],
+                  historicalData: coin.historicalData || { evaluations: [], news: [] }
+                }
+              }).catch(err => {
+                console.error(`⚠️ Failed to store evaluation for ${coin.symbol}:`, err.message);
+              });
+            }
+          }
+          
           console.log(`✅ Batch AI analysis completed for ${Object.keys(batchAIResults).length} coins`);
           console.log(`📊 AI API calls this session: ${this.stats.aiCalls}`);
           
@@ -1622,7 +1643,10 @@ class ProfessionalTradingBot {
 
       // Create AI prompt for trade re-evaluation
       const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${tradesWithNews.length} open trades and provide your recommendation for each.
-IMPORTANT: Consider both technical analysis AND recent news sentiment when making recommendations.
+IMPORTANT: Consider technical analysis, recent news, AND historical context when making recommendations.
+- Review previous evaluations to see if patterns are consistent or changing
+- Historical news can provide context for current price movements
+- If previous evaluations were wrong, learn from those mistakes
 
 ${tradesWithNews.map((t, i) => {
   let newsText = '';
@@ -1631,6 +1655,24 @@ ${tradesWithNews.map((t, i) => {
     newsText = `\n- Recent News:\n${newsItems}`;
   } else {
     newsText = '\n- Recent News: No significant news found';
+  }
+  
+  // Include historical context
+  let historicalText = '';
+  const historical = t.historicalData || { evaluations: [], news: [] };
+  if (historical.evaluations && historical.evaluations.length > 0) {
+    const recentEvals = historical.evaluations.slice(0, 2).map(eval => {
+      const date = new Date(eval.timestamp).toLocaleDateString();
+      return `    - [${date}] ${eval.data.recommendation || eval.data.action || 'HOLD'} (${((eval.data.confidence || 0) * 100).toFixed(0)}%)`;
+    }).join('\n');
+    historicalText += `\n- Previous Evaluations:\n${recentEvals}`;
+  }
+  if (historical.news && historical.news.length > 0) {
+    const historicalNews = historical.news.slice(0, 2).map(n => {
+      const date = new Date(n.publishedAt).toLocaleDateString();
+      return `    - [${date}] ${n.title}`;
+    }).join('\n');
+    historicalText += `\n- Historical News:\n${historicalNews}`;
   }
   
   // Safely handle pnlPercent - might be undefined or not a number
@@ -1645,7 +1687,7 @@ Trade ${i + 1}: ${t.symbol} (${t.name})
 - Take Profit: $${t.takeProfit.toFixed(2)}
 - Stop Loss: $${t.stopLoss.toFixed(2)}
 - Current P&L: ${pnlText}
-- Status: ${t.status}${newsText}
+- Status: ${t.status}${newsText}${historicalText}
 `;
 }).join('\n')}
 
@@ -1742,8 +1784,31 @@ Return JSON array format:
             
             // Find the corresponding trade
             const trade = openTrades.find(t => t.symbol === symbol);
+            const tradeData = tradesWithNews.find(t => t.symbol === symbol);
             const pnlPercent = trade && typeof trade.pnlPercent === 'number' ? trade.pnlPercent : 0;
             const pnl = trade ? `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%` : 'N/A';
+            
+            // Store evaluation in database
+            if (trade) {
+              storeAIEvaluation({
+                symbol: symbol,
+                tradeId: trade.symbol, // Use symbol as trade identifier
+                type: 'trade_evaluation',
+                data: {
+                  recommendation: recommendation,
+                  confidence: rec.confidence || 0,
+                  reason: reason,
+                  pnlPercent: pnlPercent
+                },
+                model: config.AI_MODEL,
+                context: {
+                  news: tradeData?.news?.articles || [],
+                  historicalData: tradeData?.historicalData || { evaluations: [], news: [] }
+                }
+              }).catch(err => {
+                console.error(`⚠️ Failed to store trade evaluation for ${symbol}:`, err.message);
+              });
+            }
             
             // Add to log
             addLogEntry(

@@ -1,5 +1,6 @@
 const axios = require('axios');
 const config = require('../config/config');
+const { retrieveRelatedData } = require('./dataStorageService');
 
 async function getAITechnicalAnalysis(technicalData, options = {}) {
   try {
@@ -229,6 +230,22 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
     return {};
   }
 
+  // Retrieve historical data for all coins (async, don't block)
+  const historicalDataPromises = allCoinsData.map(coin => 
+    retrieveRelatedData({ symbol: coin.symbol, days: 30, limit: 10 })
+      .catch(err => {
+        console.error(`⚠️ Failed to retrieve historical data for ${coin.symbol}:`, err.message);
+        return { evaluations: [], news: [] };
+      })
+  );
+  
+  const historicalDataArray = await Promise.all(historicalDataPromises);
+  
+  // Attach historical data to coins
+  allCoinsData.forEach((coin, idx) => {
+    coin.historicalData = historicalDataArray[idx] || { evaluations: [], news: [] };
+  });
+
   // Retry logic for rate limits
   const maxRetries = 3;
   let lastError = null;
@@ -340,7 +357,7 @@ function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
     const frame1d = frames['1d'] || {};
     const frame1h = frames['1h'] || {};
     
-    // Include news if available
+    // Include current news if available
     let newsText = '';
     if (coin.news && coin.news.articles && coin.news.articles.length > 0) {
       const recentNews = coin.news.articles.slice(0, 3).map(n => `  - ${n.title} (${n.source})`).join('\n');
@@ -349,9 +366,33 @@ function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
       newsText = '\n   Recent News: No significant news found';
     }
     
+    // Include historical context
+    let historicalText = '';
+    const historical = coin.historicalData || { evaluations: [], news: [] };
+    
+    if (historical.evaluations && historical.evaluations.length > 0) {
+      const recentEvals = historical.evaluations.slice(0, 3).map(eval => {
+        const date = new Date(eval.timestamp).toLocaleDateString();
+        return `  - [${date}] ${eval.data.action || 'HOLD'} (${(eval.data.confidence * 100).toFixed(0)}%) - ${eval.data.reason || 'No reason'}`;
+      }).join('\n');
+      historicalText += `\n   Historical Evaluations:\n${recentEvals}`;
+    }
+    
+    if (historical.news && historical.news.length > 0) {
+      const historicalNews = historical.news.slice(0, 2).map(n => {
+        const date = new Date(n.publishedAt).toLocaleDateString();
+        return `  - [${date}] ${n.title} (${n.source})`;
+      }).join('\n');
+      historicalText += `\n   Historical News:\n${historicalNews}`;
+    }
+    
+    if (!historicalText) {
+      historicalText = '\n   Historical Context: No previous evaluations or news found';
+    }
+    
     return `${idx + 1}. ${coin.symbol} (${coin.name}) - Price: $${coin.currentPrice}
    Daily: RSI ${frame1d.rsi || 'N/A'}, Trend ${frame1d.trend || 'N/A'}, BB ${frame1d.bollingerPosition || 'N/A'}
-   Hourly: RSI ${frame1h.rsi || 'N/A'}, Trend ${frame1h.trend || 'N/A'}, Momentum ${frame1h.momentum || 'N/A'}${newsText}`;
+   Hourly: RSI ${frame1h.rsi || 'N/A'}, Trend ${frame1h.trend || 'N/A'}, Momentum ${frame1h.momentum || 'N/A'}${newsText}${historicalText}`;
   }).join('\n\n');
 
   return `BATCH CRYPTO TECHNICAL ANALYSIS REQUEST:
@@ -361,8 +402,11 @@ ${globalMetricsText}Analyze ${allCoinsData.length} cryptocurrencies and provide 
 COINS TO ANALYZE:
 ${coinsSummary}
 
-IMPORTANT: Consider both technical indicators AND recent news sentiment when making recommendations.
-News can significantly impact price movements - factor this into your analysis.
+IMPORTANT: Consider technical indicators, recent news, AND historical context when making recommendations.
+- Review previous evaluations to see if patterns are consistent or changing
+- Historical news can provide context for current price movements
+- News can significantly impact price movements - factor this into your analysis
+- If previous evaluations were wrong, learn from those mistakes
 
 For each coin, provide:
 1. Action: BUY, SELL, or HOLD

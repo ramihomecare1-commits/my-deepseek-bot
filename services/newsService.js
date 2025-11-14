@@ -4,6 +4,7 @@
  */
 
 const axios = require('axios');
+const { storeNewsBatch } = require('./dataStorageService');
 
 // Cache for news to avoid excessive API calls
 const newsCache = new Map();
@@ -160,6 +161,21 @@ async function fetchCryptoNews(symbol, limit = 5) {
     // Sort by date (newest first) and limit
     uniqueArticles.sort((a, b) => b.publishedAt - a.publishedAt);
     const limitedArticles = uniqueArticles.slice(0, limit);
+
+    // Store news articles in database (async, don't wait)
+    if (limitedArticles.length > 0) {
+      const newsToStore = limitedArticles.map(article => ({
+        symbol: symbol,
+        title: article.title,
+        source: article.source,
+        url: article.url,
+        publishedAt: article.publishedAt,
+        content: article.summary || ''
+      }));
+      storeNewsBatch(newsToStore).catch(err => {
+        console.error('⚠️ Failed to store news:', err.message);
+      });
+    }
 
     return {
       source: 'merged',
