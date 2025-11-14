@@ -3,21 +3,21 @@
  * Tests trading strategies on historical data to validate recommendations
  */
 
-const { fetchHistoricalData } = require('./dataFetcher');
+const { fetchLongTermHistoricalData } = require('./dataFetcher');
 const { calculateRSI, calculateBollingerBands, identifyTrend, calculateMomentum } = require('../bot/indicators');
 const { detectTradingPatterns } = require('../bot/patternDetection');
 
 /**
  * Backtest a trading strategy on historical data
- * @param {Object} coin - Coin object with symbol, name
+ * @param {Object} coin - Coin object with symbol, name, id
  * @param {Object} strategy - Strategy parameters (entryPrice, takeProfit, stopLoss, action)
- * @param {number} lookbackDays - How many days of history to test (default: 30)
+ * @param {number} lookbackDays - How many days of history to test (default: 1825 = 5 years)
  * @returns {Promise<Object>} Backtest results
  */
-async function backtestStrategy(coin, strategy, lookbackDays = 30) {
+async function backtestStrategy(coin, strategy, lookbackDays = 1825) {
   try {
-    // Fetch historical data
-    const historicalData = await fetchHistoricalData(coin, lookbackDays);
+    // Fetch 5 years of historical data for comprehensive backtesting
+    const historicalData = await fetchLongTermHistoricalData(coin);
     
     if (!historicalData || historicalData.length < 20) {
       return {
@@ -232,14 +232,14 @@ async function backtestStrategy(coin, strategy, lookbackDays = 30) {
 }
 
 /**
- * Quick backtest - simplified version for faster results
+ * Quick backtest - uses 5 years of data for comprehensive validation
  * @param {Object} coin - Coin object
  * @param {Object} strategy - Strategy parameters
- * @returns {Promise<Object>} Quick backtest results
+ * @returns {Promise<Object>} Backtest results (5 years of data)
  */
 async function quickBacktest(coin, strategy) {
-  // Use shorter lookback for faster results
-  return await backtestStrategy(coin, strategy, 14); // 2 weeks
+  // Use 5 years of data for comprehensive backtesting
+  return await backtestStrategy(coin, strategy, 1825); // 5 years
 }
 
 module.exports = {

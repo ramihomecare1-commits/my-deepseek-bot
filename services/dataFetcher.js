@@ -467,6 +467,163 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
   }
 }
 
+/**
+ * Fetch 5 years of historical daily data for backtesting
+ * Priority: Binance → CryptoCompare → CoinGecko → CoinPaprika
+ * @param {Object} coin - Coin object with symbol, name, id
+ * @returns {Promise<Array>} Array of price data points
+ */
+async function fetchLongTermHistoricalData(coin) {
+  const symbol = coin?.symbol;
+  const coinId = coin?.id || coin?.name?.toLowerCase();
+  const days = 1825; // 5 years
+  
+  // 1. Try Binance (best for long-term daily data)
+  if (symbol && BINANCE_SYMBOL_MAP[symbol]) {
+    try {
+      const binanceSymbol = BINANCE_SYMBOL_MAP[symbol];
+      const scraperApiKey = process.env.SCRAPER_API_KEY || '';
+      const allData = [];
+      const now = Date.now();
+      const fiveYearsAgo = now - (days * 24 * 60 * 60 * 1000);
+      
+      // Binance max is 1000 candles per request
+      // We need multiple requests to get 5 years (1825 days)
+      const batches = Math.ceil(days / 1000);
+      
+      for (let batch = 0; batch < batches; batch++) {
+        const batchStart = now - ((batch + 1) * 1000 * 24 * 60 * 60 * 1000);
+        const batchEnd = now - (batch * 1000 * 24 * 60 * 60 * 1000);
+        
+        // Don't go beyond 5 years
+        const actualStart = Math.max(batchStart, fiveYearsAgo);
+        
+        try {
+          let url = 'https://api.binance.com/api/v3/klines';
+          let params = {
+            symbol: binanceSymbol,
+            interval: '1d',
+            limit: 1000,
+            endTime: batchEnd,
+            startTime: actualStart
+          };
+          
+          if (scraperApiKey) {
+            url = `http://api.scraperapi.com`;
+            params = {
+              api_key: scraperApiKey,
+              url: `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=1d&limit=1000&endTime=${batchEnd}&startTime=${actualStart}`
+            };
+          }
+          
+          const response = await axios.get(url, { params, timeout: 15000 });
+          const data = scraperApiKey ? response.data : response.data;
+          
+          if (data && Array.isArray(data) && data.length > 0) {
+            const batchData = data.map(([openTime, open, high, low, close]) => ({
+              timestamp: new Date(openTime),
+              price: parseFloat(close),
+            })).filter(item => Number.isFinite(item.price) && item.price > 0);
+            
+            allData.push(...batchData);
+            
+            // If we got less than 1000, we've reached the end
+            if (data.length < 1000) break;
+          }
+          
+          // Small delay between requests to avoid rate limits
+          if (batch < batches - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (batchError) {
+          // Continue with what we have
+          if (batch === 0) throw batchError; // If first batch fails, throw error
+          break; // Otherwise, use what we have
+        }
+      }
+      
+      // Sort by timestamp (oldest first)
+      allData.sort((a, b) => a.timestamp - b.timestamp);
+      
+      if (allData.length >= 365) { // At least 1 year
+        console.log(`✅ ${symbol}: Binance long-term data - ${allData.length} days (${(allData.length / 365).toFixed(1)} years)`);
+        return allData;
+      }
+    } catch (error) {
+      if (!error.message.includes('geo-blocked')) {
+        console.log(`⚠️ ${symbol}: Binance long-term failed - ${error.message}`);
+      }
+    }
+  }
+
+  // 2. Try CryptoCompare (excellent for long-term data with API key)
+  if (symbol && process.env.CRYPTOCOMPARE_API_KEY) {
+    try {
+      // CryptoCompare can get daily data for long periods
+      // For 5 years, we'll request daily data (aggregate=24 means daily)
+      const limit = Math.min(days, 2000); // CryptoCompare limit
+      const response = await axios.get('https://min-api.cryptocompare.com/data/v2/histoday', {
+        params: { 
+          fsym: symbol, 
+          tsym: 'USD', 
+          limit: limit,
+          toTs: Math.floor(Date.now() / 1000) // Current timestamp
+        },
+        headers: { authorization: `Apikey ${process.env.CRYPTOCOMPARE_API_KEY}` },
+        timeout: 15000,
+      });
+
+      if (response.data && response.data.Data && Array.isArray(response.data.Data.Data)) {
+        const data = response.data.Data.Data.map(item => ({
+          timestamp: new Date(item.time * 1000),
+          price: item.close,
+        })).filter(item => Number.isFinite(item.price) && item.price > 0);
+        
+        if (data.length >= 365) {
+          console.log(`✅ ${symbol}: CryptoCompare long-term data - ${data.length} days`);
+          return data;
+        }
+      }
+    } catch (error) {
+      console.log(`⚠️ ${symbol}: CryptoCompare long-term failed - ${error.message}`);
+    }
+  }
+
+  // 3. Try CoinGecko (can get up to 5 years with days parameter)
+  if (coinId) {
+    try {
+      const response = await axios.get(
+        `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart`,
+        {
+          params: { vs_currency: 'usd', days: days },
+          timeout: 20000, // Longer timeout for large data
+          headers: { 'User-Agent': 'ProfessionalTradingBot/2.0' },
+        },
+      );
+
+      if (response.data && Array.isArray(response.data.prices)) {
+        const data = response.data.prices
+          .map(([timestamp, price]) => ({
+            timestamp: new Date(timestamp),
+            price: typeof price === 'number' ? price : Number(price),
+          }))
+          .filter((item) => Number.isFinite(item.price) && item.price > 0);
+
+        if (data.length >= 365) {
+          console.log(`✅ ${symbol}: CoinGecko long-term data - ${data.length} days`);
+          return data;
+        }
+      }
+    } catch (error) {
+      console.log(`⚠️ ${symbol}: CoinGecko long-term failed - ${error.message}`);
+    }
+  }
+
+  // 4. Fallback: Return empty array (backtest will handle gracefully)
+  console.log(`⚠️ ${symbol}: Could not fetch 5 years of data, will use available data`);
+  return [];
+}
+
 // Fetch coin news
 async function fetchCoinNews(symbol, name, newsCache, config) {
   if (!config.NEWS_ENABLED) return [];
@@ -658,6 +815,7 @@ module.exports = {
   fetchGlobalMetrics,
   fetchEnhancedPriceData,
   fetchHistoricalData,
+  fetchLongTermHistoricalData,
   fetchCoinNews,
   ensureGreedFearIndex,
   generateMockPriceData,
