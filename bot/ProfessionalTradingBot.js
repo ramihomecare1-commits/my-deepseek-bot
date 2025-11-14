@@ -65,6 +65,7 @@ class ProfessionalTradingBot {
       totalOpportunities: 0,
       avgConfidence: 0,
       lastScanDuration: 0,
+      lastScanTime: null,
       notificationsSent: 0,
       lastSuccessfulScan: null,
       mockDataUsage: 0,
@@ -747,6 +748,7 @@ class ProfessionalTradingBot {
       this.stats.totalScans += 1;
       this.stats.totalOpportunities += opportunities.length;
       this.stats.lastScanDuration = Date.now() - startTime;
+      this.stats.lastScanTime = Date.now();
       this.stats.mockDataUsage += mockDataUsed;
       this.stats.lastSuccessfulScan = new Date();
       this.latestHeatmap = heatmapEntries.sort((a, b) => (b.overallScore || 0) - (a.overallScore || 0));

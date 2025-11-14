@@ -1115,10 +1115,57 @@
           return;
         }
         document.getElementById('statusText').innerHTML = '🔄 Auto-Scanning Active';
-        document.getElementById('nextScan').textContent = 'Next scan: Active';
+        updateNextScanTime();
         manualScan();
       } catch (error) {
         alert('Error starting auto-scan: ' + error.message);
+      }
+    }
+    
+    // Function to update next scan time display
+    async function updateNextScanTime() {
+      try {
+        const response = await fetch(API_BASE + '/bot-status');
+        const status = await response.json();
+        
+        if (status.running && status.nextScan) {
+          const nextScanDate = new Date(status.nextScan);
+          const now = new Date();
+          const timeUntil = nextScanDate - now;
+          
+          if (timeUntil > 0) {
+            // Format time until next scan
+            const hours = Math.floor(timeUntil / (1000 * 60 * 60));
+            const minutes = Math.floor((timeUntil % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((timeUntil % (1000 * 60)) / 1000);
+            
+            let timeStr = '';
+            if (hours > 0) {
+              timeStr = `${hours}h ${minutes}m`;
+            } else if (minutes > 0) {
+              timeStr = `${minutes}m ${seconds}s`;
+            } else {
+              timeStr = `${seconds}s`;
+            }
+            
+            // Also show the actual time
+            const timeStr2 = nextScanDate.toLocaleTimeString('en-US', { 
+              hour: '2-digit', 
+              minute: '2-digit',
+              hour12: true 
+            });
+            
+            document.getElementById('nextScan').textContent = `Next scan: ${timeStr} (${timeStr2})`;
+          } else {
+            // Next scan is in the past or happening now
+            document.getElementById('nextScan').textContent = 'Next scan: Running now...';
+          }
+        } else {
+          document.getElementById('nextScan').textContent = 'Next scan: Not scheduled';
+        }
+      } catch (error) {
+        console.error('Error updating next scan time:', error);
+        document.getElementById('nextScan').textContent = 'Next scan: Unknown';
       }
     }
 
@@ -1798,6 +1845,7 @@
     setInterval(updateAIEvaluation, 5000); // Update AI display every 5 seconds
     setInterval(updateActiveTradesDisplay, 10000); // Update active trades every 10 seconds
     setInterval(updatePortfolioDisplay, 10000); // Update portfolio every 10 seconds
+    setInterval(updateNextScanTime, 5000); // Update next scan time every 5 seconds
     
     // Initialize log window
     appendLog('Bot initialized. Waiting for activity...', 'info');
