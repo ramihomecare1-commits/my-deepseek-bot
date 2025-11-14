@@ -383,6 +383,17 @@ router.get('/active-trades', (req, res) => {
   }
 });
 
+// Closed trades endpoint
+router.get('/closed-trades', (req, res) => {
+  try {
+    const { tradingBot } = req.app.locals;
+    const closedTrades = tradingBot.getClosedTrades();
+    res.json(closedTrades);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Portfolio stats endpoint
 router.get('/portfolio', (req, res) => {
   try {

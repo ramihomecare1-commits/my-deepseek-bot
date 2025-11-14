@@ -236,9 +236,162 @@ function getTradesFilePath() {
   return TRADES_FILE;
 }
 
+/**
+ * Load closed trades from MongoDB or file
+ * @returns {Promise<Array>} Array of closed trade objects
+ */
+async function loadClosedTrades() {
+  // Try MongoDB first if URI is set
+  if (process.env.MONGODB_URI) {
+    try {
+      if (!mongoDb) {
+        const connected = await initMongoDB();
+        if (!connected) return [];
+      }
+      
+      const collection = mongoDb.collection('closedTrades');
+      const trades = await collection.find({}).sort({ closedAt: -1 }).limit(100).toArray();
+      
+      // Remove MongoDB _id field and convert dates
+      return trades.map(trade => {
+        const { _id, ...tradeData } = trade;
+        if (tradeData.entryTime && typeof tradeData.entryTime === 'string') {
+          tradeData.entryTime = new Date(tradeData.entryTime);
+        }
+        if (tradeData.closedAt && typeof tradeData.closedAt === 'string') {
+          tradeData.closedAt = new Date(tradeData.closedAt);
+        }
+        return tradeData;
+      });
+    } catch (error) {
+      console.error('❌ Error loading closed trades from MongoDB:', error);
+      return [];
+    }
+  }
+  
+  // Fallback to file system
+  try {
+    await ensureDataDir();
+    const CLOSED_TRADES_FILE = path.join(DATA_DIR, 'closed-trades.json');
+    
+    try {
+      await fs.access(CLOSED_TRADES_FILE);
+    } catch (accessError) {
+      return [];
+    }
+    
+    const data = await fs.readFile(CLOSED_TRADES_FILE, 'utf8');
+    if (!data || data.trim().length === 0) {
+      return [];
+    }
+    
+    const trades = JSON.parse(data);
+    if (Array.isArray(trades)) {
+      return trades.map(trade => {
+        if (trade.entryTime && typeof trade.entryTime === 'string') {
+          trade.entryTime = new Date(trade.entryTime);
+        }
+        if (trade.closedAt && typeof trade.closedAt === 'string') {
+          trade.closedAt = new Date(trade.closedAt);
+        }
+        return trade;
+      }).filter(trade => trade && trade.symbol);
+    }
+    
+    return [];
+  } catch (error) {
+    console.error('❌ Error loading closed trades:', error);
+    return [];
+  }
+}
+
+/**
+ * Save closed trades to MongoDB or file
+ * @param {Array} trades - Array of closed trade objects
+ * @returns {Promise<boolean>} Success status
+ */
+async function saveClosedTrades(trades) {
+  // Try MongoDB first if URI is set
+  if (process.env.MONGODB_URI) {
+    try {
+      if (!mongoDb) {
+        const connected = await initMongoDB();
+        if (!connected) return false;
+      }
+      
+      const collection = mongoDb.collection('closedTrades');
+      
+      // Convert dates to ISO strings for MongoDB
+      const tradesToSave = trades.map(trade => {
+        const tradeCopy = { ...trade };
+        if (tradeCopy.entryTime instanceof Date) {
+          tradeCopy.entryTime = tradeCopy.entryTime.toISOString();
+        }
+        if (tradeCopy.closedAt instanceof Date) {
+          tradeCopy.closedAt = tradeCopy.closedAt.toISOString();
+        }
+        return tradeCopy;
+      });
+      
+      // Upsert closed trades (update if exists, insert if not)
+      // Use symbol + closedAt as unique identifier
+      for (const trade of tradesToSave) {
+        await collection.updateOne(
+          { symbol: trade.symbol, closedAt: trade.closedAt },
+          { $set: trade },
+          { upsert: true }
+        );
+      }
+      
+      // Keep only last 500 closed trades in MongoDB
+      const totalCount = await collection.countDocuments();
+      if (totalCount > 500) {
+        const excess = totalCount - 500;
+        const oldestTrades = await collection.find({}).sort({ closedAt: 1 }).limit(excess).toArray();
+        const idsToDelete = oldestTrades.map(t => t._id);
+        await collection.deleteMany({ _id: { $in: idsToDelete } });
+      }
+      
+      console.log(`💾 Saved ${tradesToSave.length} closed trades to MongoDB`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error saving closed trades to MongoDB:', error);
+      return false;
+    }
+  }
+  
+  // Fallback to file system
+  try {
+    await ensureDataDir();
+    const CLOSED_TRADES_FILE = path.join(DATA_DIR, 'closed-trades.json');
+    
+    // Convert to JSON-safe format
+    const tradesToSave = trades.map(trade => {
+      const tradeCopy = { ...trade };
+      if (tradeCopy.entryTime instanceof Date) {
+        tradeCopy.entryTime = tradeCopy.entryTime.toISOString();
+      }
+      if (tradeCopy.closedAt instanceof Date) {
+        tradeCopy.closedAt = tradeCopy.closedAt.toISOString();
+      }
+      return tradeCopy;
+    });
+    
+    const jsonData = JSON.stringify(tradesToSave, null, 2);
+    await fs.writeFile(CLOSED_TRADES_FILE, jsonData, 'utf8');
+    console.log(`💾 Saved ${tradesToSave.length} closed trades to ${CLOSED_TRADES_FILE}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Error saving closed trades:', error);
+    return false;
+  }
+}
+
 module.exports = {
   loadTrades,
   saveTrades,
+  loadClosedTrades,
+  saveClosedTrades,
   getTradesFilePath
 };
 

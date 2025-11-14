@@ -934,6 +934,16 @@
       </div>
 
       <div>
+        <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">📊 Closed Trades</h3>
+        <div id="closed-trades-container" class="active-trades-container">
+          <div class="no-active-trades">
+            <h3>No Closed Trades</h3>
+            <p>Closed trades will appear here for performance tracking.</p>
+          </div>
+        </div>
+      </div>
+
+      <div>
         <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">📈 Trading Opportunities</h3>
         <div id="results">
           <div class="no-opportunities">
@@ -1690,6 +1700,87 @@
       }
     }
 
+    // Closed Trades Dashboard functions
+    async function updateClosedTradesDisplay() {
+      try {
+        const response = await fetch(API_BASE + '/closed-trades');
+        const closedTrades = await response.json();
+        const container = document.getElementById('closed-trades-container');
+
+        if (!closedTrades || closedTrades.length === 0) {
+          container.innerHTML = `
+            <div class="no-active-trades">
+              <h3>No Closed Trades</h3>
+              <p>Closed trades will appear here for performance tracking.</p>
+            </div>
+          `;
+          return;
+        }
+
+        // Sort by closed date (newest first)
+        const sortedTrades = closedTrades.sort((a, b) => {
+          const dateA = new Date(a.closedAt || a.entryTime);
+          const dateB = new Date(b.closedAt || b.entryTime);
+          return dateB - dateA;
+        });
+
+        // Build table HTML
+        let html = '<table class="trades-table">';
+        html += '<thead><tr>';
+        html += '<th>Coin</th>';
+        html += '<th>Action</th>';
+        html += '<th>Entry</th>';
+        html += '<th>Exit</th>';
+        html += '<th>P&L</th>';
+        html += '<th>P&L %</th>';
+        html += '<th>DCA</th>';
+        html += '<th>Status</th>';
+        html += '<th>AI Confidence</th>';
+        html += '<th>Reason</th>';
+        html += '<th>Closed</th>';
+        html += '</tr></thead><tbody>';
+        
+        sortedTrades.forEach(trade => {
+          const pnlValue = parseFloat(trade.finalPnlPercent || trade.pnlPercent || 0);
+          const pnlClass = pnlValue > 0 ? 'positive' : pnlValue < 0 ? 'negative' : 'neutral';
+          const pnlSign = pnlValue > 0 ? '+' : '';
+          const actionBadgeClass = trade.action === 'BUY' ? 'buy' : 'sell';
+          const statusBadgeClass = trade.status?.toLowerCase() || 'closed';
+          const isProfit = pnlValue > 0;
+          const statusEmoji = isProfit ? '✅' : '❌';
+          
+          html += '<tr>';
+          html += `<td><span class="trade-coin-name">${trade.name || trade.symbol}</span><br><span class="trade-time-small">${trade.symbol}</span></td>`;
+          html += `<td><span class="trade-action-badge ${actionBadgeClass}">${trade.action}</span></td>`;
+          html += `<td class="trade-price">$${Number(trade.entryPrice).toFixed(2)}</td>`;
+          html += `<td class="trade-price">$${Number(trade.closePrice || trade.executionPrice || trade.currentPrice).toFixed(2)}</td>`;
+          html += `<td><span class="trade-pnl-value ${pnlClass}">${pnlSign}$${Number(trade.finalPnl || trade.pnl || 0).toFixed(2)}</span></td>`;
+          html += `<td><span class="trade-pnl-value ${pnlClass}">${pnlSign}${pnlValue.toFixed(2)}%</span></td>`;
+          html += `<td class="trade-price">${trade.dcaCount || 0}/5</td>`;
+          html += `<td><span class="trade-status-badge ${statusBadgeClass}">${statusEmoji} ${trade.status || 'CLOSED'}</span></td>`;
+          html += `<td class="trade-price">${trade.aiConfidence ? (trade.aiConfidence * 100).toFixed(0) + '%' : 'N/A'}</td>`;
+          html += `<td class="trade-time-small" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${trade.closeReason || 'N/A'}">${trade.closeReason || 'N/A'}</td>`;
+          html += `<td class="trade-time-small">${new Date(trade.closedAt || trade.entryTime).toLocaleString()}</td>`;
+          html += '</tr>';
+        });
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+
+      } catch (error) {
+        console.error('Error updating closed trades display:', error);
+        const container = document.getElementById('closed-trades-container');
+        if (container) {
+          container.innerHTML = `
+            <div class="no-active-trades">
+              <h3>Error Loading Closed Trades</h3>
+              <p>Could not fetch closed trades. Please check server logs.</p>
+            </div>
+          `;
+        }
+      }
+    }
+
     // Portfolio display functions
     async function updatePortfolioDisplay() {
       try {
@@ -1791,6 +1882,7 @@
     updateStats();
     updateAIEvaluation();
     updateActiveTradesDisplay(); // Initial load of active trades
+    updateClosedTradesDisplay(); // Initial load of closed trades
 
     // AI Trade Re-evaluation function
     async function evaluateTradesWithAI() {
@@ -1844,6 +1936,7 @@
     setInterval(updateStats, 30000);
     setInterval(updateAIEvaluation, 5000); // Update AI display every 5 seconds
     setInterval(updateActiveTradesDisplay, 10000); // Update active trades every 10 seconds
+    setInterval(updateClosedTradesDisplay, 10000); // Update closed trades every 10 seconds
     setInterval(updatePortfolioDisplay, 10000); // Update portfolio every 10 seconds
     setInterval(updateNextScanTime, 5000); // Update next scan time every 5 seconds
     

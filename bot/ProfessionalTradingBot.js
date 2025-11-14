@@ -106,7 +106,8 @@ class ProfessionalTradingBot {
     };
     
     // Active trades management
-    this.activeTrades = []; // Stores currently open or recently closed trades
+    this.activeTrades = []; // Stores currently open trades
+    this.closedTrades = []; // Stores closed trades for performance tracking
     
     // Customizable trading rules
     this.tradingRules = {
@@ -195,6 +196,10 @@ class ProfessionalTradingBot {
         this.activeTrades = savedTrades;
         console.log(`✅ Restored ${savedTrades.length} active trades from storage`);
         addLogEntry(`Restored ${savedTrades.length} active trades from storage`, 'success');
+      }
+      
+      // Load closed trades
+      await this.loadClosedTrades();
         
         // Log trade details
         savedTrades.forEach(trade => {
@@ -1714,14 +1719,31 @@ For each trade, provide:
 1. Recommendation: HOLD, CLOSE, or ADJUST
 2. Confidence: 0.0 to 1.0
 3. Reason: Brief explanation
+4. If ADJUST: provide newTakeProfit and/or newStopLoss (optional - only if adjustment needed)
+5. If CLOSE: consider DCA first - if DCA is still available (dcaCount < 5), suggest DCA instead of closing
+
+IMPORTANT RULES:
+- Before recommending CLOSE on a losing trade, check if DCA is available (dcaCount < 5). DCA is often better than closing at a loss.
+- For ADJUST: Only provide newTakeProfit or newStopLoss if you want to change them. Leave null if no change needed.
+- For CLOSE: Only recommend if trade is profitable OR if all DCAs are exhausted (dcaCount >= 5) and loss is significant.
 
 Return JSON array format:
 [
   {
     "symbol": "BTC",
-    "recommendation": "HOLD",
+    "recommendation": "ADJUST",
     "confidence": 0.75,
-    "reason": "Price approaching take profit, momentum still strong"
+    "reason": "Price approaching take profit, adjusting TP higher to capture more gains",
+    "newTakeProfit": 101000.00,
+    "newStopLoss": null
+  },
+  {
+    "symbol": "ETH",
+    "recommendation": "CLOSE",
+    "confidence": 0.85,
+    "reason": "Take profit reached, closing position to lock in gains",
+    "newTakeProfit": null,
+    "newStopLoss": null
   }
 ]`;
 
@@ -1835,6 +1857,53 @@ Return JSON array format:
               recommendation === 'CLOSE' ? 'warning' : 'info'
             );
             
+            // Execute AI recommendations
+            if (trade && recommendation !== 'HOLD') {
+              try {
+                if (recommendation === 'ADJUST') {
+                  // Adjust take profit and/or stop loss
+                  let adjusted = false;
+                  if (rec.newTakeProfit && typeof rec.newTakeProfit === 'number' && rec.newTakeProfit > 0) {
+                    const oldTP = trade.takeProfit;
+                    trade.takeProfit = rec.newTakeProfit;
+                    adjusted = true;
+                    addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${rec.newTakeProfit.toFixed(2)}`, 'info');
+                    telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${rec.newTakeProfit.toFixed(2)}\n`;
+                  }
+                  if (rec.newStopLoss && typeof rec.newStopLoss === 'number' && rec.newStopLoss > 0) {
+                    const oldSL = trade.stopLoss;
+                    trade.stopLoss = rec.newStopLoss;
+                    adjusted = true;
+                    addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${rec.newStopLoss.toFixed(2)}`, 'info');
+                    telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${rec.newStopLoss.toFixed(2)}\n`;
+                  }
+                  if (adjusted) {
+                    await saveTrades(this.activeTrades);
+                    addLogEntry(`✅ ${symbol}: Trade parameters updated by AI`, 'success');
+                  }
+                } else if (recommendation === 'CLOSE') {
+                  // Check if DCA is still available - warn AI if it should have suggested DCA
+                  if (trade.dcaCount < 5 && pnlPercent < 0) {
+                    addLogEntry(`⚠️ ${symbol}: AI recommended CLOSE but DCA still available (${5 - trade.dcaCount} remaining). Consider DCA instead.`, 'warning');
+                    telegramMessage += `   ⚠️ Note: DCA still available (${5 - trade.dcaCount} remaining)\n`;
+                  }
+                  
+                  // Close the trade
+                  const closeResult = await this.closeTradeByAI(trade, reason, confidence);
+                  if (closeResult.success) {
+                    addLogEntry(`🔴 ${symbol}: Trade closed by AI - ${reason}`, 'warning');
+                    telegramMessage += `   ✅ Trade closed at $${closeResult.closePrice.toFixed(2)}\n`;
+                  } else {
+                    addLogEntry(`⚠️ ${symbol}: AI close recommendation failed - ${closeResult.error}`, 'warning');
+                    telegramMessage += `   ⚠️ Close failed: ${closeResult.error}\n`;
+                  }
+                }
+              } catch (execError) {
+                console.error(`❌ Error executing AI recommendation for ${symbol}:`, execError);
+                addLogEntry(`❌ ${symbol}: Failed to execute AI recommendation - ${execError.message}`, 'error');
+              }
+            }
+            
             // Add to Telegram message
             const emoji = recommendation === 'CLOSE' ? '🔴' : recommendation === 'ADJUST' ? '🟡' : '🟢';
             telegramMessage += `${emoji} *${symbol}* - ${recommendation}\n`;
@@ -1890,6 +1959,112 @@ Return JSON array format:
   }
 
   // New method: Get active trades
+  /**
+   * Close a trade by AI recommendation
+   * Moves trade from activeTrades to closedTrades
+   */
+  async closeTradeByAI(trade, reason, confidence) {
+    try {
+      const { executeTakeProfit, executeStopLoss } = require('../services/exchangeService');
+      
+      // Determine if this is a profit or loss close
+      const pnlPercent = typeof trade.pnlPercent === 'number' ? trade.pnlPercent : 0;
+      const isProfit = pnlPercent > 0;
+      
+      // Execute close order (use take profit for profit, stop loss for loss)
+      let closeResult;
+      if (isProfit) {
+        closeResult = await executeTakeProfit(trade);
+      } else {
+        closeResult = await executeStopLoss(trade);
+      }
+      
+      if (!closeResult.success && !closeResult.skipped) {
+        return {
+          success: false,
+          error: closeResult.error || 'Close execution failed'
+        };
+      }
+      
+      // Create closed trade record
+      const closedTrade = {
+        ...trade,
+        status: isProfit ? 'AI_CLOSED_PROFIT' : 'AI_CLOSED_LOSS',
+        closedAt: new Date(),
+        closePrice: trade.currentPrice,
+        closeReason: reason,
+        aiConfidence: confidence,
+        finalPnl: trade.pnl,
+        finalPnlPercent: pnlPercent,
+        executionOrderId: closeResult.orderId,
+        executionPrice: closeResult.price || trade.currentPrice,
+        executedQty: closeResult.executedQty || trade.quantity
+      };
+      
+      // Remove from active trades
+      this.activeTrades = this.activeTrades.filter(t => t.symbol !== trade.symbol);
+      
+      // Add to closed trades
+      this.closedTrades.push(closedTrade);
+      
+      // Keep only last 100 closed trades in memory
+      if (this.closedTrades.length > 100) {
+        this.closedTrades = this.closedTrades.slice(-100);
+      }
+      
+      // Save both active and closed trades
+      await saveTrades(this.activeTrades);
+      await this.saveClosedTrades();
+      
+      // Recalculate portfolio
+      await recalculateFromTrades(this.activeTrades);
+      
+      console.log(`✅ ${trade.symbol}: Trade closed by AI - ${isProfit ? 'Profit' : 'Loss'}: ${pnlPercent.toFixed(2)}%`);
+      
+      return {
+        success: true,
+        closePrice: trade.currentPrice,
+        pnl: pnlPercent,
+        isProfit: isProfit
+      };
+    } catch (error) {
+      console.error(`❌ Error closing trade ${trade.symbol} by AI:`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Save closed trades to storage
+   */
+  async saveClosedTrades() {
+    try {
+      const { saveClosedTrades } = require('../services/tradePersistenceService');
+      await saveClosedTrades(this.closedTrades);
+    } catch (error) {
+      console.error('❌ Error saving closed trades:', error);
+    }
+  }
+
+  /**
+   * Load closed trades from storage
+   */
+  async loadClosedTrades() {
+    try {
+      const { loadClosedTrades } = require('../services/tradePersistenceService');
+      const closed = await loadClosedTrades();
+      if (closed && closed.length > 0) {
+        this.closedTrades = closed.slice(-100); // Keep last 100 in memory
+        console.log(`✅ Loaded ${this.closedTrades.length} closed trades from storage`);
+      }
+    } catch (error) {
+      console.error('❌ Error loading closed trades:', error);
+      this.closedTrades = [];
+    }
+  }
+
   getActiveTrades() {
     return this.activeTrades.filter(trade => trade.status === 'OPEN' || trade.status === 'DCA_HIT'); // Only show open or DCA triggered trades in dashboard
   }
