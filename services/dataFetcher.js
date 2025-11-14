@@ -685,9 +685,12 @@ async function fetchLongTermHistoricalData(coin) {
         const batchStart = Math.max(batchEnd - (1000 * 24 * 60 * 60 * 1000), fiveYearsAgo);
         
         try {
+          // Gate.io uses underscore format: BTC_USDT instead of BTCUSDT
+          const gateCurrencyPair = EXCHANGE_SYMBOL_MAP[symbol].replace('USDT', '_USDT');
+          
           const response = await axios.get('https://api.gateio.ws/api/v4/spot/candlesticks', {
             params: {
-              currency_pair: EXCHANGE_SYMBOL_MAP[symbol],
+              currency_pair: gateCurrencyPair,
               interval: '1d',
               limit: 1000,
               to: Math.floor(batchEnd / 1000),
