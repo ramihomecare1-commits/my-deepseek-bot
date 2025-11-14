@@ -31,7 +31,7 @@ const {
   executeAddPosition
 } = require('../services/exchangeService');
 const { quickBacktest } = require('../services/backtestService');
-const { loadTrades, saveTrades } = require('../services/tradePersistenceService');
+const { loadTrades, saveTrades, loadClosedTrades, saveClosedTrades } = require('../services/tradePersistenceService');
 const { loadPortfolio, recalculateFromTrades, getPortfolioStats } = require('../services/portfolioService');
 
 // Helper function to add log entries
@@ -2034,7 +2034,6 @@ Return JSON array format:
    */
   async saveClosedTrades() {
     try {
-      const { saveClosedTrades } = require('../services/tradePersistenceService');
       await saveClosedTrades(this.closedTrades);
     } catch (error) {
       console.error('❌ Error saving closed trades:', error);
@@ -2046,7 +2045,6 @@ Return JSON array format:
    */
   async loadClosedTrades() {
     try {
-      const { loadClosedTrades } = require('../services/tradePersistenceService');
       const closed = await loadClosedTrades();
       if (closed && closed.length > 0) {
         this.closedTrades = closed.slice(-100); // Keep last 100 in memory
