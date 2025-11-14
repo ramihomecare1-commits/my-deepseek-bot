@@ -371,9 +371,9 @@ function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
     const historical = coin.historicalData || { evaluations: [], news: [] };
     
     if (historical.evaluations && historical.evaluations.length > 0) {
-      const recentEvals = historical.evaluations.slice(0, 3).map(eval => {
-        const date = new Date(eval.timestamp).toLocaleDateString();
-        return `  - [${date}] ${eval.data.action || 'HOLD'} (${(eval.data.confidence * 100).toFixed(0)}%) - ${eval.data.reason || 'No reason'}`;
+      const recentEvals = historical.evaluations.slice(0, 3).map(evaluation => {
+        const date = new Date(evaluation.timestamp).toLocaleDateString();
+        return `  - [${date}] ${evaluation.data.action || 'HOLD'} (${(evaluation.data.confidence * 100).toFixed(0)}%) - ${evaluation.data.reason || 'No reason'}`;
       }).join('\n');
       historicalText += `\n   Historical Evaluations:\n${recentEvals}`;
     }

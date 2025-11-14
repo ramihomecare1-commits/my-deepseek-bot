@@ -250,8 +250,8 @@ async function retrieveRelatedData(options) {
       .limit(limit)
       .toArray();
 
-    results.evaluations = evaluations.map(eval => {
-      const { _id, ...data } = eval;
+    results.evaluations = evaluations.map(evaluation => {
+      const { _id, ...data } = evaluation;
       return data;
     });
 

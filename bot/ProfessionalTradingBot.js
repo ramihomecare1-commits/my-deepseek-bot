@@ -1677,9 +1677,9 @@ ${tradesWithNews.map((t, i) => {
   let historicalText = '';
   const historical = t.historicalData || { evaluations: [], news: [] };
   if (historical.evaluations && historical.evaluations.length > 0) {
-    const recentEvals = historical.evaluations.slice(0, 2).map(eval => {
-      const date = new Date(eval.timestamp).toLocaleDateString();
-      return `    - [${date}] ${eval.data.recommendation || eval.data.action || 'HOLD'} (${((eval.data.confidence || 0) * 100).toFixed(0)}%)`;
+    const recentEvals = historical.evaluations.slice(0, 2).map(evaluation => {
+      const date = new Date(evaluation.timestamp).toLocaleDateString();
+      return `    - [${date}] ${evaluation.data.recommendation || evaluation.data.action || 'HOLD'} (${((evaluation.data.confidence || 0) * 100).toFixed(0)}%)`;
     }).join('\n');
     historicalText += `\n- Previous Evaluations:\n${recentEvals}`;
   }
