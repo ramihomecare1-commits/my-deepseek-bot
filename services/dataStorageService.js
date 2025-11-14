@@ -9,9 +9,12 @@ const { MongoClient } = require('mongodb');
 let mongoClient = null;
 let mongoDb = null;
 let useMongoDB = false;
+let mongoInitPromise = null; // Guard to prevent multiple simultaneous initializations
+let mongoInitInProgress = false; // Flag to track initialization status
 
 /**
  * Initialize MongoDB connection
+ * Uses a promise guard to prevent multiple simultaneous connection attempts
  */
 async function initMongoDB() {
   const mongoUri = process.env.MONGODB_URI;
@@ -20,29 +23,59 @@ async function initMongoDB() {
     return false;
   }
 
-  try {
-    if (!mongoClient || !mongoDb) {
-      mongoClient = new MongoClient(mongoUri);
-      await mongoClient.connect();
-      mongoDb = mongoClient.db();
-      useMongoDB = true;
-      console.log('✅ MongoDB connected for data storage');
-    }
-    
-    // Verify connection is still valid
-    if (!mongoDb) {
-      console.error('❌ MongoDB connection established but db is null');
-      return false;
-    }
-    
+  // If already connected, return immediately
+  if (mongoClient && mongoDb && useMongoDB) {
     return true;
-  } catch (error) {
-    console.error('❌ MongoDB connection failed:', error.message);
-    mongoDb = null;
-    mongoClient = null;
-    useMongoDB = false;
-    return false;
   }
+
+  // If initialization is already in progress, wait for it
+  if (mongoInitInProgress && mongoInitPromise) {
+    try {
+      return await mongoInitPromise;
+    } catch (error) {
+      // If initialization failed, allow retry
+      mongoInitPromise = null;
+      mongoInitInProgress = false;
+    }
+  }
+
+  // Start new initialization
+  mongoInitInProgress = true;
+  mongoInitPromise = (async () => {
+    try {
+      // Double-check after acquiring lock
+      if (mongoClient && mongoDb && useMongoDB) {
+        return true;
+      }
+
+      if (!mongoClient || !mongoDb) {
+        mongoClient = new MongoClient(mongoUri);
+        await mongoClient.connect();
+        mongoDb = mongoClient.db();
+        useMongoDB = true;
+        console.log('✅ MongoDB connected for data storage');
+      }
+      
+      // Verify connection is still valid
+      if (!mongoDb) {
+        console.error('❌ MongoDB connection established but db is null');
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('❌ MongoDB connection failed:', error.message);
+      mongoDb = null;
+      mongoClient = null;
+      useMongoDB = false;
+      return false;
+    } finally {
+      mongoInitInProgress = false;
+      mongoInitPromise = null;
+    }
+  })();
+
+  return await mongoInitPromise;
 }
 
 /**
@@ -57,16 +90,17 @@ async function initMongoDB() {
  */
 async function storeAIEvaluation(evaluation) {
   try {
+    // Check connection status first (fast path)
     if (!useMongoDB || !mongoDb) {
       const connected = await initMongoDB();
       if (!connected || !mongoDb) {
-        console.log('⚠️ Cannot store AI evaluation - MongoDB not available');
+        // Don't log for every failed attempt - only log once
         return false;
       }
     }
 
+    // Double-check after potential initialization
     if (!mongoDb) {
-      console.log('⚠️ Cannot store AI evaluation - MongoDB connection not established');
       return false;
     }
     const collection = mongoDb.collection('aiEvaluations');
