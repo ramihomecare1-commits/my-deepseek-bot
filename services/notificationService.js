@@ -274,7 +274,45 @@ async function sendTestNotification(config) {
   }
 }
 
+/**
+ * Send a simple text message to Telegram
+ * @param {string} message - Plain text message to send
+ * @returns {Promise<boolean>} Success status
+ */
+async function sendTelegramMessage(message) {
+  if (!config.TELEGRAM_ENABLED) {
+    console.log('⚠️ Telegram disabled - cannot send message');
+    return false;
+  }
+
+  try {
+    const telegramUrl = `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const response = await axios.post(telegramUrl, {
+      chat_id: config.TELEGRAM_CHAT_ID,
+      text: message,
+      parse_mode: 'Markdown',
+    }, {
+      timeout: 10000,
+    });
+
+    if (response.data && response.data.ok) {
+      console.log('✅ Telegram message sent successfully');
+      return true;
+    } else {
+      console.log('⚠️ Telegram API returned error:', response.data);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Failed to send Telegram message:', error.message);
+    if (error.response) {
+      console.error('Response data:', error.response.data);
+    }
+    return false;
+  }
+}
+
 module.exports = {
   sendTelegramNotification,
-  sendTestNotification
+  sendTestNotification,
+  sendTelegramMessage
 };

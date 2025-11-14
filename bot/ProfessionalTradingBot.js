@@ -17,7 +17,8 @@ const {
 } = require('../services/dataFetcher');
 const { 
   sendTelegramNotification,
-  sendTestNotification 
+  sendTestNotification,
+  sendTelegramMessage
 } = require('../services/notificationService');
 const { getAITechnicalAnalysis, getBatchAIAnalysis } = require('../services/aiService');
 const { fetchCryptoNews } = require('../services/newsService');
@@ -1474,13 +1475,23 @@ class ProfessionalTradingBot {
   async reevaluateOpenTradesWithAI() {
     const openTrades = this.activeTrades.filter(t => t.status === 'OPEN' || t.status === 'DCA_HIT');
     
-    if (openTrades.length === 0 || !config.AI_API_KEY) {
-      return;
+    console.log(`\n🤖 Starting AI re-evaluation for ${openTrades.length} open trades...`);
+    addLogEntry(`🤖 Re-evaluating ${openTrades.length} open trades with AI...`, 'info');
+    
+    if (openTrades.length === 0) {
+      console.log('⚠️ No open trades to evaluate');
+      addLogEntry('⚠️ No open trades to evaluate', 'warning');
+      return [];
+    }
+    
+    if (!config.AI_API_KEY) {
+      console.log('⚠️ AI API key not configured - cannot re-evaluate');
+      addLogEntry('⚠️ AI API key not configured', 'warning');
+      return [];
     }
 
-    addLogEntry(`🤖 Re-evaluating ${openTrades.length} open trades with AI...`, 'info');
-
     try {
+      console.log(`📊 Preparing trade data for ${openTrades.length} trades...`);
       // Prepare trade data for AI analysis
       const tradesForAI = await Promise.all(openTrades.map(async (trade) => {
         const coinData = trade.coinData || {
@@ -1514,6 +1525,7 @@ class ProfessionalTradingBot {
       }));
 
       // Fetch news for each trade (with timeout protection)
+      console.log('📰 Fetching news for trades...');
       const tradesWithNews = await Promise.all(tradesForAI.map(async (trade) => {
         try {
           // Add timeout wrapper to prevent hanging
@@ -1522,12 +1534,16 @@ class ProfessionalTradingBot {
             setTimeout(() => reject(new Error('News fetch timeout')), 5000)
           );
           const news = await Promise.race([newsPromise, timeoutPromise]);
+          if (news && news.articles && news.articles.length > 0) {
+            console.log(`✅ Fetched ${news.articles.length} news articles for ${trade.symbol}`);
+          }
           return { ...trade, news };
         } catch (error) {
           // Silently fail - news is optional
           return { ...trade, news: { articles: [], total: 0 } };
         }
       }));
+      console.log('✅ Trade data prepared with news');
 
       // Create AI prompt for trade re-evaluation
       const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${tradesWithNews.length} open trades and provide your recommendation for each.
@@ -1574,6 +1590,8 @@ Return JSON array format:
 ]`;
 
       // Call AI API directly
+      console.log('🤖 Calling AI API for trade re-evaluation...');
+      console.log(`📝 Prompt length: ${prompt.length} characters`);
       const axios = require('axios');
       const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
         model: config.AI_MODEL,
@@ -1591,11 +1609,20 @@ Return JSON array format:
       });
 
       // Parse AI response
+      console.log('✅ AI API responded successfully');
       const aiContent = response.data.choices[0].message.content;
+      console.log(`📝 AI response length: ${aiContent.length} characters`);
       const jsonMatch = aiContent.match(/\[[\s\S]*\]/);
       
       if (jsonMatch) {
-        const recommendations = JSON.parse(jsonMatch[0]);
+        console.log('✅ Found JSON array in AI response');
+        try {
+          const recommendations = JSON.parse(jsonMatch[0]);
+          console.log(`✅ Parsed ${recommendations.length} recommendations`);
+          
+          if (!Array.isArray(recommendations) || recommendations.length === 0) {
+            throw new Error('Invalid recommendations format - expected non-empty array');
+          }
         
         // Build Telegram message
         let telegramMessage = `🤖 *AI Trade Re-evaluation*\n\n`;
@@ -1626,16 +1653,38 @@ Return JSON array format:
         });
         
         // Send to Telegram
+        console.log('📤 Sending re-evaluation to Telegram...');
+        addLogEntry('📤 Sending re-evaluation results to Telegram...', 'info');
         try {
-          await sendTelegramNotification(telegramMessage);
-          addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
+          const sent = await sendTelegramMessage(telegramMessage);
+          if (sent) {
+            console.log('✅ AI re-evaluation sent to Telegram successfully');
+            addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
+          } else {
+            console.log('⚠️ Failed to send re-evaluation to Telegram');
+            addLogEntry('⚠️ Failed to send re-evaluation to Telegram', 'warning');
+          }
         } catch (telegramError) {
+          console.error('❌ Telegram error:', telegramError);
           addLogEntry(`⚠️ Failed to send re-evaluation to Telegram: ${telegramError.message}`, 'warning');
         }
         
-        return recommendations;
+          return recommendations;
+        } catch (parseError) {
+          console.error('❌ Failed to parse AI recommendations:', parseError.message);
+          console.error('AI response preview:', aiContent.substring(0, 500));
+          addLogEntry(`⚠️ Failed to parse AI recommendations: ${parseError.message}`, 'error');
+          throw new Error(`AI response parsing failed: ${parseError.message}`);
+        }
+      } else {
+        console.error('❌ No JSON array found in AI response');
+        console.error('AI response preview:', aiContent.substring(0, 500));
+        addLogEntry('⚠️ AI response format invalid - no JSON array found', 'error');
+        throw new Error('Invalid AI response format - no JSON array found');
       }
     } catch (error) {
+      console.error('❌ AI re-evaluation error:', error.message);
+      console.error('Error stack:', error.stack);
       addLogEntry(`⚠️ AI re-evaluation failed: ${error.message}`, 'warning');
       throw error;
     }
