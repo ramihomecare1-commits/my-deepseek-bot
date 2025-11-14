@@ -185,6 +185,11 @@ class ProfessionalTradingBot {
         this.activeTrades = savedTrades;
         addLogEntry(`Restored ${savedTrades.length} active trades from storage`, 'success');
         
+        // Immediately update trades with current prices (don't wait for timer)
+        addLogEntry('Updating restored trades with current prices...', 'info');
+        await this.updateActiveTrades();
+        addLogEntry('Trades updated with current market prices', 'success');
+        
         // Recalculate portfolio metrics from restored trades
         await recalculateFromTrades(this.activeTrades);
         addLogEntry('Portfolio metrics recalculated from restored trades', 'info');
