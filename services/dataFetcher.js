@@ -382,9 +382,9 @@ async function fetchGateIOKlines(symbol, interval, limit) {
 
     // Gate.io interval mapping - Gate.io uses: 10s, 1m, 5m, 15m, 30m, 1h, 4h, 8h, 1d, 7d
     // Map our intervals to Gate.io format
-    let gateInterval = '1h'; // default
+    let gateInterval = interval; // Use interval as-is (supports 5m, 1h, 1d)
     if (interval === '1m') {
-      gateInterval = '1m';
+      gateInterval = '5m'; // Use 5m instead of 1m (more reliable)
     } else if (interval === '1h') {
       gateInterval = '1h';
     } else if (interval === '1d') {
@@ -392,9 +392,17 @@ async function fetchGateIOKlines(symbol, interval, limit) {
     }
     
     let gateLimit = Math.min(limit, 1000);
-    // Gate.io may have limits on 1m data - reduce limit for 1m interval
-    if (gateInterval === '1m' && gateLimit > 500) {
-      gateLimit = 500; // Reduce limit for 1m to avoid 400 errors
+    
+    // Adjust limit based on interval
+    if (gateInterval === '5m') {
+      // For 5m, max reasonable is ~288 (24 hours)
+      gateLimit = Math.min(gateLimit, 288);
+    } else if (gateInterval === '1h') {
+      // For 1h, max is 1000
+      gateLimit = Math.min(gateLimit, 1000);
+    } else if (gateInterval === '1d') {
+      // For 1d, max is 1000
+      gateLimit = Math.min(gateLimit, 1000);
     }
     
     const response = await axios.get('https://api.gateio.ws/api/v4/spot/candlesticks', {
@@ -472,8 +480,9 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
       try {
         let mexcInterval, mexcLimit;
         if (days === 1) {
-          mexcInterval = '1m';
-          mexcLimit = 720; // 12 hours of minute data
+          // Use 5m interval (MEXC will map 1m to 5m internally for better reliability)
+          mexcInterval = '1m'; // Will be converted to 5m in fetchMEXCKlines
+          mexcLimit = 288; // 24 hours of 5-minute data (24 * 60 / 5 = 288)
         } else if (days === 7) {
           mexcInterval = '1h';
           mexcLimit = 168; // 7 days of hourly
@@ -482,7 +491,7 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
           mexcLimit = Math.min(days, 2000); // MEXC supports up to 2000 klines!
         }
         
-        console.log(`📊 ${symbol}: Trying MEXC first (${mexcInterval}, direct API)...`);
+        console.log(`📊 ${symbol}: Trying MEXC first (${mexcInterval}, direct API, limit: ${mexcLimit})...`);
         const data = await fetchMEXCKlines(symbol, mexcInterval, mexcLimit);
         if (data.length > 0) {
           console.log(`✅ ${symbol}: MEXC SUCCESS - ${data.length} data points`);
