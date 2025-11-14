@@ -6,13 +6,15 @@ const { storeAIEvaluation } = require('./dataStorageService');
 /**
  * Two-Tier AI Monitoring System
  * 
- * Tier 1 (Free): DeepSeek v3 - Continuous monitoring every minute
- * Tier 2 (Paid): DeepSeek R1 - Confirmation and final decisions
+ * Supports both Gemini API (Google) and OpenRouter API
+ * 
+ * Tier 1 (Free): Gemini Flash OR DeepSeek v3 - Continuous monitoring every minute
+ * Tier 2 (Premium): Gemini Pro OR DeepSeek R1 - Confirmation and final decisions
  * 
  * Flow:
- * 1. v3 monitors prices/volatility every minute
- * 2. If opportunity detected with high confidence → escalate to R1
- * 3. R1 confirms or rejects
+ * 1. Free model monitors prices/volatility every minute
+ * 2. If opportunity detected with high confidence → escalate to premium model
+ * 3. Premium model confirms or rejects
  * 4. Send Telegram notification on escalation
  * 5. Store all evaluations for learning
  */
@@ -24,11 +26,75 @@ class MonitoringService {
     this.isMonitoring = false;
     
     // Configuration
-    this.FREE_MODEL = config.MONITORING_MODEL || 'deepseek/deepseek-chat';
-    this.PREMIUM_MODEL = config.AI_MODEL || 'deepseek/deepseek-r1';
+    this.API_TYPE = config.API_TYPE || 'openrouter';
+    this.FREE_MODEL = config.MONITORING_MODEL;
+    this.PREMIUM_MODEL = config.AI_MODEL;
     this.ESCALATION_THRESHOLD = config.ESCALATION_THRESHOLD || 0.70; // 70% confidence
     this.VOLATILITY_THRESHOLD = config.VOLATILITY_THRESHOLD || 3.0; // 3% price change
     this.VOLUME_SPIKE_THRESHOLD = config.VOLUME_SPIKE_THRESHOLD || 2.0; // 2x average volume
+    
+    console.log(`🤖 Monitoring Service initialized with ${this.API_TYPE.toUpperCase()} API`);
+  }
+
+  /**
+   * Call AI API (supports both Gemini and OpenRouter)
+   */
+  async callAI(prompt, model, maxTokens = 150) {
+    if (this.API_TYPE === 'gemini') {
+      return await this.callGeminiAPI(prompt, model, maxTokens);
+    } else {
+      return await this.callOpenRouterAPI(prompt, model, maxTokens);
+    }
+  }
+
+  /**
+   * Call Gemini API (Google)
+   */
+  async callGeminiAPI(prompt, model, maxTokens) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.AI_API_KEY}`;
+    
+    const response = await axios.post(url, {
+      contents: [{
+        parts: [{
+          text: prompt
+        }]
+      }],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: maxTokens,
+      }
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      timeout: 10000,
+    });
+
+    // Extract text from Gemini response
+    const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    return text;
+  }
+
+  /**
+   * Call OpenRouter API
+   */
+  async callOpenRouterAPI(prompt, model, maxTokens) {
+    const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+      model: model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: maxTokens,
+      temperature: 0.3,
+    }, {
+      headers: {
+        Authorization: `Bearer ${config.AI_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
+        'X-Title': 'Crypto Monitoring Bot',
+      },
+      timeout: 10000,
+    });
+
+    return response.data.choices[0].message.content;
   }
 
   /**
@@ -50,24 +116,11 @@ class MonitoringService {
       // Create lightweight prompt for v3
       const prompt = this.createMonitoringPrompt(coinData);
 
-      console.log(`🔍 v3 monitoring ${symbol} (${volatilityLevel} volatility: ${priceChangePercent.toFixed(2)}%)`);
+      console.log(`🔍 Free model monitoring ${symbol} (${volatilityLevel} volatility: ${priceChangePercent.toFixed(2)}%)`);
 
-      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model: this.FREE_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 150,
-        temperature: 0.3,
-      }, {
-        headers: {
-          Authorization: `Bearer ${config.AI_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
-          'X-Title': 'Crypto Monitoring Bot',
-        },
-        timeout: 10000, // Quick timeout for monitoring
-      });
-
-      const analysis = this.parseMonitoringResponse(response.data.choices[0].message.content);
+      // Call appropriate API
+      const responseText = await this.callAI(prompt, this.FREE_MODEL, 150);
+      const analysis = this.parseMonitoringResponse(responseText);
       
       // Store v3 evaluation
       await storeAIEvaluation({
@@ -81,44 +134,35 @@ class MonitoringService {
       return analysis;
 
     } catch (error) {
-      console.log(`⚠️ v3 monitoring error for ${coinData.symbol}:`, error.message);
+      console.log(`⚠️ Free model monitoring error for ${coinData.symbol}:`, error.message);
+      if (error.response) {
+        console.log(`   API Status: ${error.response.status}`);
+        console.log(`   API Error: ${JSON.stringify(error.response.data).substring(0, 200)}`);
+      }
       return null;
     }
   }
 
   /**
-   * Escalate to premium R1 model for confirmation
+   * Escalate to premium model for confirmation
    */
   async escalateToR1(coinData, v3Analysis) {
     try {
       const { symbol } = coinData;
       
-      console.log(`🚨 ESCALATING ${symbol} to R1 for confirmation!`);
-      console.log(`   v3 Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%`);
-      console.log(`   v3 Reason: ${v3Analysis.reason}`);
+      console.log(`🚨 ESCALATING ${symbol} to Premium Model for confirmation!`);
+      console.log(`   Free Model Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%`);
+      console.log(`   Free Model Reason: ${v3Analysis.reason}`);
 
       // Send Telegram notification about escalation
       await this.notifyEscalation(symbol, v3Analysis);
 
-      // Create detailed prompt for R1
+      // Create detailed prompt for premium model
       const prompt = this.createConfirmationPrompt(coinData, v3Analysis);
 
-      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model: this.PREMIUM_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 300,
-        temperature: 0.1,
-      }, {
-        headers: {
-          Authorization: `Bearer ${config.AI_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
-          'X-Title': 'Crypto Trading Bot - R1 Confirmation',
-        },
-        timeout: 30000,
-      });
-
-      const r1Decision = this.parseR1Response(response.data.choices[0].message.content);
+      // Call premium model with longer timeout
+      const responseText = await this.callAI(prompt, this.PREMIUM_MODEL, 300);
+      const r1Decision = this.parseR1Response(responseText);
 
       // Store R1 evaluation
       await storeAIEvaluation({
@@ -145,10 +189,14 @@ class MonitoringService {
       return r1Decision;
 
     } catch (error) {
-      console.log(`⚠️ R1 escalation error for ${coinData.symbol}:`, error.message);
+      console.log(`⚠️ Premium model escalation error for ${coinData.symbol}:`, error.message);
+      if (error.response) {
+        console.log(`   API Status: ${error.response.status}`);
+        console.log(`   API Error: ${JSON.stringify(error.response.data).substring(0, 200)}`);
+      }
       return {
         decision: 'ERROR',
-        reason: `R1 escalation failed: ${error.message}`,
+        reason: `Premium model escalation failed: ${error.message}`,
         confidence: 0
       };
     }
@@ -334,12 +382,12 @@ Be thorough and conservative. Only confirm high-probability setups.`;
     const message = `🚨 AI ESCALATION ALERT
 
 📊 Coin: ${symbol}
-🤖 Free AI (v3) detected opportunity
+🤖 Free AI (${this.FREE_MODEL}) detected opportunity
 📈 Signal: ${v3Analysis.signal}
 💪 Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%
 📝 Reason: ${v3Analysis.reason}
 
-⏳ Escalating to Premium AI (R1) for confirmation...`;
+⏳ Escalating to Premium AI (${this.PREMIUM_MODEL}) for confirmation...`;
 
     await sendTelegramMessage(message);
   }
@@ -351,20 +399,20 @@ Be thorough and conservative. Only confirm high-probability setups.`;
     const emoji = r1Decision.decision === 'CONFIRMED' ? '✅' : '❌';
     const action = r1Decision.decision === 'CONFIRMED' ? 'EXECUTING' : 'REJECTED';
 
-    const message = `${emoji} R1 DECISION: ${r1Decision.decision}
+    const message = `${emoji} PREMIUM AI DECISION: ${r1Decision.decision}
 
 📊 Coin: ${symbol}
 🎯 Action: ${r1Decision.action}
-💪 R1 Confidence: ${(r1Decision.confidence * 100).toFixed(0)}%
-📝 R1 Analysis: ${r1Decision.reason}
+💪 Premium Confidence: ${(r1Decision.confidence * 100).toFixed(0)}%
+📝 Premium Analysis: ${r1Decision.reason}
 
 ${r1Decision.decision === 'CONFIRMED' ? `
 🛡️ Stop Loss: ${r1Decision.stopLoss}%
 🎯 Take Profit: ${r1Decision.takeProfit}%
 ` : ''}
 ---
-🤖 v3 Initial: ${v3Analysis.signal} (${(v3Analysis.confidence * 100).toFixed(0)}%)
-📝 v3 Reason: ${v3Analysis.reason}`;
+🤖 Free AI Initial: ${v3Analysis.signal} (${(v3Analysis.confidence * 100).toFixed(0)}%)
+📝 Free AI Reason: ${v3Analysis.reason}`;
 
     await sendTelegramMessage(message);
   }

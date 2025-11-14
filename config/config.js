@@ -31,16 +31,19 @@ const SCAN_INTERVAL_OPTIONS = {
 };
 
 // AI Configuration - check multiple possible env var names
-const AI_API_KEY = process.env.API_KEY || process.env.AI_API_KEY || process.env.OPENROUTER_API_KEY || '';
-// Using PAID model with OpenRouter credits
-// deepseek/deepseek-r1 - Advanced reasoning model ($0.55/$2.19 per 1M tokens)
-// Alternative: deepseek/deepseek-chat - 6x cheaper ($0.14/$0.28 per 1M tokens)
-// Free models: google/gemini-2.0-flash-exp, meta-llama/llama-3.1-8b-instruct
-const AI_MODEL = process.env.AI_MODEL || 'deepseek/deepseek-r1';
+const AI_API_KEY = process.env.API_KEY || process.env.AI_API_KEY || process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY || '';
+// Detect API type based on key format
+const API_TYPE = AI_API_KEY.startsWith('AIza') || AI_API_KEY.startsWith('AI') ? 'gemini' : 'openrouter';
+
+// Using PAID model with OpenRouter credits OR Gemini API
+// OpenRouter: deepseek/deepseek-r1 - Advanced reasoning model ($0.55/$2.19 per 1M tokens)
+// Gemini: gemini-pro or gemini-1.5-pro (FREE up to rate limits)
+const AI_MODEL = process.env.AI_MODEL || (API_TYPE === 'gemini' ? 'gemini-1.5-pro' : 'deepseek/deepseek-r1');
 
 // Two-Tier Monitoring Configuration
 const MONITORING_ENABLED = (process.env.MONITORING_ENABLED || 'true').toLowerCase() === 'true';
-const MONITORING_MODEL = process.env.MONITORING_MODEL || 'deepseek/deepseek-chat'; // Free v3
+// Free monitoring model: gemini-flash for Gemini API, deepseek-chat for OpenRouter
+const MONITORING_MODEL = process.env.MONITORING_MODEL || (API_TYPE === 'gemini' ? 'gemini-1.5-flash' : 'deepseek/deepseek-chat');
 const MONITORING_INTERVAL = Number(process.env.MONITORING_INTERVAL || 60000); // 1 minute
 const ESCALATION_THRESHOLD = Number(process.env.ESCALATION_THRESHOLD || 0.70); // 70% confidence
 const VOLATILITY_THRESHOLD = Number(process.env.VOLATILITY_THRESHOLD || 3.0); // 3% price change
@@ -60,14 +63,16 @@ console.log(`   CoinMarketCap: ${COINMARKETCAP_ENABLED ? 'ENABLED ✅' : 'DISABL
 console.log(`   CryptoCompare: ${process.env.CRYPTOCOMPARE_API_KEY ? 'ENABLED ✅' : 'DISABLED ❌'}`);
 console.log(`   ScraperAPI Proxy: ${SCRAPER_API_ENABLED ? 'ENABLED ✅ (Bypasses geo-blocks)' : 'DISABLED ❌'}`);
 console.log(`   News: ENABLED ✅ (Free public APIs: CryptoCompare${NEWSAPI_KEY ? ' + NewsAPI.org' : ''})`);
+console.log(`   AI API Type: ${API_TYPE.toUpperCase()} ${API_TYPE === 'gemini' ? '(Google)' : '(OpenRouter)'}`);
 console.log(`   AI Model (Premium): ${AI_MODEL}`);
-console.log(`   AI Key: ${AI_API_KEY ? 'ENABLED' : 'DISABLED'}`);
+console.log(`   AI Key: ${AI_API_KEY ? 'ENABLED ✅' : 'DISABLED ❌'}`);
 console.log(`   Mock Notifications: ${ALLOW_MOCK_NOTIFICATIONS ? 'ALLOWED' : 'BLOCKED'}`);
 console.log(`   API Delay: ${API_DELAY}ms between requests`);
 console.log('');
 console.log('🤖 Two-Tier AI Monitoring:');
 console.log(`   Monitoring: ${MONITORING_ENABLED ? 'ENABLED ✅' : 'DISABLED ❌'}`);
-console.log(`   Free Model (v3): ${MONITORING_MODEL}`);
+console.log(`   Free Model: ${MONITORING_MODEL}`);
+console.log(`   Premium Model: ${AI_MODEL}`);
 console.log(`   Monitoring Interval: ${MONITORING_INTERVAL / 1000}s`);
 console.log(`   Escalation Threshold: ${(ESCALATION_THRESHOLD * 100).toFixed(0)}%`);
 console.log(`   Volatility Trigger: ${VOLATILITY_THRESHOLD}%`);
@@ -86,6 +91,7 @@ module.exports = {
   SCAN_INTERVAL_OPTIONS,
   AI_API_KEY,
   AI_MODEL,
+  API_TYPE,
   ALLOW_MOCK_NOTIFICATIONS,
   // Two-Tier Monitoring
   MONITORING_ENABLED,
