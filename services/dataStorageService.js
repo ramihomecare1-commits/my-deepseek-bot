@@ -21,16 +21,26 @@ async function initMongoDB() {
   }
 
   try {
-    if (!mongoClient) {
+    if (!mongoClient || !mongoDb) {
       mongoClient = new MongoClient(mongoUri);
       await mongoClient.connect();
       mongoDb = mongoClient.db();
       useMongoDB = true;
       console.log('✅ MongoDB connected for data storage');
     }
+    
+    // Verify connection is still valid
+    if (!mongoDb) {
+      console.error('❌ MongoDB connection established but db is null');
+      return false;
+    }
+    
     return true;
   } catch (error) {
     console.error('❌ MongoDB connection failed:', error.message);
+    mongoDb = null;
+    mongoClient = null;
+    useMongoDB = false;
     return false;
   }
 }
