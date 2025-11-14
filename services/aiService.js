@@ -238,8 +238,9 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
       const prompt = createBatchAnalysisPrompt(allCoinsData, globalMetrics, options);
 
       console.log(`🤖 AI API attempt ${attempt}/${maxRetries}...`);
-      // Calculate tokens needed: ~200 tokens per coin for response (with risk management)
-      const estimatedTokens = Math.min(allCoinsData.length * 200, 8000);
+      // Calculate tokens needed: ~250 tokens per coin for response (with risk management and backtest data)
+      // Increased to handle backtest results in responses
+      const estimatedTokens = Math.min(allCoinsData.length * 250, 10000);
       console.log(`📊 Requesting ${estimatedTokens} max tokens for ${allCoinsData.length} coins`);
       
       const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
@@ -275,6 +276,13 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
         console.log('📄 Full response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
         throw new Error('AI API failed - response content is empty');
       }
+      
+      // Check if response was truncated
+      const finishReason = response.data.choices[0].finish_reason;
+      if (finishReason === 'length') {
+        console.log('⚠️ AI response was truncated (hit token limit). Response may be incomplete.');
+      }
+      
       return parseBatchAIResponse(response.data.choices[0].message.content, allCoinsData);
       
     } catch (error) {
@@ -407,46 +415,123 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
       // 1. Remove trailing commas before ] or }
       jsonStr = jsonStr.replace(/,(\s*[\]}])/g, '$1');
       
-      // 2. If JSON is incomplete (no closing bracket), try to fix it
+      // 2. If JSON is incomplete, try to extract complete objects first
       const openBrackets = (jsonStr.match(/\[/g) || []).length;
       const closeBrackets = (jsonStr.match(/\]/g) || []).length;
-      if (openBrackets > closeBrackets) {
-        console.log(`⚠️ Incomplete JSON detected (${openBrackets} [ vs ${closeBrackets} ]). Attempting to fix...`);
-        // Try to close incomplete objects/arrays
-        const openBraces = (jsonStr.match(/\{/g) || []).length;
-        const closeBraces = (jsonStr.match(/\}/g) || []).length;
-        for (let i = 0; i < (openBraces - closeBraces); i++) {
-          jsonStr += '}';
-        }
-        for (let i = 0; i < (openBrackets - closeBrackets); i++) {
-          jsonStr += ']';
-        }
-      }
+      const openBraces = (jsonStr.match(/\{/g) || []).length;
+      const closeBraces = (jsonStr.match(/\}/g) || []).length;
       
       let parsed;
+      
+      // First, try to parse as-is
       try {
         parsed = JSON.parse(jsonStr);
       } catch (parseError) {
-        console.log(`⚠️ JSON parse failed: ${parseError.message}`);
-        console.log(`📄 Problematic JSON (first 1000 chars): ${jsonStr.substring(0, 1000)}`);
-        
-        // Last resort: try to extract complete objects manually
-        const objects = [];
-        const objRegex = /\{\s*"symbol"\s*:\s*"([^"]+)"[\s\S]*?\}/g;
-        let match;
-        while ((match = objRegex.exec(jsonStr)) !== null) {
-          try {
-            const obj = JSON.parse(match[0]);
-            objects.push(obj);
-          } catch (e) {
-            // Skip invalid objects
+        // If parsing fails, try to fix incomplete JSON
+        if (openBrackets > closeBrackets || openBraces > closeBraces) {
+          console.log(`⚠️ Incomplete JSON detected (${openBrackets} [ vs ${closeBrackets} ], ${openBraces} { vs ${closeBraces} }). Attempting to fix...`);
+          
+          // Try to extract complete objects manually (more reliable than fixing brackets)
+          const objects = [];
+          
+          // Find all object start positions (look for "symbol" key)
+          const symbolPattern = /"symbol"\s*:\s*"([^"]+)"/g;
+          const objectStarts = [];
+          let symbolMatch;
+          
+          while ((symbolMatch = symbolPattern.exec(jsonStr)) !== null) {
+            // Find the opening brace before this symbol
+            let startIndex = symbolMatch.index;
+            while (startIndex > 0 && jsonStr[startIndex] !== '{') {
+              startIndex--;
+            }
+            if (jsonStr[startIndex] === '{') {
+              objectStarts.push({ start: startIndex, symbol: symbolMatch[1] });
+            }
           }
-        }
-        
-        if (objects.length > 0) {
-          console.log(`✅ Extracted ${objects.length} valid objects from malformed JSON`);
-          parsed = objects;
+          
+          // For each object start, try to extract the complete object
+          for (const objInfo of objectStarts) {
+            try {
+              let braceCount = 0;
+              let inString = false;
+              let escapeNext = false;
+              let objStr = '';
+              
+              // Extract the complete object by tracking braces
+              for (let i = objInfo.start; i < jsonStr.length; i++) {
+                const char = jsonStr[i];
+                objStr += char;
+                
+                if (escapeNext) {
+                  escapeNext = false;
+                  continue;
+                }
+                
+                if (char === '\\') {
+                  escapeNext = true;
+                  continue;
+                }
+                
+                if (char === '"') {
+                  inString = !inString;
+                  continue;
+                }
+                
+                if (!inString) {
+                  if (char === '{') braceCount++;
+                  if (char === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                      // Found complete object
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              // If object is incomplete, try to close it
+              if (braceCount > 0) {
+                for (let i = 0; i < braceCount; i++) {
+                  objStr += '}';
+                }
+              }
+              
+              const obj = JSON.parse(objStr);
+              if (obj.symbol) {
+                objects.push(obj);
+              }
+            } catch (e) {
+              // Skip invalid objects, continue with next
+            }
+          }
+          
+          // If we extracted objects, use them
+          if (objects.length > 0) {
+            console.log(`✅ Extracted ${objects.length} valid objects from incomplete JSON`);
+            parsed = objects;
+          } else {
+            // Last resort: try to fix by adding closing brackets
+            console.log(`⚠️ Could not extract objects, trying to fix brackets...`);
+            let fixedJson = jsonStr;
+            for (let i = 0; i < (openBraces - closeBraces); i++) {
+              fixedJson += '}';
+            }
+            for (let i = 0; i < (openBrackets - closeBrackets); i++) {
+              fixedJson += ']';
+            }
+            try {
+              parsed = JSON.parse(fixedJson);
+              console.log(`✅ Fixed JSON by adding closing brackets`);
+            } catch (e) {
+              console.log(`⚠️ JSON parse failed even after fixing: ${e.message}`);
+              console.log(`📄 Problematic JSON (first 1000 chars): ${jsonStr.substring(0, 1000)}`);
+              throw parseError;
+            }
+          }
         } else {
+          console.log(`⚠️ JSON parse failed: ${parseError.message}`);
+          console.log(`📄 Problematic JSON (first 1000 chars): ${jsonStr.substring(0, 1000)}`);
           throw parseError;
         }
       }
@@ -469,18 +554,24 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
       console.log(`✅ Successfully parsed ${Object.keys(results).length} AI evaluations`);
       
       // Fill in missing coins with HOLD
+      const missingCoins = [];
       allCoinsData.forEach((coin) => {
         if (!results[coin.symbol]) {
+          missingCoins.push(coin.symbol);
           results[coin.symbol] = {
             action: 'HOLD',
             confidence: 0.3,
-            reason: 'No AI evaluation provided',
-            insights: ['Waiting for analysis'],
+            reason: 'No AI evaluation provided (incomplete response)',
+            insights: ['AI response incomplete - using technical analysis'],
             signal: 'HOLD | Pending',
             aiEvaluated: false,
           };
         }
       });
+      
+      if (missingCoins.length > 0) {
+        console.log(`⚠️ ${missingCoins.length} coins missing from AI response: ${missingCoins.join(', ')}. Using fallback analysis.`);
+      }
       
       return results;
     }
