@@ -2137,13 +2137,28 @@ class ProfessionalTradingBot {
       console.log('✅ Trade data prepared with news');
 
       // Create AI prompt for trade re-evaluation
-      const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${tradesWithNews.length} open trades and provide your recommendation for each.
+      // Limit context size to prevent token limit issues
+      // For many trades, we'll process in smaller batches
+      const MAX_TRADES_PER_BATCH = 5; // Process max 5 trades at a time to avoid truncation
+      const tradeBatches = [];
+      for (let i = 0; i < tradesWithNews.length; i += MAX_TRADES_PER_BATCH) {
+        tradeBatches.push(tradesWithNews.slice(i, i + MAX_TRADES_PER_BATCH));
+      }
+      
+      let allRecommendations = [];
+      
+      // Process each batch separately
+      for (let batchIdx = 0; batchIdx < tradeBatches.length; batchIdx++) {
+        const batch = tradeBatches[batchIdx];
+        console.log(`📦 Processing trade batch ${batchIdx + 1}/${tradeBatches.length} (${batch.length} trades)...`);
+        
+        const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${batch.length} open trades and provide your recommendation for each.
 IMPORTANT: Consider technical analysis, recent news, AND historical context when making recommendations.
 - Review previous evaluations to see if patterns are consistent or changing
 - Historical news can provide context for current price movements
 - If previous evaluations were wrong, learn from those mistakes
 
-${tradesWithNews.map((t, i) => {
+${batch.map((t, i) => {
   let newsText = '';
   if (t.news && t.news.articles && t.news.articles.length > 0) {
     const newsItems = t.news.articles.slice(0, 3).map(n => `    - ${n.title} (${n.source})`).join('\n');
@@ -2225,7 +2240,7 @@ Return JSON array format:
       const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
         model: config.AI_MODEL,
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 2000, // Increased for multiple trades
+        max_tokens: 4000, // Increased significantly for multiple trades (was 2000)
         temperature: 0.1,
       }, {
         headers: {
@@ -2244,6 +2259,10 @@ Return JSON array format:
       const finishReason = response.data.choices[0].finish_reason;
       if (finishReason === 'length') {
         console.warn('⚠️ AI response was truncated (hit token limit)');
+        addLogEntry('⚠️ AI response truncated - increasing token limit or reducing trade count may help', 'warning');
+        
+        // Try to parse what we have - might be partial JSON
+        // If response is truncated, we'll try to extract complete JSON objects
         addLogEntry('⚠️ AI response truncated - may be incomplete', 'warning');
       }
       
