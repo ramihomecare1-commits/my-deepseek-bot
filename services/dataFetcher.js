@@ -324,13 +324,28 @@ async function fetchMEXCKlines(symbol, interval, limit) {
     }
 
     // MEXC interval mapping - MEXC uses: 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w, 1M
-    // For 1m, limit might be restricted, so reduce if too high
-    let mexcInterval = interval === '1m' ? '1m' : interval === '1h' ? '1h' : '1d';
+    // Map intervals: if 1m requested, use 5m (more reliable), otherwise use as-is
+    let mexcInterval = interval;
+    if (interval === '1m') {
+      mexcInterval = '5m'; // Use 5m instead of 1m (more reliable, less likely to hit limits)
+    } else if (interval === '1h') {
+      mexcInterval = '1h';
+    } else if (interval === '1d') {
+      mexcInterval = '1d';
+    }
+    
     let mexcLimit = Math.min(limit, 2000);
     
-    // MEXC may have limits on 1m data - reduce limit for 1m interval
-    if (mexcInterval === '1m' && mexcLimit > 500) {
-      mexcLimit = 500; // Reduce limit for 1m to avoid 400 errors
+    // Adjust limit based on interval
+    if (mexcInterval === '5m') {
+      // For 5m, max reasonable is ~288 (24 hours)
+      mexcLimit = Math.min(mexcLimit, 288);
+    } else if (mexcInterval === '1h') {
+      // For 1h, max is 2000 (but we typically use less)
+      mexcLimit = Math.min(mexcLimit, 2000);
+    } else if (mexcInterval === '1d') {
+      // For 1d, max is 2000
+      mexcLimit = Math.min(mexcLimit, 2000);
     }
     
     const response = await axios.get('https://api.mexc.com/api/v3/klines', {
