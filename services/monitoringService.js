@@ -25,33 +25,54 @@ class MonitoringService {
     this.escalationHistory = []; // Track escalations
     this.isMonitoring = false;
     
-    // Configuration
-    this.API_TYPE = config.API_TYPE || 'openrouter';
+    // Configuration - Support HYBRID mode (different APIs for each tier)
+    this.USE_HYBRID_MODE = config.USE_HYBRID_MODE || false;
+    
+    // Free monitoring tier
     this.FREE_MODEL = config.MONITORING_MODEL;
+    this.FREE_API_KEY = config.MONITORING_API_KEY;
+    this.FREE_API_TYPE = config.MONITORING_API_TYPE;
+    
+    // Premium confirmation tier
     this.PREMIUM_MODEL = config.AI_MODEL;
+    this.PREMIUM_API_KEY = config.PREMIUM_API_KEY;
+    this.PREMIUM_API_TYPE = config.PREMIUM_API_TYPE;
+    
+    // Thresholds
     this.ESCALATION_THRESHOLD = config.ESCALATION_THRESHOLD || 0.70; // 70% confidence
     this.VOLATILITY_THRESHOLD = config.VOLATILITY_THRESHOLD || 3.0; // 3% price change
     this.VOLUME_SPIKE_THRESHOLD = config.VOLUME_SPIKE_THRESHOLD || 2.0; // 2x average volume
     
-    console.log(`🤖 Monitoring Service initialized with ${this.API_TYPE.toUpperCase()} API`);
+    if (this.USE_HYBRID_MODE) {
+      console.log(`🤖 Monitoring Service initialized in HYBRID mode 🔥`);
+      console.log(`   Free Tier: ${this.FREE_MODEL} (${this.FREE_API_TYPE.toUpperCase()})`);
+      console.log(`   Premium Tier: ${this.PREMIUM_MODEL} (${this.PREMIUM_API_TYPE.toUpperCase()})`);
+    } else {
+      console.log(`🤖 Monitoring Service initialized with ${this.FREE_API_TYPE.toUpperCase()} API`);
+    }
   }
 
   /**
    * Call AI API (supports both Gemini and OpenRouter)
+   * In HYBRID mode, uses different APIs for free vs premium
    */
-  async callAI(prompt, model, maxTokens = 150) {
-    if (this.API_TYPE === 'gemini') {
-      return await this.callGeminiAPI(prompt, model, maxTokens);
+  async callAI(prompt, model, maxTokens = 150, tier = 'free') {
+    // Determine which API to use based on tier
+    const apiType = tier === 'premium' ? this.PREMIUM_API_TYPE : this.FREE_API_TYPE;
+    const apiKey = tier === 'premium' ? this.PREMIUM_API_KEY : this.FREE_API_KEY;
+    
+    if (apiType === 'gemini') {
+      return await this.callGeminiAPI(prompt, model, maxTokens, apiKey);
     } else {
-      return await this.callOpenRouterAPI(prompt, model, maxTokens);
+      return await this.callOpenRouterAPI(prompt, model, maxTokens, apiKey);
     }
   }
 
   /**
    * Call Gemini API (Google)
    */
-  async callGeminiAPI(prompt, model, maxTokens) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.AI_API_KEY}`;
+  async callGeminiAPI(prompt, model, maxTokens, apiKey) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     
     const response = await axios.post(url, {
       contents: [{
@@ -78,7 +99,7 @@ class MonitoringService {
   /**
    * Call OpenRouter API
    */
-  async callOpenRouterAPI(prompt, model, maxTokens) {
+  async callOpenRouterAPI(prompt, model, maxTokens, apiKey) {
     const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
       model: model,
       messages: [{ role: 'user', content: prompt }],
@@ -86,7 +107,7 @@ class MonitoringService {
       temperature: 0.3,
     }, {
       headers: {
-        Authorization: `Bearer ${config.AI_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
         'X-Title': 'Crypto Monitoring Bot',
@@ -118,8 +139,8 @@ class MonitoringService {
 
       console.log(`🔍 Free model monitoring ${symbol} (${volatilityLevel} volatility: ${priceChangePercent.toFixed(2)}%)`);
 
-      // Call appropriate API
-      const responseText = await this.callAI(prompt, this.FREE_MODEL, 150);
+      // Call free tier API
+      const responseText = await this.callAI(prompt, this.FREE_MODEL, 150, 'free');
       const analysis = this.parseMonitoringResponse(responseText);
       
       // Store v3 evaluation
@@ -160,8 +181,8 @@ class MonitoringService {
       // Create detailed prompt for premium model
       const prompt = this.createConfirmationPrompt(coinData, v3Analysis);
 
-      // Call premium model with longer timeout
-      const responseText = await this.callAI(prompt, this.PREMIUM_MODEL, 300);
+      // Call premium tier API with longer timeout
+      const responseText = await this.callAI(prompt, this.PREMIUM_MODEL, 300, 'premium');
       const r1Decision = this.parseR1Response(responseText);
 
       // Store R1 evaluation
