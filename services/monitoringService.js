@@ -140,6 +140,11 @@ class MonitoringService {
       console.log(`🔍 Free model monitoring ${symbol} (${volatilityLevel} volatility: ${priceChangePercent.toFixed(2)}%)`);
 
       // Call free tier API
+      if (!this.FREE_API_KEY) {
+        console.log(`⚠️ No free tier API key - skipping ${symbol}`);
+        return null;
+      }
+      
       const responseText = await this.callAI(prompt, this.FREE_MODEL, 150, 'free');
       const analysis = this.parseMonitoringResponse(responseText);
       
@@ -180,6 +185,16 @@ class MonitoringService {
 
       // Create detailed prompt for premium model
       const prompt = this.createConfirmationPrompt(coinData, v3Analysis);
+
+      // Check premium API key
+      if (!this.PREMIUM_API_KEY) {
+        console.log(`⚠️ No premium tier API key - cannot escalate ${symbol}`);
+        return {
+          decision: 'ERROR',
+          reason: 'Premium API key not configured',
+          confidence: 0
+        };
+      }
 
       // Call premium tier API with longer timeout
       const responseText = await this.callAI(prompt, this.PREMIUM_MODEL, 300, 'premium');

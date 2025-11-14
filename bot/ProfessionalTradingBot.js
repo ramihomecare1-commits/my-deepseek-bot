@@ -489,14 +489,17 @@ class ProfessionalTradingBot {
       return;
     }
 
-    if (!config.AI_API_KEY) {
-      console.log('⚠️ AI_API_KEY not configured - monitoring disabled');
+    // Check for monitoring API key (supports hybrid mode with separate keys)
+    if (!config.MONITORING_API_KEY) {
+      console.log('⚠️ No monitoring API key configured - monitoring disabled');
+      console.log('   Set GEMINI_API_KEY (for free monitoring) or OPENROUTER_API_KEY');
       return;
     }
 
     console.log('🤖 Starting Two-Tier AI Monitoring System');
-    console.log(`   Free Model (v3): ${config.MONITORING_MODEL}`);
-    console.log(`   Premium Model (R1): ${config.AI_MODEL}`);
+    console.log(`   Mode: ${config.USE_HYBRID_MODE ? 'HYBRID 🔥' : 'Single API'}`);
+    console.log(`   Free Model: ${config.MONITORING_MODEL} (${config.MONITORING_API_TYPE.toUpperCase()})`);
+    console.log(`   Premium Model: ${config.AI_MODEL} (${config.PREMIUM_API_TYPE.toUpperCase()})`);
     console.log(`   Interval: ${config.MONITORING_INTERVAL / 1000}s`);
     console.log(`   Escalation Threshold: ${(config.ESCALATION_THRESHOLD * 100).toFixed(0)}%`);
 
