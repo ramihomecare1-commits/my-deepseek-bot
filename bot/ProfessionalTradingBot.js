@@ -27,6 +27,7 @@ const {
   executeStopLoss,
   executeAddPosition
 } = require('../services/exchangeService');
+const { quickBacktest } = require('../services/backtestService');
 
 // Helper function to add log entries (if available)
 let addLogEntry = null;
@@ -593,6 +594,41 @@ class ProfessionalTradingBot {
               console.log(`🚫 ${coin.symbol}: Does not match custom trading rules`);
               continue;
             }
+            
+            // Run backtest on this opportunity
+            try {
+              addLogEntry(`Running backtest for ${coin.symbol}...`, 'info');
+              const backtestResult = await quickBacktest(coin, {
+                action: analysis.action,
+                entryPrice: analysis.entryPrice,
+                takeProfit: analysis.takeProfit,
+                stopLoss: analysis.stopLoss
+              });
+              
+              if (backtestResult.success) {
+                analysis.backtest = {
+                  winRate: backtestResult.winRate,
+                  totalTrades: backtestResult.totalTrades,
+                  avgReturn: backtestResult.avgReturn,
+                  profitFactor: backtestResult.profitFactor,
+                  maxDrawdown: backtestResult.maxDrawdown,
+                  dataPoints: backtestResult.dataPoints
+                };
+                addLogEntry(`✅ ${coin.symbol}: Backtest complete - ${backtestResult.winRate.toFixed(1)}% win rate (${backtestResult.totalTrades} trades)`, 'success');
+              } else {
+                analysis.backtest = {
+                  error: backtestResult.error || 'Backtest failed',
+                  dataPoints: backtestResult.dataPoints || 0
+                };
+                addLogEntry(`⚠️ ${coin.symbol}: Backtest failed - ${backtestResult.error}`, 'warning');
+              }
+            } catch (backtestError) {
+              console.log(`⚠️ ${coin.symbol}: Backtest error - ${backtestError.message}`);
+              analysis.backtest = {
+                error: backtestError.message
+              };
+            }
+            
             opportunities.push(analysis);
             console.log(`✅ ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}% confidence) - ADDED TO OPPORTUNITIES`);
             addLogEntry(`${coin.symbol}: ${analysis.action} signal detected (${(analysis.confidence * 100).toFixed(0)}% confidence)`, 'success');

@@ -96,6 +96,24 @@ ${opportunity.addPosition ? `• Add Position (DCA): $${Number(opportunity.addPo
 `;
     }
 
+    // Add backtest results if available
+    let backtestText = '';
+    if (opportunity.backtest && opportunity.backtest.winRate !== undefined) {
+      const bt = opportunity.backtest;
+      backtestText = `
+📈 *BACKTEST RESULTS (${bt.dataPoints || 0} data points):*
+• Win Rate: ${bt.winRate.toFixed(1)}% (${bt.totalTrades || 0} trades)
+• Avg Return: ${bt.avgReturn > 0 ? '+' : ''}${bt.avgReturn.toFixed(2)}%
+• Profit Factor: ${bt.profitFactor.toFixed(2)}
+• Max Drawdown: ${bt.maxDrawdown.toFixed(2)}%
+${bt.totalTrades > 0 ? '✅ Strategy validated on historical data' : '⚠️ Limited backtest data'}
+`;
+    } else if (opportunity.backtest && opportunity.backtest.error) {
+      backtestText = `
+📈 *BACKTEST:* ⚠️ ${escapeMarkdown(opportunity.backtest.error)}
+`;
+    }
+
     const message = `${actionEmoji} *${opportunity.action} SIGNAL DETECTED*
 
 *Coin:* ${opportunity.name} (${opportunity.symbol})
@@ -104,6 +122,7 @@ ${opportunity.addPosition ? `• Add Position (DCA): $${Number(opportunity.addPo
 *Data Source:* ${opportunity.dataSource || 'CoinGecko'}
 *Market Sentiment:* ${sentiment}
 ${riskManagementText}
+${backtestText}
 📊 *Technical Snapshot:*
 • Daily RSI: ${indicators.daily.rsi}
 • Hourly RSI: ${indicators.hourly.rsi}

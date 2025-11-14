@@ -1112,6 +1112,26 @@
               '<div class="confidence-box"><div class="value">' + (opp.confidence * 100).toFixed(0) + '%</div><div>Confidence</div></div>' +
             '</div>' +
             patternsHTML +
+            (opp.backtest && opp.backtest.winRate !== undefined ? 
+              '<div style="margin-top: 12px; padding: 12px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1)); border-radius: 8px; border-left: 3px solid #6366f1;">' +
+                '<div style="font-weight: 600; margin-bottom: 8px; color: #6366f1;">📈 Backtest Results:</div>' +
+                '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9em;">' +
+                  '<div><strong>Win Rate:</strong> <span style="color: ' + (opp.backtest.winRate >= 50 ? '#22c55e' : '#ef4444') + ';">' + opp.backtest.winRate.toFixed(1) + '%</span></div>' +
+                  '<div><strong>Trades:</strong> ' + (opp.backtest.totalTrades || 0) + '</div>' +
+                  '<div><strong>Avg Return:</strong> <span style="color: ' + (opp.backtest.avgReturn >= 0 ? '#22c55e' : '#ef4444') + ';">' + (opp.backtest.avgReturn >= 0 ? '+' : '') + opp.backtest.avgReturn.toFixed(2) + '%</span></div>' +
+                  '<div><strong>Profit Factor:</strong> ' + opp.backtest.profitFactor.toFixed(2) + '</div>' +
+                  '<div><strong>Max Drawdown:</strong> <span style="color: #ef4444;">' + opp.backtest.maxDrawdown.toFixed(2) + '%</span></div>' +
+                  '<div><strong>Data Points:</strong> ' + (opp.backtest.dataPoints || 0) + '</div>' +
+                '</div>' +
+                '<div style="margin-top: 8px; padding: 6px; background: rgba(34, 197, 94, 0.1); border-radius: 4px; font-size: 0.85em; color: #15803d;">' +
+                  '✅ Strategy validated on historical data' +
+                '</div>' +
+              '</div>' : 
+              opp.backtest && opp.backtest.error ? 
+              '<div style="margin-top: 12px; padding: 12px; background: rgba(245, 158, 11, 0.1); border-radius: 8px; border-left: 3px solid #f59e0b;">' +
+                '<div style="font-weight: 600; color: #f59e0b;">📈 Backtest:</div>' +
+                '<div style="font-size: 0.9em; color: #b45309;">⚠️ ' + opp.backtest.error + '</div>' +
+              '</div>' : '') +
             (opp.insights && opp.insights.length > 0 ? '<div class="reason-box" style="margin-top: 12px;"><strong>Insights:</strong><ul class="insights-list"><li>' + 
               opp.insights.join('</li><li>') + '</li></ul></div>' : '') +
             '</div>';
