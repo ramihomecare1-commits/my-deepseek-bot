@@ -196,10 +196,6 @@ class ProfessionalTradingBot {
         this.activeTrades = savedTrades;
         console.log(`✅ Restored ${savedTrades.length} active trades from storage`);
         addLogEntry(`Restored ${savedTrades.length} active trades from storage`, 'success');
-      }
-      
-      // Load closed trades
-      await this.loadClosedTrades();
         
         // Log trade details
         savedTrades.forEach(trade => {
@@ -212,6 +208,10 @@ class ProfessionalTradingBot {
         await this.updateActiveTrades();
         addLogEntry('Trades updated with current market prices', 'success');
         console.log('✅ Trades updated with current market prices');
+      }
+      
+      // Load closed trades
+      await this.loadClosedTrades();
         
         // Recalculate portfolio metrics from restored trades
         await recalculateFromTrades(this.activeTrades);
