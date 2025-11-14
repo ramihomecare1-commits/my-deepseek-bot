@@ -36,21 +36,40 @@ const { loadPortfolio, recalculateFromTrades, getPortfolioStats } = require('../
 
 // Helper function to add log entries (if available)
 // Note: We can't require routes/api here as it might cause circular dependency
-// Instead, we'll get it lazily when needed
+// Instead, we'll use console.log as fallback and only try to get the real function
+// when we're sure the module loading is complete
 let addLogEntryFn = null;
+let addLogEntryInitialized = false;
 function addLogEntry(message, level = 'info') {
-  if (!addLogEntryFn) {
+  // Always use console.log to avoid any circular dependency issues during module load
+  const levelUpper = level.toUpperCase();
+  console.log(`[${levelUpper}] ${message}`);
+  
+  // Try to get the real function only after module loading is complete
+  // This prevents circular dependency during require()
+  if (!addLogEntryInitialized) {
+    addLogEntryInitialized = true;
+    // Use setImmediate to defer this until after module loading
+    setImmediate(() => {
+      try {
+        const apiRoutes = require('../routes/api');
+        if (apiRoutes && apiRoutes.addLogEntry) {
+          addLogEntryFn = apiRoutes.addLogEntry;
+        }
+      } catch (e) {
+        // Ignore - we'll just use console.log
+      }
+    });
+  }
+  
+  // If we have the real function, use it (but still log to console as backup)
+  if (addLogEntryFn) {
     try {
-      const apiRoutes = require('../routes/api');
-      addLogEntryFn = apiRoutes.addLogEntry;
+      addLogEntryFn(message, level);
     } catch (e) {
-      // Logging not available, use console fallback
-      addLogEntryFn = (msg, lvl) => {
-        console.log(`[${lvl.toUpperCase()}] ${msg}`);
-      };
+      // Fallback to console if real function fails
     }
   }
-  return addLogEntryFn(message, level);
 }
 
 class ProfessionalTradingBot {
