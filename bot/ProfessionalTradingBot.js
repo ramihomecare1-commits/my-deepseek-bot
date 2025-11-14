@@ -462,56 +462,81 @@ class ProfessionalTradingBot {
       const allCoinsData = []; // Collect all coin data for batch AI
       const analysisResults = new Map(); // Store analysis results to avoid re-computation
 
-      // Step 1: Collect all coin technical data
+      // Step 1: Collect all coin technical data (in batches of 10 for parallel processing)
       console.log('📊 Step 1: Collecting technical data for all coins...');
       addLogEntry('Step 1: Collecting technical data for all coins...', 'info');
-      for (const coin of this.trackedCoins) {
-        try {
-          const analysis = await this.analyzeWithTechnicalIndicators(coin, { 
+      
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < this.trackedCoins.length; i += BATCH_SIZE) {
+        const batch = this.trackedCoins.slice(i, i + BATCH_SIZE);
+        console.log(`📦 Processing batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} coins)...`);
+        
+        // Process all coins in batch in parallel
+        const analysisPromises = batch.map(coin => 
+          this.analyzeWithTechnicalIndicators(coin, { 
             options,
             globalMetrics: this.globalMetrics 
-          });
-          analyzedCount += 1;
-
-          // Store analysis result
-          analysisResults.set(coin.symbol, analysis);
-
-          if (analysis.usesMockData) {
-            mockDataUsed += 1;
-          }
-
-          if (analysis.heatmapEntry) {
-            heatmapEntries.push(analysis.heatmapEntry);
-          }
-
-          // Collect data for batch AI
-          // Check if we have valid frame data
-          const hasFrames = analysis.frames && typeof analysis.frames === 'object';
-          const frameCount = hasFrames ? Object.keys(analysis.frames).length : 0;
+          }).catch(error => {
+            console.log(`❌ ${coin.symbol}: Data collection failed - ${error.message}`);
+            this.stats.apiErrors += 1;
+            return null; // Return null on error so Promise.allSettled continues
+          })
+        );
+        
+        const results = await Promise.allSettled(analysisPromises);
+        
+        // Process results
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j];
+          const coin = batch[j];
           
-          console.log(`🔍 ${coin.symbol} analysis check:`, {
-            hasFrames: !!hasFrames,
-            frameCount: frameCount,
-            usesMockData: analysis.usesMockData,
-            dataSource: analysis.dataSource,
-            confidence: analysis.confidence
-          });
-          
-          if (hasFrames && frameCount > 0) {
-            const priceValue = typeof analysis.price === 'string' 
-              ? parseFloat(analysis.price.replace('$', '').replace(/,/g, '')) 
-              : analysis.price || currentPrice;
+          if (result.status === 'fulfilled' && result.value) {
+            const analysis = result.value;
+            analyzedCount += 1;
+
+            // Store analysis result
+            analysisResults.set(coin.symbol, analysis);
+
+            if (analysis.usesMockData) {
+              mockDataUsed += 1;
+            }
+
+            if (analysis.heatmapEntry) {
+              heatmapEntries.push(analysis.heatmapEntry);
+            }
+
+            // Collect data for batch AI
+            // Check if we have valid frame data
+            const hasFrames = analysis.frames && typeof analysis.frames === 'object';
+            const frameCount = hasFrames ? Object.keys(analysis.frames).length : 0;
             
-            allCoinsData.push({
-              symbol: coin.symbol,
-              name: coin.name,
-              currentPrice: priceValue,
-              frames: analysis.frames,
-              dataSource: analysis.dataSource || 'CoinGecko',
+            console.log(`🔍 ${coin.symbol} analysis check:`, {
+              hasFrames: !!hasFrames,
+              frameCount: frameCount,
+              usesMockData: analysis.usesMockData,
+              dataSource: analysis.dataSource,
+              confidence: analysis.confidence
             });
-            console.log(`✅ Collected data for AI: ${coin.symbol} (${frameCount} timeframes, price: $${priceValue})`);
+            
+            if (hasFrames && frameCount > 0) {
+              const priceValue = typeof analysis.price === 'string' 
+                ? parseFloat(analysis.price.replace('$', '').replace(/,/g, '')) 
+                : analysis.price || 0;
+              
+              allCoinsData.push({
+                symbol: coin.symbol,
+                name: coin.name,
+                currentPrice: priceValue,
+                frames: analysis.frames,
+                dataSource: analysis.dataSource || 'CoinGecko',
+              });
+              console.log(`✅ Collected data for AI: ${coin.symbol} (${frameCount} timeframes, price: $${priceValue})`);
+            } else {
+              console.log(`⏭️ Skipping ${coin.symbol} for AI - reason:`, !hasFrames ? 'no frames object' : frameCount === 0 ? 'empty frames' : 'unknown');
+            }
           } else {
-            console.log(`⏭️ Skipping ${coin.symbol} for AI - reason:`, !hasFrames ? 'no frames object' : frameCount === 0 ? 'empty frames' : 'unknown');
+            console.log(`❌ ${coin.symbol}: Analysis failed`);
+            this.stats.apiErrors += 1;
           }
 
           this.scanProgress.processed += 1;
@@ -519,13 +544,12 @@ class ProfessionalTradingBot {
             Math.round((this.scanProgress.processed / this.trackedCoins.length) * 60), // 60% for data collection
             60,
           );
-        } catch (error) {
-          console.log(`❌ ${coin.symbol}: Data collection failed - ${error.message}`);
-          this.stats.apiErrors += 1;
-          this.scanProgress.processed += 1;
         }
-
-        await sleep(config.API_DELAY);
+        
+        // Small delay between batches to respect rate limits
+        if (i + BATCH_SIZE < this.trackedCoins.length) {
+          await sleep(200); // 200ms delay between batches
+        }
       }
 
       // Step 2a: Fetch news for all coins before AI analysis
@@ -1234,16 +1258,20 @@ class ProfessionalTradingBot {
 
     addLogEntry(`Updating ${this.activeTrades.length} active trades...`, 'info');
 
-    for (let i = 0; i < this.activeTrades.length; i++) {
-      const trade = this.activeTrades[i];
+    // Filter only OPEN or DCA_HIT trades
+    const activeTradesToUpdate = this.activeTrades.filter(t => t.status === 'OPEN' || t.status === 'DCA_HIT');
+    
+    if (activeTradesToUpdate.length === 0) {
+      return;
+    }
 
-      // Only update OPEN or DCA_HIT trades (DCA_HIT trades are still active)
-      if (trade.status !== 'OPEN' && trade.status !== 'DCA_HIT') {
-        continue;
-      }
-
-      try {
-        // Fetch latest price for the trade's coin - use stored coin data if available
+    // Process trades in batches of 10 for parallel price fetching
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < activeTradesToUpdate.length; i += BATCH_SIZE) {
+      const batch = activeTradesToUpdate.slice(i, i + BATCH_SIZE);
+      
+      // Fetch prices for all trades in batch in parallel
+      const pricePromises = batch.map(trade => {
         const coinData = trade.coinData || { 
           symbol: trade.symbol, 
           name: trade.name,
@@ -1251,7 +1279,30 @@ class ProfessionalTradingBot {
           coinmarketcap_id: trade.coinmarketcap_id,
           coinpaprika_id: trade.coinpaprika_id
         };
-        const priceResult = await fetchEnhancedPriceData(coinData, this.priceCache, this.stats, config);
+        return fetchEnhancedPriceData(coinData, this.priceCache, this.stats, config)
+          .then(priceResult => ({ trade, priceResult, success: true }))
+          .catch(error => {
+            console.error(`⚠️ Price fetch failed for ${trade.symbol}:`, error.message);
+            return { trade, priceResult: null, success: false, error };
+          });
+      });
+      
+      const priceResults = await Promise.allSettled(pricePromises);
+      
+      // Process each trade with its price result
+      for (let j = 0; j < priceResults.length; j++) {
+        const result = priceResults[j];
+        if (result.status !== 'fulfilled') {
+          continue;
+        }
+        
+        const { trade, priceResult, success } = result.value;
+        
+        if (!success || !priceResult) {
+          continue;
+        }
+
+      try {
         
         // Handle different price formats
         let currentPrice = 0;
@@ -1549,6 +1600,12 @@ class ProfessionalTradingBot {
         addLogEntry(`⚠️ Failed to update trade for ${trade.symbol}: ${error.message}. Will retry on next scan.`, 'warning');
         // Don't mark as ERROR - just skip this update and retry next scan
         // This handles temporary API failures gracefully
+      }
+      }
+      
+      // Small delay between batches to respect rate limits
+      if (i + BATCH_SIZE < activeTradesToUpdate.length) {
+        await sleep(200); // 200ms delay between batches
       }
     }
     
