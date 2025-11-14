@@ -220,6 +220,78 @@ async function recalculateFromTrades(activeTrades) {
 }
 
 /**
+ * Recalculate portfolio from closed trades (on startup)
+ * This ensures portfolio reflects all historical closed trades
+ */
+async function recalculateFromClosedTrades(closedTrades) {
+  if (!closedTrades || closedTrades.length === 0) {
+    return;
+  }
+  
+  // Reset realized P&L and stats (will recalculate from closed trades)
+  let totalRealized = 0;
+  let winningTrades = 0;
+  let losingTrades = 0;
+  let totalClosedPositions = 0;
+  let largestWin = 0;
+  let largestLoss = 0;
+  let totalWinAmount = 0;
+  let totalLossAmount = 0;
+  
+  for (const trade of closedTrades) {
+    const pnl = trade.finalPnl || trade.pnl || 0;
+    const pnlPercent = trade.finalPnlPercent || trade.pnlPercent || 0;
+    const entryPrice = trade.entryPrice || 0;
+    const exitPrice = trade.closePrice || trade.executionPrice || trade.currentPrice || 0;
+    const quantity = trade.quantity || trade.executedQty || 0;
+    
+    totalRealized += pnl;
+    totalClosedPositions++;
+    
+    if (pnl > 0) {
+      winningTrades++;
+      totalWinAmount += pnl;
+      if (pnl > largestWin) {
+        largestWin = pnl;
+      }
+    } else if (pnl < 0) {
+      losingTrades++;
+      totalLossAmount += pnl;
+      if (pnl < largestLoss) {
+        largestLoss = pnl;
+      }
+    }
+  }
+  
+  // Update portfolio state
+  portfolioState.totalRealized = totalRealized;
+  portfolioState.closedPositions = totalClosedPositions;
+  portfolioState.winningTrades = winningTrades;
+  portfolioState.losingTrades = losingTrades;
+  portfolioState.largestWin = largestWin;
+  portfolioState.largestLoss = largestLoss;
+  portfolioState.averageWin = winningTrades > 0 ? totalWinAmount / winningTrades : 0;
+  portfolioState.averageLoss = losingTrades > 0 ? totalLossAmount / losingTrades : 0;
+  portfolioState.winRate = (winningTrades + losingTrades) > 0
+    ? (winningTrades / (winningTrades + losingTrades)) * 100
+    : 0;
+  
+  // Update balance: start from initial capital, add all realized P&L
+  portfolioState.currentBalance = portfolioState.initialCapital + totalRealized;
+  
+  // Recalculate total P&L (will be updated when active trades are recalculated)
+  portfolioState.totalPnl = portfolioState.totalRealized + portfolioState.totalUnrealized;
+  portfolioState.totalPnlPercent = portfolioState.initialCapital > 0
+    ? (portfolioState.totalPnl / portfolioState.initialCapital) * 100
+    : 0;
+  
+  portfolioState.lastUpdated = new Date().toISOString();
+  await savePortfolio();
+  
+  console.log(`✅ Recalculated portfolio from ${closedTrades.length} closed trades: ${winningTrades} wins, ${losingTrades} losses, Total P&L: $${totalRealized.toFixed(2)}`);
+}
+
+/**
  * Reset portfolio (for testing)
  */
 async function resetPortfolio() {
@@ -274,6 +346,7 @@ module.exports = {
   updateTradePnl,
   closeTrade,
   recalculateFromTrades,
+  recalculateFromClosedTrades,
   resetPortfolio,
   getPositionSize,
   getDCASize,

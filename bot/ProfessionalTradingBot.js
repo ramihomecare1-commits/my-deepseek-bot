@@ -32,7 +32,7 @@ const {
 } = require('../services/exchangeService');
 const { quickBacktest } = require('../services/backtestService');
 const { loadTrades, saveTrades, loadClosedTrades, saveClosedTrades } = require('../services/tradePersistenceService');
-const { loadPortfolio, recalculateFromTrades, getPortfolioStats } = require('../services/portfolioService');
+const { loadPortfolio, recalculateFromTrades, recalculateFromClosedTrades, getPortfolioStats, closeTrade } = require('../services/portfolioService');
 
 // Helper function to add log entries
 // Note: We can't require routes/api here as it causes circular dependency
@@ -211,7 +211,14 @@ class ProfessionalTradingBot {
       // Load closed trades
       await this.loadClosedTrades();
       
-      // Recalculate portfolio metrics from restored trades
+      // Recalculate portfolio from closed trades first (historical P&L)
+      if (this.closedTrades && this.closedTrades.length > 0) {
+        await recalculateFromClosedTrades(this.closedTrades);
+        addLogEntry(`Portfolio recalculated from ${this.closedTrades.length} closed trades`, 'info');
+        console.log(`✅ Portfolio recalculated from ${this.closedTrades.length} closed trades`);
+      }
+      
+      // Recalculate portfolio metrics from active trades (unrealized P&L)
       await recalculateFromTrades(this.activeTrades);
       addLogEntry('Portfolio metrics recalculated from restored trades', 'info');
       console.log('✅ Portfolio metrics recalculated');
@@ -1558,6 +1565,16 @@ class ProfessionalTradingBot {
           finalPnlPercent: trade.pnlPercent
         };
         this.closedTrades.push(closedTrade);
+        
+        // Update portfolio with closed trade
+        await closeTrade(
+          trade.symbol,
+          trade.pnl || 0,
+          trade.pnlPercent || 0,
+          trade.entryPrice,
+          closedTrade.closePrice,
+          trade.quantity || 0
+        );
       }
       
       // Remove closed trades from active trades
@@ -1571,7 +1588,7 @@ class ProfessionalTradingBot {
       // Save closed trades
       await this.saveClosedTrades();
       
-      console.log(`✅ Moved ${closedTradesToMove.length} closed trade(s) to closedTrades`);
+      console.log(`✅ Moved ${closedTradesToMove.length} closed trade(s) to closedTrades and updated portfolio`);
     }
     
     // Save trades to disk after updates
@@ -2033,6 +2050,16 @@ Return JSON array format:
       if (this.closedTrades.length > 100) {
         this.closedTrades = this.closedTrades.slice(-100);
       }
+      
+      // Update portfolio with closed trade
+      await closeTrade(
+        trade.symbol,
+        trade.pnl || 0,
+        pnlPercent,
+        trade.entryPrice,
+        closedTrade.closePrice,
+        closedTrade.executedQty || trade.quantity
+      );
       
       // Save both active and closed trades
       await saveTrades(this.activeTrades);
