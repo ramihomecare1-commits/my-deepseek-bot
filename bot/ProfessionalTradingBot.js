@@ -2449,31 +2449,12 @@ Return JSON array format:
     }
     
     return allRecommendations;
-        } catch (parseError) {
-          console.error('❌ Failed to parse AI recommendations:', parseError.message);
-          console.error('AI response preview:', aiContent.substring(0, 500));
-          addLogEntry(`⚠️ Failed to parse AI recommendations: ${parseError.message}`, 'error');
-          throw new Error(`AI response parsing failed: ${parseError.message}`);
-        }
-      } else {
-        console.error('❌ No JSON found in AI response');
-        console.error('Full AI response:', aiContent);
-        console.error('Response length:', aiContent.length);
-        
-        // Check if response is too short (likely incomplete)
-        if (aiContent.length < 50) {
-          addLogEntry('⚠️ AI response too short - likely incomplete or error', 'error');
-          throw new Error(`AI response too short (${aiContent.length} chars) - response may be incomplete. Full response: "${aiContent}"`);
-        }
-        
-        addLogEntry('⚠️ AI response format invalid - no JSON found', 'error');
-        throw new Error(`Invalid AI response format - no JSON found. Response: "${aiContent.substring(0, 200)}"`);
-      }
+    
     } catch (error) {
       console.error('❌ AI re-evaluation error:', error.message);
       console.error('Error stack:', error.stack);
       addLogEntry(`⚠️ AI re-evaluation failed: ${error.message}`, 'warning');
-      throw error;
+      return [];
     }
   }
 
