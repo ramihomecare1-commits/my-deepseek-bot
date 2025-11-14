@@ -174,6 +174,13 @@ async function storeNewsBatch(newsArray) {
       console.log('⚠️ Cannot store news batch - MongoDB connection not established');
       return;
     }
+    
+    // Double-check mongoDb is still valid
+    if (!mongoDb || typeof mongoDb.collection !== 'function') {
+      console.log('⚠️ MongoDB collection method not available, skipping news batch storage');
+      return;
+    }
+    
     const collection = mongoDb.collection('newsArticles');
     const operations = [];
 
@@ -256,6 +263,7 @@ async function retrieveRelatedData(options) {
 
     // Retrieve AI evaluations
     if (!mongoDb) {
+      console.log('⚠️ MongoDB not connected for retrieveRelatedData, returning empty data');
       return { evaluations: [], news: [] };
     }
     const evalCollection = mongoDb.collection('aiEvaluations');

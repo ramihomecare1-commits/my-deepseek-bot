@@ -1600,7 +1600,9 @@ class ProfessionalTradingBot {
           pnlPercent = ((trade.entryPrice - currentPrice) / trade.entryPrice) * 100;
         }
         
-        console.log(`💰 ${trade.symbol} P&L: Entry $${trade.entryPrice.toFixed(2)} → Current $${currentPrice.toFixed(2)} = ${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%`);
+        // Ensure pnlPercent is a number before using toFixed
+        const safePnlPercent = typeof pnlPercent === 'number' ? pnlPercent : 0;
+        console.log(`💰 ${trade.symbol} P&L: Entry $${trade.entryPrice.toFixed(2)} → Current $${currentPrice.toFixed(2)} = ${safePnlPercent >= 0 ? '+' : ''}${safePnlPercent.toFixed(2)}%`);
 
         // Fetch historical data for analysis
         const historicalData = await fetchHistoricalData(coinData, this.priceCache, this.stats, config);

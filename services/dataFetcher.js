@@ -326,15 +326,15 @@ async function fetchMEXCKlines(symbol, interval, limit) {
       throw new Error(`Symbol ${symbol} not available on MEXC`);
     }
 
-    // MEXC interval mapping - MEXC uses: 1m, 5m, 15m, 30m, 1H (capital H), 4H, 1D, 1W, 1M
-    // Map intervals: if 1m requested, use 5m (more reliable), otherwise convert to MEXC format
+    // MEXC interval mapping - MEXC uses: 1m, 5m, 15m, 30m, 60m, 4h, 1d, 1w, 1M
+    // Map intervals: if 1m requested, use 5m (more reliable), for 1h use 60m, for 1d use 1d
     let mexcInterval = interval;
     if (interval === '1m') {
       mexcInterval = '5m'; // Use 5m instead of 1m (more reliable, less likely to hit limits)
     } else if (interval === '1h') {
-      mexcInterval = '1H'; // MEXC uses capital H for hourly
+      mexcInterval = '60m'; // MEXC uses 60m for hourly (not 1h)
     } else if (interval === '1d') {
-      mexcInterval = '1D'; // MEXC uses capital D for daily
+      mexcInterval = '1d'; // MEXC uses lowercase 1d for daily
     }
     
     let mexcLimit = Math.min(limit, 2000);
@@ -343,11 +343,11 @@ async function fetchMEXCKlines(symbol, interval, limit) {
     if (mexcInterval === '5m') {
       // For 5m, max reasonable is ~288 (24 hours)
       mexcLimit = Math.min(mexcLimit, 288);
-    } else if (mexcInterval === '1H') {
-      // For 1H, max is 2000 (but we typically use less)
+    } else if (mexcInterval === '60m') {
+      // For 60m (hourly), max is 2000 (but we typically use less)
       mexcLimit = Math.min(mexcLimit, 2000);
-    } else if (mexcInterval === '1D') {
-      // For 1D, max is 2000
+    } else if (mexcInterval === '1d') {
+      // For 1d, max is 2000
       mexcLimit = Math.min(mexcLimit, 2000);
     }
     

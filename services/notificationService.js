@@ -286,31 +286,18 @@ async function sendTelegramMessage(message) {
   }
 
   try {
-    // Escape special Markdown characters to avoid parsing errors
-    // Telegram Markdown special chars: _ * [ ] ( ) ~ ` > # + - = | { } . !
+    // Use HTML mode instead of Markdown for better compatibility
+    // Escape HTML special characters: < > &
     const escapedMessage = message
-      .replace(/\_/g, '\\_')
-      .replace(/\*/g, '\\*')
-      .replace(/\[/g, '\\[')
-      .replace(/\]/g, '\\]')
-      .replace(/\(/g, '\\(')
-      .replace(/\)/g, '\\)')
-      .replace(/\~/g, '\\~')
-      .replace(/\`/g, '\\`')
-      .replace(/\>/g, '\\>')
-      .replace(/\#/g, '\\#')
-      .replace(/\+/g, '\\+')
-      .replace(/\-/g, '\\-')
-      .replace(/\=/g, '\\=')
-      .replace(/\|/g, '\\|')
-      .replace(/\{/g, '\\{')
-      .replace(/\}/g, '\\}');
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
 
     const telegramUrl = `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/sendMessage`;
     const response = await axios.post(telegramUrl, {
       chat_id: config.TELEGRAM_CHAT_ID,
       text: escapedMessage,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
     }, {
       timeout: 10000,
     });
