@@ -1586,6 +1586,7 @@
         html += '<thead><tr>';
         html += '<th>Coin</th>';
         html += '<th>Action</th>';
+        html += '<th>Position</th>';
         html += '<th>Entry</th>';
         html += '<th>Current</th>';
         html += '<th>TP</th>';
@@ -1603,9 +1604,14 @@
           const actionBadgeClass = trade.action === 'BUY' ? 'buy' : 'sell';
           const statusBadgeClass = trade.status.toLowerCase(); // OPEN -> open, TP_HIT -> tp_hit, etc.
           
+          // Calculate position size
+          const quantity = trade.quantity || (100 / trade.entryPrice); // $100 position size
+          const positionValue = quantity * trade.currentPrice; // Current position value
+          
           html += '<tr>';
           html += `<td><span class="trade-coin-name">${trade.name}</span><br><span class="trade-time-small">${trade.symbol}</span></td>`;
           html += `<td><span class="trade-action-badge ${actionBadgeClass}">${trade.action}</span></td>`;
+          html += `<td class="trade-price">${quantity.toFixed(6)}<br><span class="trade-time-small">$${positionValue.toFixed(2)}</span></td>`;
           html += `<td class="trade-price">$${Number(trade.entryPrice).toFixed(2)}</td>`;
           html += `<td class="trade-price">$${Number(trade.currentPrice).toFixed(2)}</td>`;
           html += `<td class="trade-price">$${Number(trade.takeProfit).toFixed(2)}</td>`;
