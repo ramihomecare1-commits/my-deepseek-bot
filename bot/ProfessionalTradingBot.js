@@ -2152,7 +2152,8 @@ class ProfessionalTradingBot {
         const batch = tradeBatches[batchIdx];
         console.log(`📦 Processing trade batch ${batchIdx + 1}/${tradeBatches.length} (${batch.length} trades)...`);
         
-        const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${batch.length} open trades and provide your recommendation for each.
+        try {
+          const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${batch.length} open trades and provide your recommendation for each.
 IMPORTANT: Consider technical analysis, recent news, AND historical context when making recommendations.
 - Review previous evaluations to see if patterns are consistent or changing
 - Historical news can provide context for current price movements
@@ -2233,93 +2234,93 @@ Return JSON array format:
   }
 ]`;
 
-      // Call AI API directly
-      console.log('🤖 Calling AI API for trade re-evaluation...');
-      console.log(`📝 Prompt length: ${prompt.length} characters`);
-      const axios = require('axios');
-      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model: config.AI_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 4000, // Increased significantly for multiple trades (was 2000)
-        temperature: 0.1,
-      }, {
-        headers: {
-          Authorization: `Bearer ${config.AI_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
-          'X-Title': 'Technical Analysis Bot',
-        },
-        timeout: 30000,
-      });
+          // Call AI API directly
+          console.log('🤖 Calling AI API for trade re-evaluation...');
+          console.log(`📝 Prompt length: ${prompt.length} characters`);
+          const axios = require('axios');
+          const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+            model: config.AI_MODEL,
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 4000, // Increased significantly for multiple trades (was 2000)
+            temperature: 0.1,
+          }, {
+            headers: {
+              Authorization: `Bearer ${config.AI_API_KEY}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
+              'X-Title': 'Technical Analysis Bot',
+            },
+            timeout: 30000,
+          });
 
-        // Parse AI response
-        console.log('✅ AI API responded successfully');
+          // Parse AI response
+          console.log('✅ AI API responded successfully');
         
-        // Check if response was truncated
-        const finishReason = response.data.choices[0].finish_reason;
-        if (finishReason === 'length') {
-          console.warn('⚠️ AI response was truncated (hit token limit)');
-          addLogEntry('⚠️ AI response truncated - may be incomplete', 'warning');
-        }
-        
-        let aiContent = response.data.choices[0].message.content;
-        
-        // Check if response is empty or too short
-        if (!aiContent || aiContent.trim().length === 0) {
-          console.error('❌ AI response is empty');
-          throw new Error('AI response is empty - no content received');
-        }
-        
-        console.log(`📝 AI response length: ${aiContent.length} characters`);
-        console.log(`📝 AI response preview: ${aiContent.substring(0, 200)}`);
-        console.log(`📝 Finish reason: ${finishReason}`);
-        
-        // Clean up markdown code blocks if present
-        aiContent = aiContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-        
-        // Try to find JSON array
-        let jsonMatch = aiContent.match(/\[[\s\S]*\]/);
-        
-        // If no match, try to find JSON object and wrap it in array
-        if (!jsonMatch) {
-          const objectMatch = aiContent.match(/\{[\s\S]*\}/);
-          if (objectMatch) {
-            console.log('⚠️ Found JSON object instead of array, wrapping in array...');
-            jsonMatch = [`[${objectMatch[0]}]`];
+          // Check if response was truncated
+          const finishReason = response.data.choices[0].finish_reason;
+          if (finishReason === 'length') {
+            console.warn('⚠️ AI response was truncated (hit token limit)');
+            addLogEntry('⚠️ AI response truncated - may be incomplete', 'warning');
           }
-        }
-        
-        if (jsonMatch) {
-          console.log('✅ Found JSON in AI response');
-          try {
-            const recommendations = JSON.parse(jsonMatch[0]);
-            console.log(`✅ Parsed ${recommendations.length} recommendations`);
-            
-            if (!Array.isArray(recommendations) || recommendations.length === 0) {
-              throw new Error('Invalid recommendations format - expected non-empty array');
+          
+          let aiContent = response.data.choices[0].message.content;
+          
+          // Check if response is empty or too short
+          if (!aiContent || aiContent.trim().length === 0) {
+            console.error('❌ AI response is empty');
+            throw new Error('AI response is empty - no content received');
+          }
+          
+          console.log(`📝 AI response length: ${aiContent.length} characters`);
+          console.log(`📝 AI response preview: ${aiContent.substring(0, 200)}`);
+          console.log(`📝 Finish reason: ${finishReason}`);
+          
+          // Clean up markdown code blocks if present
+          aiContent = aiContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+          
+          // Try to find JSON array
+          let jsonMatch = aiContent.match(/\[[\s\S]*\]/);
+          
+          // If no match, try to find JSON object and wrap it in array
+          if (!jsonMatch) {
+            const objectMatch = aiContent.match(/\{[\s\S]*\}/);
+            if (objectMatch) {
+              console.log('⚠️ Found JSON object instead of array, wrapping in array...');
+              jsonMatch = [`[${objectMatch[0]}]`];
             }
-            
-            // Add to all recommendations
-            allRecommendations.push(...recommendations);
-            
-          } catch (parseError) {
-            console.error('❌ Failed to parse AI response:', parseError.message);
-            addLogEntry(`Failed to parse AI response for batch ${batchIdx + 1}: ${parseError.message}`, 'error');
           }
-        } else {
-          console.warn('⚠️ No JSON found in AI response');
-          addLogEntry(`No JSON found in AI response for batch ${batchIdx + 1}`, 'warning');
+          
+          if (jsonMatch) {
+            console.log('✅ Found JSON in AI response');
+            try {
+              const recommendations = JSON.parse(jsonMatch[0]);
+              console.log(`✅ Parsed ${recommendations.length} recommendations`);
+              
+              if (!Array.isArray(recommendations) || recommendations.length === 0) {
+                throw new Error('Invalid recommendations format - expected non-empty array');
+              }
+              
+              // Add to all recommendations
+              allRecommendations.push(...recommendations);
+              
+            } catch (parseError) {
+              console.error('❌ Failed to parse AI response:', parseError.message);
+              addLogEntry(`Failed to parse AI response for batch ${batchIdx + 1}: ${parseError.message}`, 'error');
+            }
+          } else {
+            console.warn('⚠️ No JSON found in AI response');
+            addLogEntry(`No JSON found in AI response for batch ${batchIdx + 1}`, 'warning');
+          }
+        } catch (batchError) {
+          console.error(`❌ Error processing batch ${batchIdx + 1}:`, batchError.message);
+          addLogEntry(`Error processing batch ${batchIdx + 1}: ${batchError.message}`, 'error');
         }
-      } catch (batchError) {
-        console.error(`❌ Error processing batch ${batchIdx + 1}:`, batchError.message);
-        addLogEntry(`Error processing batch ${batchIdx + 1}: ${batchError.message}`, 'error');
+        
+        // Small delay between batches
+        if (batchIdx < tradeBatches.length - 1) {
+          await sleep(1000); // 1 second between batches
+        }
       }
-      
-      // Small delay between batches
-      if (batchIdx < tradeBatches.length - 1) {
-        await sleep(1000); // 1 second between batches
-      }
-    }
     
     // Process all recommendations together
     if (allRecommendations.length === 0) {
