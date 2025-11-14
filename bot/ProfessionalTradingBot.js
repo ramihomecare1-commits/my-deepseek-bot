@@ -1605,7 +1605,8 @@ class ProfessionalTradingBot {
         console.log(`💰 ${trade.symbol} P&L: Entry $${trade.entryPrice.toFixed(2)} → Current $${currentPrice.toFixed(2)} = ${safePnlPercent >= 0 ? '+' : ''}${safePnlPercent.toFixed(2)}%`);
 
         // Fetch historical data for analysis
-        const historicalData = await fetchHistoricalData(coinData, this.priceCache, this.stats, config);
+        // fetchHistoricalData expects: (coinId, coin, stats, config)
+        const historicalData = await fetchHistoricalData(coinData.id || trade.symbol, coinData, this.stats, config);
         
         return {
           symbol: trade.symbol,

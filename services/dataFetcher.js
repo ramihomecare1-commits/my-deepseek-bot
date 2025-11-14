@@ -132,7 +132,8 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
         console.log(`✅ ${coin.symbol}: CoinMarketCap price: $${primaryData.price.toFixed(2)}`);
       }
     } catch (error) {
-      console.log(`⚠️ ${coin.symbol}: CoinMarketCap price fetch failed - ${error.message}`);
+      const symbol = coin?.symbol || 'unknown';
+      console.log(`⚠️ ${symbol}: CoinMarketCap price fetch failed - ${error.message}`);
     }
   }
 
@@ -480,6 +481,11 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
 
   const fetchData = async (days, interval) => {
     const symbol = coin?.symbol;
+    
+    // Safety check: if symbol is undefined, we can't fetch data
+    if (!symbol) {
+      throw new Error(`Symbol is undefined for coin: ${JSON.stringify(coin)}`);
+    }
     
     // 1. Try MEXC FIRST (FREE, direct API, 2000 klines per request, no scraper needed!)
     if (symbol && EXCHANGE_SYMBOL_MAP[symbol]) {
