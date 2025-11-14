@@ -1133,11 +1133,26 @@ class ProfessionalTradingBot {
           }
         }
         
-        // Validate price is reasonable (prevent wrong coin data)
-        const minPrice = 0.0001; // Minimum reasonable price
-        const maxPrice = 1000000; // Maximum reasonable price
-        if (currentPrice < minPrice || currentPrice > maxPrice) {
-          addLogEntry(`⚠️ ${trade.symbol}: Invalid price fetched ($${currentPrice}), using last known price $${trade.currentPrice.toFixed(2)}`, 'warning');
+        // Coin-specific price validation (prevent wrong coin data)
+        const getPriceRange = (symbol) => {
+          const ranges = {
+            'BTC': { min: 1000, max: 200000 },
+            'ETH': { min: 100, max: 10000 },
+            'BNB': { min: 10, max: 2000 },
+            'SOL': { min: 1, max: 500 },
+            'XRP': { min: 0.01, max: 10 },
+            'DOGE': { min: 0.001, max: 1 },
+            'ADA': { min: 0.01, max: 10 },
+            'AVAX': { min: 1, max: 200 },
+            'LINK': { min: 1, max: 100 },
+            'DOT': { min: 0.1, max: 100 }
+          };
+          return ranges[symbol] || { min: 0.0001, max: 1000000 };
+        };
+        
+        const priceRange = getPriceRange(trade.symbol);
+        if (currentPrice < priceRange.min || currentPrice > priceRange.max) {
+          addLogEntry(`⚠️ ${trade.symbol}: Invalid price for coin ($${currentPrice.toFixed(2)}), expected range $${priceRange.min}-$${priceRange.max}. Using last known price $${trade.currentPrice.toFixed(2)}`, 'warning');
           continue; // Skip this trade update
         }
         
@@ -1147,10 +1162,10 @@ class ProfessionalTradingBot {
           continue; // Skip this trade update but don't mark as error
         }
         
-        // Additional validation: price shouldn't change by more than 50% in one update (likely wrong coin)
+        // Additional validation: price shouldn't change by more than 30% in one update (likely wrong coin)
         if (trade.currentPrice && trade.currentPrice > 0) {
           const priceChangePercent = Math.abs((currentPrice - trade.currentPrice) / trade.currentPrice) * 100;
-          if (priceChangePercent > 50) {
+          if (priceChangePercent > 30) {
             addLogEntry(`⚠️ ${trade.symbol}: Suspicious price change (${priceChangePercent.toFixed(1)}%), using last known price $${trade.currentPrice.toFixed(2)}`, 'warning');
             continue; // Skip this update
           }

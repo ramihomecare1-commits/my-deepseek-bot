@@ -258,7 +258,23 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
       });
 
       console.log(`✅ OpenRouter batch status: ${response.status}`);
-      if (!response.data) throw new Error('AI API failed');
+      if (!response.data) throw new Error('AI API failed - no response data');
+      if (!response.data.choices || !response.data.choices[0]) {
+        throw new Error('AI API failed - no choices in response');
+      }
+      if (!response.data.choices[0].message || !response.data.choices[0].message.content) {
+        console.log('⚠️ AI response has no content');
+        console.log('📄 Full response structure:', JSON.stringify(response.data, null, 2).substring(0, 2000));
+        throw new Error('AI API failed - empty response content');
+      }
+      
+      // Check if content is actually empty
+      const content = response.data.choices[0].message.content;
+      if (!content || content.trim().length === 0) {
+        console.log('⚠️ AI response content is empty');
+        console.log('📄 Full response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
+        throw new Error('AI API failed - response content is empty');
+      }
       return parseBatchAIResponse(response.data.choices[0].message.content, allCoinsData);
       
     } catch (error) {
@@ -364,6 +380,12 @@ Respond with JSON array:
 
 function parseBatchAIResponse(aiResponse, allCoinsData) {
   try {
+    // Check if response is empty
+    if (!aiResponse || aiResponse.trim().length === 0) {
+      console.log('⚠️ AI response is empty, using fallback analysis');
+      return generateBatchAnalysis(allCoinsData);
+    }
+    
     console.log(`📝 AI Response preview: ${aiResponse.substring(0, 500)}...`);
     console.log(`📏 AI Response length: ${aiResponse.length} chars`);
     

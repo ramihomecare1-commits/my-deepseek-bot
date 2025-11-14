@@ -251,6 +251,32 @@ async function getBalance(asset, apiKey, apiSecret) {
 }
 
 /**
+ * Validate price is reasonable for the coin (prevents wrong coin data)
+ * @param {string} symbol - Coin symbol
+ * @param {number} price - Price to validate
+ * @returns {boolean} True if price is valid
+ */
+function validatePrice(symbol, price) {
+  const ranges = {
+    'BTC': { min: 1000, max: 200000 },
+    'ETH': { min: 100, max: 10000 },
+    'BNB': { min: 10, max: 2000 },
+    'SOL': { min: 1, max: 500 },
+    'XRP': { min: 0.01, max: 10 },
+    'DOGE': { min: 0.001, max: 1 },
+    'ADA': { min: 0.01, max: 10 },
+    'AVAX': { min: 1, max: 200 },
+    'LINK': { min: 1, max: 100 },
+    'DOT': { min: 0.1, max: 100 }
+  };
+  
+  const range = ranges[symbol];
+  if (!range) return price > 0 && price < 1000000; // Generic validation
+  
+  return price >= range.min && price <= range.max;
+}
+
+/**
  * Calculate trade quantity based on position size
  * @param {string} symbol - Coin symbol (e.g., 'BTC')
  * @param {number} price - Current price
@@ -294,6 +320,15 @@ async function executeTakeProfit(trade) {
     return {
       success: false,
       error: `Symbol ${trade.symbol} not available on Binance`
+    };
+  }
+
+  // Validate price before execution (prevent wrong coin data)
+  if (!validatePrice(trade.symbol, trade.currentPrice)) {
+    return {
+      success: false,
+      error: `Invalid price for ${trade.symbol}: $${trade.currentPrice.toFixed(2)}. Price validation failed - likely wrong coin data.`,
+      skipped: true
     };
   }
 
@@ -349,6 +384,15 @@ async function executeStopLoss(trade) {
     };
   }
 
+  // Validate price before execution (prevent wrong coin data)
+  if (!validatePrice(trade.symbol, trade.currentPrice)) {
+    return {
+      success: false,
+      error: `Invalid price for ${trade.symbol}: $${trade.currentPrice.toFixed(2)}. Price validation failed - likely wrong coin data.`,
+      skipped: true
+    };
+  }
+
   // For BUY positions: SELL to stop loss
   // For SELL positions: BUY to cover (stop loss)
   const side = trade.action === 'BUY' ? 'SELL' : 'BUY';
@@ -398,6 +442,15 @@ async function executeAddPosition(trade) {
     return {
       success: false,
       error: `Symbol ${trade.symbol} not available on Binance`
+    };
+  }
+
+  // Validate price before execution (prevent wrong coin data)
+  if (!validatePrice(trade.symbol, trade.currentPrice)) {
+    return {
+      success: false,
+      error: `Invalid price for ${trade.symbol}: $${trade.currentPrice.toFixed(2)}. Price validation failed - likely wrong coin data.`,
+      skipped: true
     };
   }
 
