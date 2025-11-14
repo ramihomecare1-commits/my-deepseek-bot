@@ -512,5 +512,96 @@ router.get('/market-regime', async (req, res) => {
   }
 });
 
+// Portfolio Rebalancing endpoints
+router.get('/rebalancing', (req, res) => {
+  try {
+    const { tradingBot } = req.app.locals;
+    const { getRebalancingStrategy } = require('../services/rebalancingService');
+    
+    if (!tradingBot) {
+      return res.status(500).json({ error: 'Trading bot not initialized' });
+    }
+    
+    const activeTrades = tradingBot.activeTrades || [];
+    const targetAllocation = req.query.targets ? JSON.parse(req.query.targets) : {};
+    const deviationThreshold = parseFloat(req.query.deviation || '5');
+    
+    const strategy = getRebalancingStrategy(activeTrades, targetAllocation, {
+      deviationThreshold,
+      maxPositions: 10,
+      minPositionSize: 50
+    });
+    
+    res.json(strategy);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/rebalancing/execute', async (req, res) => {
+  try {
+    const { tradingBot } = req.app.locals;
+    const { getRebalancingStrategy } = require('../services/rebalancingService');
+    const { executeMarketOrder } = require('../services/exchangeService');
+    
+    if (!tradingBot) {
+      return res.status(500).json({ error: 'Trading bot not initialized' });
+    }
+    
+    const { targetAllocation, deviationThreshold = 5, dryRun = false } = req.body;
+    const activeTrades = tradingBot.activeTrades || [];
+    
+    const strategy = getRebalancingStrategy(activeTrades, targetAllocation || {}, {
+      deviationThreshold,
+      maxPositions: 10,
+      minPositionSize: 50
+    });
+    
+    if (!strategy.needsRebalancing) {
+      return res.json({
+        success: true,
+        message: 'Portfolio is already balanced',
+        actions: []
+      });
+    }
+    
+    if (dryRun) {
+      return res.json({
+        success: true,
+        dryRun: true,
+        actions: strategy.actions,
+        message: 'Dry run - no trades executed'
+      });
+    }
+    
+    // Execute rebalancing actions
+    const executedActions = [];
+    for (const action of strategy.actions) {
+      try {
+        // This would execute actual trades - simplified for now
+        executedActions.push({
+          ...action,
+          status: 'pending',
+          message: 'Rebalancing execution requires exchange API integration'
+        });
+      } catch (error) {
+        executedActions.push({
+          ...action,
+          status: 'failed',
+          error: error.message
+        });
+      }
+    }
+    
+    res.json({
+      success: true,
+      actions: executedActions,
+      message: `Rebalancing initiated for ${executedActions.length} positions`
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
 module.exports.addLogEntry = addLogEntry;

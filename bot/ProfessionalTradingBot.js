@@ -427,6 +427,14 @@ class ProfessionalTradingBot {
       return;
     }
     
+    // Initialize rebalancing variables if not already set
+    if (this.rebalancingTimer === undefined) {
+      this.rebalancingTimer = null;
+      this.rebalancingEnabled = false;
+      this.targetAllocation = {};
+      this.rebalancingDeviationThreshold = 5;
+    }
+    
     // Flag to prevent concurrent updates
     this.isUpdatingTrades = false;
 
@@ -463,6 +471,108 @@ class ProfessionalTradingBot {
       this.tradesUpdateTimer = null;
       console.log('⏰ Active trades update timer stopped');
     }
+  }
+
+  // Start portfolio rebalancing automation
+  startRebalancingTimer() {
+    if (this.rebalancingTimer) {
+      console.log('⏰ Rebalancing timer already running');
+      return;
+    }
+
+    if (!this.rebalancingEnabled) {
+      console.log('⏰ Rebalancing is disabled');
+      return;
+    }
+
+    // Check for rebalancing every 6 hours
+    this.rebalancingTimer = setInterval(async () => {
+      if (!this.rebalancingEnabled) return;
+      
+      try {
+        await this.checkAndRebalance();
+      } catch (error) {
+        console.error('Rebalancing error:', error);
+        addLogEntry(`Rebalancing error: ${error.message}`, 'error');
+      }
+    }, 6 * 60 * 60 * 1000); // 6 hours
+
+    // Initial check after 1 hour
+    setTimeout(() => {
+      if (this.rebalancingEnabled) {
+        this.checkAndRebalance();
+      }
+    }, 60 * 60 * 1000); // 1 hour
+
+    console.log('⏰ Portfolio rebalancing timer started (checks every 6 hours)');
+  }
+
+  // Stop rebalancing timer
+  stopRebalancingTimer() {
+    if (this.rebalancingTimer) {
+      clearInterval(this.rebalancingTimer);
+      this.rebalancingTimer = null;
+      console.log('⏰ Rebalancing timer stopped');
+    }
+  }
+
+  // Check portfolio and rebalance if needed
+  async checkAndRebalance() {
+    if (!this.rebalancingEnabled || Object.keys(this.targetAllocation).length === 0) {
+      return;
+    }
+
+    try {
+      const { getRebalancingStrategy } = require('../services/rebalancingService');
+      
+      const strategy = getRebalancingStrategy(this.activeTrades, this.targetAllocation, {
+        deviationThreshold: this.rebalancingDeviationThreshold,
+        maxPositions: 10,
+        minPositionSize: 50
+      });
+
+      if (!strategy.needsRebalancing) {
+        addLogEntry('Portfolio is balanced - no rebalancing needed', 'info');
+        return;
+      }
+
+      addLogEntry(`Portfolio rebalancing needed: ${strategy.actions.length} positions require adjustment`, 'info');
+      console.log(`📊 Rebalancing: ${strategy.actions.length} positions need adjustment`);
+
+      // Log actions (actual execution would require exchange API integration)
+      strategy.actions.forEach(action => {
+        addLogEntry(
+          `Rebalancing: ${action.action} ${action.symbol} - Adjust by ${action.adjustmentPercent.toFixed(2)}% (${action.adjustmentAmount.toFixed(2)} USD)`,
+          'info'
+        );
+      });
+
+      // In production, this would execute trades via exchange service
+      // For now, we just log the actions
+      addLogEntry('Rebalancing actions logged (execution requires exchange API integration)', 'info');
+    } catch (error) {
+      console.error('Rebalancing check error:', error);
+      addLogEntry(`Rebalancing check failed: ${error.message}`, 'error');
+    }
+  }
+
+  // Enable/disable rebalancing
+  setRebalancing(enabled, targetAllocation = {}, deviationThreshold = 5) {
+    this.rebalancingEnabled = enabled;
+    this.targetAllocation = targetAllocation;
+    this.rebalancingDeviationThreshold = deviationThreshold;
+
+    if (enabled) {
+      this.startRebalancingTimer();
+    } else {
+      this.stopRebalancingTimer();
+    }
+
+    return {
+      enabled: this.rebalancingEnabled,
+      targetAllocation: this.targetAllocation,
+      deviationThreshold: this.rebalancingDeviationThreshold
+    };
   }
 
   // Main technical scan method
@@ -981,6 +1091,20 @@ class ProfessionalTradingBot {
       // Re-evaluate open trades with AI
       await this.reevaluateOpenTradesWithAI();
       
+      // Learn from closed trades and update ML model
+      if (this.closedTrades && this.closedTrades.length >= 10) {
+        try {
+          const { learnFromTrades } = require('../services/mlService');
+          const mlResults = learnFromTrades(this.closedTrades);
+          if (mlResults.success) {
+            addLogEntry(`🧠 ML: Top features: ${mlResults.featureImportance.topFeatures.join(', ')}`, 'info');
+            console.log(`🧠 ML Learning: Optimal confidence ${(mlResults.recommendations.optimalConfidence * 100).toFixed(0)}%`);
+          }
+        } catch (error) {
+          console.error('ML learning error:', error);
+        }
+      }
+      
       this.scanInProgress = false;
       this.scanProgress = {
         running: false,
@@ -1216,6 +1340,63 @@ class ProfessionalTradingBot {
             analysis.confidence = 0.3; // Lower confidence if pattern required but not found
           }
         }
+      }
+
+      // Detect market regime and adjust strategy
+      try {
+        const { detectMarketRegime } = require('../services/marketRegimeService');
+        
+        // Use daily data for regime detection
+        const dailyPrices = dailyData || [];
+        if (dailyPrices.length >= 50) {
+          const prices = dailyPrices.map(d => typeof d === 'number' ? d : (d.price || d.close || 0)).filter(p => p > 0);
+          
+          if (prices.length >= 50) {
+            // Prepare indicators for regime detection
+            const { calculateRSI, identifyTrend, calculateBollingerBands } = require('../bot/indicators');
+            const rsi = calculateRSI(prices, 14);
+            const trend = identifyTrend(prices);
+            const bollinger = calculateBollingerBands(prices, 20, 2);
+            
+            const regime = detectMarketRegime(prices, {
+              rsi: rsi[rsi.length - 1],
+              trend: trend,
+              bollinger: bollinger
+            });
+            
+            analysis.marketRegime = regime;
+            
+            // Adjust confidence based on market regime
+            if (regime.recommendation) {
+              const rec = regime.recommendation;
+              
+              // Apply regime-specific adjustments
+              if (rec.minConfidence && rec.minConfidence > this.tradingRules.minConfidence) {
+                // Regime requires higher confidence - apply penalty
+                const penalty = (rec.minConfidence - this.tradingRules.minConfidence) * 0.5;
+                analysis.confidence = Math.max(0.3, analysis.confidence - penalty);
+                analysis.insights.push(`Market regime: ${regime.regime} (confidence penalty applied)`);
+              } else if (rec.minConfidence && rec.minConfidence < this.tradingRules.minConfidence) {
+                // Regime allows lower confidence - apply bonus
+                const bonus = (this.tradingRules.minConfidence - rec.minConfidence) * 0.3;
+                analysis.confidence = Math.min(0.95, analysis.confidence + bonus);
+                analysis.insights.push(`Market regime: ${regime.regime} (confidence bonus applied)`);
+              } else {
+                analysis.insights.push(`Market regime: ${regime.regime} (${(regime.confidence * 100).toFixed(0)}% confidence)`);
+              }
+              
+              // Adjust strategy recommendations
+              if (rec.useBreakouts && analysis.action === 'BUY') {
+                analysis.insights.push('Breakout strategy recommended');
+              } else if (rec.useMeanReversion && analysis.action === 'BUY') {
+                analysis.insights.push('Mean reversion strategy recommended');
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Market regime detection error for ${coin.symbol}:`, error);
+        // Continue without regime detection if it fails
       }
 
       return analysis;
