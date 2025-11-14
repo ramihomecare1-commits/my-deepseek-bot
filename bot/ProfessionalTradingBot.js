@@ -1506,6 +1506,19 @@ class ProfessionalTradingBot {
         const priceResult = await fetchEnhancedPriceData(coinData, this.priceCache, this.stats, config);
         const currentPrice = priceResult?.data?.price || trade.currentPrice;
 
+        // Calculate fresh P&L based on current price
+        let pnl = 0;
+        let pnlPercent = 0;
+        if (trade.action === 'BUY') {
+          pnl = currentPrice - trade.entryPrice;
+          pnlPercent = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
+        } else if (trade.action === 'SELL') {
+          pnl = trade.entryPrice - currentPrice;
+          pnlPercent = ((trade.entryPrice - currentPrice) / trade.entryPrice) * 100;
+        }
+        
+        console.log(`💰 ${trade.symbol} P&L: Entry $${trade.entryPrice.toFixed(2)} → Current $${currentPrice.toFixed(2)} = ${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%`);
+
         // Fetch historical data for analysis
         const historicalData = await fetchHistoricalData(coinData, this.priceCache, this.stats, config);
         
@@ -1517,8 +1530,8 @@ class ProfessionalTradingBot {
           takeProfit: trade.takeProfit,
           stopLoss: trade.stopLoss,
           action: trade.action,
-          pnl: trade.pnl,
-          pnlPercent: trade.pnlPercent,
+          pnl: pnl,
+          pnlPercent: pnlPercent,
           status: trade.status,
           historicalData: historicalData
         };
