@@ -1596,7 +1596,7 @@ Return JSON array format:
       const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
         model: config.AI_MODEL,
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 1000,
+        max_tokens: 2000, // Increased for multiple trades
         temperature: 0.1,
       }, {
         headers: {
@@ -1610,12 +1610,43 @@ Return JSON array format:
 
       // Parse AI response
       console.log('✅ AI API responded successfully');
-      const aiContent = response.data.choices[0].message.content;
+      
+      // Check if response was truncated
+      const finishReason = response.data.choices[0].finish_reason;
+      if (finishReason === 'length') {
+        console.warn('⚠️ AI response was truncated (hit token limit)');
+        addLogEntry('⚠️ AI response truncated - may be incomplete', 'warning');
+      }
+      
+      let aiContent = response.data.choices[0].message.content;
+      
+      // Check if response is empty or too short
+      if (!aiContent || aiContent.trim().length === 0) {
+        console.error('❌ AI response is empty');
+        throw new Error('AI response is empty - no content received');
+      }
+      
       console.log(`📝 AI response length: ${aiContent.length} characters`);
-      const jsonMatch = aiContent.match(/\[[\s\S]*\]/);
+      console.log(`📝 AI response preview: ${aiContent.substring(0, 200)}`);
+      console.log(`📝 Finish reason: ${finishReason}`);
+      
+      // Clean up markdown code blocks if present
+      aiContent = aiContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      
+      // Try to find JSON array
+      let jsonMatch = aiContent.match(/\[[\s\S]*\]/);
+      
+      // If no match, try to find JSON object and wrap it in array
+      if (!jsonMatch) {
+        const objectMatch = aiContent.match(/\{[\s\S]*\}/);
+        if (objectMatch) {
+          console.log('⚠️ Found JSON object instead of array, wrapping in array...');
+          jsonMatch = [`[${objectMatch[0]}]`];
+        }
+      }
       
       if (jsonMatch) {
-        console.log('✅ Found JSON array in AI response');
+        console.log('✅ Found JSON in AI response');
         try {
           const recommendations = JSON.parse(jsonMatch[0]);
           console.log(`✅ Parsed ${recommendations.length} recommendations`);
@@ -1678,10 +1709,18 @@ Return JSON array format:
           throw new Error(`AI response parsing failed: ${parseError.message}`);
         }
       } else {
-        console.error('❌ No JSON array found in AI response');
-        console.error('AI response preview:', aiContent.substring(0, 500));
-        addLogEntry('⚠️ AI response format invalid - no JSON array found', 'error');
-        throw new Error('Invalid AI response format - no JSON array found');
+        console.error('❌ No JSON found in AI response');
+        console.error('Full AI response:', aiContent);
+        console.error('Response length:', aiContent.length);
+        
+        // Check if response is too short (likely incomplete)
+        if (aiContent.length < 50) {
+          addLogEntry('⚠️ AI response too short - likely incomplete or error', 'error');
+          throw new Error(`AI response too short (${aiContent.length} chars) - response may be incomplete. Full response: "${aiContent}"`);
+        }
+        
+        addLogEntry('⚠️ AI response format invalid - no JSON found', 'error');
+        throw new Error(`Invalid AI response format - no JSON found. Response: "${aiContent.substring(0, 200)}"`);
       }
     } catch (error) {
       console.error('❌ AI re-evaluation error:', error.message);
