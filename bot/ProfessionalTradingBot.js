@@ -2344,11 +2344,11 @@ Return JSON array format:
       const trade = openTrades.find(t => t.symbol === symbol);
       const tradeData = tradesWithNews.find(t => t.symbol === symbol) || 
                       tradeBatches.flat().find(t => t.symbol === symbol);
-            const pnlPercent = trade && typeof trade.pnlPercent === 'number' ? trade.pnlPercent : 0;
-            const pnl = trade ? `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%` : 'N/A';
-            
-            // Store evaluation in database
-            if (trade) {
+      const pnlPercent = trade && typeof trade.pnlPercent === 'number' ? trade.pnlPercent : 0;
+      const pnl = trade ? `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%` : 'N/A';
+      
+      // Store evaluation in database
+      if (trade) {
               // Store AI evaluation with limited context to prevent MongoDB size issues
               storeAIEvaluation({
                 symbol: symbol,
