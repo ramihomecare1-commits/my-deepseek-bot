@@ -5,24 +5,7 @@ const config = require('../config/config');
 async function fetchGlobalMetrics(globalMetrics, stats, coinmarketcapEnabled, coinmarketcapApiKey) {
   const now = Date.now();
   
-  // Fetch from CoinPaprika (free, no API key needed)
-  try {
-    const paprikaResponse = await axios.get('https://api.coinpaprika.com/v1/global', {
-      timeout: 10000,
-    });
-    if (paprikaResponse.data) {
-      globalMetrics.coinpaprika = {
-        market_cap_usd: paprikaResponse.data.market_cap_usd,
-        volume_24h_usd: paprikaResponse.data.volume_24h_usd,
-        bitcoin_dominance_percentage: paprikaResponse.data.bitcoin_dominance_percentage,
-        cryptocurrencies_number: paprikaResponse.data.cryptocurrencies_number,
-        last_updated: paprikaResponse.data.last_updated
-      };
-      stats.coinpaprikaUsage++;
-    }
-  } catch (error) {
-    console.log('⚠️ CoinPaprika global metrics fetch failed:', error.message);
-  }
+  // CoinPaprika removed due to rate limiting issues
 
   // Fetch from CoinMarketCap (if API key available)
   if (coinmarketcapEnabled) {
@@ -47,7 +30,7 @@ async function fetchGlobalMetrics(globalMetrics, stats, coinmarketcapEnabled, co
 }
 
 // Enhanced price data fetching with multiple APIs
-// Priority: Binance (FREE, real-time exchange data) → CoinMarketCap → CoinGecko → CoinPaprika
+// Priority: Binance (FREE, real-time exchange data) → CoinMarketCap
 async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
   let primaryData = null;
   let usedMock = false;
@@ -109,60 +92,7 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
     }
   }
 
-  // Fallback to CoinGecko
-  if (!primaryData) {
-    try {
-      const priceResponse = await axios.get(
-        `https://api.coingecko.com/api/v3/simple/price`,
-        {
-          params: { 
-            ids: coin.id, 
-            vs_currencies: 'usd', 
-            include_market_cap: true, 
-            include_24hr_vol: true, 
-            include_24hr_change: true 
-          },
-          timeout: 10000,
-        },
-      );
-      
-      if (priceResponse.data && priceResponse.data[coin.id]) {
-        primaryData = {
-          price: priceResponse.data[coin.id].usd,
-          market_cap: priceResponse.data[coin.id].usd_market_cap,
-          volume_24h: priceResponse.data[coin.id].usd_24h_vol,
-          change_24h: priceResponse.data[coin.id].usd_24h_change,
-          source: 'coingecko'
-        };
-        priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
-      }
-    } catch (error) {
-      console.log(`⚠️ ${coin.symbol}: CoinGecko price fetch failed`);
-    }
-  }
-
-  // Fallback to CoinPaprika
-  if (!primaryData && config.COINPAPRIKA_ENABLED) {
-    try {
-      const paprikaResponse = await axios.get(
-        `https://api.coinpaprika.com/v1/tickers/${coin.coinpaprika_id}`,
-        { timeout: 10000 }
-      );
-      
-      if (paprikaResponse.data) {
-        primaryData = {
-          price: paprikaResponse.data.quotes.USD.price,
-          market_cap: paprikaResponse.data.quotes.USD.market_cap,
-          volume_24h: paprikaResponse.data.quotes.USD.volume_24h,
-          change_24h: paprikaResponse.data.quotes.USD.percent_change_24h,
-          source: 'coinpaprika'
-        };
-        stats.coinpaprikaUsage++;
-      }
-    } catch (error) {
-      console.log(`⚠️ ${coin.symbol}: CoinPaprika price fetch failed`);
-    }
-  }
+  // CoinGecko and CoinPaprika removed due to rate limiting issues
 
   // Final fallback to cached data
   if (!primaryData) {
@@ -304,7 +234,7 @@ async function fetchCryptoCompare(symbol, limit, aggregate = 1) {
   }
 }
 
-// Historical data fetching with Binance → CryptoCompare → CoinGecko → CoinPaprika
+// Historical data fetching with Binance → CryptoCompare
 async function fetchHistoricalData(coinId, coin, stats, config) {
   let usedMock = false;
   let currentPrice = null;
@@ -374,68 +304,8 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
       }
     }
 
-    // 3. Fallback to CoinGecko
-    try {
-      const response = await axios.get(
-        `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart`,
-        {
-          params: interval
-            ? { vs_currency: 'usd', days, interval }
-            : { vs_currency: 'usd', days },
-          timeout: 15000,
-          headers: { 'User-Agent': 'ProfessionalTradingBot/2.0' },
-        },
-      );
-
-      if (response.data && Array.isArray(response.data.prices)) {
-        const prices = response.data.prices
-          .map(([timestamp, price]) => ({
-            timestamp: new Date(timestamp),
-            price: typeof price === 'number' ? price : Number(price),
-          }))
-          .filter((item) => Number.isFinite(item.price) && item.price > 0);
-
-        if (prices.length > 0) {
-          currentPrice = currentPrice || prices[prices.length - 1].price;
-        }
-        
-        return prices;
-      }
-
-      throw new Error('Invalid API response structure');
-    } catch (error) {
-      // 4. Final fallback to CoinPaprika
-      if (coin && config.COINPAPRIKA_ENABLED) {
-        try {
-          const paprikaResponse = await axios.get(
-            `https://api.coinpaprika.com/v1/coins/${coin.coinpaprika_id}/ohlcv/historical`,
-            {
-              params: {
-                start: new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                end: new Date().toISOString().split('T')[0],
-                limit: days
-              },
-              timeout: 15000,
-            },
-          );
-          
-          if (paprikaResponse.data && Array.isArray(paprikaResponse.data)) {
-            const prices = paprikaResponse.data
-              .map((item) => ({
-                timestamp: new Date(item.time_close),
-                price: item.close,
-              }))
-              .filter((item) => Number.isFinite(item.price) && item.price > 0);
-
-            stats.coinpaprikaUsage++;
-            return prices;
-          }
-        } catch (paprikaError) {
-          console.log(`⚠️ ${coinId}: CoinPaprika historical data also failed`);
-        }
-      }
-      throw error;
-    }
+    // CoinGecko and CoinPaprika removed due to rate limiting issues
+    throw new Error('No data source available (Binance and CryptoCompare failed)');
   };
 
   try {
@@ -469,7 +339,7 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
 
 /**
  * Fetch 5 years of historical daily data for backtesting
- * Priority: Binance → CryptoCompare → CoinGecko → CoinPaprika
+ * Priority: Binance → CryptoCompare
  * @param {Object} coin - Coin object with symbol, name, id
  * @returns {Promise<Array>} Array of price data points
  */
@@ -589,37 +459,9 @@ async function fetchLongTermHistoricalData(coin) {
     }
   }
 
-  // 3. Try CoinGecko (can get up to 5 years with days parameter)
-  if (coinId) {
-    try {
-      const response = await axios.get(
-        `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart`,
-        {
-          params: { vs_currency: 'usd', days: days },
-          timeout: 20000, // Longer timeout for large data
-          headers: { 'User-Agent': 'ProfessionalTradingBot/2.0' },
-        },
-      );
+  // CoinGecko removed due to rate limiting issues
 
-      if (response.data && Array.isArray(response.data.prices)) {
-        const data = response.data.prices
-          .map(([timestamp, price]) => ({
-            timestamp: new Date(timestamp),
-            price: typeof price === 'number' ? price : Number(price),
-          }))
-          .filter((item) => Number.isFinite(item.price) && item.price > 0);
-
-        if (data.length >= 365) {
-          console.log(`✅ ${symbol}: CoinGecko long-term data - ${data.length} days`);
-          return data;
-        }
-      }
-    } catch (error) {
-      console.log(`⚠️ ${symbol}: CoinGecko long-term failed - ${error.message}`);
-    }
-  }
-
-  // 4. Fallback: Return empty array (backtest will handle gracefully)
+  // Fallback: Return empty array (backtest will handle gracefully)
   console.log(`⚠️ ${symbol}: Could not fetch 5 years of data, will use available data`);
   return [];
 }
@@ -703,18 +545,8 @@ async function generateMockPriceData(coin) {
 
 async function generateRealisticMockData(coinId) {
   try {
-    const currentPriceResponse = await axios.get(
-      `https://api.coingecko.com/api/v3/simple/price`,
-      {
-        params: { ids: coinId, vs_currencies: 'usd' },
-        timeout: 10000,
-      },
-    );
-
+    // CoinGecko removed - use default base price
     let basePrice = 100;
-    if (currentPriceResponse.data && currentPriceResponse.data[coinId]) {
-      basePrice = currentPriceResponse.data[coinId].usd;
-    }
 
     const daily = [];
     const hourly = [];

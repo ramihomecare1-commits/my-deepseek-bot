@@ -1211,13 +1211,21 @@ class ProfessionalTradingBot {
         
         trade.currentPrice = currentPrice;
 
-        // Calculate P&L first (needed for notifications)
+        // Calculate P&L based on position size (USD)
+        // Position size is $100, so quantity = $100 / entryPrice
+        const positionSizeUSD = 100; // $100 per position
+        const quantity = trade.quantity || (positionSizeUSD / trade.entryPrice);
+        
         if (trade.action === 'BUY') {
-          trade.pnl = currentPrice - trade.entryPrice;
-          trade.pnlPercent = (trade.pnl / trade.entryPrice * 100).toFixed(2);
+          // For BUY: (currentPrice - entryPrice) * quantity = USD gain/loss
+          const priceDiff = currentPrice - trade.entryPrice;
+          trade.pnl = priceDiff * quantity; // USD P&L
+          trade.pnlPercent = ((priceDiff / trade.entryPrice) * 100).toFixed(2);
         } else if (trade.action === 'SELL') { // Short position
-          trade.pnl = trade.entryPrice - currentPrice;
-          trade.pnlPercent = (trade.pnl / trade.entryPrice * 100).toFixed(2);
+          // For SELL (short): (entryPrice - currentPrice) * quantity = USD gain/loss
+          const priceDiff = trade.entryPrice - currentPrice;
+          trade.pnl = priceDiff * quantity; // USD P&L
+          trade.pnlPercent = ((priceDiff / trade.entryPrice) * 100).toFixed(2);
         }
 
         let notificationNeeded = false;
