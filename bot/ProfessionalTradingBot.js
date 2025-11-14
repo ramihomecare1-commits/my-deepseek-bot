@@ -1175,6 +1175,8 @@ class ProfessionalTradingBot {
       quantity: initialQuantity, // Track position size
       pnl: 0,
       pnlPercent: 0,
+      dcaCount: 0, // Track number of DCA additions (max 5)
+      averageEntryPrice: entryPrice, // Track average entry price after DCAs
       insights: opportunity.insights || [],
       reason: opportunity.reason || '',
       dataSource: opportunity.dataSource || 'unknown',
@@ -1278,17 +1280,19 @@ class ProfessionalTradingBot {
         // Position size is $100, so quantity = $100 / entryPrice
         const positionSizeUSD = 100; // $100 per position
         const quantity = trade.quantity || (positionSizeUSD / trade.entryPrice);
+        // Use average entry price if DCAs have been executed, otherwise use original entry
+        const avgEntry = trade.averageEntryPrice || trade.entryPrice;
         
         if (trade.action === 'BUY') {
-          // For BUY: (currentPrice - entryPrice) * quantity = USD gain/loss
-          const priceDiff = currentPrice - trade.entryPrice;
+          // For BUY: (currentPrice - avgEntryPrice) * quantity = USD gain/loss
+          const priceDiff = currentPrice - avgEntry;
           trade.pnl = priceDiff * quantity; // USD P&L
-          trade.pnlPercent = ((priceDiff / trade.entryPrice) * 100).toFixed(2);
+          trade.pnlPercent = ((priceDiff / avgEntry) * 100).toFixed(2);
         } else if (trade.action === 'SELL') { // Short position
-          // For SELL (short): (entryPrice - currentPrice) * quantity = USD gain/loss
-          const priceDiff = trade.entryPrice - currentPrice;
+          // For SELL (short): (avgEntryPrice - currentPrice) * quantity = USD gain/loss
+          const priceDiff = avgEntry - currentPrice;
           trade.pnl = priceDiff * quantity; // USD P&L
-          trade.pnlPercent = ((priceDiff / trade.entryPrice) * 100).toFixed(2);
+          trade.pnlPercent = ((priceDiff / avgEntry) * 100).toFixed(2);
         }
 
         let notificationNeeded = false;
@@ -1296,7 +1300,7 @@ class ProfessionalTradingBot {
         let notificationLevel = 'info';
 
         if (trade.action === 'BUY') {
-          // Check Take Profit for BUY
+          // Check Take Profit for BUY (highest priority)
           if (currentPrice >= trade.takeProfit && trade.status === 'OPEN') {
             // Execute Take Profit order
             const tpResult = await executeTakeProfit(trade);
@@ -1318,9 +1322,70 @@ class ProfessionalTradingBot {
               addLogEntry(`⚠️ TP hit but execution failed: ${trade.symbol} - ${tpResult.error}`, 'warning');
             }
           }
-          // Check Stop Loss for BUY
-          else if (currentPrice <= trade.stopLoss && trade.status === 'OPEN') {
-            // Execute Stop Loss order
+          // Check DCA for BUY (BEFORE stop loss - priority!)
+          // LONG: First DCA at 10% loss, then 12% from average for each subsequent DCA (max 5 total)
+          else if (trade.status === 'OPEN' && trade.dcaCount < 5) {
+            const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+            let dcaLevel = 0;
+            
+            if (trade.dcaCount === 0) {
+              // First DCA: 10% loss from original entry
+              dcaLevel = trade.entryPrice * 0.90; // 10% down
+            } else {
+              // Subsequent DCAs: 12% loss from current average entry
+              dcaLevel = avgEntry * 0.88; // 12% down from average
+            }
+            
+            // Check if price hit DCA level
+            if (currentPrice <= dcaLevel && !trade.dcaNotified) {
+              // Execute Add Position (DCA) order
+              const dcaResult = await executeAddPosition(trade);
+              if (dcaResult.success) {
+                trade.status = 'DCA_HIT';
+                trade.dcaCount = (trade.dcaCount || 0) + 1;
+                trade.dcaExecutedAt = new Date();
+                trade.dcaExecutionPrice = dcaResult.price || currentPrice;
+                trade.dcaOrderId = dcaResult.orderId;
+                trade.dcaQuantity = dcaResult.executedQty;
+                
+                // Update average entry price (weighted average)
+                const totalQuantity = (trade.quantity || 1) + dcaResult.executedQty;
+                trade.averageEntryPrice = ((avgEntry * (trade.quantity || 1)) + (dcaResult.price * dcaResult.executedQty)) / totalQuantity;
+                trade.quantity = totalQuantity;
+                
+                notificationMessage = `💰 DCA #${trade.dcaCount} EXECUTED: ${trade.symbol} bought ${dcaResult.executedQty} at $${dcaResult.price.toFixed(2)}. New avg entry: $${trade.averageEntryPrice.toFixed(2)}`;
+                notificationLevel = 'warning';
+                notificationNeeded = true;
+                trade.dcaNotified = true;
+                addLogEntry(`💰 DCA #${trade.dcaCount} EXECUTED: ${trade.symbol} - Order ID: ${dcaResult.orderId}`, 'info');
+              } else if (!dcaResult.skipped) {
+                trade.status = 'DCA_HIT';
+                trade.dcaNotified = true;
+                notificationMessage = `💰 DCA #${trade.dcaCount + 1} (Execution ${dcaResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)}. Consider averaging down.`;
+                notificationLevel = 'warning';
+                notificationNeeded = true;
+                addLogEntry(`⚠️ DCA hit but execution failed: ${trade.symbol} - ${dcaResult.error}`, 'warning');
+              }
+            }
+          }
+          // Reset DCA_HIT back to OPEN if price moves away from DCA level
+          else if (trade.status === 'DCA_HIT') {
+            const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+            let nextDcaLevel = 0;
+            if (trade.dcaCount === 0) {
+              nextDcaLevel = trade.entryPrice * 0.90;
+            } else {
+              nextDcaLevel = avgEntry * 0.88;
+            }
+            
+            if (currentPrice > nextDcaLevel && trade.dcaCount < 5) {
+              trade.status = 'OPEN';
+              trade.dcaNotified = false; // Reset so it can trigger again if price drops back
+            }
+          }
+          // Check Stop Loss for BUY (LAST - only after all 5 DCAs used)
+          else if (currentPrice <= trade.stopLoss && trade.status === 'OPEN' && trade.dcaCount >= 5) {
+            // Execute Stop Loss order (only after all 5 DCAs used)
             const slResult = await executeStopLoss(trade);
             if (slResult.success) {
               trade.status = 'SL_HIT';
@@ -1339,41 +1404,8 @@ class ProfessionalTradingBot {
               addLogEntry(`⚠️ SL hit but execution failed: ${trade.symbol} - ${slResult.error}`, 'error');
             }
           }
-          // Check Add Position for BUY
-          else if (currentPrice <= trade.addPosition && trade.addPosition < trade.entryPrice && !trade.dcaNotified) {
-            // Execute Add Position (DCA) order
-            const dcaResult = await executeAddPosition(trade);
-            if (dcaResult.success) {
-              trade.status = 'DCA_HIT';
-              trade.dcaExecutedAt = new Date();
-              trade.dcaExecutionPrice = dcaResult.price || currentPrice;
-              trade.dcaOrderId = dcaResult.orderId;
-              trade.dcaQuantity = dcaResult.executedQty;
-              // Update average entry price (weighted average)
-              const totalQuantity = (trade.quantity || 1) + dcaResult.executedQty;
-              trade.entryPrice = ((trade.entryPrice * (trade.quantity || 1)) + (dcaResult.price * dcaResult.executedQty)) / totalQuantity;
-              trade.quantity = totalQuantity;
-              notificationMessage = `💰 ADD POSITION EXECUTED: ${trade.symbol} bought ${dcaResult.executedQty} at $${dcaResult.price.toFixed(2)}. New avg entry: $${trade.entryPrice.toFixed(2)}`;
-              notificationLevel = 'warning';
-              notificationNeeded = true;
-              trade.dcaNotified = true;
-              addLogEntry(`💰 DCA EXECUTED: ${trade.symbol} - Order ID: ${dcaResult.orderId}`, 'info');
-            } else if (!dcaResult.skipped) {
-              trade.status = 'DCA_HIT';
-              notificationMessage = `💰 ADD POSITION (Execution ${dcaResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)}. Consider averaging down.`;
-              notificationLevel = 'warning';
-              notificationNeeded = true;
-              trade.dcaNotified = true;
-              addLogEntry(`⚠️ DCA hit but execution failed: ${trade.symbol} - ${dcaResult.error}`, 'warning');
-            }
-          }
-          // Reset DCA_HIT back to OPEN if price moves away from DCA level
-          else if (trade.status === 'DCA_HIT' && currentPrice > trade.addPosition) {
-            trade.status = 'OPEN';
-            trade.dcaNotified = false; // Reset so it can trigger again if price drops back
-          }
         } else if (trade.action === 'SELL') { // Short position logic
-          // Check Take Profit for SELL (price drops)
+          // Check Take Profit for SELL (highest priority)
           if (currentPrice <= trade.takeProfit && trade.status === 'OPEN') {
             // Execute Take Profit order (cover short)
             const tpResult = await executeTakeProfit(trade);
@@ -1394,9 +1426,70 @@ class ProfessionalTradingBot {
               addLogEntry(`⚠️ TP hit but execution failed (SHORT): ${trade.symbol} - ${tpResult.error}`, 'warning');
             }
           }
-          // Check Stop Loss for SELL (price rises)
-          else if (currentPrice >= trade.stopLoss && trade.status === 'OPEN') {
-            // Execute Stop Loss order (cover short)
+          // Check DCA for SELL (BEFORE stop loss - priority!)
+          // SHORT: First DCA at 15% loss, then 25% from average for each subsequent DCA (max 5 total)
+          else if (trade.status === 'OPEN' && trade.dcaCount < 5) {
+            const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+            let dcaLevel = 0;
+            
+            if (trade.dcaCount === 0) {
+              // First DCA: 15% loss from original entry (price rises 15%)
+              dcaLevel = trade.entryPrice * 1.15; // 15% up
+            } else {
+              // Subsequent DCAs: 25% loss from current average entry (price rises 25% from average)
+              dcaLevel = avgEntry * 1.25; // 25% up from average
+            }
+            
+            // Check if price hit DCA level
+            if (currentPrice >= dcaLevel && !trade.dcaNotified) {
+              // Execute Add Position (DCA) order (short more)
+              const dcaResult = await executeAddPosition(trade);
+              if (dcaResult.success) {
+                trade.status = 'DCA_HIT';
+                trade.dcaCount = (trade.dcaCount || 0) + 1;
+                trade.dcaExecutedAt = new Date();
+                trade.dcaExecutionPrice = dcaResult.price || currentPrice;
+                trade.dcaOrderId = dcaResult.orderId;
+                trade.dcaQuantity = dcaResult.executedQty;
+                
+                // Update average entry price (weighted average for short)
+                const totalQuantity = (trade.quantity || 1) + dcaResult.executedQty;
+                trade.averageEntryPrice = ((avgEntry * (trade.quantity || 1)) + (dcaResult.price * dcaResult.executedQty)) / totalQuantity;
+                trade.quantity = totalQuantity;
+                
+                notificationMessage = `💰 DCA #${trade.dcaCount} EXECUTED (SHORT): ${trade.symbol} shorted ${dcaResult.executedQty} more at $${dcaResult.price.toFixed(2)}. New avg entry: $${trade.averageEntryPrice.toFixed(2)}`;
+                notificationLevel = 'warning';
+                notificationNeeded = true;
+                trade.dcaNotified = true;
+                addLogEntry(`💰 DCA #${trade.dcaCount} EXECUTED (SHORT): ${trade.symbol} - Order ID: ${dcaResult.orderId}`, 'info');
+              } else if (!dcaResult.skipped) {
+                trade.status = 'DCA_HIT';
+                trade.dcaNotified = true;
+                notificationMessage = `💰 DCA #${trade.dcaCount + 1} (SHORT, Execution ${dcaResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)}. Consider averaging up.`;
+                notificationLevel = 'warning';
+                notificationNeeded = true;
+                addLogEntry(`⚠️ DCA hit but execution failed (SHORT): ${trade.symbol} - ${dcaResult.error}`, 'warning');
+              }
+            }
+          }
+          // Reset DCA_HIT back to OPEN if price moves away from DCA level
+          else if (trade.status === 'DCA_HIT') {
+            const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+            let nextDcaLevel = 0;
+            if (trade.dcaCount === 0) {
+              nextDcaLevel = trade.entryPrice * 1.15;
+            } else {
+              nextDcaLevel = avgEntry * 1.25;
+            }
+            
+            if (currentPrice < nextDcaLevel && trade.dcaCount < 5) {
+              trade.status = 'OPEN';
+              trade.dcaNotified = false; // Reset so it can trigger again if price rises back
+            }
+          }
+          // Check Stop Loss for SELL (LAST - only after all 5 DCAs used)
+          else if (currentPrice >= trade.stopLoss && trade.status === 'OPEN' && trade.dcaCount >= 5) {
+            // Execute Stop Loss order (only after all 5 DCAs used)
             const slResult = await executeStopLoss(trade);
             if (slResult.success) {
               trade.status = 'SL_HIT';
@@ -1414,39 +1507,6 @@ class ProfessionalTradingBot {
               notificationNeeded = true;
               addLogEntry(`⚠️ SL hit but execution failed (SHORT): ${trade.symbol} - ${slResult.error}`, 'error');
             }
-          }
-          // Check Add Position for SELL (price rises)
-          else if (currentPrice >= trade.addPosition && trade.addPosition > trade.entryPrice && !trade.dcaNotified) {
-            // Execute Add Position (DCA) order (short more)
-            const dcaResult = await executeAddPosition(trade);
-            if (dcaResult.success) {
-              trade.status = 'DCA_HIT';
-              trade.dcaExecutedAt = new Date();
-              trade.dcaExecutionPrice = dcaResult.price || currentPrice;
-              trade.dcaOrderId = dcaResult.orderId;
-              trade.dcaQuantity = dcaResult.executedQty;
-              // Update average entry price (weighted average for short)
-              const totalQuantity = (trade.quantity || 1) + dcaResult.executedQty;
-              trade.entryPrice = ((trade.entryPrice * (trade.quantity || 1)) + (dcaResult.price * dcaResult.executedQty)) / totalQuantity;
-              trade.quantity = totalQuantity;
-              notificationMessage = `💰 ADD POSITION EXECUTED (SHORT): ${trade.symbol} shorted ${dcaResult.executedQty} more at $${dcaResult.price.toFixed(2)}. New avg entry: $${trade.entryPrice.toFixed(2)}`;
-              notificationLevel = 'warning';
-              notificationNeeded = true;
-              trade.dcaNotified = true;
-              addLogEntry(`💰 DCA EXECUTED (SHORT): ${trade.symbol} - Order ID: ${dcaResult.orderId}`, 'info');
-            } else if (!dcaResult.skipped) {
-              trade.status = 'DCA_HIT';
-              notificationMessage = `💰 ADD POSITION (SHORT, Execution ${dcaResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)}. Consider averaging up.`;
-              notificationLevel = 'warning';
-              notificationNeeded = true;
-              trade.dcaNotified = true;
-              addLogEntry(`⚠️ DCA hit but execution failed (SHORT): ${trade.symbol} - ${dcaResult.error}`, 'warning');
-            }
-          }
-          // Reset DCA_HIT back to OPEN if price moves away from DCA level (for SELL)
-          else if (trade.status === 'DCA_HIT' && currentPrice < trade.addPosition) {
-            trade.status = 'OPEN';
-            trade.dcaNotified = false; // Reset so it can trigger again if price rises back
           }
         }
 
