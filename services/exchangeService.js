@@ -19,6 +19,37 @@ const BINANCE_SYMBOL_MAP = {
   'NEO': 'NEOUSDT', 'FTM': 'FTMUSDT'
 };
 
+// Map coin symbols to MEXC trading pairs (same format as Binance)
+const MEXC_SYMBOL_MAP = {
+  'BTC': 'BTCUSDT', 'ETH': 'ETHUSDT', 'BNB': 'BNBUSDT', 'SOL': 'SOLUSDT',
+  'XRP': 'XRPUSDT', 'DOGE': 'DOGEUSDT', 'ADA': 'ADAUSDT', 'AVAX': 'AVAXUSDT',
+  'LINK': 'LINKUSDT', 'DOT': 'DOTUSDT', 'MATIC': 'MATICUSDT', 'LTC': 'LTCUSDT',
+  'UNI': 'UNIUSDT', 'ATOM': 'ATOMUSDT', 'XLM': 'XLMUSDT', 'ETC': 'ETCUSDT',
+  'XMR': 'XMRUSDT', 'ALGO': 'ALGOUSDT', 'FIL': 'FILUSDT', 'ICP': 'ICPUSDT',
+  'VET': 'VETUSDT', 'EOS': 'EOSUSDT', 'XTZ': 'XTZUSDT', 'AAVE': 'AAVEUSDT',
+  'MKR': 'MKRUSDT', 'GRT': 'GRTUSDT', 'THETA': 'THETAUSDT', 'RUNE': 'RUNEUSDT',
+  'NEO': 'NEOUSDT', 'FTM': 'FTMUSDT'
+};
+
+/**
+ * Get preferred exchange for trading
+ * Priority: MEXC (if API keys available) > Binance > Virtual
+ */
+function getPreferredExchange() {
+  const mexcApiKey = process.env.MEXC_API_KEY || '';
+  const mexcApiSecret = process.env.MEXC_API_SECRET || '';
+  const binanceApiKey = process.env.BINANCE_API_KEY || '';
+  const binanceApiSecret = process.env.BINANCE_API_SECRET || '';
+  
+  if (mexcApiKey && mexcApiSecret) {
+    return { exchange: 'MEXC', apiKey: mexcApiKey, apiSecret: mexcApiSecret };
+  } else if (binanceApiKey && binanceApiSecret) {
+    return { exchange: 'BINANCE', apiKey: binanceApiKey, apiSecret: binanceApiSecret };
+  }
+  
+  return { exchange: 'VIRTUAL', apiKey: null, apiSecret: null };
+}
+
 // Virtual trading state (in-memory, resets on restart)
 let virtualBalance = parseFloat(process.env.VIRTUAL_STARTING_BALANCE || '10000'); // Default $10,000 virtual balance
 let virtualPositions = {}; // Track long positions (positive = we own)
@@ -29,24 +60,31 @@ let virtualOrderCounter = 1000000; // Start order IDs from 1,000,000 to distingu
  * Check if exchange trading is enabled (real or virtual)
  */
 function isExchangeTradingEnabled() {
-  const apiKey = process.env.BINANCE_API_KEY || '';
-  const apiSecret = process.env.BINANCE_API_SECRET || '';
+  const binanceApiKey = process.env.BINANCE_API_KEY || '';
+  const binanceApiSecret = process.env.BINANCE_API_SECRET || '';
+  const mexcApiKey = process.env.MEXC_API_KEY || '';
+  const mexcApiSecret = process.env.MEXC_API_SECRET || '';
   const realTradingEnabled = process.env.ENABLE_AUTO_TRADING === 'true' || process.env.ENABLE_AUTO_TRADING === '1';
   const virtualTradingEnabled = process.env.ENABLE_VIRTUAL_TRADING !== 'false'; // Default to true
   
-  // Real trading requires API keys
-  const realTrading = realTradingEnabled && apiKey.length > 0 && apiSecret.length > 0;
+  // Real trading requires API keys (MEXC or Binance)
+  const hasBinanceKeys = binanceApiKey.length > 0 && binanceApiSecret.length > 0;
+  const hasMEXCKeys = mexcApiKey.length > 0 && mexcApiSecret.length > 0;
+  const realTrading = realTradingEnabled && (hasBinanceKeys || hasMEXCKeys);
   
   // Virtual trading is default (no API keys needed)
   const virtualTrading = virtualTradingEnabled;
+  
+  const preferredExchange = getPreferredExchange();
   
   return {
     enabled: realTrading || virtualTrading,
     mode: realTrading ? 'REAL' : 'VIRTUAL',
     realTrading: realTrading,
     virtualTrading: virtualTrading,
-    hasApiKey: apiKey.length > 0,
-    hasApiSecret: apiSecret.length > 0,
+    preferredExchange: preferredExchange.exchange,
+    hasBinanceKeys: hasBinanceKeys,
+    hasMEXCKeys: hasMEXCKeys,
     virtualBalance: virtualTrading ? virtualBalance : null
   };
 }
@@ -517,6 +555,8 @@ module.exports = {
   calculateQuantity,
   getVirtualTradingState,
   resetVirtualTrading,
-  BINANCE_SYMBOL_MAP
+  getPreferredExchange,
+  BINANCE_SYMBOL_MAP,
+  MEXC_SYMBOL_MAP
 };
 

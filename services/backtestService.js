@@ -242,8 +242,112 @@ async function quickBacktest(coin, strategy) {
   return await backtestStrategy(coin, strategy, 1825); // 5 years
 }
 
+/**
+ * Walk-forward optimization
+ * Splits data into in-sample and out-of-sample periods
+ */
+async function walkForwardOptimization(coin, strategy, inSampleDays = 1095, outSampleDays = 365) {
+  try {
+    const historicalData = await fetchLongTermHistoricalData(coin);
+    if (!historicalData || historicalData.length < inSampleDays + outSampleDays) {
+      return {
+        success: false,
+        error: 'Insufficient data for walk-forward optimization'
+      };
+    }
+    
+    const prices = historicalData.map(d => typeof d === 'number' ? d : (d.price || d.close || 0)).filter(p => p > 0);
+    
+    // Split into in-sample and out-of-sample
+    const inSample = prices.slice(0, inSampleDays);
+    const outSample = prices.slice(inSampleDays, inSampleDays + outSampleDays);
+    
+    // Optimize on in-sample
+    const inSampleResult = await backtestStrategy(
+      coin,
+      { ...strategy, prices: inSample },
+      inSampleDays
+    );
+    
+    // Test on out-of-sample
+    const outSampleResult = await backtestStrategy(
+      coin,
+      { ...strategy, prices: outSample },
+      outSampleDays
+    );
+    
+    return {
+      success: true,
+      inSample: inSampleResult,
+      outSample: outSampleResult,
+      consistency: outSampleResult.winRate > inSampleResult.winRate * 0.8
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Monte Carlo simulation with slippage
+ */
+async function monteCarloSimulation(coin, strategy, simulations = 1000, slippagePercent = 0.1) {
+  try {
+    const baseResult = await backtestStrategy(coin, strategy);
+    if (!baseResult.success) {
+      return baseResult;
+    }
+    
+    const results = [];
+    const slippageMultiplier = 1 - (slippagePercent / 100);
+    
+    for (let i = 0; i < Math.min(simulations, 100); i++) { // Limit to 100 for performance
+      const modifiedStrategy = {
+        ...strategy,
+        entryPrice: strategy.entryPrice * (1 + (Math.random() - 0.5) * 0.002),
+        takeProfit: strategy.takeProfit * slippageMultiplier,
+        stopLoss: strategy.stopLoss * (1 + (Math.random() - 0.5) * 0.002)
+      };
+      
+      const result = await backtestStrategy(coin, modifiedStrategy);
+      if (result.success) {
+        results.push(result);
+      }
+    }
+    
+    if (results.length === 0) {
+      return baseResult;
+    }
+    
+    const winRates = results.map(r => r.winRate).filter(w => !isNaN(w));
+    const profitFactors = results.map(r => r.profitFactor).filter(p => !isNaN(p));
+    
+    const avgWinRate = winRates.reduce((a, b) => a + b, 0) / winRates.length;
+    const avgProfitFactor = profitFactors.reduce((a, b) => a + b, 0) / profitFactors.length;
+    
+    return {
+      success: true,
+      simulations: results.length,
+      baseResult,
+      statistics: {
+        avgWinRate: Math.round(avgWinRate * 100) / 100,
+        avgProfitFactor: Math.round(avgProfitFactor * 100) / 100
+      }
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
 module.exports = {
   backtestStrategy,
-  quickBacktest
+  quickBacktest,
+  walkForwardOptimization,
+  monteCarloSimulation
 };
 

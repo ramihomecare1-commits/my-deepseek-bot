@@ -921,6 +921,58 @@
       </div>
 
       <div>
+        <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">📊 Performance Analytics</h3>
+        <div id="analytics-container" style="background: white; padding: 24px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <div id="analytics-loading" style="text-align: center; padding: 40px; color: #64748b;">
+            <p>Loading analytics...</p>
+          </div>
+          <div id="analytics-content" style="display: none;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+              <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); padding: 16px; border-radius: 12px; border-left: 4px solid #0ea5e9;">
+                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Sharpe Ratio</div>
+                <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-sharpe">-</div>
+              </div>
+              <div style="background: linear-gradient(135deg, #fef2f2, #fee2e2); padding: 16px; border-radius: 12px; border-left: 4px solid #ef4444;">
+                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Max Drawdown</div>
+                <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-drawdown">-</div>
+              </div>
+              <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); padding: 16px; border-radius: 12px; border-left: 4px solid #22c55e;">
+                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Avg Holding Time</div>
+                <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-holding">-</div>
+              </div>
+              <div style="background: linear-gradient(135deg, #faf5ff, #f3e8ff); padding: 16px; border-radius: 12px; border-left: 4px solid #a855f7;">
+                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Best Trade</div>
+                <div style="font-size: 1.2em; font-weight: 700; color: #0f172a;" id="analytics-best">-</div>
+              </div>
+            </div>
+            <div style="margin-top: 24px;">
+              <h4 style="color: #0f172a; margin-bottom: 12px;">Win Rate by Coin</h4>
+              <div id="analytics-winrate-by-coin" style="background: #f8fafc; padding: 16px; border-radius: 12px; min-height: 100px;">
+                <p style="color: #64748b; text-align: center;">No trade data available</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">📈 Price Charts</h3>
+        <div id="charts-container" style="background: white; padding: 24px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <div style="margin-bottom: 16px;">
+            <select id="chart-coin-select" onchange="updateChart()" style="padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(148,163,184,0.4); background: white; color: #0f172a; font-weight: 600; width: 200px;">
+              <option value="">Select a coin...</option>
+            </select>
+          </div>
+          <div id="chart-container" style="width: 100%; height: 400px; position: relative;">
+            <div style="text-align: center; padding: 80px; color: #64748b;">
+              <p>Select a coin to view price chart</p>
+              <p style="font-size: 0.9em; margin-top: 8px;">Charts will display price action with indicators and trade markers</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
           <h3 style="margin: 0; color: #0f172a; font-size: 1.5em; font-weight: 700;">💰 Active Trades</h3>
           <button id="evaluateTradesBtn" onclick="evaluateTradesWithAI()" style="padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9em; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s;" onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.2)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)';">🤖 AI Re-evaluate Trades</button>
@@ -1932,12 +1984,109 @@
         btn.style.opacity = '1';
       }
     }
+    // Analytics Dashboard Functions
+    async function updateAnalyticsDisplay() {
+      try {
+        const response = await fetch(API_BASE + '/analytics');
+        const analytics = await response.json();
+        
+        if (analytics && analytics.sharpeRatio !== undefined) {
+          document.getElementById('analytics-loading').style.display = 'none';
+          document.getElementById('analytics-content').style.display = 'block';
+          
+          // Update metrics
+          document.getElementById('analytics-sharpe').textContent = analytics.sharpeRatio.toFixed(2);
+          document.getElementById('analytics-drawdown').textContent = `${analytics.maxDrawdownPercent.toFixed(2)}%`;
+          document.getElementById('analytics-holding').textContent = `${analytics.holdingTime?.avgDays.toFixed(1) || 0} days`;
+          
+          if (analytics.bestTrades && analytics.bestTrades.length > 0) {
+            const best = analytics.bestTrades[0];
+            document.getElementById('analytics-best').textContent = `${best.symbol}: +${best.pnlPercent.toFixed(2)}%`;
+          }
+          
+          // Update win rate by coin
+          const winRateContainer = document.getElementById('analytics-winrate-by-coin');
+          if (analytics.winRateByCoin && Object.keys(analytics.winRateByCoin).length > 0) {
+            let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;">';
+            Object.entries(analytics.winRateByCoin)
+              .sort((a, b) => b[1].winRate - a[1].winRate)
+              .forEach(([symbol, stats]) => {
+                html += `<div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">
+                  <div style="font-weight: 600; color: #0f172a;">${symbol}</div>
+                  <div style="font-size: 1.2em; font-weight: 700; color: ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">${stats.winRate.toFixed(1)}%</div>
+                  <div style="font-size: 0.8em; color: #64748b;">${stats.wins}W/${stats.losses}L</div>
+                </div>`;
+              });
+            html += '</div>';
+            winRateContainer.innerHTML = html;
+          } else {
+            winRateContainer.innerHTML = '<p style="color: #64748b; text-align: center;">No trade data available</p>';
+          }
+        }
+      } catch (error) {
+        console.error('Error updating analytics:', error);
+      }
+    }
+
+    // Chart Functions (using TradingView widget)
+    function updateChart() {
+      const select = document.getElementById('chart-coin-select');
+      const symbol = select.value;
+      const container = document.getElementById('chart-container');
+      
+      if (!symbol) {
+        container.innerHTML = '<div style="text-align: center; padding: 80px; color: #64748b;"><p>Select a coin to view price chart</p></div>';
+        return;
+      }
+      
+      // Use TradingView widget for charting
+      container.innerHTML = `
+        <div style="width: 100%; height: 400px;">
+          <iframe 
+            src="https://www.tradingview.com/widgetembed/?symbol=BINANCE:${symbol}USDT&interval=1h&theme=light&style=1&locale=en&toolbar_bg=f1f3f6&enable_publishing=false&hide_top_toolbar=true&hide_legend=false&save_image=false&container_id=tradingview_${symbol}"
+            style="width: 100%; height: 100%; border: none; border-radius: 8px;"
+            frameborder="0"
+            allowtransparency="true"
+            scrolling="no"
+            allowfullscreen>
+          </iframe>
+        </div>
+      `;
+    }
+
+    // Populate chart coin selector
+    async function populateChartSelector() {
+      try {
+        const response = await fetch(API_BASE + '/active-trades');
+        const activeTrades = await response.json();
+        const select = document.getElementById('chart-coin-select');
+        
+        // Clear existing options except first
+        select.innerHTML = '<option value="">Select a coin...</option>';
+        
+        // Add active trades
+        if (activeTrades && activeTrades.length > 0) {
+          activeTrades.forEach(trade => {
+            const option = document.createElement('option');
+            option.value = trade.symbol;
+            option.textContent = `${trade.symbol} - ${trade.name || trade.symbol}`;
+            select.appendChild(option);
+          });
+        }
+      } catch (error) {
+        console.error('Error populating chart selector:', error);
+      }
+    }
+
     updatePortfolioDisplay(); // Initial load of portfolio
+    updateAnalyticsDisplay(); // Initial load of analytics
+    populateChartSelector(); // Populate chart selector
     setInterval(updateStats, 30000);
     setInterval(updateAIEvaluation, 5000); // Update AI display every 5 seconds
     setInterval(updateActiveTradesDisplay, 10000); // Update active trades every 10 seconds
     setInterval(updateClosedTradesDisplay, 10000); // Update closed trades every 10 seconds
     setInterval(updatePortfolioDisplay, 10000); // Update portfolio every 10 seconds
+    setInterval(updateAnalyticsDisplay, 30000); // Update analytics every 30 seconds
     setInterval(updateNextScanTime, 5000); // Update next scan time every 5 seconds
     
     // Initialize log window

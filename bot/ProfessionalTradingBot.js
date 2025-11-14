@@ -120,6 +120,19 @@ class ProfessionalTradingBot {
         momentum: true,
         trend: true
       },
+      trailingStopLoss: {
+        enabled: true,
+        activationPercent: 2.0,  // Activate when profit reaches 2%
+        trailingPercent: 1.0,    // Trail by 1% from peak
+        updateInterval: 60000    // Check every minute
+      },
+      positionSizing: {
+        enabled: true,
+        riskPerTrade: 0.02,       // 2% of capital per trade
+        maxPositionSize: 0.10,    // Max 10% of capital per position
+        useVolatility: true,      // Adjust based on volatility (ATR)
+        minPositionSize: 50      // Minimum $50 per trade
+      },
       rsi: {
         oversold: 30,
         overbought: 70,
@@ -486,12 +499,30 @@ class ProfessionalTradingBot {
         this.fetchGlobalMetrics()
       ]);
       
+      // Detect market regime and adjust strategy
+      const { detectMarketRegime } = require('../services/marketRegimeService');
+      const { calculateAdaptiveThreshold } = require('../services/mlService');
+      
+      // Get recent closed trades for adaptive threshold
+      const recentTrades = this.closedTrades?.slice(-30) || [];
+      const adaptiveThreshold = calculateAdaptiveThreshold(recentTrades, this.tradingRules.minConfidence);
+      
+      // Update minConfidence if adaptive threshold is different
+      if (Math.abs(adaptiveThreshold - this.tradingRules.minConfidence) > 0.01) {
+        const oldThreshold = this.tradingRules.minConfidence;
+        this.tradingRules.minConfidence = adaptiveThreshold;
+        this.minConfidence = adaptiveThreshold;
+        addLogEntry(`🧠 ML: Adaptive threshold adjusted from ${(oldThreshold * 100).toFixed(0)}% to ${(adaptiveThreshold * 100).toFixed(0)}%`, 'info');
+      }
+      
       console.log(`\n🎯 TECHNICAL SCAN STARTED: ${new Date().toLocaleString()}`);
       console.log(`🌐 Global Metrics: CoinPaprika ${this.globalMetrics.coinpaprika ? '✅' : '❌'}, CoinMarketCap ${this.globalMetrics.coinmarketcap ? '✅' : '❌'}`);
+      console.log(`🧠 ML Adaptive Threshold: ${(adaptiveThreshold * 100).toFixed(0)}%`);
       
       addLogEntry('Technical scan started', 'info');
       addLogEntry(`Scanning ${this.trackedCoins.length} coins`, 'info');
       addLogEntry(`Analysis engine: JavaScript`, 'info');
+      addLogEntry(`ML Adaptive Threshold: ${(adaptiveThreshold * 100).toFixed(0)}%`, 'info');
 
       const opportunities = [];
       let analyzedCount = 0;
@@ -1296,11 +1327,36 @@ class ProfessionalTradingBot {
     const stopLoss = parsePrice(opportunity.stopLoss) || currentPrice * 0.95;
     const addPosition = parsePrice(opportunity.addPosition) || currentPrice;
     
-    // Calculate initial quantity based on position size from portfolio service
+    // Calculate position size using risk management
     const { calculateQuantity } = require('../services/exchangeService');
-    const { getPositionSize, recordTrade } = require('../services/portfolioService');
-    const positionSizeUSD = getPositionSize(); // $100 USD per position
-    const initialQuantity = calculateQuantity(opportunity.symbol, entryPrice, positionSizeUSD);
+    const { recordTrade, getPositionSize } = require('../services/portfolioService');
+    const { calculatePositionSizeWithRR } = require('../services/positionSizingService');
+    
+    let positionSizeUSD = 100; // Default fallback
+    let initialQuantity = 0;
+    
+    // Use dynamic position sizing if enabled
+    if (this.tradingRules.positionSizing?.enabled) {
+      const positionSizeResult = calculatePositionSizeWithRR({
+        entryPrice: entryPrice,
+        stopLoss: stopLoss,
+        takeProfit: takeProfit,
+        riskPerTrade: this.tradingRules.positionSizing.riskPerTrade || 0.02,
+        maxPositionSize: this.tradingRules.positionSizing.maxPositionSize || 0.10,
+        minPositionSize: this.tradingRules.positionSizing.minPositionSize || 50,
+        useVolatility: this.tradingRules.positionSizing.useVolatility || true,
+        currentPrice: currentPrice
+      });
+      
+      positionSizeUSD = positionSizeResult.positionSizeUSD;
+      initialQuantity = positionSizeResult.quantity;
+      
+      addLogEntry(`💰 Position sizing: $${positionSizeUSD.toFixed(2)} (Risk: ${(this.tradingRules.positionSizing.riskPerTrade * 100).toFixed(1)}%, SL: ${positionSizeResult.stopLossPercent.toFixed(2)}%)`, 'info');
+    } else {
+      // Fallback to fixed position size
+      positionSizeUSD = getPositionSize(); // $100 USD per position
+      initialQuantity = calculateQuantity(opportunity.symbol, entryPrice, positionSizeUSD);
+    }
     
     // Store coin data for proper price fetching
     const coinData = {
@@ -1335,7 +1391,16 @@ class ProfessionalTradingBot {
       coinData: coinData, // Store full coin data for price fetching
       coinId: coinData.id,
       coinmarketcap_id: coinData.coinmarketcap_id,
-      coinpaprika_id: coinData.coinpaprika_id
+      coinpaprika_id: coinData.coinpaprika_id,
+      // Trailing stop loss tracking
+      trailingStopLoss: {
+        enabled: this.tradingRules.trailingStopLoss?.enabled || false,
+        activated: false,
+        peakPrice: entryPrice,
+        currentStopLoss: stopLoss,
+        activationPercent: this.tradingRules.trailingStopLoss?.activationPercent || 2.0,
+        trailingPercent: this.tradingRules.trailingStopLoss?.trailingPercent || 1.0
+      }
     };
 
     this.activeTrades.push(newTrade);
@@ -1466,12 +1531,42 @@ class ProfessionalTradingBot {
           // For BUY: (currentPrice - avgEntryPrice) * quantity = USD gain/loss
           const priceDiff = currentPrice - avgEntry;
           trade.pnl = priceDiff * quantity; // USD P&L
-          trade.pnlPercent = ((priceDiff / avgEntry) * 100).toFixed(2);
+          trade.pnlPercent = parseFloat(((priceDiff / avgEntry) * 100).toFixed(2));
         } else if (trade.action === 'SELL') { // Short position
           // For SELL (short): (avgEntryPrice - currentPrice) * quantity = USD gain/loss
           const priceDiff = avgEntry - currentPrice;
           trade.pnl = priceDiff * quantity; // USD P&L
-          trade.pnlPercent = ((priceDiff / avgEntry) * 100).toFixed(2);
+          trade.pnlPercent = parseFloat(((priceDiff / avgEntry) * 100).toFixed(2));
+        }
+
+        // Trailing Stop Loss Logic
+        if (trade.trailingStopLoss && trade.trailingStopLoss.enabled && trade.action === 'BUY' && trade.status === 'OPEN') {
+          const trailing = trade.trailingStopLoss;
+          const pnlPercent = trade.pnlPercent;
+          
+          // Update peak price if current price is higher
+          if (currentPrice > trailing.peakPrice) {
+            trailing.peakPrice = currentPrice;
+          }
+          
+          // Activate trailing stop if profit reaches activation threshold
+          if (!trailing.activated && pnlPercent >= trailing.activationPercent) {
+            trailing.activated = true;
+            const newStopLoss = trailing.peakPrice * (1 - trailing.trailingPercent / 100);
+            trailing.currentStopLoss = Math.max(newStopLoss, trade.stopLoss); // Don't go below original SL
+            trade.stopLoss = trailing.currentStopLoss;
+            addLogEntry(`🔄 ${trade.symbol}: Trailing stop loss activated at $${trailing.peakPrice.toFixed(2)} (${pnlPercent.toFixed(2)}% profit)`, 'info');
+          }
+          
+          // Update trailing stop if activated
+          if (trailing.activated) {
+            const newStopLoss = trailing.peakPrice * (1 - trailing.trailingPercent / 100);
+            if (newStopLoss > trailing.currentStopLoss) {
+              trailing.currentStopLoss = newStopLoss;
+              trade.stopLoss = trailing.currentStopLoss;
+              addLogEntry(`📈 ${trade.symbol}: Trailing stop loss updated to $${trailing.currentStopLoss.toFixed(2)} (peak: $${trailing.peakPrice.toFixed(2)})`, 'info');
+            }
+          }
         }
 
         let notificationNeeded = false;

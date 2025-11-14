@@ -465,5 +465,52 @@ router.post('/evaluate-trades', async (req, res) => {
   }
 });
 
+// Performance Analytics endpoint
+router.get('/analytics', (req, res) => {
+  try {
+    const { tradingBot } = req.app.locals;
+    const { getPerformanceAnalytics } = require('../services/analyticsService');
+    
+    if (!tradingBot) {
+      return res.status(500).json({ error: 'Trading bot not initialized' });
+    }
+    
+    const closedTrades = tradingBot.getClosedTrades() || [];
+    const activeTrades = tradingBot.activeTrades || [];
+    
+    const analytics = getPerformanceAnalytics(closedTrades, activeTrades);
+    res.json(analytics);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Market Regime endpoint
+router.get('/market-regime', async (req, res) => {
+  try {
+    const { tradingBot } = req.app.locals;
+    const { detectMarketRegime } = require('../services/marketRegimeService');
+    
+    if (!tradingBot) {
+      return res.status(500).json({ error: 'Trading bot not initialized' });
+    }
+    
+    // Get current coin data from last scan
+    const lastScan = tradingBot.analysisHistory?.[0];
+    if (!lastScan || !lastScan.details) {
+      return res.json({ regimes: {}, message: 'No recent scan data available' });
+    }
+    
+    // Simplified - would need full price data for accurate detection
+    res.json({ 
+      regimes: {}, 
+      message: 'Market regime detection requires price data from recent scan',
+      note: 'This feature will be enhanced with real-time price data'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
 module.exports.addLogEntry = addLogEntry;
