@@ -108,6 +108,9 @@ async function initializeBotAsync() {
     tradingBot.pythonAvailable = pythonAvailable;
     app.locals.tradingBot = tradingBot;
     
+    // Initialize bot: Load saved trades and portfolio state
+    await tradingBot.initialize();
+    
     // Start independent trades update timer (runs every 30 seconds, regardless of scans)
     tradingBot.startTradesUpdateTimer();
     

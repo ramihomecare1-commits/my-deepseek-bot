@@ -637,6 +637,45 @@
       border: 1px dashed rgba(148, 163, 184, 0.4);
       color: #64748b;
     }
+    /* Portfolio Display Styles */
+    .portfolio-container {
+      background: white;
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+      margin-bottom: 28px;
+    }
+    .portfolio-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .portfolio-metric {
+      background: rgba(241, 245, 249, 0.85);
+      padding: 16px;
+      border-radius: 12px;
+      border-left: 4px solid #6366f1;
+    }
+    .portfolio-metric-label {
+      font-size: 0.85em;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .portfolio-metric-value {
+      font-size: 1.5em;
+      font-weight: 700;
+      color: #0f172a;
+      font-family: 'Courier New', monospace;
+    }
+    .portfolio-metric-value.positive {
+      color: #22c55e;
+    }
+    .portfolio-metric-value.negative {
+      color: #ef4444;
+    }
     .no-active-trades h3 {
       margin-bottom: 10px;
       color: #475569;
@@ -838,6 +877,46 @@
             </div>
           </div>
 
+        </div>
+      </div>
+
+      <div>
+        <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">💼 Portfolio</h3>
+        <div id="portfolio-container" class="portfolio-container">
+          <div class="portfolio-grid">
+            <div class="portfolio-metric">
+              <div class="portfolio-metric-label">Initial Capital</div>
+              <div class="portfolio-metric-value" id="portfolio-initial">$10,000.00</div>
+            </div>
+            <div class="portfolio-metric">
+              <div class="portfolio-metric-label">Current Balance</div>
+              <div class="portfolio-metric-value" id="portfolio-balance">$10,000.00</div>
+            </div>
+            <div class="portfolio-metric">
+              <div class="portfolio-metric-label">Total Equity</div>
+              <div class="portfolio-metric-value" id="portfolio-equity">$10,000.00</div>
+            </div>
+            <div class="portfolio-metric">
+              <div class="portfolio-metric-label">Total P&L</div>
+              <div class="portfolio-metric-value" id="portfolio-pnl">$0.00</div>
+            </div>
+            <div class="portfolio-metric">
+              <div class="portfolio-metric-label">ROI</div>
+              <div class="portfolio-metric-value" id="portfolio-roi">0.00%</div>
+            </div>
+            <div class="portfolio-metric">
+              <div class="portfolio-metric-label">Win Rate</div>
+              <div class="portfolio-metric-value" id="portfolio-winrate">0.00%</div>
+            </div>
+            <div class="portfolio-metric">
+              <div class="portfolio-metric-label">Total Trades</div>
+              <div class="portfolio-metric-value" id="portfolio-trades">0</div>
+            </div>
+            <div class="portfolio-metric">
+              <div class="portfolio-metric-label">Open Positions</div>
+              <div class="portfolio-metric-value" id="portfolio-open">0</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1555,6 +1634,43 @@
       }
     }
 
+    // Portfolio display functions
+    async function updatePortfolioDisplay() {
+      try {
+        const response = await fetch(API_BASE + '/portfolio');
+        const portfolio = await response.json();
+        
+        // Update portfolio metrics
+        document.getElementById('portfolio-initial').textContent = `$${Number(portfolio.initialCapital || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        document.getElementById('portfolio-balance').textContent = `$${Number(portfolio.currentBalance || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        document.getElementById('portfolio-equity').textContent = `$${Number(portfolio.totalEquity || portfolio.currentBalance || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        
+        // P&L with color coding
+        const totalPnl = portfolio.totalPnl || 0;
+        const pnlEl = document.getElementById('portfolio-pnl');
+        pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${Number(totalPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        pnlEl.className = 'portfolio-metric-value' + (totalPnl > 0 ? ' positive' : totalPnl < 0 ? ' negative' : '');
+        
+        // ROI with color coding
+        const roi = portfolio.roi || 0;
+        const roiEl = document.getElementById('portfolio-roi');
+        roiEl.textContent = `${roi >= 0 ? '+' : ''}${Number(roi).toFixed(2)}%`;
+        roiEl.className = 'portfolio-metric-value' + (roi > 0 ? ' positive' : roi < 0 ? ' negative' : '');
+        
+        // Win rate
+        document.getElementById('portfolio-winrate').textContent = `${Number(portfolio.winRate || 0).toFixed(2)}%`;
+        
+        // Total trades
+        document.getElementById('portfolio-trades').textContent = portfolio.totalTrades || 0;
+        
+        // Open positions
+        document.getElementById('portfolio-open').textContent = portfolio.openPositions || 0;
+        
+      } catch (error) {
+        console.error('Error updating portfolio display:', error);
+      }
+    }
+
     // Log window functions
     let logEntries = [];
     let lastLogId = 0;
@@ -1619,9 +1735,11 @@
     updateStats();
     updateAIEvaluation();
     updateActiveTradesDisplay(); // Initial load of active trades
+    updatePortfolioDisplay(); // Initial load of portfolio
     setInterval(updateStats, 30000);
     setInterval(updateAIEvaluation, 5000); // Update AI display every 5 seconds
     setInterval(updateActiveTradesDisplay, 10000); // Update active trades every 10 seconds
+    setInterval(updatePortfolioDisplay, 10000); // Update portfolio every 10 seconds
     
     // Initialize log window
     appendLog('Bot initialized. Waiting for activity...', 'info');

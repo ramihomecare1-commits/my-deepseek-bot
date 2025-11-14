@@ -458,8 +458,9 @@ async function executeAddPosition(trade) {
   // For SELL positions: SELL more (average up)
   const side = trade.action; // Same direction as original trade
   
-  // Calculate quantity for DCA (typically smaller than initial position)
-  const dcaSizeUSD = parseFloat(process.env.DCA_POSITION_SIZE_USD || '50'); // Default 50% of initial
+  // Calculate quantity for DCA using portfolio service ($100 USD)
+  const { getDCASize } = require('./portfolioService');
+  const dcaSizeUSD = getDCASize(); // $100 USD per DCA
   const quantity = calculateQuantity(trade.symbol, trade.currentPrice, dcaSizeUSD);
 
   if (quantity <= 0) {

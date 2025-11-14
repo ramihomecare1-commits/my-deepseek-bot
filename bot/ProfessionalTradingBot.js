@@ -28,6 +28,8 @@ const {
   executeAddPosition
 } = require('../services/exchangeService');
 const { quickBacktest } = require('../services/backtestService');
+const { loadTrades, saveTrades } = require('../services/tradePersistenceService');
+const { loadPortfolio, recalculateFromTrades, getPortfolioStats } = require('../services/portfolioService');
 
 // Helper function to add log entries (if available)
 let addLogEntry = null;
@@ -168,6 +170,33 @@ class ProfessionalTradingBot {
     
     // Sync minConfidence
     this.minConfidence = this.tradingRules.minConfidence;
+  }
+
+  /**
+   * Initialize bot: Load saved trades and portfolio state
+   */
+  async initialize() {
+    try {
+      // Load portfolio state
+      await loadPortfolio();
+      addLogEntry('Portfolio state loaded', 'success');
+      
+      // Load saved trades
+      const savedTrades = await loadTrades();
+      if (savedTrades && savedTrades.length > 0) {
+        this.activeTrades = savedTrades;
+        addLogEntry(`Restored ${savedTrades.length} active trades from storage`, 'success');
+        
+        // Recalculate portfolio metrics from restored trades
+        await recalculateFromTrades(this.activeTrades);
+        addLogEntry('Portfolio metrics recalculated from restored trades', 'info');
+      } else {
+        addLogEntry('No saved trades found, starting fresh', 'info');
+      }
+    } catch (error) {
+      console.error('Error initializing bot:', error);
+      addLogEntry(`Error initializing: ${error.message}`, 'error');
+    }
   }
 
   setAutoScanInterval(key) {
@@ -1051,9 +1080,10 @@ class ProfessionalTradingBot {
     const stopLoss = parsePrice(opportunity.stopLoss) || currentPrice * 0.95;
     const addPosition = parsePrice(opportunity.addPosition) || currentPrice;
     
-    // Calculate initial quantity based on position size
+    // Calculate initial quantity based on position size from portfolio service
     const { calculateQuantity } = require('../services/exchangeService');
-    const positionSizeUSD = parseFloat(process.env.DEFAULT_POSITION_SIZE_USD || '100');
+    const { getPositionSize, recordTrade } = require('../services/portfolioService');
+    const positionSizeUSD = getPositionSize(); // $100 USD per position
     const initialQuantity = calculateQuantity(opportunity.symbol, entryPrice, positionSizeUSD);
     
     // Store coin data for proper price fetching
@@ -1091,6 +1121,13 @@ class ProfessionalTradingBot {
     };
 
     this.activeTrades.push(newTrade);
+    
+    // Record trade in portfolio
+    await recordTrade(newTrade);
+    
+    // Save trades to disk
+    await saveTrades(this.activeTrades);
+    
     addLogEntry(`NEW TRADE: ${newTrade.action} ${newTrade.symbol} at $${newTrade.entryPrice.toFixed(2)} (TP: $${newTrade.takeProfit.toFixed(2)}, SL: $${newTrade.stopLoss.toFixed(2)})`, 'success');
     // TODO: Send Telegram notification for new trade opened
   }
@@ -1354,6 +1391,12 @@ class ProfessionalTradingBot {
         // This handles temporary API failures gracefully
       }
     }
+    
+    // Save trades to disk after updates
+    await saveTrades(this.activeTrades);
+    
+    // Recalculate portfolio metrics from updated trades
+    await recalculateFromTrades(this.activeTrades);
   }
 
   // New method: Get active trades

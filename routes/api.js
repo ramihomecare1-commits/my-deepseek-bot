@@ -364,6 +364,17 @@ router.get('/active-trades', (req, res) => {
   }
 });
 
+// Portfolio stats endpoint
+router.get('/portfolio', (req, res) => {
+  try {
+    const { getPortfolioStats } = require('../services/portfolioService');
+    const portfolio = getPortfolioStats();
+    res.json(portfolio);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Exchange trading status endpoint
 router.get('/exchange-status', (req, res) => {
   try {
