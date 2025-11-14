@@ -212,11 +212,11 @@ class ProfessionalTradingBot {
       
       // Load closed trades
       await this.loadClosedTrades();
-        
-        // Recalculate portfolio metrics from restored trades
-        await recalculateFromTrades(this.activeTrades);
-        addLogEntry('Portfolio metrics recalculated from restored trades', 'info');
-        console.log('✅ Portfolio metrics recalculated');
+      
+      // Recalculate portfolio metrics from restored trades
+      await recalculateFromTrades(this.activeTrades);
+      addLogEntry('Portfolio metrics recalculated from restored trades', 'info');
+      console.log('✅ Portfolio metrics recalculated');
       } else {
         console.log('⚠️ No saved trades found or empty array returned');
         console.log(`   savedTrades value: ${JSON.stringify(savedTrades)}`);
