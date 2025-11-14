@@ -261,10 +261,8 @@ function getDCASize() {
   return DEFAULT_DCA_SIZE;
 }
 
-// Initialize portfolio on module load
-loadPortfolio().catch(err => {
-  console.error('Failed to load portfolio on startup:', err);
-});
+// Note: loadPortfolio() is called explicitly in ProfessionalTradingBot.initialize()
+// to avoid module loading issues and circular dependencies
 
 module.exports = {
   loadPortfolio,
