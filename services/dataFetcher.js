@@ -293,8 +293,11 @@ async function fetchGateIOPrice(symbol) {
       throw new Error(`Symbol ${symbol} not available on Gate.io`);
     }
 
+    // Gate.io uses underscore format: BTC_USDT instead of BTCUSDT
+    const gateCurrencyPair = gateSymbol.replace('USDT', '_USDT');
+
     const response = await axios.get('https://api.gateio.ws/api/v4/spot/tickers', {
-      params: { currency_pair: gateSymbol },
+      params: { currency_pair: gateCurrencyPair },
       timeout: 10000,
     });
 
@@ -323,15 +326,15 @@ async function fetchMEXCKlines(symbol, interval, limit) {
       throw new Error(`Symbol ${symbol} not available on MEXC`);
     }
 
-    // MEXC interval mapping - MEXC uses: 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w, 1M
-    // Map intervals: if 1m requested, use 5m (more reliable), otherwise use as-is
+    // MEXC interval mapping - MEXC uses: 1m, 5m, 15m, 30m, 1H (capital H), 4H, 1D, 1W, 1M
+    // Map intervals: if 1m requested, use 5m (more reliable), otherwise convert to MEXC format
     let mexcInterval = interval;
     if (interval === '1m') {
       mexcInterval = '5m'; // Use 5m instead of 1m (more reliable, less likely to hit limits)
     } else if (interval === '1h') {
-      mexcInterval = '1h';
+      mexcInterval = '1H'; // MEXC uses capital H for hourly
     } else if (interval === '1d') {
-      mexcInterval = '1d';
+      mexcInterval = '1D'; // MEXC uses capital D for daily
     }
     
     let mexcLimit = Math.min(limit, 2000);
@@ -340,11 +343,11 @@ async function fetchMEXCKlines(symbol, interval, limit) {
     if (mexcInterval === '5m') {
       // For 5m, max reasonable is ~288 (24 hours)
       mexcLimit = Math.min(mexcLimit, 288);
-    } else if (mexcInterval === '1h') {
-      // For 1h, max is 2000 (but we typically use less)
+    } else if (mexcInterval === '1H') {
+      // For 1H, max is 2000 (but we typically use less)
       mexcLimit = Math.min(mexcLimit, 2000);
-    } else if (mexcInterval === '1d') {
-      // For 1d, max is 2000
+    } else if (mexcInterval === '1D') {
+      // For 1D, max is 2000
       mexcLimit = Math.min(mexcLimit, 2000);
     }
     
@@ -405,9 +408,12 @@ async function fetchGateIOKlines(symbol, interval, limit) {
       gateLimit = Math.min(gateLimit, 1000);
     }
     
+    // Gate.io uses underscore format: BTC_USDT instead of BTCUSDT
+    const gateCurrencyPair = gateSymbol.replace('USDT', '_USDT');
+
     const response = await axios.get('https://api.gateio.ws/api/v4/spot/candlesticks', {
       params: { 
-        currency_pair: gateSymbol, 
+        currency_pair: gateCurrencyPair, 
         interval: gateInterval, 
         limit: gateLimit 
       },
