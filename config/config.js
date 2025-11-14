@@ -37,6 +37,11 @@ const SCAN_INTERVAL_OPTIONS = {
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 
+// Debug logging to help troubleshoot
+console.log('🔍 API Key Detection:');
+console.log(`   GEMINI_API_KEY: ${GEMINI_API_KEY ? '✅ Found (' + GEMINI_API_KEY.substring(0, 10) + '...)' : '❌ Not set'}`);
+console.log(`   OPENROUTER_API_KEY: ${OPENROUTER_API_KEY ? '✅ Found (' + OPENROUTER_API_KEY.substring(0, 15) + '...)' : '❌ Not set'}`);
+
 // Fallback to generic AI_API_KEY if specific ones not set
 const AI_API_KEY = process.env.API_KEY || process.env.AI_API_KEY || OPENROUTER_API_KEY || GEMINI_API_KEY || '';
 
@@ -46,6 +51,8 @@ const API_TYPE = AI_API_KEY.startsWith('AIza') ? 'gemini' : 'openrouter';
 // HYBRID MODE: Use Gemini for free monitoring, DeepSeek R1 for premium confirmations
 const USE_HYBRID_MODE = Boolean(GEMINI_API_KEY && OPENROUTER_API_KEY);
 
+console.log(`   Hybrid Mode: ${USE_HYBRID_MODE ? '✅ ENABLED' : '❌ DISABLED (need both keys)'}`);
+
 // Free monitoring model (Tier 1)
 // Default: Gemini Flash (FREE) if Gemini key available, else DeepSeek Chat
 const MONITORING_MODEL = process.env.MONITORING_MODEL || 
@@ -53,12 +60,17 @@ const MONITORING_MODEL = process.env.MONITORING_MODEL ||
 const MONITORING_API_KEY = GEMINI_API_KEY || OPENROUTER_API_KEY || AI_API_KEY;
 const MONITORING_API_TYPE = GEMINI_API_KEY ? 'gemini' : 'openrouter';
 
+console.log(`   Free Tier will use: ${MONITORING_API_TYPE.toUpperCase()} (${MONITORING_MODEL})`);
+
 // Premium confirmation model (Tier 2)
 // Default: DeepSeek R1 (best reasoning) if OpenRouter key available, else Gemini Pro
 const AI_MODEL = process.env.AI_MODEL || 
   (OPENROUTER_API_KEY ? 'deepseek/deepseek-r1' : 'gemini-1.5-pro');
 const PREMIUM_API_KEY = OPENROUTER_API_KEY || GEMINI_API_KEY || AI_API_KEY;
 const PREMIUM_API_TYPE = OPENROUTER_API_KEY ? 'openrouter' : 'gemini';
+
+console.log(`   Premium Tier will use: ${PREMIUM_API_TYPE.toUpperCase()} (${AI_MODEL})`);
+console.log('');
 
 // Two-Tier Monitoring Configuration
 const MONITORING_ENABLED = (process.env.MONITORING_ENABLED || 'true').toLowerCase() === 'true';
