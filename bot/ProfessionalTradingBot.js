@@ -1623,52 +1623,53 @@ Return JSON array format:
           if (!Array.isArray(recommendations) || recommendations.length === 0) {
             throw new Error('Invalid recommendations format - expected non-empty array');
           }
-        
-        // Build Telegram message
-        let telegramMessage = `🤖 *AI Trade Re-evaluation*\n\n`;
-        telegramMessage += `📊 *${openTrades.length} Open Trade${openTrades.length > 1 ? 's' : ''} Analyzed*\n\n`;
-        
-        recommendations.forEach((rec, index) => {
-          const symbol = rec.symbol;
-          const recommendation = rec.recommendation || 'HOLD';
-          const confidence = (rec.confidence || 0) * 100;
-          const reason = rec.reason || 'No reason provided';
           
-          // Find the corresponding trade
-          const trade = openTrades.find(t => t.symbol === symbol);
-          const pnlPercent = trade && typeof trade.pnlPercent === 'number' ? trade.pnlPercent : 0;
-          const pnl = trade ? `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%` : 'N/A';
+          // Build Telegram message
+          let telegramMessage = `🤖 *AI Trade Re-evaluation*\n\n`;
+          telegramMessage += `📊 *${openTrades.length} Open Trade${openTrades.length > 1 ? 's' : ''} Analyzed*\n\n`;
           
-          // Add to log
-          addLogEntry(
-            `📊 ${symbol} AI Re-evaluation: ${recommendation} (${confidence.toFixed(0)}%) - ${reason}`,
-            recommendation === 'CLOSE' ? 'warning' : 'info'
-          );
+          recommendations.forEach((rec, index) => {
+            const symbol = rec.symbol;
+            const recommendation = rec.recommendation || 'HOLD';
+            const confidence = (rec.confidence || 0) * 100;
+            const reason = rec.reason || 'No reason provided';
+            
+            // Find the corresponding trade
+            const trade = openTrades.find(t => t.symbol === symbol);
+            const pnlPercent = trade && typeof trade.pnlPercent === 'number' ? trade.pnlPercent : 0;
+            const pnl = trade ? `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%` : 'N/A';
+            
+            // Add to log
+            addLogEntry(
+              `📊 ${symbol} AI Re-evaluation: ${recommendation} (${confidence.toFixed(0)}%) - ${reason}`,
+              recommendation === 'CLOSE' ? 'warning' : 'info'
+            );
+            
+            // Add to Telegram message
+            const emoji = recommendation === 'CLOSE' ? '🔴' : recommendation === 'ADJUST' ? '🟡' : '🟢';
+            telegramMessage += `${emoji} *${symbol}* - ${recommendation}\n`;
+            telegramMessage += `   P&L: ${pnl} | Confidence: ${confidence.toFixed(0)}%\n`;
+            telegramMessage += `   ${reason}\n\n`;
+          });
           
-          // Add to Telegram message
-          const emoji = recommendation === 'CLOSE' ? '🔴' : recommendation === 'ADJUST' ? '🟡' : '🟢';
-          telegramMessage += `${emoji} *${symbol}* - ${recommendation}\n`;
-          telegramMessage += `   P&L: ${pnl} | Confidence: ${confidence.toFixed(0)}%\n`;
-          telegramMessage += `   ${reason}\n\n`;
-        });
-        
-        // Send to Telegram
-        console.log('📤 Sending re-evaluation to Telegram...');
-        addLogEntry('📤 Sending re-evaluation results to Telegram...', 'info');
-        try {
-          const sent = await sendTelegramMessage(telegramMessage);
-          if (sent) {
-            console.log('✅ AI re-evaluation sent to Telegram successfully');
-            addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
-          } else {
-            console.log('⚠️ Failed to send re-evaluation to Telegram');
-            addLogEntry('⚠️ Failed to send re-evaluation to Telegram', 'warning');
+          // Send to Telegram
+          console.log('📤 Sending re-evaluation to Telegram...');
+          console.log(`📝 Message length: ${telegramMessage.length} characters`);
+          addLogEntry('📤 Sending re-evaluation results to Telegram...', 'info');
+          try {
+            const sent = await sendTelegramMessage(telegramMessage);
+            if (sent) {
+              console.log('✅ AI re-evaluation sent to Telegram successfully');
+              addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
+            } else {
+              console.log('⚠️ Failed to send re-evaluation to Telegram');
+              addLogEntry('⚠️ Failed to send re-evaluation to Telegram', 'warning');
+            }
+          } catch (telegramError) {
+            console.error('❌ Telegram error:', telegramError);
+            addLogEntry(`⚠️ Failed to send re-evaluation to Telegram: ${telegramError.message}`, 'warning');
           }
-        } catch (telegramError) {
-          console.error('❌ Telegram error:', telegramError);
-          addLogEntry(`⚠️ Failed to send re-evaluation to Telegram: ${telegramError.message}`, 'warning');
-        }
-        
+          
           return recommendations;
         } catch (parseError) {
           console.error('❌ Failed to parse AI recommendations:', parseError.message);
