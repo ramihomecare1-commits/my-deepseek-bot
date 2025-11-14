@@ -2,7 +2,7 @@
   "name": "deepseek-bot",
   "version": "1.0.0",
   "scripts": {
-    "start": "node app.js",
+    "start": "node --max-old-space-size=512 app.js",
     "build": "npm install"
   },
   "dependencies": {

@@ -91,7 +91,9 @@ class ProfessionalTradingBot {
     };
     this.latestHeatmap = [];
     this.newsCache = new Map();
+    this.newsCacheMaxSize = 200; // Limit news cache to 200 entries
     this.priceCache = new Map();
+    this.priceCacheMaxSize = 100; // Limit price cache to 100 entries
     this.globalMetrics = {
       coinmarketcap: null,
       coinpaprika: null,
@@ -245,6 +247,28 @@ class ProfessionalTradingBot {
     return { ...this.scanProgress, interval: this.selectedIntervalKey };
   }
 
+  // Limit price cache size to prevent memory leaks
+  _limitPriceCache() {
+    if (this.priceCache.size > this.priceCacheMaxSize) {
+      const entries = Array.from(this.priceCache.entries());
+      entries.sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
+      const toRemove = entries.slice(0, this.priceCache.size - this.priceCacheMaxSize);
+      toRemove.forEach(([key]) => this.priceCache.delete(key));
+      console.log(`🧹 Cleaned price cache: ${toRemove.length} old entries removed`);
+    }
+  }
+
+  // Limit news cache size to prevent memory leaks
+  _limitNewsCache() {
+    if (this.newsCache.size > this.newsCacheMaxSize) {
+      const entries = Array.from(this.newsCache.entries());
+      entries.sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
+      const toRemove = entries.slice(0, this.newsCache.size - this.newsCacheMaxSize);
+      toRemove.forEach(([key]) => this.newsCache.delete(key));
+      console.log(`🧹 Cleaned news cache: ${toRemove.length} old entries removed`);
+    }
+  }
+
   async ensureGreedFearIndex() {
     return await ensureGreedFearIndex(this.greedFearIndex);
   }
@@ -384,10 +408,14 @@ class ProfessionalTradingBot {
   // Start separate timer for active trades updates (every 1 minute)
   // This runs COMPLETELY INDEPENDENTLY of the scanner - starts when bot initializes
   startTradesUpdateTimer() {
-    // Clear any existing timer
+    // Prevent duplicate timers - guard against multiple calls
     if (this.tradesUpdateTimer) {
-      clearInterval(this.tradesUpdateTimer);
+      console.log('⏰ Trades update timer already running, skipping duplicate initialization');
+      return;
     }
+    
+    // Flag to prevent concurrent updates
+    this.isUpdatingTrades = false;
 
     // Update immediately on start
     this.updateActiveTrades().catch(err => {
@@ -396,8 +424,19 @@ class ProfessionalTradingBot {
 
     // Then update every 1 minute - runs independently of scans
     this.tradesUpdateTimer = setInterval(async () => {
+      // Prevent concurrent updates
+      if (this.isUpdatingTrades) {
+        console.log('⏭️ Skipping trade update - previous update still in progress');
+        return;
+      }
+      
       if (this.activeTrades.length > 0) {
-        await this.updateActiveTrades();
+        this.isUpdatingTrades = true;
+        try {
+          await this.updateActiveTrades();
+        } finally {
+          this.isUpdatingTrades = false;
+        }
       }
     }, 60000); // 1 minute
 
@@ -441,9 +480,11 @@ class ProfessionalTradingBot {
       // Note: Active trades are updated by the independent timer (every 1 minute)
       // No need to update here to avoid duplicate calls
       
-      // Fetch global metrics at the start of each scan
-      await this.ensureGreedFearIndex();
-      await this.fetchGlobalMetrics();
+      // Fetch global metrics in parallel (both independent operations)
+      await Promise.all([
+        this.ensureGreedFearIndex(),
+        this.fetchGlobalMetrics()
+      ]);
       
       console.log(`\n🎯 TECHNICAL SCAN STARTED: ${new Date().toLocaleString()}`);
       console.log(`🌐 Global Metrics: CoinPaprika ${this.globalMetrics.coinpaprika ? '✅' : '❌'}, CoinMarketCap ${this.globalMetrics.coinmarketcap ? '✅' : '❌'}`);
@@ -463,7 +504,46 @@ class ProfessionalTradingBot {
       console.log('📊 Step 1: Collecting technical data for all coins...');
       addLogEntry('Step 1: Collecting technical data for all coins...', 'info');
       
-      const BATCH_SIZE = 10;
+      // Start news fetching early in parallel (will be awaited later)
+      let newsFetchPromise = null;
+      const startNewsFetch = () => {
+        if (allCoinsData.length > 0 && !newsFetchPromise) {
+          newsFetchPromise = (async () => {
+            // Wait a bit to collect more coins, then fetch news for all collected coins
+            await sleep(500); // Small delay to let more coins accumulate
+            
+            const coinsToFetch = [...allCoinsData]; // Copy current array
+            const NEWS_BATCH_SIZE = 10;
+            for (let i = 0; i < coinsToFetch.length; i += NEWS_BATCH_SIZE) {
+              const batch = coinsToFetch.slice(i, i + NEWS_BATCH_SIZE);
+              const newsPromises = batch.map(async (coin) => {
+                try {
+                  const news = await fetchCryptoNews(coin.symbol, 5);
+                  // Update the coin in allCoinsData array
+                  const coinIndex = allCoinsData.findIndex(c => c.symbol === coin.symbol);
+                  if (coinIndex >= 0) {
+                    allCoinsData[coinIndex].news = news;
+                  }
+                  return news;
+                } catch (error) {
+                  const coinIndex = allCoinsData.findIndex(c => c.symbol === coin.symbol);
+                  if (coinIndex >= 0) {
+                    allCoinsData[coinIndex].news = { articles: [], total: 0 };
+                  }
+                  return null;
+                }
+              });
+              await Promise.allSettled(newsPromises);
+              if (i + NEWS_BATCH_SIZE < coinsToFetch.length) {
+                await sleep(100);
+              }
+            }
+          })();
+        }
+        return newsFetchPromise;
+      };
+      
+      const BATCH_SIZE = 5; // Reduced from 10 to 5 to limit memory usage
       for (let i = 0; i < this.trackedCoins.length; i += BATCH_SIZE) {
         const batch = this.trackedCoins.slice(i, i + BATCH_SIZE);
         console.log(`📦 Processing batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} coins)...`);
@@ -474,7 +554,6 @@ class ProfessionalTradingBot {
             options,
             globalMetrics: this.globalMetrics 
           }).catch(error => {
-            console.log(`❌ ${coin.symbol}: Data collection failed - ${error.message}`);
             this.stats.apiErrors += 1;
             return null; // Return null on error so Promise.allSettled continues
           })
@@ -507,14 +586,6 @@ class ProfessionalTradingBot {
             const hasFrames = analysis.frames && typeof analysis.frames === 'object';
             const frameCount = hasFrames ? Object.keys(analysis.frames).length : 0;
             
-            console.log(`🔍 ${coin.symbol} analysis check:`, {
-              hasFrames: !!hasFrames,
-              frameCount: frameCount,
-              usesMockData: analysis.usesMockData,
-              dataSource: analysis.dataSource,
-              confidence: analysis.confidence
-            });
-            
             if (hasFrames && frameCount > 0) {
               const priceValue = typeof analysis.price === 'string' 
                 ? parseFloat(analysis.price.replace('$', '').replace(/,/g, '')) 
@@ -527,12 +598,13 @@ class ProfessionalTradingBot {
                 frames: analysis.frames,
                 dataSource: analysis.dataSource || 'CoinGecko',
               });
-              console.log(`✅ Collected data for AI: ${coin.symbol} (${frameCount} timeframes, price: $${priceValue})`);
-            } else {
-              console.log(`⏭️ Skipping ${coin.symbol} for AI - reason:`, !hasFrames ? 'no frames object' : frameCount === 0 ? 'empty frames' : 'unknown');
+              
+              // Start news fetching when we have enough coins (start early, fetch in parallel)
+              if (allCoinsData.length === 5) {
+                startNewsFetch(); // Start fetching news early
+              }
             }
           } else {
-            console.log(`❌ ${coin.symbol}: Analysis failed`);
             this.stats.apiErrors += 1;
           }
 
@@ -545,37 +617,42 @@ class ProfessionalTradingBot {
         
         // Small delay between batches to respect rate limits
         if (i + BATCH_SIZE < this.trackedCoins.length) {
-          await sleep(200); // 200ms delay between batches
+          await sleep(100); // 100ms delay between batches (reduced from 200ms)
         }
       }
 
-      // Step 2a: Fetch news for all coins before AI analysis (in parallel batches)
+      // Step 2a: Wait for news fetching (started early in parallel with coin analysis)
       if (allCoinsData.length > 0) {
         console.log('📰 Fetching news for coins...');
         addLogEntry('Fetching recent news for analysis...', 'info');
         
-        const NEWS_BATCH_SIZE = 10;
-        for (let i = 0; i < allCoinsData.length; i += NEWS_BATCH_SIZE) {
-          const batch = allCoinsData.slice(i, i + NEWS_BATCH_SIZE);
-          
-          // Fetch news for all coins in batch in parallel
-          const newsPromises = batch.map(async (coin) => {
-            try {
-              const news = await fetchCryptoNews(coin.symbol, 5);
-              coin.news = news;
-              return news;
-            } catch (error) {
-              console.log(`⚠️ News fetch failed for ${coin.symbol}: ${error.message}`);
-              coin.news = { articles: [], total: 0 };
-              return null;
+        // If news fetching hasn't started yet, start it now
+        if (!newsFetchPromise) {
+          startNewsFetch();
+        }
+        
+        // Wait for news fetching to complete
+        if (newsFetchPromise) {
+          await newsFetchPromise;
+        } else {
+          // Fallback: fetch news now if it wasn't started
+          const NEWS_BATCH_SIZE = 10;
+          for (let i = 0; i < allCoinsData.length; i += NEWS_BATCH_SIZE) {
+            const batch = allCoinsData.slice(i, i + NEWS_BATCH_SIZE);
+            const newsPromises = batch.map(async (coin) => {
+              try {
+                const news = await fetchCryptoNews(coin.symbol, 5);
+                coin.news = news;
+                return news;
+              } catch (error) {
+                coin.news = { articles: [], total: 0 };
+                return null;
+              }
+            });
+            await Promise.allSettled(newsPromises);
+            if (i + NEWS_BATCH_SIZE < allCoinsData.length) {
+              await sleep(100);
             }
-          });
-          
-          await Promise.allSettled(newsPromises);
-          
-          // Small delay between batches to respect rate limits
-          if (i + NEWS_BATCH_SIZE < allCoinsData.length) {
-            await sleep(200); // 200ms delay between batches
           }
         }
         
@@ -854,6 +931,18 @@ class ProfessionalTradingBot {
         this.analysisHistory = this.analysisHistory.slice(0, 288);
       }
 
+      // Clean up memory after scan
+      this._limitPriceCache();
+      this._limitNewsCache();
+      
+      // Clear large data structures to free memory
+      if (allCoinsData.length > 0) {
+        allCoinsData.length = 0; // Clear array but keep reference
+      }
+      if (analysisResults.size > 0) {
+        analysisResults.clear(); // Clear Map
+      }
+      
       console.log(`\n📈 SCAN COMPLETE: ${opportunities.length} opportunities found`);
       console.log(`📊 API Usage: CoinGecko (primary), CoinPaprika: ${this.stats.coinpaprikaUsage}, CoinMarketCap: ${this.stats.coinmarketcapUsage}`);
       
@@ -931,18 +1020,19 @@ class ProfessionalTradingBot {
       };
       this.updateLiveAnalysis();
 
-      // Get enhanced price data using service
+      // Fetch price first, then historical data in parallel (pass price to avoid duplicate fetch)
+      this.currentlyAnalyzing.stage = 'Fetching price and historical data...';
+      this.currentlyAnalyzing.progress = 30;
+      this.updateLiveAnalysis();
+
+      // Fetch price first
       const priceResult = await fetchEnhancedPriceData(coin, this.priceCache, this.stats, config);
       const usesMockData = priceResult.usedMock;
       const dataSource = priceResult.data.source;
       const currentPrice = priceResult.data.price;
-
-      // Fetch historical data for pattern detection
-      this.currentlyAnalyzing.stage = 'Fetching historical data...';
-      this.currentlyAnalyzing.progress = 30;
-      this.updateLiveAnalysis();
-
-      const historicalData = await fetchHistoricalData(coin.id, coin, this.stats, config);
+      
+      // Fetch historical data in parallel with price already available (pass price to avoid duplicate fetch)
+      const historicalData = await fetchHistoricalData(coin.id, coin, this.stats, config, currentPrice);
       const { dailyData, hourlyData, minuteData, usedMock: historicalMock } = historicalData;
 
       // Detect trading patterns (if enabled)
@@ -1614,7 +1704,7 @@ class ProfessionalTradingBot {
       
       // Small delay between batches to respect rate limits
       if (i + BATCH_SIZE < activeTradesToUpdate.length) {
-        await sleep(200); // 200ms delay between batches
+        await sleep(100); // 100ms delay between batches (reduced from 200ms)
       }
     }
     
@@ -1714,9 +1804,8 @@ class ProfessionalTradingBot {
         const safePnlPercent = typeof pnlPercent === 'number' ? pnlPercent : 0;
         console.log(`💰 ${trade.symbol} P&L: Entry $${trade.entryPrice.toFixed(2)} → Current $${currentPrice.toFixed(2)} = ${safePnlPercent >= 0 ? '+' : ''}${safePnlPercent.toFixed(2)}%`);
 
-        // Fetch historical data for analysis
-        // fetchHistoricalData expects: (coinId, coin, stats, config)
-        const historicalData = await fetchHistoricalData(coinData.id || trade.symbol, coinData, this.stats, config);
+        // Fetch historical data for analysis (pass currentPrice to avoid duplicate price fetch)
+        const historicalData = await fetchHistoricalData(coinData.id || trade.symbol, coinData, this.stats, config, currentPrice);
         
         return {
           symbol: trade.symbol,

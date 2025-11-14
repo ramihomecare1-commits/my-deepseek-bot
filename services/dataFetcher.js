@@ -35,72 +35,89 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
   let primaryData = null;
   let usedMock = false;
 
-  // Try MEXC FIRST (FREE, no API key, direct API call - no scraper needed!)
-  if (!primaryData && coin.symbol && EXCHANGE_SYMBOL_MAP[coin.symbol]) {
-    try {
-      const mexcData = await fetchMEXCPrice(coin.symbol);
-      if (mexcData && mexcData.price) {
-      primaryData = {
-          price: mexcData.price,
-          volume_24h: mexcData.volume_24h,
-          change_24h: mexcData.change_24h,
-          high_24h: mexcData.high_24h,
-          low_24h: mexcData.low_24h,
-          source: 'mexc'
-      };
-      priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
-        console.log(`✅ ${coin.symbol}: MEXC price: $${primaryData.price.toFixed(2)}`);
-    }
-  } catch (error) {
-      // Silently skip - will try other sources
-      console.log(`⚠️ ${coin.symbol}: MEXC price fetch failed - ${error.message}`);
-    }
+  // Parallelize price fetching from multiple exchanges with timeout
+  // Use Promise.race to get fastest response and reduce memory usage
+  const TIMEOUT = 8000; // 8 second timeout per request
+  const pricePromises = [];
+  
+  // MEXC (FREE, no API key, direct API call)
+  if (coin.symbol && EXCHANGE_SYMBOL_MAP[coin.symbol]) {
+    pricePromises.push(
+      Promise.race([
+        fetchMEXCPrice(coin.symbol)
+          .then(data => data && data.price ? { source: 'mexc', data } : null)
+          .catch(() => null),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMEOUT))
+      ]).catch(() => null)
+    );
   }
-
-  // Fallback to Gate.io (FREE, no API key, direct API call - no scraper needed!)
-  if (!primaryData && coin.symbol && EXCHANGE_SYMBOL_MAP[coin.symbol]) {
+  
+  // Gate.io (FREE, no API key, direct API call)
+  if (coin.symbol && EXCHANGE_SYMBOL_MAP[coin.symbol]) {
+    pricePromises.push(
+      Promise.race([
+        fetchGateIOPrice(coin.symbol)
+          .then(data => data && data.price ? { source: 'gateio', data } : null)
+          .catch(() => null),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMEOUT))
+      ]).catch(() => null)
+    );
+  }
+  
+  // Binance (with scraper if needed)
+  if (coin.symbol && BINANCE_SYMBOL_MAP[coin.symbol]) {
+    pricePromises.push(
+      Promise.race([
+        fetchBinancePrice(coin.symbol)
+          .then(data => data && data.price ? { source: 'binance', data } : null)
+          .catch(() => null),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMEOUT))
+      ]).catch(() => null)
+    );
+  }
+  
+  // Race to get the fastest successful response (cancels slower requests)
+  if (pricePromises.length > 0) {
     try {
-      const gateData = await fetchGateIOPrice(coin.symbol);
-      if (gateData && gateData.price) {
+      // Use Promise.race to get first successful result and abandon others
+      const fastestResult = await Promise.race(
+        pricePromises.map((p, idx) => 
+          p.then(result => result ? { ...result, index: idx } : null)
+        )
+      );
+      
+      if (fastestResult && fastestResult.source) {
+        const { source, data } = fastestResult;
         primaryData = {
-          price: gateData.price,
-          volume_24h: gateData.volume_24h,
-          change_24h: gateData.change_24h,
-          high_24h: gateData.high_24h,
-          low_24h: gateData.low_24h,
-          source: 'gateio'
+          price: data.price,
+          volume_24h: data.volume_24h,
+          change_24h: data.change_24h,
+          high_24h: data.high_24h,
+          low_24h: data.low_24h,
+          source: source
         };
         priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
-        console.log(`✅ ${coin.symbol}: Gate.io price: $${primaryData.price.toFixed(2)}`);
+      } else {
+        // If race doesn't get a result, wait for all to complete
+        const results = await Promise.allSettled(pricePromises);
+        for (const result of results) {
+          if (result.status === 'fulfilled' && result.value) {
+            const { source, data } = result.value;
+            primaryData = {
+              price: data.price,
+              volume_24h: data.volume_24h,
+              change_24h: data.change_24h,
+              high_24h: data.high_24h,
+              low_24h: data.low_24h,
+              source: source
+            };
+            priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
+            break; // Use first successful result
+          }
+        }
       }
     } catch (error) {
-      // Silently skip - will try other sources
-      console.log(`⚠️ ${coin.symbol}: Gate.io price fetch failed - ${error.message}`);
-    }
-  }
-
-  // Fallback to Binance (with scraper if needed - uses scraper API to bypass geo-blocking)
-  if (!primaryData && coin.symbol && BINANCE_SYMBOL_MAP[coin.symbol]) {
-    try {
-      const binanceData = await fetchBinancePrice(coin.symbol);
-      if (binanceData && binanceData.price) {
-        primaryData = {
-          price: binanceData.price,
-          volume_24h: binanceData.volume_24h,
-          change_24h: binanceData.change_24h,
-          high_24h: binanceData.high_24h,
-          low_24h: binanceData.low_24h,
-          source: 'binance'
-        };
-        priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
-        console.log(`✅ ${coin.symbol}: Binance price: $${primaryData.price.toFixed(2)}`);
-      }
-    } catch (error) {
-      // Silently skip - will try other sources
-      // Only log if it's not a geo-block (451) error
-      if (!error.message.includes('geo-blocked')) {
-        console.log(`⚠️ ${coin.symbol}: Binance price fetch failed - ${error.message}`);
-      }
+      // All parallel requests failed, will try CoinMarketCap below
     }
   }
 
@@ -129,7 +146,7 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
         };
         stats.coinmarketcapUsage++;
         priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
-        console.log(`✅ ${coin.symbol}: CoinMarketCap price: $${primaryData.price.toFixed(2)}`);
+        // Price fetched successfully from CoinMarketCap
       }
     } catch (error) {
       const symbol = coin?.symbol || 'unknown';
@@ -468,12 +485,11 @@ async function fetchCryptoCompare(symbol, limit, aggregate = 1) {
 }
 
 // Historical data fetching with MEXC (direct) → Gate.io (direct) → Binance (with scraper) → CryptoCompare
-async function fetchHistoricalData(coinId, coin, stats, config) {
+async function fetchHistoricalData(coinId, coin, stats, config, currentPrice = null) {
   let usedMock = false;
-  let currentPrice = null;
 
-  // Get current price first with enhanced method
-  if (coin) {
+  // Only fetch price if not provided (to avoid duplicate API calls)
+  if (!currentPrice && coin) {
     const priceResult = await fetchEnhancedPriceData(coin, new Map(), stats, config);
     currentPrice = priceResult.data.price;
     usedMock = priceResult.usedMock;
@@ -503,15 +519,13 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
           mexcLimit = Math.min(days, 2000); // MEXC supports up to 2000 klines!
         }
         
-        console.log(`📊 ${symbol}: Trying MEXC first (${mexcInterval}, direct API, limit: ${mexcLimit})...`);
         const data = await fetchMEXCKlines(symbol, mexcInterval, mexcLimit);
         if (data.length > 0) {
-          console.log(`✅ ${symbol}: MEXC SUCCESS - ${data.length} data points`);
           currentPrice = currentPrice || data[data.length - 1].price;
           return data;
         }
       } catch (mexcError) {
-        console.log(`⚠️ ${symbol}: MEXC failed - ${mexcError.message}`);
+        // Silently continue to next source
       }
     }
 
@@ -531,34 +545,30 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
           gateLimit = Math.min(days, 1000); // Gate.io supports up to 1000 klines
         }
         
-        console.log(`📊 ${symbol}: Trying Gate.io (${gateInterval}, direct API, limit: ${gateLimit})...`);
         try {
           const data = await fetchGateIOKlines(symbol, gateInterval, gateLimit);
           if (data.length > 0) {
-            console.log(`✅ ${symbol}: Gate.io SUCCESS - ${data.length} data points`);
             currentPrice = currentPrice || data[data.length - 1].price;
             return data;
           }
         } catch (gateError) {
           // If 5m fails for 1 day, try 1h as fallback
           if (days === 1 && gateInterval === '1m') {
-            console.log(`📊 ${symbol}: Gate.io 5m failed, trying 1h interval...`);
             try {
               const data = await fetchGateIOKlines(symbol, '1h', 24); // 24 hours of hourly data
               if (data.length > 0) {
-                console.log(`✅ ${symbol}: Gate.io SUCCESS (1h fallback) - ${data.length} data points`);
                 currentPrice = currentPrice || data[data.length - 1].price;
                 return data;
               }
             } catch (fallbackError) {
-              console.log(`⚠️ ${symbol}: Gate.io failed - ${gateError.message} (fallback also failed: ${fallbackError.message})`);
+              // Silently continue to next source
             }
           } else {
             throw gateError; // Re-throw if not a 1-day/1m case
           }
         }
       } catch (gateError) {
-        console.log(`⚠️ ${symbol}: Gate.io failed - ${gateError.message}`);
+        // Silently continue to next source
       }
     }
 
@@ -577,16 +587,13 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
           binanceLimit = Math.min(days, 365); // Daily data
         }
         
-        console.log(`📊 ${symbol}: Trying Binance (${binanceInterval}, with scraper if needed)...`);
         const data = await fetchBinanceKlines(symbol, binanceInterval, binanceLimit);
         if (data.length > 0) {
-          console.log(`✅ ${symbol}: Binance SUCCESS - ${data.length} data points`);
           currentPrice = currentPrice || data[data.length - 1].price;
           return data;
         }
       } catch (binanceError) {
-        // Log all Binance errors to show attempts
-        console.log(`⚠️ ${symbol}: Binance failed - ${binanceError.message}`);
+        // Silently continue to next source
       }
     }
 
@@ -664,22 +671,19 @@ async function fetchLongTermHistoricalData(coin) {
   // 1. Try MEXC FIRST (excellent for long-term - 2000 klines per request = only 1 request for 5 years, direct API!)
   if (symbol && EXCHANGE_SYMBOL_MAP[symbol]) {
     try {
-      console.log(`📊 ${symbol}: Fetching 5 years from MEXC (single request, direct API)...`);
       const data = await fetchMEXCKlines(symbol, '1d', 2000); // MEXC supports up to 2000!
       
       if (data.length >= 365) { // At least 1 year
-        console.log(`✅ ${symbol}: MEXC long-term data - ${data.length} days (${(data.length / 365).toFixed(1)} years)`);
         return data;
       }
     } catch (error) {
-      console.log(`⚠️ ${symbol}: MEXC long-term failed - ${error.message}`);
+      // Silently continue to next source
     }
   }
 
   // 2. Try Gate.io (good for long-term - 1000 klines per request = 2 requests for 5 years, direct API!)
   if (symbol && EXCHANGE_SYMBOL_MAP[symbol]) {
     try {
-      console.log(`📊 ${symbol}: Fetching 5 years from Gate.io (2 requests, direct API)...`);
       const allData = [];
       const now = Date.now();
       const fiveYearsAgo = now - (days * 24 * 60 * 60 * 1000);
@@ -731,11 +735,10 @@ async function fetchLongTermHistoricalData(coin) {
       allData.sort((a, b) => a.timestamp - b.timestamp);
       
       if (allData.length >= 365) { // At least 1 year
-        console.log(`✅ ${symbol}: Gate.io long-term data - ${allData.length} days (${(allData.length / 365).toFixed(1)} years)`);
         return allData;
       }
     } catch (error) {
-      console.log(`⚠️ ${symbol}: Gate.io long-term failed - ${error.message}`);
+      // Silently continue to next source
     }
   }
 
@@ -807,13 +810,10 @@ async function fetchLongTermHistoricalData(coin) {
       allData.sort((a, b) => a.timestamp - b.timestamp);
       
       if (allData.length >= 365) { // At least 1 year
-        console.log(`✅ ${symbol}: Binance long-term data - ${allData.length} days (${(allData.length / 365).toFixed(1)} years)`);
         return allData;
       }
     } catch (error) {
-      if (!error.message.includes('geo-blocked')) {
-        console.log(`⚠️ ${symbol}: Binance long-term failed - ${error.message}`);
-      }
+      // Silently continue to next source
     }
   }
 
