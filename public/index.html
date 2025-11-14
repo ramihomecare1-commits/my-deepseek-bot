@@ -41,6 +41,25 @@
       letter-spacing: 0.05em;
       text-transform: uppercase;
     }
+    .fg-indicator {
+      margin-top: 16px;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 0.9em;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background-color 0.5s, color 0.5s;
+    }
+    .fg-label { opacity: 0.7; }
+    .fg-value { font-weight: 700; }
+    .fg-score { font-size: 0.9em; opacity: 0.8; }
+    .fg-indicator.extreme-fear { background: rgba(239, 68, 68, 0.15); color: #b91c1c; }
+    .fg-indicator.fear { background: rgba(245, 158, 11, 0.15); color: #b45309; }
+    .fg-indicator.neutral { background: rgba(100, 116, 139, 0.15); color: #475569; }
+    .fg-indicator.greed { background: rgba(132, 204, 22, 0.15); color: #4d7c0f; }
+    .fg-indicator.extreme-greed { background: rgba(34, 197, 94, 0.15); color: #15803d; }
     .controls {
       background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9));
       padding: 28px;
@@ -639,6 +658,11 @@
       <div class="header">
         <h1>🤖 AI Crypto Trading Scanner Pro</h1>
         <div class="subtitle">Multi-API Technical Analysis • AI Validation • Real-time Data</div>
+        <div id="fearGreedIndicator" class="fg-indicator" style="display: none;">
+          <span class="fg-label">Sentiment:</span>
+          <span id="fearGreedClassification" class="fg-value">Neutral</span>
+          <span id="fearGreedValue" class="fg-score">(50)</span>
+        </div>
       </div>
 
       <div id="scanProgressContainer" style="display:none; margin-bottom: 20px;">
@@ -1164,8 +1188,26 @@
       try {
         const response = await fetch(API_BASE + '/bot-status');
         const data = await response.json();
-        if (data.stats) {
-          // Stats elements removed - keeping function for potential future use
+        if (data.stats && data.stats.greedFearIndex) {
+          const fgIndex = data.stats.greedFearIndex;
+          const indicatorEl = document.getElementById('fearGreedIndicator');
+          const classificationEl = document.getElementById('fearGreedClassification');
+          const valueEl = document.getElementById('fearGreedValue');
+          
+          if (fgIndex.value !== null) {
+            indicatorEl.style.display = 'inline-flex';
+            classificationEl.textContent = fgIndex.classification;
+            valueEl.textContent = `(${fgIndex.value})`;
+            
+            // Remove old classes
+            indicatorEl.classList.remove('extreme-fear', 'fear', 'neutral', 'greed', 'extreme-greed');
+            
+            // Add new class based on classification
+            const classificationClass = fgIndex.classification.toLowerCase().replace(/ /g, '-');
+            indicatorEl.classList.add(classificationClass);
+          } else {
+            indicatorEl.style.display = 'none';
+          }
         }
       } catch (error) {
         console.log('Error updating stats:', error);
