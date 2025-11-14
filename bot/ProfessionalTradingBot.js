@@ -217,11 +217,6 @@ class ProfessionalTradingBot {
       await recalculateFromTrades(this.activeTrades);
       addLogEntry('Portfolio metrics recalculated from restored trades', 'info');
       console.log('✅ Portfolio metrics recalculated');
-      } else {
-        console.log('⚠️ No saved trades found or empty array returned');
-        console.log(`   savedTrades value: ${JSON.stringify(savedTrades)}`);
-        addLogEntry('No saved trades found, starting fresh', 'info');
-      }
     } catch (error) {
       console.error('❌ Error initializing bot:', error);
       console.error('Error stack:', error.stack);
