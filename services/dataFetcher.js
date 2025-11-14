@@ -323,11 +323,18 @@ async function fetchMEXCKlines(symbol, interval, limit) {
       throw new Error(`Symbol ${symbol} not available on MEXC`);
     }
 
-    // MEXC interval mapping
-    const mexcInterval = interval === '1m' ? '1m' : interval === '1h' ? '1h' : '1d';
+    // MEXC interval mapping - MEXC uses: 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w, 1M
+    // For 1m, limit might be restricted, so reduce if too high
+    let mexcInterval = interval === '1m' ? '1m' : interval === '1h' ? '1h' : '1d';
+    let mexcLimit = Math.min(limit, 2000);
+    
+    // MEXC may have limits on 1m data - reduce limit for 1m interval
+    if (mexcInterval === '1m' && mexcLimit > 500) {
+      mexcLimit = 500; // Reduce limit for 1m to avoid 400 errors
+    }
     
     const response = await axios.get('https://api.mexc.com/api/v3/klines', {
-      params: { symbol: mexcSymbol, interval: mexcInterval, limit: Math.min(limit, 2000) },
+      params: { symbol: mexcSymbol, interval: mexcInterval, limit: mexcLimit },
       timeout: 15000,
     });
 
@@ -339,6 +346,13 @@ async function fetchMEXCKlines(symbol, interval, limit) {
     }
     throw new Error('Invalid MEXC response');
   } catch (error) {
+    // Provide more detailed error info
+    if (error.response) {
+      const status = error.response.status;
+      const statusText = error.response.statusText;
+      const errorData = error.response.data;
+      throw new Error(`MEXC fetch failed: ${status} ${statusText}${errorData ? ` - ${JSON.stringify(errorData)}` : ''}`);
+    }
     throw new Error(`MEXC fetch failed: ${error.message}`);
   }
 }
@@ -351,19 +365,34 @@ async function fetchGateIOKlines(symbol, interval, limit) {
       throw new Error(`Symbol ${symbol} not available on Gate.io`);
     }
 
-    // Gate.io interval mapping (1m, 1h, 1d)
-    const gateInterval = interval === '1m' ? '1m' : interval === '1h' ? '1h' : '1d';
+    // Gate.io interval mapping - Gate.io uses: 10s, 1m, 5m, 15m, 30m, 1h, 4h, 8h, 1d, 7d
+    // Map our intervals to Gate.io format
+    let gateInterval = '1h'; // default
+    if (interval === '1m') {
+      gateInterval = '1m';
+    } else if (interval === '1h') {
+      gateInterval = '1h';
+    } else if (interval === '1d') {
+      gateInterval = '1d';
+    }
+    
+    let gateLimit = Math.min(limit, 1000);
+    // Gate.io may have limits on 1m data - reduce limit for 1m interval
+    if (gateInterval === '1m' && gateLimit > 500) {
+      gateLimit = 500; // Reduce limit for 1m to avoid 400 errors
+    }
     
     const response = await axios.get('https://api.gateio.ws/api/v4/spot/candlesticks', {
       params: { 
         currency_pair: gateSymbol, 
         interval: gateInterval, 
-        limit: Math.min(limit, 1000) 
+        limit: gateLimit 
       },
       timeout: 15000,
     });
 
     if (response.data && Array.isArray(response.data)) {
+      // Gate.io returns: [timestamp, volume, close, high, low, open]
       return response.data.map(([timestamp, volume, close, high, low, open]) => ({
         timestamp: new Date(parseInt(timestamp) * 1000),
         price: parseFloat(close),
@@ -371,6 +400,13 @@ async function fetchGateIOKlines(symbol, interval, limit) {
     }
     throw new Error('Invalid Gate.io response');
   } catch (error) {
+    // Provide more detailed error info
+    if (error.response) {
+      const status = error.response.status;
+      const statusText = error.response.statusText;
+      const errorData = error.response.data;
+      throw new Error(`Gate.io fetch failed: ${status} ${statusText}${errorData ? ` - ${JSON.stringify(errorData)}` : ''}`);
+    }
     throw new Error(`Gate.io fetch failed: ${error.message}`);
   }
 }
@@ -449,7 +485,7 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
         let gateInterval, gateLimit;
         if (days === 1) {
           gateInterval = '1m';
-          gateLimit = 720; // 12 hours of minute data
+          gateLimit = 500; // Reduced from 720 to avoid 400 errors (Gate.io may limit 1m data)
         } else if (days === 7) {
           gateInterval = '1h';
           gateLimit = 168; // 7 days of hourly
@@ -458,7 +494,7 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
           gateLimit = Math.min(days, 1000); // Gate.io supports up to 1000 klines
         }
         
-        console.log(`📊 ${symbol}: Trying Gate.io (${gateInterval}, direct API)...`);
+        console.log(`📊 ${symbol}: Trying Gate.io (${gateInterval}, direct API, limit: ${gateLimit})...`);
         const data = await fetchGateIOKlines(symbol, gateInterval, gateLimit);
         if (data.length > 0) {
           console.log(`✅ ${symbol}: Gate.io SUCCESS - ${data.length} data points`);
