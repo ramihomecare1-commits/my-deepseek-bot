@@ -6,7 +6,6 @@ const path = require('path');
 const config = require('./config/config');
 const apiRoutes = require('./routes/api');
 const ProfessionalTradingBot = require('./bot/ProfessionalTradingBot');
-const { testPythonSetup } = require('./services/pythonService');
 
 // Initialize app
 const app = express();
@@ -100,12 +99,7 @@ async function initializeBotAsync() {
   try {
     console.log('🔄 Initializing trading bot...');
     
-    // Test Python setup (non-blocking, optional)
-    console.log('🐍 Testing Python setup...');
-    const pythonAvailable = await testPythonSetup();
-    
     tradingBot = new ProfessionalTradingBot();
-    tradingBot.pythonAvailable = pythonAvailable;
     app.locals.tradingBot = tradingBot;
     
     // Initialize bot: Load saved trades and portfolio state
@@ -114,30 +108,19 @@ async function initializeBotAsync() {
     // Start independent trades update timer (runs every 30 seconds, regardless of scans)
     tradingBot.startTradesUpdateTimer();
     
-    // Add log entry about Python status
+    // Add log entry
     try {
       const { addLogEntry } = require('./routes/api');
-      if (pythonAvailable) {
-        addLogEntry('Bot initialized with Python support ✅', 'success');
-        addLogEntry('Using Python + JavaScript for technical analysis', 'info');
-      } else {
-        addLogEntry('Bot initialized (using JavaScript analysis)', 'info');
-        addLogEntry('Python not available - using JavaScript fallback', 'warning');
-      }
+      addLogEntry('Bot initialized (using JavaScript analysis)', 'success');
     } catch (e) {
       // Logging not available yet, ignore
     }
     
-    if (pythonAvailable) {
-      console.log('✅ Trading bot initialized with Python support');
-    } else {
-      console.log('✅ Trading bot initialized (using JavaScript analysis)');
-      console.log('ℹ️ Python not available - using JavaScript fallback (works perfectly!)');
-    }
+    console.log('✅ Trading bot initialized (using JavaScript analysis)');
   } catch (error) {
     console.error('❌ Bot initialization error:', error);
     // Create a minimal bot instance to prevent crashes
-    tradingBot = { trackedCoins: [], isRunning: false, pythonAvailable: false, getStats: () => ({ trackedCoins: 0 }) };
+    tradingBot = { trackedCoins: [], isRunning: false, getStats: () => ({ trackedCoins: 0 }) };
     app.locals.tradingBot = tradingBot;
   }
 }

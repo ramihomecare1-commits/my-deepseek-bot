@@ -57,8 +57,6 @@ class ProfessionalTradingBot {
     this.liveAnalysis = [];
     this.currentlyAnalyzing = null;
     
-    // Python analysis availability
-    this.pythonAvailable = false;
 
     this.stats = {
       totalScans: 0,
@@ -423,7 +421,7 @@ class ProfessionalTradingBot {
       
       addLogEntry('Technical scan started', 'info');
       addLogEntry(`Scanning ${this.trackedCoins.length} coins`, 'info');
-      addLogEntry(`Analysis engine: ${this.pythonAvailable ? 'Python + JavaScript' : 'JavaScript'}`, 'info');
+      addLogEntry(`Analysis engine: JavaScript`, 'info');
 
       const opportunities = [];
       let analyzedCount = 0;
@@ -644,7 +642,7 @@ class ProfessionalTradingBot {
                   dataPoints: backtestResult.dataPoints
                 };
                 addLogEntry(`✅ ${coin.symbol}: Backtest complete - ${backtestResult.winRate.toFixed(1)}% win rate (${backtestResult.totalTrades} trades)`, 'success');
-              } else {
+          } else {
                 analysis.backtest = {
                   error: backtestResult.error || 'Backtest failed',
                   dataPoints: backtestResult.dataPoints || 0
@@ -734,6 +732,9 @@ class ProfessionalTradingBot {
 
       console.log(`\n📈 SCAN COMPLETE: ${opportunities.length} opportunities found`);
       console.log(`📊 API Usage: CoinGecko (primary), CoinPaprika: ${this.stats.coinpaprikaUsage}, CoinMarketCap: ${this.stats.coinmarketcapUsage}`);
+      
+      // Re-evaluate open trades with AI
+      await this.reevaluateOpenTradesWithAI();
       
       this.scanInProgress = false;
       this.scanProgress = {
@@ -1397,6 +1398,119 @@ class ProfessionalTradingBot {
     
     // Recalculate portfolio metrics from updated trades
     await recalculateFromTrades(this.activeTrades);
+  }
+
+  // Re-evaluate open trades with AI during scan
+  async reevaluateOpenTradesWithAI() {
+    const openTrades = this.activeTrades.filter(t => t.status === 'OPEN' || t.status === 'DCA_HIT');
+    
+    if (openTrades.length === 0 || !config.AI_API_KEY) {
+      return;
+    }
+
+    addLogEntry(`🤖 Re-evaluating ${openTrades.length} open trades with AI...`, 'info');
+
+    try {
+      // Prepare trade data for AI analysis
+      const tradesForAI = await Promise.all(openTrades.map(async (trade) => {
+        const coinData = trade.coinData || {
+          symbol: trade.symbol,
+          name: trade.name,
+          id: trade.coinId,
+          coinmarketcap_id: trade.coinmarketcap_id,
+          coinpaprika_id: trade.coinpaprika_id
+        };
+
+        // Fetch current price and data
+        const priceResult = await fetchEnhancedPriceData(coinData, this.priceCache, this.stats, config);
+        const currentPrice = priceResult?.data?.price || trade.currentPrice;
+
+        // Fetch historical data for analysis
+        const historicalData = await fetchHistoricalData(coinData, this.priceCache, this.stats, config);
+        
+        return {
+          symbol: trade.symbol,
+          name: trade.name,
+          currentPrice: currentPrice,
+          entryPrice: trade.entryPrice,
+          takeProfit: trade.takeProfit,
+          stopLoss: trade.stopLoss,
+          action: trade.action,
+          pnl: trade.pnl,
+          pnlPercent: trade.pnlPercent,
+          status: trade.status,
+          historicalData: historicalData
+        };
+      }));
+
+      // Create AI prompt for trade re-evaluation
+      const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${tradesForAI.length} open trades and provide your recommendation for each:
+
+${tradesForAI.map((t, i) => `
+Trade ${i + 1}: ${t.symbol} (${t.name})
+- Action: ${t.action}
+- Entry Price: $${t.entryPrice.toFixed(2)}
+- Current Price: $${t.currentPrice.toFixed(2)}
+- Take Profit: $${t.takeProfit.toFixed(2)}
+- Stop Loss: $${t.stopLoss.toFixed(2)}
+- Current P&L: ${t.pnlPercent >= 0 ? '+' : ''}${t.pnlPercent.toFixed(2)}%
+- Status: ${t.status}
+`).join('\n')}
+
+For each trade, provide:
+1. Recommendation: HOLD, CLOSE, or ADJUST
+2. Confidence: 0.0 to 1.0
+3. Reason: Brief explanation
+
+Return JSON array format:
+[
+  {
+    "symbol": "BTC",
+    "recommendation": "HOLD",
+    "confidence": 0.75,
+    "reason": "Price approaching take profit, momentum still strong"
+  }
+]`;
+
+      // Call AI API directly
+      const axios = require('axios');
+      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+        model: config.AI_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 1000,
+        temperature: 0.1,
+      }, {
+        headers: {
+          Authorization: `Bearer ${config.AI_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
+          'X-Title': 'Technical Analysis Bot',
+        },
+        timeout: 30000,
+      });
+
+      // Parse AI response
+      const aiContent = response.data.choices[0].message.content;
+      const jsonMatch = aiContent.match(/\[[\s\S]*\]/);
+      
+      if (jsonMatch) {
+        const recommendations = JSON.parse(jsonMatch[0]);
+        
+        recommendations.forEach((rec) => {
+          const symbol = rec.symbol;
+          const recommendation = rec.recommendation || 'HOLD';
+          const confidence = (rec.confidence || 0) * 100;
+          const reason = rec.reason || 'No reason provided';
+          
+          addLogEntry(
+            `📊 ${symbol} AI Re-evaluation: ${recommendation} (${confidence.toFixed(0)}%) - ${reason}`,
+            recommendation === 'CLOSE' ? 'warning' : 'info'
+          );
+        });
+      }
+    } catch (error) {
+      addLogEntry(`⚠️ AI re-evaluation failed: ${error.message}`, 'warning');
+    }
   }
 
   // New method: Get active trades

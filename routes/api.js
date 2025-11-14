@@ -283,8 +283,7 @@ router.get('/bot-status', (req, res) => {
       minConfidence: tradingBot.minConfidence,
       stats: tradingBot.getStats(),
       batchAI: tradingBot.getBatchAIResults(), // Include batch AI results for coins analyzed count
-      pythonAvailable: tradingBot.pythonAvailable || false,
-      analysisEngine: tradingBot.pythonAvailable ? 'Python + JavaScript' : 'JavaScript',
+      analysisEngine: 'JavaScript',
       telegramEnabled: config.TELEGRAM_ENABLED,
       newsEnabled: config.NEWS_ENABLED,
       coinmarketcapEnabled: config.COINMARKETCAP_ENABLED,
