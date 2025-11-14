@@ -508,8 +508,9 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
       try {
         let gateInterval, gateLimit;
         if (days === 1) {
-          gateInterval = '1m';
-          gateLimit = 500; // Reduced from 720 to avoid 400 errors (Gate.io may limit 1m data)
+          // Use 5m interval (Gate.io will map 1m to 5m internally for better reliability)
+          gateInterval = '1m'; // Will be converted to 5m in fetchGateIOKlines
+          gateLimit = 288; // 24 hours of 5-minute data (24 * 60 / 5 = 288)
         } else if (days === 7) {
           gateInterval = '1h';
           gateLimit = 168; // 7 days of hourly
@@ -519,11 +520,30 @@ async function fetchHistoricalData(coinId, coin, stats, config) {
         }
         
         console.log(`📊 ${symbol}: Trying Gate.io (${gateInterval}, direct API, limit: ${gateLimit})...`);
-        const data = await fetchGateIOKlines(symbol, gateInterval, gateLimit);
-        if (data.length > 0) {
-          console.log(`✅ ${symbol}: Gate.io SUCCESS - ${data.length} data points`);
-          currentPrice = currentPrice || data[data.length - 1].price;
-          return data;
+        try {
+          const data = await fetchGateIOKlines(symbol, gateInterval, gateLimit);
+          if (data.length > 0) {
+            console.log(`✅ ${symbol}: Gate.io SUCCESS - ${data.length} data points`);
+            currentPrice = currentPrice || data[data.length - 1].price;
+            return data;
+          }
+        } catch (gateError) {
+          // If 5m fails for 1 day, try 1h as fallback
+          if (days === 1 && gateInterval === '1m') {
+            console.log(`📊 ${symbol}: Gate.io 5m failed, trying 1h interval...`);
+            try {
+              const data = await fetchGateIOKlines(symbol, '1h', 24); // 24 hours of hourly data
+              if (data.length > 0) {
+                console.log(`✅ ${symbol}: Gate.io SUCCESS (1h fallback) - ${data.length} data points`);
+                currentPrice = currentPrice || data[data.length - 1].price;
+                return data;
+              }
+            } catch (fallbackError) {
+              console.log(`⚠️ ${symbol}: Gate.io failed - ${gateError.message} (fallback also failed: ${fallbackError.message})`);
+            }
+          } else {
+            throw gateError; // Re-throw if not a 1-day/1m case
+          }
         }
       } catch (gateError) {
         console.log(`⚠️ ${symbol}: Gate.io failed - ${gateError.message}`);
