@@ -200,12 +200,9 @@ class ProfessionalTradingBot {
           console.log(`  - ${trade.symbol} (${trade.action}) - Entry: $${trade.entryPrice?.toFixed(2) || 'N/A'}, Status: ${trade.status}`);
         });
         
-        // Immediately update trades with current prices (don't wait for timer)
-        addLogEntry('Updating restored trades with current prices...', 'info');
-        console.log('🔄 Updating restored trades with current prices...');
-        await this.updateActiveTrades();
-        addLogEntry('Trades updated with current market prices', 'success');
-        console.log('✅ Trades updated with current market prices');
+        // Note: Trades will be updated by startTradesUpdateTimer() which runs immediately
+        // No need to update here to avoid duplicate calls
+        console.log('✅ Trades restored - will be updated by timer');
       }
       
       // Load closed trades
@@ -441,8 +438,8 @@ class ProfessionalTradingBot {
     };
 
     try {
-      // First, update any existing active trades
-      await this.updateActiveTrades();
+      // Note: Active trades are updated by the independent timer (every 1 minute)
+      // No need to update here to avoid duplicate calls
       
       // Fetch global metrics at the start of each scan
       await this.ensureGreedFearIndex();
@@ -552,24 +549,36 @@ class ProfessionalTradingBot {
         }
       }
 
-      // Step 2a: Fetch news for all coins before AI analysis
+      // Step 2a: Fetch news for all coins before AI analysis (in parallel batches)
       if (allCoinsData.length > 0) {
         console.log('📰 Fetching news for coins...');
         addLogEntry('Fetching recent news for analysis...', 'info');
-        const newsPromises = allCoinsData.map(async (coin, index) => {
-          // Add small delay to avoid rate limits
-          await sleep(index * 200); // 200ms between requests
-          try {
-            const news = await fetchCryptoNews(coin.symbol, 5);
-            coin.news = news;
-            return news;
-          } catch (error) {
-            console.log(`⚠️ News fetch failed for ${coin.symbol}: ${error.message}`);
-            coin.news = { articles: [], total: 0 };
-            return null;
+        
+        const NEWS_BATCH_SIZE = 10;
+        for (let i = 0; i < allCoinsData.length; i += NEWS_BATCH_SIZE) {
+          const batch = allCoinsData.slice(i, i + NEWS_BATCH_SIZE);
+          
+          // Fetch news for all coins in batch in parallel
+          const newsPromises = batch.map(async (coin) => {
+            try {
+              const news = await fetchCryptoNews(coin.symbol, 5);
+              coin.news = news;
+              return news;
+            } catch (error) {
+              console.log(`⚠️ News fetch failed for ${coin.symbol}: ${error.message}`);
+              coin.news = { articles: [], total: 0 };
+              return null;
+            }
+          });
+          
+          await Promise.allSettled(newsPromises);
+          
+          // Small delay between batches to respect rate limits
+          if (i + NEWS_BATCH_SIZE < allCoinsData.length) {
+            await sleep(200); // 200ms delay between batches
           }
-        });
-        await Promise.all(newsPromises);
+        }
+        
         const newsCount = allCoinsData.filter(c => c.news && c.news.articles && c.news.articles.length > 0).length;
         console.log(`✅ Fetched news for ${newsCount}/${allCoinsData.length} coins`);
       }
