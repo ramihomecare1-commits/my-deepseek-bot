@@ -1810,7 +1810,7 @@ Return JSON array format:
           let telegramMessage = `🤖 *AI Trade Re-evaluation*\n\n`;
           telegramMessage += `📊 *${openTrades.length} Open Trade${openTrades.length > 1 ? 's' : ''} Analyzed*\n\n`;
           
-          recommendations.forEach((rec, index) => {
+          for (const rec of recommendations) {
             const symbol = rec.symbol;
             const recommendation = rec.recommendation || 'HOLD';
             const confidence = (rec.confidence || 0) * 100;
@@ -1902,7 +1902,7 @@ Return JSON array format:
             telegramMessage += `${emoji} *${symbol}* - ${recommendation}\n`;
             telegramMessage += `   P&L: ${pnl} | Confidence: ${confidence.toFixed(0)}%\n`;
             telegramMessage += `   ${reason}\n\n`;
-          });
+          }
           
           // Send to Telegram
           console.log('📤 Sending re-evaluation to Telegram...');
