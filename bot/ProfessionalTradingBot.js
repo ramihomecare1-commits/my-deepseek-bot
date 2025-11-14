@@ -2252,70 +2252,98 @@ Return JSON array format:
         timeout: 30000,
       });
 
-      // Parse AI response
-      console.log('✅ AI API responded successfully');
-      
-      // Check if response was truncated
-      const finishReason = response.data.choices[0].finish_reason;
-      if (finishReason === 'length') {
-        console.warn('⚠️ AI response was truncated (hit token limit)');
-        addLogEntry('⚠️ AI response truncated - increasing token limit or reducing trade count may help', 'warning');
+        // Parse AI response
+        console.log('✅ AI API responded successfully');
         
-        // Try to parse what we have - might be partial JSON
-        // If response is truncated, we'll try to extract complete JSON objects
-        addLogEntry('⚠️ AI response truncated - may be incomplete', 'warning');
-      }
-      
-      let aiContent = response.data.choices[0].message.content;
-      
-      // Check if response is empty or too short
-      if (!aiContent || aiContent.trim().length === 0) {
-        console.error('❌ AI response is empty');
-        throw new Error('AI response is empty - no content received');
-      }
-      
-      console.log(`📝 AI response length: ${aiContent.length} characters`);
-      console.log(`📝 AI response preview: ${aiContent.substring(0, 200)}`);
-      console.log(`📝 Finish reason: ${finishReason}`);
-      
-      // Clean up markdown code blocks if present
-      aiContent = aiContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-      
-      // Try to find JSON array
-      let jsonMatch = aiContent.match(/\[[\s\S]*\]/);
-      
-      // If no match, try to find JSON object and wrap it in array
-      if (!jsonMatch) {
-        const objectMatch = aiContent.match(/\{[\s\S]*\}/);
-        if (objectMatch) {
-          console.log('⚠️ Found JSON object instead of array, wrapping in array...');
-          jsonMatch = [`[${objectMatch[0]}]`];
+        // Check if response was truncated
+        const finishReason = response.data.choices[0].finish_reason;
+        if (finishReason === 'length') {
+          console.warn('⚠️ AI response was truncated (hit token limit)');
+          addLogEntry('⚠️ AI response truncated - may be incomplete', 'warning');
         }
+        
+        let aiContent = response.data.choices[0].message.content;
+        
+        // Check if response is empty or too short
+        if (!aiContent || aiContent.trim().length === 0) {
+          console.error('❌ AI response is empty');
+          throw new Error('AI response is empty - no content received');
+        }
+        
+        console.log(`📝 AI response length: ${aiContent.length} characters`);
+        console.log(`📝 AI response preview: ${aiContent.substring(0, 200)}`);
+        console.log(`📝 Finish reason: ${finishReason}`);
+        
+        // Clean up markdown code blocks if present
+        aiContent = aiContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+        
+        // Try to find JSON array
+        let jsonMatch = aiContent.match(/\[[\s\S]*\]/);
+        
+        // If no match, try to find JSON object and wrap it in array
+        if (!jsonMatch) {
+          const objectMatch = aiContent.match(/\{[\s\S]*\}/);
+          if (objectMatch) {
+            console.log('⚠️ Found JSON object instead of array, wrapping in array...');
+            jsonMatch = [`[${objectMatch[0]}]`];
+          }
+        }
+        
+        if (jsonMatch) {
+          console.log('✅ Found JSON in AI response');
+          try {
+            const recommendations = JSON.parse(jsonMatch[0]);
+            console.log(`✅ Parsed ${recommendations.length} recommendations`);
+            
+            if (!Array.isArray(recommendations) || recommendations.length === 0) {
+              throw new Error('Invalid recommendations format - expected non-empty array');
+            }
+            
+            // Add to all recommendations
+            allRecommendations.push(...recommendations);
+            
+          } catch (parseError) {
+            console.error('❌ Failed to parse AI response:', parseError.message);
+            addLogEntry(`Failed to parse AI response for batch ${batchIdx + 1}: ${parseError.message}`, 'error');
+          }
+        } else {
+          console.warn('⚠️ No JSON found in AI response');
+          addLogEntry(`No JSON found in AI response for batch ${batchIdx + 1}`, 'warning');
+        }
+      } catch (batchError) {
+        console.error(`❌ Error processing batch ${batchIdx + 1}:`, batchError.message);
+        addLogEntry(`Error processing batch ${batchIdx + 1}: ${batchError.message}`, 'error');
       }
       
-      if (jsonMatch) {
-        console.log('✅ Found JSON in AI response');
-        try {
-          const recommendations = JSON.parse(jsonMatch[0]);
-          console.log(`✅ Parsed ${recommendations.length} recommendations`);
-          
-          if (!Array.isArray(recommendations) || recommendations.length === 0) {
-            throw new Error('Invalid recommendations format - expected non-empty array');
-          }
-          
-          // Build Telegram message
-          let telegramMessage = `🤖 *AI Trade Re-evaluation*\n\n`;
-          telegramMessage += `📊 *${openTrades.length} Open Trade${openTrades.length > 1 ? 's' : ''} Analyzed*\n\n`;
-          
-          for (const rec of recommendations) {
-            const symbol = rec.symbol;
-            const recommendation = rec.recommendation || 'HOLD';
-            const confidence = (rec.confidence || 0) * 100;
-            const reason = rec.reason || 'No reason provided';
-            
-            // Find the corresponding trade
-            const trade = openTrades.find(t => t.symbol === symbol);
-            const tradeData = tradesWithNews.find(t => t.symbol === symbol);
+      // Small delay between batches
+      if (batchIdx < tradeBatches.length - 1) {
+        await sleep(1000); // 1 second between batches
+      }
+    }
+    
+    // Process all recommendations together
+    if (allRecommendations.length === 0) {
+      console.warn('⚠️ No recommendations received from AI');
+      addLogEntry('⚠️ No recommendations received from AI', 'warning');
+      return [];
+    }
+    
+    console.log(`✅ Total recommendations received: ${allRecommendations.length}`);
+    
+    // Build Telegram message
+    let telegramMessage = `🤖 *AI Trade Re-evaluation*\n\n`;
+    telegramMessage += `📊 *${openTrades.length} Open Trade${openTrades.length > 1 ? 's' : ''} Analyzed*\n\n`;
+    
+    for (const rec of allRecommendations) {
+      const symbol = rec.symbol;
+      const recommendation = rec.recommendation || 'HOLD';
+      const confidence = (rec.confidence || 0) * 100;
+      const reason = rec.reason || 'No reason provided';
+      
+      // Find the corresponding trade
+      const trade = openTrades.find(t => t.symbol === symbol);
+      const tradeData = tradesWithNews.find(t => t.symbol === symbol) || 
+                      tradeBatches.flat().find(t => t.symbol === symbol);
             const pnlPercent = trade && typeof trade.pnlPercent === 'number' ? trade.pnlPercent : 0;
             const pnl = trade ? `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%` : 'N/A';
             
