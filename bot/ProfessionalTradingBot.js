@@ -1620,9 +1620,25 @@ class ProfessionalTradingBot {
         };
       }));
 
+      // Retrieve historical data for each trade
+      console.log('📚 Retrieving historical data for trades...');
+      const tradesWithHistory = await Promise.all(tradesForAI.map(async (trade) => {
+        try {
+          const historical = await retrieveRelatedData({ 
+            symbol: trade.symbol, 
+            days: 30, 
+            limit: 10 
+          });
+          return { ...trade, historicalData: historical };
+        } catch (error) {
+          console.error(`⚠️ Failed to retrieve historical data for ${trade.symbol}:`, error.message);
+          return { ...trade, historicalData: { evaluations: [], news: [] } };
+        }
+      }));
+
       // Fetch news for each trade (with timeout protection)
       console.log('📰 Fetching news for trades...');
-      const tradesWithNews = await Promise.all(tradesForAI.map(async (trade) => {
+      const tradesWithNews = await Promise.all(tradesWithHistory.map(async (trade) => {
         try {
           // Add timeout wrapper to prevent hanging
           const newsPromise = fetchCryptoNews(trade.symbol, 3);
