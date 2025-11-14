@@ -10,6 +10,11 @@ const { storeNewsBatch } = require('./dataStorageService');
 const newsCache = new Map();
 const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
 
+// Rate limiting for NewsAPI (free tier: 100 requests/day, 1 req/sec)
+let newsapiRateLimited = false;
+let newsapiRateLimitResetTime = 0;
+const NEWSAPI_RATE_LIMIT_COOLDOWN = 60 * 60 * 1000; // 1 hour cooldown after rate limit
+
 /**
  * Fetch news from CryptoCompare (FREE, no API key required for basic usage)
  */
@@ -82,6 +87,19 @@ async function fetchNewsAPI(symbol, limit = 5) {
       return { source: 'newsapi', articles: [], total: 0, error: 'No API key' };
     }
 
+    // Check if we're rate limited
+    if (newsapiRateLimited && Date.now() < newsapiRateLimitResetTime) {
+      const minutesLeft = Math.ceil((newsapiRateLimitResetTime - Date.now()) / 60000);
+      // Silently skip - don't spam logs
+      return { source: 'newsapi', articles: [], total: 0, error: 'Rate limited' };
+    }
+
+    // Reset rate limit flag if cooldown period has passed
+    if (newsapiRateLimited && Date.now() >= newsapiRateLimitResetTime) {
+      newsapiRateLimited = false;
+      newsapiRateLimitResetTime = 0;
+    }
+
     const cacheKey = `newsapi_${symbol}_${limit}`;
     const cached = newsCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
@@ -123,7 +141,22 @@ async function fetchNewsAPI(symbol, limit = 5) {
 
     return { source: 'newsapi', articles: [], total: 0 };
   } catch (error) {
-    console.log(`⚠️ NewsAPI fetch failed: ${error.message}`);
+    // Handle rate limiting (429) gracefully
+    if (error.response && error.response.status === 429) {
+      newsapiRateLimited = true;
+      newsapiRateLimitResetTime = Date.now() + NEWSAPI_RATE_LIMIT_COOLDOWN;
+      // Only log once per rate limit period
+      if (!newsCache.has('newsapi_rate_limit_logged')) {
+        console.log(`⚠️ NewsAPI rate limit reached. Will retry after ${NEWSAPI_RATE_LIMIT_COOLDOWN / 60000} minutes.`);
+        newsCache.set('newsapi_rate_limit_logged', { timestamp: Date.now() });
+      }
+      return { source: 'newsapi', articles: [], total: 0, error: 'Rate limited' };
+    }
+    
+    // For other errors, log only if not a timeout
+    if (!error.message.includes('timeout')) {
+      console.log(`⚠️ NewsAPI fetch failed: ${error.message}`);
+    }
     return { source: 'newsapi', articles: [], total: 0, error: error.message };
   }
 }
@@ -134,11 +167,15 @@ async function fetchNewsAPI(symbol, limit = 5) {
  */
 async function fetchCryptoNews(symbol, limit = 5) {
   try {
-    // Fetch from both sources in parallel
-    const [ccNews, newsapiNews] = await Promise.all([
+    // Fetch from both sources in parallel, but NewsAPI may be rate limited
+    // Use Promise.allSettled to handle failures gracefully
+    const [ccResult, newsapiResult] = await Promise.allSettled([
       fetchCryptoCompareNews(symbol, limit),
       fetchNewsAPI(symbol, limit)
     ]);
+    
+    const ccNews = ccResult.status === 'fulfilled' ? ccResult.value : { source: 'cryptocompare', articles: [], total: 0 };
+    const newsapiNews = newsapiResult.status === 'fulfilled' ? newsapiResult.value : { source: 'newsapi', articles: [], total: 0 };
 
     // Merge articles, prioritizing CryptoCompare
     const allArticles = [
