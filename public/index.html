@@ -1890,9 +1890,11 @@
         
         html += '</tbody></table>';
         container.innerHTML = html;
+        console.log(`✅ Active trades display updated (${activeTrades.length} trades)`);
 
       } catch (error) {
-        console.error('Error updating active trades display:', error);
+        console.error('❌ Error updating active trades display:', error);
+        console.error('Error stack:', error.stack);
         const container = document.getElementById('active-trades-container');
         if (container) {
           container.innerHTML = `
