@@ -4,13 +4,14 @@ const config = require('../config/config');
 /**
  * Bulk Indicator Service - Calculates RSI and Bollinger Bands from CoinGecko data
  * No external indicator API needed - completely free for all 200 coins!
+ * Uses daily candles to match TradingView/exchanges format
  */
 class BulkIndicatorService {
   constructor() {
     // No longer need TAAPI.IO - we calculate indicators ourselves!
-    this.rsiPeriod = 14; // Standard RSI period
-    this.bbPeriod = 20; // Standard Bollinger Bands period
-    this.bbStdDev = 2; // Standard deviation multiplier for Bollinger Bands
+    this.rsiPeriod = 14; // RSI(14) - 14 days (matches TradingView)
+    this.bbPeriod = 20; // Bollinger Bands(20) - 20 days (matches TradingView)
+    this.bbStdDev = 2; // 2 standard deviations (matches TradingView)
   }
 
   /**
@@ -101,9 +102,9 @@ class BulkIndicatorService {
 
   /**
    * Fetch historical price data from CoinGecko for a coin
-   * Returns array of prices (last 30 days, hourly)
+   * Returns array of prices (daily candles) - matches TradingView/exchanges format
    */
-  async fetchHistoricalPrices(coinId, days = 30) {
+  async fetchHistoricalPrices(coinId, days = 60) {
     const coinGeckoKey = process.env.COINGECKO_API_KEY || config.COINGECKO_API_KEY;
     const baseUrl = 'https://api.coingecko.com/api/v3';
     
@@ -113,22 +114,24 @@ class BulkIndicatorService {
         headers['x-cg-demo-api-key'] = coinGeckoKey;
       }
 
-      // Fetch market chart data (hourly candles for last N days)
+      // Fetch market chart data (daily candles - matches TradingView/exchanges)
+      // For daily data, don't use 'interval' parameter - it defaults to daily
       const response = await axios.get(
         `${baseUrl}/coins/${coinId}/market_chart`,
         {
           params: {
             vs_currency: 'usd',
-            days: days,
-            interval: 'hourly' // Hourly data for better RSI/BB calculation
+            days: days
+            // No 'interval' parameter = daily candles (matches TradingView)
           },
-          timeout: 10000,
+          timeout: 15000,
           headers
         }
       );
 
       // Extract prices from the response
       // Response format: { prices: [[timestamp, price], ...] }
+      // These are daily closing prices
       if (response.data && response.data.prices) {
         return response.data.prices.map(entry => entry[1]); // Extract just the prices
       }
@@ -246,24 +249,26 @@ class BulkIndicatorService {
   /**
    * Calculate indicators for a coin from historical price data
    * Returns { rsi, bollinger: { upper, middle, lower } }
+   * Uses daily candles to match TradingView/exchanges format
    */
   async calculateIndicatorsForCoin(coin) {
     try {
       // Get CoinGecko ID
       const coinId = this.getCoinGeckoId(coin.symbol, coin.name);
       
-      // Fetch historical prices (last 30 days, hourly)
-      const prices = await this.fetchHistoricalPrices(coinId, 30);
+      // Fetch historical prices (last 60 days, daily candles)
+      // This matches TradingView/exchanges which use daily candles
+      const prices = await this.fetchHistoricalPrices(coinId, 60);
       
       if (prices.length < this.bbPeriod) {
-        // Not enough data for indicators
+        // Not enough data for indicators (need at least 20 days for BB)
         return null;
       }
 
-      // Calculate RSI
+      // Calculate RSI (14 days) - matches TradingView RSI(14)
       const rsi = this.calculateRSI(prices, this.rsiPeriod);
 
-      // Calculate Bollinger Bands
+      // Calculate Bollinger Bands (20 days, 2 std dev) - matches TradingView BB(20,2)
       const bollinger = this.calculateBollingerBands(prices, this.bbPeriod, this.bbStdDev);
 
       return {
@@ -307,8 +312,9 @@ class BulkIndicatorService {
       // 2. Limit to maxCoins (now we can scan ALL coins, not just 5!)
       const coinsToScan = topCoins.slice(0, maxCoins);
       
-      console.log(`📊 Calculating indicators for ${coinsToScan.length} coins (RSI + Bollinger Bands)...`);
-      console.log(`   This may take a minute - fetching historical data from CoinGecko...`);
+      console.log(`📊 Calculating indicators for ${coinsToScan.length} coins (RSI(14) + BB(20,2))...`);
+      console.log(`   Using daily candles to match TradingView/exchanges format`);
+      console.log(`   This may take a minute - fetching 60 days of daily data from CoinGecko...`);
 
       // 3. Calculate indicators for each coin (with rate limiting to avoid CoinGecko limits)
       const analyzedCoins = [];
