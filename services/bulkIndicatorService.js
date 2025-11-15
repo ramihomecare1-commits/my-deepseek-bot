@@ -105,7 +105,7 @@ class BulkIndicatorService {
    * Fetch historical price data from CoinGecko for a coin
    * Returns array of prices (daily candles) - matches TradingView/exchanges format
    */
-  async fetchHistoricalPrices(coinId, days = 60) {
+  async fetchHistoricalPrices(coinId, days = 60, retryCount = 0, maxRetries = 2) {
     const coinGeckoKey = process.env.COINGECKO_API_KEY || config.COINGECKO_API_KEY;
     const baseUrl = 'https://api.coingecko.com/api/v3';
     
@@ -139,7 +139,20 @@ class BulkIndicatorService {
 
       return [];
     } catch (error) {
-      console.error(`⚠️ Error fetching historical prices for ${coinId}:`, error.message);
+      // Handle rate limit errors with exponential backoff
+      if (error.response && error.response.status === 429 && retryCount < maxRetries) {
+        const backoffDelay = Math.pow(2, retryCount) * 5000; // 5s, 10s, 20s
+        console.log(`⚠️ Rate limit for ${coinId}, retrying in ${backoffDelay/1000}s... (attempt ${retryCount + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+        return this.fetchHistoricalPrices(coinId, days, retryCount + 1, maxRetries);
+      }
+      
+      // Only log non-429 errors or exhausted retries
+      if (!error.response || error.response.status !== 429) {
+        console.error(`⚠️ Error fetching historical prices for ${coinId}:`, error.message);
+      } else {
+        console.log(`⏭️ Skipping ${coinId} after ${maxRetries} retries (will try on next scan)`);
+      }
       return [];
     }
   }
@@ -523,7 +536,7 @@ class BulkIndicatorService {
         if (foundId && foundId !== coinId) {
           coinId = foundId;
           // Small delay before retry to avoid rate limits
-          await new Promise(resolve => setTimeout(resolve, 300));
+          await new Promise(resolve => setTimeout(resolve, 1000));
           prices = await this.fetchHistoricalPrices(coinId, 60);
         }
       }
@@ -586,9 +599,9 @@ class BulkIndicatorService {
 
       // 3. Calculate indicators for each coin (ONE AT A TIME to avoid rate limits)
       const analyzedCoins = [];
-      const delayBetweenCoins = 2000; // 2 seconds between each coin (safe for CoinGecko free tier)
+      const delayBetweenCoins = 4000; // 4 seconds between each coin (safer for CoinGecko free tier - 15 req/min max)
       
-      console.log(`   Processing ${coinsToScan.length} coins one at a time (2s delay between each)...`);
+      console.log(`   Processing ${coinsToScan.length} coins one at a time (4s delay between each)...`);
       
       for (let i = 0; i < coinsToScan.length; i++) {
         const coin = coinsToScan[i];
