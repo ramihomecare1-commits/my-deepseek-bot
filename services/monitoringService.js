@@ -473,24 +473,27 @@ Be thorough and conservative. Only confirm high-probability setups.`;
   /**
    * Send Telegram notification about R1 decision
    */
-  async notifyR1Decision(symbol, v3Analysis, r1Decision) {
+  async notifyR1Decision(symbol, v3Analysis, r1Decision, coinData) {
     const emoji = r1Decision.decision === 'CONFIRMED' ? '✅' : '❌';
     const action = r1Decision.decision === 'CONFIRMED' ? 'EXECUTING' : 'REJECTED';
 
-    const message = `${emoji} PREMIUM AI DECISION: ${r1Decision.decision}
+    const message = `${emoji} *Premium AI Decision: ${r1Decision.decision}*
 
-📊 Coin: ${symbol}
+📊 Coin: *${symbol}*
+💰 Price: $${coinData?.currentPrice || 'N/A'}
 🎯 Action: ${r1Decision.action}
 💪 Premium Confidence: ${(r1Decision.confidence * 100).toFixed(0)}%
-📝 Premium Analysis: ${r1Decision.reason}
+🤖 Model: ${this.PREMIUM_MODEL}
+
+📝 Analysis:
+${r1Decision.reason.substring(0, 400)}${r1Decision.reason.length > 400 ? '...' : ''}
 
 ${r1Decision.decision === 'CONFIRMED' ? `
 🛡️ Stop Loss: ${r1Decision.stopLoss}%
 🎯 Take Profit: ${r1Decision.takeProfit}%
 ` : ''}
 ---
-🤖 Free AI Initial: ${v3Analysis.signal} (${(v3Analysis.confidence * 100).toFixed(0)}%)
-📝 Free AI Reason: ${v3Analysis.reason}`;
+🤖 Free AI Initial: ${v3Analysis.signal} (${(v3Analysis.confidence * 100).toFixed(0)}%)`;
 
     await sendTelegramMessage(message);
   }
