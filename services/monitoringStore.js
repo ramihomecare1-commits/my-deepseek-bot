@@ -1,7 +1,6 @@
-/**
- * Shared monitoring state store
- * This module ensures all parts of the app use the same monitoring data instance
- */
+// Shared monitoring activity store
+// This module is imported by both the API routes and the bot
+// to ensure they use the same in-memory data
 
 const monitoringStore = {
   activities: [],
@@ -24,7 +23,7 @@ function addMonitoringActivity(activity) {
     
     console.log(`📊 Added monitoring activity: ${activity.symbol} - ${activity.volatility} volatility, ${activity.priceChange}%`);
     console.log(`   Total activities: ${monitoringStore.activities.length}`);
-    console.log(`   Store instance ID:`, monitoringStore.activities.slice(-1)[0]?.timestamp);
+    console.log(`   Activity entry:`, JSON.stringify(activityEntry));
     
     if (monitoringStore.activities.length > monitoringStore.MAX_ENTRIES) {
       monitoringStore.activities = monitoringStore.activities.slice(-monitoringStore.MAX_ENTRIES);
@@ -40,13 +39,16 @@ function setMonitoringActive(active) {
   console.log(`📊 Monitoring active status set to: ${active}`);
 }
 
-function getMonitoringStore() {
-  return monitoringStore;
+function getMonitoringData() {
+  return {
+    activity: monitoringStore.activities,
+    isActive: monitoringStore.isActive
+  };
 }
 
 module.exports = {
   addMonitoringActivity,
   setMonitoringActive,
-  getMonitoringStore
+  getMonitoringData,
+  monitoringStore // Export the store itself for direct access if needed
 };
-
