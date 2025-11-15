@@ -26,10 +26,9 @@ class BulkIndicatorService {
     const coinGeckoKey = process.env.COINGECKO_API_KEY || config.COINGECKO_API_KEY;
     
     try {
-      // Use demo API (rate limited) or Pro API (with key)
-      const baseUrl = coinGeckoKey 
-        ? 'https://pro-api.coingecko.com/api/v3'
-        : 'https://api.coingecko.com/api/v3';
+      // Always use free API URL - works for both free tier and Demo API keys
+      // Pro API keys should use pro-api.coingecko.com, but most users have Demo keys
+      const baseUrl = 'https://api.coingecko.com/api/v3';
       
       const params = {
         vs_currency: 'usd',
@@ -39,12 +38,12 @@ class BulkIndicatorService {
         sparkline: false
       };
 
-      console.log(`📡 Fetching top 200 coins from CoinGecko (${coinGeckoKey ? 'Pro' : 'Free'} API)...`);
+      console.log(`📡 Fetching top 200 coins from CoinGecko${coinGeckoKey ? ' (with Demo API key)' : ' (Free tier)'}...`);
       
-      // CoinGecko Pro API key goes in header, NOT in params
+      // Demo API key goes in header (improves rate limits on free API)
       const headers = {};
       if (coinGeckoKey) {
-        headers['x-cg-pro-api-key'] = coinGeckoKey;
+        headers['x-cg-demo-api-key'] = coinGeckoKey;
       }
       
       const response = await axios.get(
