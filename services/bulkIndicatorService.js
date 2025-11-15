@@ -339,36 +339,36 @@ class BulkIndicatorService {
           const bbLower = bollinger?.lower;
           const currentPrice = coin.price;
 
-        // Count triggers (oversold conditions) based on UI settings
-        let triggerCount = 0;
-        const triggers = [];
+          // Count triggers (oversold conditions) based on UI settings
+          let triggerCount = 0;
+          const triggers = [];
 
-        // RSI oversold trigger
-        if (rsi !== undefined && rsi < rsiThreshold) {
-          triggerCount++;
-          triggers.push(`RSI: ${rsi.toFixed(2)}`);
-        }
-
-        // Bollinger Bands triggers (only if enabled in UI)
-        if (enableBollinger) {
-          // Price below lower band
-          if (bbLower && currentPrice < bbLower) {
+          // RSI oversold trigger
+          if (rsi !== undefined && rsi !== null && rsi < rsiThreshold) {
             triggerCount++;
-            triggers.push(`BB: Below lower band (${((currentPrice - bbLower) / bbLower * 100).toFixed(2)}%)`);
+            triggers.push(`RSI: ${rsi.toFixed(2)}`);
           }
-          // Price near lower band (within 1%)
-          else if (bbLower && currentPrice >= bbLower && currentPrice < bbLower * 1.01) {
-            triggerCount++;
-            triggers.push(`BB: Near lower band`);
-          }
-        }
 
-        // Price change trigger (if minPriceChange is set)
-        const priceChangeAbs = Math.abs(coin.priceChange24h || 0);
-        if (minPriceChange > 0 && priceChangeAbs >= minPriceChange) {
-          triggerCount++;
-          triggers.push(`Price change: ${priceChangeAbs.toFixed(2)}%`);
-        }
+          // Bollinger Bands triggers (only if enabled in UI)
+          if (enableBollinger && bollinger) {
+            // Price below lower band
+            if (bbLower && currentPrice < bbLower) {
+              triggerCount++;
+              triggers.push(`BB: Below lower band (${((currentPrice - bbLower) / bbLower * 100).toFixed(2)}%)`);
+            }
+            // Price near lower band (within 1%)
+            else if (bbLower && currentPrice >= bbLower && currentPrice < bbLower * 1.01) {
+              triggerCount++;
+              triggers.push(`BB: Near lower band`);
+            }
+          }
+
+          // Price change trigger (if minPriceChange is set)
+          const priceChangeAbs = Math.abs(coin.priceChange24h || 0);
+          if (minPriceChange > 0 && priceChangeAbs >= minPriceChange) {
+            triggerCount++;
+            triggers.push(`Price change: ${priceChangeAbs.toFixed(2)}%`);
+          }
 
           // Only include if meets minimum trigger threshold
           if (triggerCount >= minTriggers) {
@@ -391,7 +391,7 @@ class BulkIndicatorService {
               triggers,
               confidence: this.calculateConfidence(rsi, bbLower, currentPrice, triggerCount),
               analysis: {
-                recommendation: rsi < rsiThreshold ? 'BUY' : 'HOLD',
+                recommendation: rsi !== null && rsi !== undefined && rsi < rsiThreshold ? 'BUY' : 'HOLD',
                 confidence: this.calculateConfidence(rsi, bbLower, currentPrice, triggerCount),
                 reason: triggers.join(', ')
               }
