@@ -11,8 +11,8 @@ const TELEGRAM_ENABLED = Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID);
 // News configuration
 const CRYPTOPANIC_API_KEY = process.env.CRYPTOPANIC_API_KEY || '';
 const NEWSAPI_KEY = process.env.NEWSAPI_KEY || ''; // Optional: NewsAPI.org key for additional news sources
-const NEWS_ENABLED = Boolean(CRYPTOPANIC_API_KEY); // Legacy: CryptoPanic (optional)
-// Note: News is now fetched from free public APIs (CryptoCompare + optional NewsAPI.org)
+const NEWS_ENABLED = true; // Always enabled - uses free public APIs (CryptoCompare + optional NewsAPI.org)
+// Legacy: CRYPTOPANIC_API_KEY is optional and no longer required
 
 // Rate limiting
 // Increased to 3000ms (3 seconds) to avoid 429 rate limit errors
