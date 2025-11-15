@@ -32,6 +32,18 @@ async function fetchGlobalMetrics(globalMetrics, stats, coinmarketcapEnabled, co
 // Enhanced price data fetching with multiple APIs
 // Priority: MEXC (direct) → Gate.io (direct) → Binance (with scraper) → CoinMarketCap
 async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
+  // Safety check: ensure config is available
+  if (!config) {
+    console.log(`⚠️ fetchEnhancedPriceData: config parameter is undefined for ${coin?.symbol || 'unknown'}`);
+    // Fallback to module-level config if parameter is missing
+    const fallbackConfig = require('../config/config');
+    if (fallbackConfig) {
+      config = fallbackConfig;
+    } else {
+      throw new Error('Config not available in fetchEnhancedPriceData');
+    }
+  }
+  
   let primaryData = null;
   let usedMock = false;
 
