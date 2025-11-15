@@ -500,19 +500,71 @@ class ProfessionalTradingBot {
     console.log(`   Mode: ${config.USE_HYBRID_MODE ? 'HYBRID 🔥' : 'Single API'}`);
     console.log(`   Free Model: ${config.MONITORING_MODEL} (${config.MONITORING_API_TYPE.toUpperCase()})`);
     console.log(`   Premium Model: ${config.AI_MODEL} (${config.PREMIUM_API_TYPE.toUpperCase()})`);
-    console.log(`   Interval: ${config.MONITORING_INTERVAL / 1000}s`);
+    console.log(`   Schedule: 9:00 AM, 9:00 PM, and on startup`);
     console.log(`   Escalation Threshold: ${(config.ESCALATION_THRESHOLD * 100).toFixed(0)}%`);
 
     // Flag to prevent concurrent monitoring
     this.isMonitoring = false;
 
-    // Run monitoring on interval
-    this.monitoringTimer = setInterval(async () => {
+    // Calculate next 9 AM and 9 PM times
+    const scheduleNextRun = () => {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+      
+      // Target times: 9:00 AM (9:00) and 9:00 PM (21:00)
+      let nextRun = new Date();
+      
+      if (currentHour < 9 || (currentHour === 9 && currentMinute < 0)) {
+        // Before 9 AM today - schedule for 9 AM today
+        nextRun.setHours(9, 0, 0, 0);
+      } else if (currentHour < 21 || (currentHour === 21 && currentMinute < 0)) {
+        // Before 9 PM today - schedule for 9 PM today
+        nextRun.setHours(21, 0, 0, 0);
+      } else {
+        // After 9 PM - schedule for 9 AM tomorrow
+        nextRun.setDate(nextRun.getDate() + 1);
+        nextRun.setHours(9, 0, 0, 0);
+      }
+      
+      const msUntilNext = nextRun.getTime() - now.getTime();
+      const hoursUntil = (msUntilNext / (1000 * 60 * 60)).toFixed(1);
+      
+      console.log(`   Next scan scheduled: ${nextRun.toLocaleString()} (in ${hoursUntil} hours)`);
+      
+      // Clear any existing timer
+      if (this.monitoringTimer) {
+        clearTimeout(this.monitoringTimer);
+      }
+      
+      // Schedule next run
+      this.monitoringTimer = setTimeout(async () => {
+        if (this.isMonitoring) {
+          console.log('⏭️ Skipping monitoring - previous check still in progress');
+          scheduleNextRun(); // Reschedule
+          return;
+        }
+
+        this.isMonitoring = true;
+        try {
+          console.log(`\n🕐 Scheduled bulk scan started at ${new Date().toLocaleString()}`);
+          await this.runMonitoringCycle();
+        } catch (error) {
+          console.log(`⚠️ Monitoring error: ${error.message}`);
+        } finally {
+          this.isMonitoring = false;
+          scheduleNextRun(); // Schedule next run after completion
+        }
+      }, msUntilNext);
+    };
+
+    // Run initial scan on startup
+    console.log('🚀 Running initial bulk scan on startup...');
+    (async () => {
       if (this.isMonitoring) {
-        console.log('⏭️ Skipping monitoring - previous check still in progress');
+        console.log('⏭️ Skipping initial scan - already in progress');
         return;
       }
-
       this.isMonitoring = true;
       try {
         await this.runMonitoringCycle();
@@ -521,9 +573,12 @@ class ProfessionalTradingBot {
       } finally {
         this.isMonitoring = false;
       }
-    }, config.MONITORING_INTERVAL);
+    })();
 
-    console.log('👀 Two-tier AI monitoring started!');
+    // Schedule future runs (9 AM and 9 PM)
+    scheduleNextRun();
+
+    console.log('👀 Scheduled bulk scan monitoring started!');
   }
 
   stopMonitoringTimer() {
