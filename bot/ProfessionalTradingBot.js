@@ -736,10 +736,10 @@ class ProfessionalTradingBot {
         console.log(`\n🚨 Batch escalating ${escalations.length} coins to Premium AI in one API call...`);
         
         const batchEscalationResults = await monitoringService.batchEscalateToR1(escalations);
-              console.log(`⚠️ Config not available, skipping ${coin.symbol}`);
-              continue;
-            }
-            if (!this.priceCache) {
+        
+        // Process batch escalation results
+        for (const result of batchEscalationResults) {
+          const { symbol, coinData, v3Analysis, r1Decision } = result;
               this.priceCache = new Map();
             }
             if (!this.stats) {
