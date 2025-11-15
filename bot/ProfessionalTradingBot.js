@@ -624,16 +624,20 @@ class ProfessionalTradingBot {
           const apiModule = require('../routes/api');
           if (apiModule.setMonitoringActive && apiModule.addMonitoringActivity) {
             apiModule.setMonitoringActive(true);
-            apiModule.addMonitoringActivity({
+            const activityData = {
               symbol: coin.symbol,
-              volatility: result.v3Analysis.volatilityLevel,
-              priceChange: result.v3Analysis.priceChangePercent.toFixed(2),
-              confidence: result.v3Analysis.confidence,
+              volatility: result.v3Analysis.volatilityLevel || 'low',
+              priceChange: (result.v3Analysis.priceChangePercent || 0).toFixed(2),
+              confidence: result.v3Analysis.confidence || 0,
               escalated: !!result.r1Decision
-            });
+            };
+            apiModule.addMonitoringActivity(activityData);
+            console.log(`📊 Logged monitoring activity for ${coin.symbol} to web UI`);
+          } else {
+            console.log(`⚠️ Monitoring API functions not available`);
           }
         } catch (err) {
-          // Silently fail - web UI logging is not critical
+          console.log(`⚠️ Failed to log monitoring activity: ${err.message}`);
         }
       }
 
