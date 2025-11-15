@@ -621,8 +621,9 @@ class ProfessionalTradingBot {
       // Log monitoring activity to web UI
       if (result && result.v3Analysis) {
         try {
+          // Use the same module instance that the router uses
           const apiModule = require('../routes/api');
-          if (apiModule.setMonitoringActive && apiModule.addMonitoringActivity) {
+          if (apiModule && apiModule.setMonitoringActive && apiModule.addMonitoringActivity) {
             apiModule.setMonitoringActive(true);
             const activityData = {
               symbol: coin.symbol,
@@ -631,13 +632,18 @@ class ProfessionalTradingBot {
               confidence: result.v3Analysis.confidence || 0,
               escalated: !!result.r1Decision
             };
+            console.log(`📊 Attempting to add monitoring activity:`, activityData);
             apiModule.addMonitoringActivity(activityData);
-            console.log(`📊 Logged monitoring activity for ${coin.symbol} to web UI`);
+            console.log(`✅ Monitoring activity added for ${coin.symbol}`);
           } else {
-            console.log(`⚠️ Monitoring API functions not available`);
+            console.log(`⚠️ Monitoring API functions not available:`, {
+              hasModule: !!apiModule,
+              hasSetActive: !!apiModule?.setMonitoringActive,
+              hasAddActivity: !!apiModule?.addMonitoringActivity
+            });
           }
         } catch (err) {
-          console.log(`⚠️ Failed to log monitoring activity: ${err.message}`);
+          console.log(`⚠️ Failed to log monitoring activity: ${err.message}`, err.stack);
         }
       }
 

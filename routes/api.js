@@ -32,18 +32,28 @@ const MAX_MONITORING_ENTRIES = 50;
 let monitoringIsActive = false;
 
 function addMonitoringActivity(activity) {
-  const activityEntry = {
-    ...activity,
-    timestamp: new Date().toISOString()
-  };
-  monitoringActivity.push(activityEntry);
-  
-  console.log(`📊 Added monitoring activity: ${activity.symbol} - ${activity.volatility} volatility, ${activity.priceChange}%`);
-  console.log(`   Total activities: ${monitoringActivity.length}`);
-  
-  if (monitoringActivity.length > MAX_MONITORING_ENTRIES) {
-    monitoringActivity = monitoringActivity.slice(-MAX_MONITORING_ENTRIES);
-    console.log(`   Trimmed to ${MAX_MONITORING_ENTRIES} entries`);
+  try {
+    if (!activity || !activity.symbol) {
+      console.log(`⚠️ Invalid monitoring activity data:`, activity);
+      return;
+    }
+    
+    const activityEntry = {
+      ...activity,
+      timestamp: new Date().toISOString()
+    };
+    monitoringActivity.push(activityEntry);
+    
+    console.log(`📊 Added monitoring activity: ${activity.symbol} - ${activity.volatility} volatility, ${activity.priceChange}%`);
+    console.log(`   Total activities: ${monitoringActivity.length}`);
+    console.log(`   Activity entry:`, JSON.stringify(activityEntry));
+    
+    if (monitoringActivity.length > MAX_MONITORING_ENTRIES) {
+      monitoringActivity = monitoringActivity.slice(-MAX_MONITORING_ENTRIES);
+      console.log(`   Trimmed to ${MAX_MONITORING_ENTRIES} entries`);
+    }
+  } catch (error) {
+    console.log(`⚠️ Error adding monitoring activity:`, error.message, error.stack);
   }
 }
 
