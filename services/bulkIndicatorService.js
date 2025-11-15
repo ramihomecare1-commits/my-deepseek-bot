@@ -22,22 +22,40 @@ class BulkIndicatorService {
    * Returns array of { symbol, name, rank, marketCap }
    */
   async getTop200Coins() {
+    // CoinGecko API key (optional - improves rate limits)
+    const coinGeckoKey = process.env.COINGECKO_API_KEY || config.COINGECKO_API_KEY;
+    
     try {
+      // Use demo API (rate limited) or Pro API (with key)
+      const baseUrl = coinGeckoKey 
+        ? 'https://pro-api.coingecko.com/api/v3'
+        : 'https://api.coingecko.com/api/v3';
+      
+      const params = {
+        vs_currency: 'usd',
+        order: 'market_cap_desc',
+        per_page: 200,
+        page: 1,
+        sparkline: false
+      };
+      
+      // Add API key if available
+      if (coinGeckoKey) {
+        params.x_cg_pro_api_key = coinGeckoKey;
+      }
+
+      console.log(`📡 Fetching top 200 coins from CoinGecko (${coinGeckoKey ? 'Pro' : 'Free'} API)...`);
+      
       const response = await axios.get(
-        'https://api.coingecko.com/api/v3/coins/markets',
+        `${baseUrl}/coins/markets`,
         {
-          params: {
-            vs_currency: 'usd',
-            order: 'market_cap_desc',
-            per_page: 200,
-            page: 1,
-            sparkline: false
-          },
-          timeout: 10000
+          params,
+          timeout: 15000,
+          headers: coinGeckoKey ? { 'x-cg-pro-api-key': coinGeckoKey } : {}
         }
       );
 
-      return response.data.map((coin, index) => ({
+      const coins = response.data.map((coin, index) => ({
         symbol: coin.symbol.toUpperCase(),
         name: coin.name,
         rank: index + 1,
@@ -45,8 +63,17 @@ class BulkIndicatorService {
         price: coin.current_price,
         priceChange24h: coin.price_change_percentage_24h || 0
       }));
+      
+      console.log(`✅ Fetched ${coins.length} coins from CoinGecko`);
+      return coins;
     } catch (error) {
-      console.error('❌ Error fetching top 200 coins:', error.message);
+      if (error.response && error.response.status === 429) {
+        console.error('❌ CoinGecko rate limit exceeded (429)');
+        console.error('   💡 Consider setting COINGECKO_API_KEY for higher rate limits');
+        console.error('   💡 Or wait 60 seconds before trying again');
+      } else {
+        console.error('❌ Error fetching top 200 coins:', error.message);
+      }
       return [];
     }
   }

@@ -102,6 +102,9 @@ const SCRAPER_API_ENABLED = SCRAPER_API_KEY.length > 0;
 const TAAPI_API_KEY = process.env.TAAPI_API_KEY || '';
 const TAAPI_ENABLED = Boolean(TAAPI_API_KEY);
 
+// CoinGecko API Key (optional - for higher rate limits)
+const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY || '';
+
 // Log configuration status
 console.log('🔧 Configuration Status:');
 console.log(`   Telegram: ${TELEGRAM_ENABLED ? 'ENABLED' : 'DISABLED'}`);
@@ -168,5 +171,6 @@ module.exports = {
   VOLUME_SPIKE_THRESHOLD,
   // TAAPI.IO Configuration
   TAAPI_API_KEY,
-  TAAPI_ENABLED
+  TAAPI_ENABLED,
+  COINGECKO_API_KEY
 };
