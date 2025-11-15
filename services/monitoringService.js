@@ -133,21 +133,19 @@ class MonitoringService {
       const priceChangePercent = Math.abs(priceChange24h || 0);
       const volatilityLevel = this.calculateVolatilityLevel(priceChangePercent);
       
-      // Check if worth analyzing
-      if (volatilityLevel === 'low') {
-        return null; // Skip low volatility coins
-      }
-
-      // Create lightweight prompt for v3
-      const prompt = this.createMonitoringPrompt(coinData);
-
+      // No volatility filter - monitor everything for real-time opportunities
+      // (Since we're monitoring every minute, 24h volatility is not relevant)
+      
       console.log(`🔍 Free model monitoring ${symbol} (${volatilityLevel} volatility: ${priceChangePercent.toFixed(2)}%)`);
 
-      // Call free tier API
+      // Check for API key before making the call
       if (!this.FREE_API_KEY) {
         console.log(`⚠️ No free tier API key - skipping ${symbol}`);
         return null;
       }
+
+      // Create lightweight prompt for v3
+      const prompt = this.createMonitoringPrompt(coinData);
       
       const responseText = await this.callAI(prompt, this.FREE_MODEL, 150, 'free');
       const analysis = this.parseMonitoringResponse(responseText);
