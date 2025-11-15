@@ -2847,18 +2847,32 @@ ${batch.map((t, i) => {
   let historicalText = '';
   const historical = t.historicalData || { evaluations: [], news: [] };
   if (historical.evaluations && historical.evaluations.length > 0) {
-    const recentEvals = historical.evaluations.slice(0, 2).map(evaluation => {
-      const date = new Date(evaluation.timestamp).toLocaleDateString();
-      return `    - [${date}] ${evaluation.data.recommendation || evaluation.data.action || 'HOLD'} (${((evaluation.data.confidence || 0) * 100).toFixed(0)}%)`;
-    }).join('\n');
-    historicalText += `\n- Previous Evaluations:\n${recentEvals}`;
+    const recentEvals = historical.evaluations
+      .slice(0, 2)
+      .filter(evaluation => evaluation && evaluation.data) // Filter out entries with null data
+      .map(evaluation => {
+        const date = new Date(evaluation.timestamp).toLocaleDateString();
+        const recommendation = evaluation.data.recommendation || evaluation.data.action || 'HOLD';
+        const confidence = ((evaluation.data.confidence || 0) * 100).toFixed(0);
+        return `    - [${date}] ${recommendation} (${confidence}%)`;
+      })
+      .join('\n');
+    if (recentEvals) {
+      historicalText += `\n- Previous Evaluations:\n${recentEvals}`;
+    }
   }
   if (historical.news && historical.news.length > 0) {
-    const historicalNews = historical.news.slice(0, 2).map(n => {
-      const date = new Date(n.publishedAt).toLocaleDateString();
-      return `    - [${date}] ${n.title}`;
-    }).join('\n');
-    historicalText += `\n- Historical News:\n${historicalNews}`;
+    const historicalNews = historical.news
+      .slice(0, 2)
+      .filter(n => n && n.title && n.publishedAt) // Filter out entries with null data
+      .map(n => {
+        const date = new Date(n.publishedAt).toLocaleDateString();
+        return `    - [${date}] ${n.title}`;
+      })
+      .join('\n');
+    if (historicalNews) {
+      historicalText += `\n- Historical News:\n${historicalNews}`;
+    }
   }
   
   // Safely handle pnlPercent - might be undefined or not a number
