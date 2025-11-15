@@ -561,28 +561,90 @@ Be thorough and conservative. Only confirm high-probability setups.`;
    * Parse R1 confirmation response
    */
   parseR1Response(content) {
+    if (!content || typeof content !== 'string') {
+      console.log('⚠️ R1 response is empty or not a string');
+      return this.getDefaultR1Response('Empty response');
+    }
+
     try {
+      // Try multiple parsing strategies
+      
+      // Strategy 1: Look for JSON in markdown code blocks
+      const codeBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+      if (codeBlockMatch) {
+        const parsed = JSON.parse(codeBlockMatch[1]);
+        return this.validateR1Response(parsed);
+      }
+      
+      // Strategy 2: Look for JSON object anywhere in the text
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        return {
-          decision: parsed.decision || 'REJECTED',
-          action: parsed.action || 'HOLD',
-          confidence: parsed.confidence || 0.5,
-          reason: parsed.reason || 'No reason provided',
-          stopLoss: parsed.stopLoss || 5,
-          takeProfit: parsed.takeProfit || 10
-        };
+        return this.validateR1Response(parsed);
       }
+      
+      // Strategy 3: Try parsing the entire content as JSON
+      const parsed = JSON.parse(content.trim());
+      return this.validateR1Response(parsed);
+      
     } catch (error) {
       console.log('⚠️ Failed to parse R1 response:', error.message);
+      console.log('   Response preview (first 500 chars):', content.substring(0, 500));
+      console.log('   Full response length:', content.length);
+      
+      // Try to extract decision from text if JSON parsing fails
+      const decisionMatch = content.match(/decision["\s:]+(CONFIRMED|REJECTED|SKIPPED)/i);
+      const actionMatch = content.match(/action["\s:]+(BUY|SELL|HOLD)/i);
+      const confidenceMatch = content.match(/confidence["\s:]+([0-9.]+)/i);
+      
+      if (decisionMatch || actionMatch || confidenceMatch) {
+        console.log('   Attempting to extract fields from text...');
+        return {
+          decision: (decisionMatch && decisionMatch[1].toUpperCase()) || 'REJECTED',
+          action: (actionMatch && actionMatch[1].toUpperCase()) || 'HOLD',
+          confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5,
+          reason: content.substring(0, 200) || 'Failed to parse R1 response - extracted from text',
+          stopLoss: 5,
+          takeProfit: 10
+        };
+      }
     }
 
+    return this.getDefaultR1Response('No valid JSON found in response');
+  }
+
+  /**
+   * Validate and normalize R1 response
+   */
+  validateR1Response(parsed) {
+    // Normalize decision to uppercase
+    const decision = (parsed.decision || 'REJECTED').toUpperCase();
+    
+    // Ensure valid decision values
+    if (!['CONFIRMED', 'REJECTED', 'SKIPPED'].includes(decision)) {
+      console.log(`⚠️ Invalid decision value: ${decision}, defaulting to REJECTED`);
+      return this.getDefaultR1Response(`Invalid decision: ${decision}`);
+    }
+    
+    return {
+      decision: decision,
+      action: (parsed.action || 'HOLD').toUpperCase(),
+      confidence: Math.max(0, Math.min(1, parseFloat(parsed.confidence) || 0.5)),
+      reason: parsed.reason || 'No reason provided',
+      stopLoss: Math.max(0, Math.min(50, parseFloat(parsed.stopLoss) || 5)),
+      takeProfit: Math.max(0, Math.min(100, parseFloat(parsed.takeProfit) || 10))
+    };
+  }
+
+  /**
+   * Get default R1 response for errors
+   */
+  getDefaultR1Response(errorReason) {
     return {
       decision: 'REJECTED',
       action: 'HOLD',
       confidence: 0,
-      reason: 'Failed to parse R1 response',
+      reason: `Failed to parse R1 response: ${errorReason}`,
       stopLoss: 5,
       takeProfit: 10
     };
