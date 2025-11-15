@@ -304,71 +304,40 @@ class BulkIndicatorService {
 
       console.log(`✅ Fetched ${topCoins.length} coins from CoinGecko`);
 
-      // 2. Filter to TAAPI.IO supported symbols (free plan only supports 5 symbols)
-      // Free plan: BTC/USDT, ETH/USDT, XRP/USDT, LTC/USDT, XMR/USDT
-      // Paid plans: All Binance symbols
-      const supportedSymbols = ['BTC', 'ETH', 'XRP', 'LTC', 'XMR'];
-      const filteredCoins = topCoins
-        .slice(0, maxCoins)
-        .filter(coin => supportedSymbols.includes(coin.symbol));
+      // 2. Limit to maxCoins (now we can scan ALL coins, not just 5!)
+      const coinsToScan = topCoins.slice(0, maxCoins);
       
-      if (filteredCoins.length === 0) {
-        console.warn('⚠️ No supported symbols found in top coins (free plan supports: BTC, ETH, XRP, LTC, XMR)');
-        console.warn('   💡 Upgrade TAAPI.IO plan to scan all 200 coins');
-        return [];
-      }
-      
-      console.log(`📊 Filtered to ${filteredCoins.length} supported symbols (${filteredCoins.map(c => c.symbol).join(', ')})`);
-      
-      // 3. Convert to Binance pairs (TAAPI.IO format)
-      const binancePairs = filteredCoins.map(coin => this.convertToBinancePair(coin.symbol));
+      console.log(`📊 Calculating indicators for ${coinsToScan.length} coins (RSI + Bollinger Bands)...`);
+      console.log(`   This may take a minute - fetching historical data from CoinGecko...`);
 
-      // 3. Determine which indicators to fetch based on settings
-      const indicatorsToFetch = ['rsi']; // Always fetch RSI
-      if (enableBollinger) {
-        indicatorsToFetch.push('bbands2'); // Only fetch BB if enabled
-      }
-
-      console.log(`📡 Fetching indicators (${indicatorsToFetch.join(', ')}) for ${binancePairs.length} pairs from TAAPI.IO...`);
-
-      // 4. Fetch bulk indicators (all at once - fast!)
-      const indicatorsData = await this.fetchBulkIndicators(binancePairs, indicatorsToFetch);
-
-      console.log(`✅ Received indicators for ${indicatorsData.length} requests`);
-
-      // 5. Process and filter coins
+      // 3. Calculate indicators for each coin (with rate limiting to avoid CoinGecko limits)
       const analyzedCoins = [];
-      const indicatorsMap = new Map();
-
-      // Group indicators by symbol for easy lookup
-      // TAAPI.IO bulk returns array of results with id, indicator, value, etc.
-      if (Array.isArray(indicatorsData)) {
-        indicatorsData.forEach(result => {
-          // Parse the id format: "BTC/USDT_rsi" -> symbol: "BTC", indicator: "rsi"
-          const parts = result.id ? result.id.split('_') : [];
-          if (parts.length >= 2) {
-            const symbol = parts[0].replace('/USDT', '');
-            const indicator = parts[1];
-            if (!indicatorsMap.has(symbol)) {
-              indicatorsMap.set(symbol, {});
-            }
-            indicatorsMap.get(symbol)[indicator] = result;
+      const batchSize = 5; // Process 5 coins at a time to avoid rate limits
+      
+      for (let i = 0; i < coinsToScan.length; i += batchSize) {
+        const batch = coinsToScan.slice(i, i + batchSize);
+        console.log(`   Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(coinsToScan.length / batchSize)} (${batch.map(c => c.symbol).join(', ')})...`);
+        
+        // Process batch in parallel
+        const batchPromises = batch.map(coin => this.calculateIndicatorsForCoin(coin));
+        const batchResults = await Promise.all(batchPromises);
+        
+        // Analyze results
+        for (let j = 0; j < batch.length; j++) {
+          const coin = batch[j];
+          const indicators = batchResults[j];
+          
+          if (!indicators) {
+            continue; // Skip if indicators couldn't be calculated
           }
-        });
-      }
 
-      // 6. Analyze each filtered coin
-      for (const coin of filteredCoins) {
-        const coinIndicators = indicatorsMap.get(coin.symbol);
-        if (!coinIndicators) continue;
-
-        // Extract indicator values
-        const rsi = coinIndicators.rsi?.value;
-        const bbands = coinIndicators.bbands2;
-        const bbUpper = bbands?.valueUpperBand;
-        const bbMiddle = bbands?.valueMiddleBand;
-        const bbLower = bbands?.valueLowerBand;
-        const currentPrice = coin.price;
+          // Extract indicator values
+          const rsi = indicators.rsi;
+          const bollinger = indicators.bollinger;
+          const bbUpper = bollinger?.upper;
+          const bbMiddle = bollinger?.middle;
+          const bbLower = bollinger?.lower;
+          const currentPrice = coin.price;
 
         // Count triggers (oversold conditions) based on UI settings
         let triggerCount = 0;
