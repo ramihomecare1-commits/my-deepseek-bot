@@ -743,8 +743,7 @@ class ProfessionalTradingBot {
           const priorityLabel = escalations.find(e => e.coinData.symbol === symbol)?.isPriority ? '🔴 [OPEN TRADE]' : '🔍';
           
           // Safety check for r1Decision
-
-            // Extract price data
+          if (!r1Decision) {
             const priceData = priceResult.data;
             const lastPrice = monitoringService.lastPrices.get(coin.symbol);
             const coinData = {
