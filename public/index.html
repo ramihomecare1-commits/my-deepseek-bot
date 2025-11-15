@@ -1810,8 +1810,11 @@
     // Active Trades Dashboard functions
     async function updateActiveTradesDisplay() {
       try {
+        console.log('📊 Fetching active trades...');
         const response = await fetch(API_BASE + '/active-trades');
+        console.log('📊 Active trades response status:', response.status);
         const activeTrades = await response.json();
+        console.log('📊 Active trades data:', activeTrades);
         const container = document.getElementById('active-trades-container');
 
         if (!activeTrades || activeTrades.length === 0) {
@@ -1886,8 +1889,11 @@
     // Closed Trades Dashboard functions
     async function updateClosedTradesDisplay() {
       try {
+        console.log('📊 Fetching closed trades...');
         const response = await fetch(API_BASE + '/closed-trades');
+        console.log('📊 Closed trades response status:', response.status);
         const closedTrades = await response.json();
+        console.log('📊 Closed trades data:', closedTrades);
         const container = document.getElementById('closed-trades-container');
 
         if (!closedTrades || closedTrades.length === 0) {
@@ -1967,8 +1973,11 @@
     // Portfolio display functions
     async function updatePortfolioDisplay() {
       try {
+        console.log('📊 Fetching portfolio...');
         const response = await fetch(API_BASE + '/portfolio');
+        console.log('📊 Portfolio response status:', response.status);
         const portfolio = await response.json();
+        console.log('📊 Portfolio data:', portfolio);
         
         // Update portfolio metrics
         document.getElementById('portfolio-initial').textContent = `$${Number(portfolio.initialCapital || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1997,7 +2006,45 @@
         document.getElementById('portfolio-open').textContent = portfolio.openPositions || 0;
         
       } catch (error) {
-        console.error('Error updating portfolio display:', error);
+        console.error('❌ Error updating portfolio display:', error);
+        console.error('Error stack:', error.stack);
+      }
+    }
+
+    async function updateAnalyticsDisplay() {
+      try {
+        console.log('📊 Fetching analytics...');
+        const response = await fetch(API_BASE + '/analytics');
+        console.log('📊 Analytics response status:', response.status);
+        
+        if (!response.ok) {
+          console.warn('Analytics endpoint returned non-OK status');
+          return;
+        }
+        
+        const analytics = await response.json();
+        console.log('📊 Analytics data:', analytics);
+        
+        // Update analytics display
+        const container = document.getElementById('analytics-content');
+        const loading = document.getElementById('analytics-loading');
+        
+        if (loading) loading.style.display = 'none';
+        if (container) container.style.display = 'block';
+        
+        // Update individual metrics
+        if (analytics.sharpeRatio !== undefined) {
+          const el = document.getElementById('analytics-sharpe');
+          if (el) el.textContent = analytics.sharpeRatio.toFixed(2);
+        }
+        if (analytics.maxDrawdown !== undefined) {
+          const el = document.getElementById('analytics-drawdown');
+          if (el) el.textContent = analytics.maxDrawdown.toFixed(2) + '%';
+        }
+        
+      } catch (error) {
+        console.error('❌ Error updating analytics display:', error);
+        console.error('Error stack:', error.stack);
       }
     }
 
@@ -2062,10 +2109,25 @@
     }
 
     // Initialize
+    console.log('✅ Starting dashboard initialization...');
+    console.log('📊 API_BASE:', API_BASE);
+    
+    // Test API connectivity first
+    fetch(API_BASE + '/health').then(r => {
+      console.log('✅ Health check status:', r.status);
+      return r.json();
+    }).then(data => {
+      console.log('✅ Health data:', data);
+    }).catch(err => {
+      console.error('❌ Health check failed:', err);
+    });
+    
     updateStats();
     updateAIEvaluation();
     updateActiveTradesDisplay(); // Initial load of active trades
     updateClosedTradesDisplay(); // Initial load of closed trades
+    updatePortfolioDisplay(); // Initial load of portfolio
+    console.log('✅ Initial data fetch started');
 
     // AI Trade Re-evaluation function
     async function evaluateTradesWithAI() {
