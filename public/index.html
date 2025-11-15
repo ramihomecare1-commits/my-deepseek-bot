@@ -1763,16 +1763,24 @@
 
     // Trade Monitoring functions (with null checks)
     function toggleTradeMonitoring() {
+      console.log('🎯 Toggle trade monitoring clicked');
       const panel = document.getElementById('tradeMonitoringPanel');
+      console.log('Panel element:', panel);
+      
       if (!panel) {
-        console.warn('⚠️ Trade monitoring panel not found in DOM');
+        console.error('❌ Trade monitoring panel not found in DOM');
+        alert('❌ Trade monitoring panel not found. Please refresh the page.');
         return;
       }
       
+      console.log('Current display:', panel.style.display);
+      
       if (panel.style.display === 'none' || !panel.style.display) {
+        console.log('✅ Opening trade monitoring panel');
         panel.style.display = 'block';
         loadTradeMonitoringSettings();
       } else {
+        console.log('✅ Closing trade monitoring panel');
         panel.style.display = 'none';
       }
     }
