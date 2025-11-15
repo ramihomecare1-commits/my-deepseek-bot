@@ -33,14 +33,20 @@ const SCAN_INTERVAL_OPTIONS = {
 // AI Configuration - Support for HYBRID setup (Gemini FREE + DeepSeek R1 PREMIUM)
 // You can use different APIs for monitoring (free) and confirmation (premium)
 
-// Check for separate API keys
+// Check for separate API keys for each tier
+const FREE_TIER_API_KEY = process.env.FREE_TIER_API_KEY || '';
+const PREMIUM_TIER_API_KEY = process.env.PREMIUM_TIER_API_KEY || '';
+
+// Legacy support (for backward compatibility)
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 
 // Debug logging to help troubleshoot
 console.log('🔍 API Key Detection:');
-console.log(`   GEMINI_API_KEY: ${GEMINI_API_KEY ? '✅ Found (' + GEMINI_API_KEY.substring(0, 10) + '...)' : '❌ Not set'}`);
-console.log(`   OPENROUTER_API_KEY: ${OPENROUTER_API_KEY ? '✅ Found (' + OPENROUTER_API_KEY.substring(0, 15) + '...)' : '❌ Not set'}`);
+console.log(`   FREE_TIER_API_KEY: ${FREE_TIER_API_KEY ? '✅ Found (' + FREE_TIER_API_KEY.substring(0, 15) + '...)' : '❌ Not set'}`);
+console.log(`   PREMIUM_TIER_API_KEY: ${PREMIUM_TIER_API_KEY ? '✅ Found (' + PREMIUM_TIER_API_KEY.substring(0, 15) + '...)' : '❌ Not set'}`);
+console.log(`   GEMINI_API_KEY: ${GEMINI_API_KEY ? '✅ Found (' + GEMINI_API_KEY.substring(0, 10) + '...)' : '❌ Not set (legacy)'}`);
+console.log(`   OPENROUTER_API_KEY: ${OPENROUTER_API_KEY ? '✅ Found (' + OPENROUTER_API_KEY.substring(0, 15) + '...)' : '❌ Not set (legacy)'}`);
 
 // Fallback to generic AI_API_KEY if specific ones not set
 const AI_API_KEY = process.env.API_KEY || process.env.AI_API_KEY || OPENROUTER_API_KEY || GEMINI_API_KEY || '';
@@ -56,7 +62,8 @@ console.log(`   Hybrid Mode: ${USE_HYBRID_MODE ? '✅ ENABLED' : '❌ DISABLED (
 // Free monitoring model (Tier 1)
 // Default: DeepSeek Chat (FREE via OpenRouter)
 const MONITORING_MODEL = process.env.MONITORING_MODEL || 'deepseek/deepseek-chat';
-const MONITORING_API_KEY = OPENROUTER_API_KEY || AI_API_KEY;
+// Use FREE_TIER_API_KEY first, fallback to legacy OPENROUTER_API_KEY or AI_API_KEY
+const MONITORING_API_KEY = FREE_TIER_API_KEY || OPENROUTER_API_KEY || AI_API_KEY;
 const MONITORING_API_TYPE = 'openrouter';
 
 console.log(`   Free Tier will use: ${MONITORING_API_TYPE.toUpperCase()} (${MONITORING_MODEL})`);
@@ -64,7 +71,8 @@ console.log(`   Free Tier will use: ${MONITORING_API_TYPE.toUpperCase()} (${MONI
 // Premium confirmation model (Tier 2)
 // Default: DeepSeek R1 (best reasoning via OpenRouter)
 const AI_MODEL = process.env.AI_MODEL || 'deepseek/deepseek-r1';
-const PREMIUM_API_KEY = OPENROUTER_API_KEY || AI_API_KEY;
+// Use PREMIUM_TIER_API_KEY first, fallback to legacy OPENROUTER_API_KEY or AI_API_KEY
+const PREMIUM_API_KEY = PREMIUM_TIER_API_KEY || OPENROUTER_API_KEY || AI_API_KEY;
 const PREMIUM_API_TYPE = 'openrouter';
 
 console.log(`   Premium Tier will use: ${PREMIUM_API_TYPE.toUpperCase()} (${AI_MODEL})`);
