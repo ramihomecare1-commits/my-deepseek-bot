@@ -665,18 +665,125 @@ class ProfessionalTradingBot {
         }
       }
       
-      // PRIORITY 2: Monitor other top coins for new opportunities (individual calls)
+      // PRIORITY 2: Batch monitor other top coins for new opportunities (one API call for all)
       const otherCoins = this.trackedCoins
         .filter(c => !activeTradeSymbols.includes(c.symbol))
         .slice(0, 7); // Monitor 7 other coins
       
-      console.log(`👀 Monitoring ${otherCoins.length} other coins for opportunities...`);
-
-      for (const coin of otherCoins) {
-        await this.monitorSingleCoin(coin, false); // priority = false
+      if (otherCoins.length > 0) {
+        console.log(`👀 Batch monitoring ${otherCoins.length} other coins for opportunities in one API call...`);
         
-        // Small delay between coins
-        await sleep(1000);
+        // Gather price data for all other coins first
+        const otherCoinsData = [];
+        for (const coin of otherCoins) {
+          try {
+            const coinDataForFetch = { symbol: coin.symbol, id: coin.id };
+            
+            if (!config) {
+              console.log(`⚠️ Config not available, skipping ${coin.symbol}`);
+              continue;
+            }
+            if (!this.priceCache) {
+              this.priceCache = new Map();
+            }
+            if (!this.stats) {
+              this.stats = { coinmarketcapUsage: 0, coinpaprikaUsage: 0 };
+            }
+            
+            const priceResult = await fetchEnhancedPriceData(coinDataForFetch, this.priceCache, this.stats, config);
+            
+            if (!priceResult || !priceResult.data || !priceResult.data.price) {
+              console.log(`⚠️ ${coin.symbol}: No price data available, skipping`);
+              continue;
+            }
+
+            // Extract price data
+            const priceData = priceResult.data;
+            const lastPrice = monitoringService.lastPrices.get(coin.symbol);
+            const coinData = {
+              symbol: coin.symbol,
+              name: coin.name,
+              id: coin.id,
+              currentPrice: priceData.price,
+              priceChange24h: priceData.change_24h || priceData.priceChange24h || 0,
+              volume24h: priceData.volume_24h || priceData.volume24h || 0,
+            };
+            
+            // Track price changes
+            if (lastPrice) {
+              const priceChange = ((coinData.currentPrice - lastPrice) / lastPrice) * 100;
+              coinData.minutePriceChange = priceChange;
+            }
+            monitoringService.lastPrices.set(coin.symbol, coinData.currentPrice);
+            
+            otherCoinsData.push(coinData);
+          } catch (error) {
+            console.log(`⚠️ Error fetching data for ${coin.symbol}:`, error.message);
+          }
+        }
+        
+        // Batch monitor all other coins in one API call
+        if (otherCoinsData.length > 0) {
+          const batchResults = await monitoringService.batchVolatilityCheck(otherCoinsData);
+          
+          // Process batch results
+          for (const batchResult of batchResults) {
+            const coinData = otherCoinsData.find(c => c.symbol === batchResult.symbol);
+            if (!coinData) continue;
+            
+            const analysis = batchResult.analysis;
+            if (!analysis) {
+              console.log(`🔍 ${batchResult.symbol}: No analysis returned`);
+              continue;
+            }
+            
+            // Log monitoring activity
+            try {
+              const { addMonitoringActivity, setMonitoringActive } = require('../services/monitoringStore');
+              setMonitoringActive(true);
+              const priceChangePercent = Math.abs(coinData.priceChange24h || 0);
+              const volatilityLevel = monitoringService.calculateVolatilityLevel(priceChangePercent);
+              const activityData = {
+                symbol: coinData.symbol,
+                volatility: volatilityLevel,
+                priceChange: priceChangePercent.toFixed(2),
+                confidence: analysis.confidence || 0,
+                escalated: false
+              };
+              addMonitoringActivity(activityData);
+            } catch (err) {
+              console.log(`⚠️ Failed to log monitoring activity for ${coinData.symbol}: ${err.message}`);
+            }
+            
+            // Check if escalation is needed
+            if (analysis.shouldEscalate && analysis.confidence >= monitoringService.ESCALATION_THRESHOLD) {
+              const r1Decision = await monitoringService.escalateToR1(coinData, analysis);
+              
+              if (r1Decision && r1Decision.decision === 'CONFIRMED') {
+                console.log(`🔍 ✅ R1 CONFIRMED opportunity for ${coinData.symbol}!`);
+                
+                if (this.tradingRules.paperTradingEnabled) {
+                  await this.executePaperTrade({
+                    symbol: coinData.symbol,
+                    action: r1Decision.action,
+                    price: coinData.currentPrice,
+                    reason: r1Decision.reason,
+                    confidence: r1Decision.confidence,
+                    stopLoss: r1Decision.stopLoss,
+                    takeProfit: r1Decision.takeProfit,
+                    source: 'monitoring'
+                  });
+                }
+              } else if (r1Decision && r1Decision.decision === 'SKIPPED') {
+                console.log(`⏭️ ${coinData.symbol} - Recently rejected, skipped escalation (saves cost)`);
+              } else {
+                console.log(`🔍 ❌ R1 rejected ${coinData.symbol}`);
+              }
+            } else {
+              console.log(`🔍 ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%)`);
+            }
+          }
+        }
       }
 
       console.log('✅ Monitoring cycle complete');
