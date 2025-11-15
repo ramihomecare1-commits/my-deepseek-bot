@@ -543,18 +543,21 @@ class ProfessionalTradingBot {
 
       for (const coin of coinsToMonitor) {
         try {
-          // Fetch current price data
-          const priceData = await fetchEnhancedPriceData(coin.symbol, coin.id);
+          // Fetch current price data (need to pass coin object, cache, stats, and config)
+          const coinDataForFetch = { symbol: coin.symbol, id: coin.id };
+          const priceResult = await fetchEnhancedPriceData(coinDataForFetch, this.priceCache || new Map(), this.stats, config);
           
-          if (!priceData) continue;
+          if (!priceResult || !priceResult.data || !priceResult.data.price) continue;
 
+          // Extract price data from result
+          const priceData = priceResult.data;
           const coinData = {
             symbol: coin.symbol,
             name: coin.name,
             id: coin.id,
-            currentPrice: priceData.currentPrice,
-            priceChange24h: priceData.priceChange24h,
-            volume24h: priceData.volume24h,
+            currentPrice: priceData.price,
+            priceChange24h: priceData.change_24h || priceData.priceChange24h || 0,
+            volume24h: priceData.volume_24h || priceData.volume24h || 0,
           };
 
           // Monitor with v3
