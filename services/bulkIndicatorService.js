@@ -12,6 +12,7 @@ class BulkIndicatorService {
     this.rsiPeriod = 14; // RSI(14) - 14 days (matches TradingView)
     this.bbPeriod = 20; // Bollinger Bands(20) - 20 days (matches TradingView)
     this.bbStdDev = 2; // 2 standard deviations (matches TradingView)
+    this.idCache = new Map(); // Cache for CoinGecko ID lookups
   }
 
   /**
