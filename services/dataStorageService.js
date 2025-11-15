@@ -65,6 +65,35 @@ async function initDynamoDB() {
 }
 
 /**
+ * Convert Date objects to timestamps recursively
+ */
+function convertDatesToTimestamps(obj) {
+  if (obj === null || obj === undefined) return obj;
+  
+  // Handle Date objects
+  if (obj instanceof Date) {
+    return obj.getTime();
+  }
+  
+  // Handle arrays
+  if (Array.isArray(obj)) {
+    return obj.map(item => convertDatesToTimestamps(item));
+  }
+  
+  // Handle objects
+  if (typeof obj === 'object') {
+    const converted = {};
+    for (const [key, value] of Object.entries(obj)) {
+      converted[key] = convertDatesToTimestamps(value);
+    }
+    return converted;
+  }
+  
+  // Return primitives as-is
+  return obj;
+}
+
+/**
  * Store AI evaluation
  * @param {Object} evaluation - Evaluation data
  * @param {string} evaluation.symbol - Coin symbol (e.g., 'BTC')
@@ -121,14 +150,15 @@ async function storeAIEvaluation(evaluation) {
       }
     }
     
+    // Convert all Date objects to timestamps before storing
     const item = {
       symbol: evaluation.symbol,
       timestamp: timestamp,
       tradeId: evaluation.tradeId || null,
       type: evaluation.type,
-      data: evaluation.data,
+      data: convertDatesToTimestamps(evaluation.data),
       model: evaluation.model || 'unknown',
-      context: limitedContext,
+      context: convertDatesToTimestamps(limitedContext),
       createdAt: timestamp
     };
 
@@ -141,7 +171,7 @@ async function storeAIEvaluation(evaluation) {
         timestamp: timestamp,
         tradeId: evaluation.tradeId || null,
         type: evaluation.type,
-        data: evaluation.data,
+        data: convertDatesToTimestamps(evaluation.data),
         model: evaluation.model || 'unknown',
         createdAt: timestamp
       };
