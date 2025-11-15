@@ -71,10 +71,37 @@ class MonitoringService {
     const apiType = tier === 'premium' ? this.PREMIUM_API_TYPE : this.FREE_API_TYPE;
     const apiKey = tier === 'premium' ? this.PREMIUM_API_KEY : this.FREE_API_KEY;
     
-    if (apiType === 'gemini') {
-      return await this.callGeminiAPI(prompt, model, maxTokens, apiKey);
-    } else {
-      return await this.callOpenRouterAPI(prompt, model, maxTokens, apiKey);
+    console.log(`🔍 callAI: tier=${tier}, apiType=${apiType}, model=${model}, hasKey=${!!apiKey}`);
+    
+    if (!apiKey) {
+      console.log(`⚠️ No API key for ${tier} tier`);
+      throw new Error(`No API key configured for ${tier} tier`);
+    }
+    
+    try {
+      let result;
+      if (apiType === 'gemini') {
+        result = await this.callGeminiAPI(prompt, model, maxTokens, apiKey);
+      } else {
+        result = await this.callOpenRouterAPI(prompt, model, maxTokens, apiKey);
+      }
+      
+      // Ensure result is a string
+      if (result === null || result === undefined) {
+        console.log(`⚠️ API returned null/undefined for ${tier} tier`);
+        throw new Error(`API call returned null/undefined`);
+      }
+      
+      if (typeof result !== 'string') {
+        console.log(`⚠️ API returned non-string: ${typeof result}`);
+        throw new Error(`API call returned non-string: ${typeof result}`);
+      }
+      
+      return result;
+      
+    } catch (error) {
+      console.log(`⚠️ callAI error for ${tier} tier: ${error.message}`);
+      throw error;
     }
   }
 
@@ -145,12 +172,35 @@ class MonitoringService {
         return '';
       }
 
-      const content = response.data.choices[0]?.message?.content || '';
+      const content = response.data.choices[0]?.message?.content;
       
-      if (!content || content.trim().length === 0) {
-        console.log('⚠️ OpenRouter API returned empty content');
+      // More strict validation - don't use default empty string
+      if (content === null || content === undefined) {
+        console.log('⚠️ OpenRouter API returned null/undefined content');
         console.log('   Full response:', JSON.stringify(response.data).substring(0, 500));
         console.log('   Choices structure:', JSON.stringify(response.data.choices[0]).substring(0, 300));
+        
+        // Check if there's an error message in the response
+        if (response.data.error) {
+          console.log('   API Error:', JSON.stringify(response.data.error));
+          throw new Error(`OpenRouter API error: ${response.data.error.message || JSON.stringify(response.data.error)}`);
+        }
+        
+        // Return empty string as last resort (better than undefined)
+        console.log('   Returning empty string as fallback');
+        return '';
+      }
+      
+      if (typeof content !== 'string') {
+        console.log('⚠️ OpenRouter API returned non-string content');
+        console.log(`   Content type: ${typeof content}`);
+        console.log(`   Content value: ${JSON.stringify(content).substring(0, 200)}`);
+        return String(content); // Try to convert to string
+      }
+      
+      if (content.trim().length === 0) {
+        console.log('⚠️ OpenRouter API returned empty string');
+        console.log('   This might indicate rate limiting or API issues');
       } else {
         console.log(`✅ OpenRouter API response received (${content.length} chars)`);
       }
@@ -480,12 +530,14 @@ class MonitoringService {
         // Detailed validation of response
         console.log(`📥 Premium API call completed`);
         console.log(`   Response type: ${typeof responseText}`);
-        console.log(`   Response is null/undefined: ${responseText == null}`);
+        console.log(`   Response is null: ${responseText === null}`);
+        console.log(`   Response is undefined: ${responseText === undefined}`);
         console.log(`   Response length: ${responseText ? responseText.length : 'N/A'}`);
         
-        if (!responseText) {
+        if (responseText === null || responseText === undefined) {
           console.log('⚠️ Premium API returned null/undefined response');
-          throw new Error('Null/undefined response from premium API');
+          console.log(`   Exact value: ${responseText}`);
+          throw new Error('Null/undefined response from premium API - check API key and rate limits');
         }
         
         if (typeof responseText !== 'string') {
@@ -498,7 +550,7 @@ class MonitoringService {
           console.log('⚠️ Premium API returned empty string (whitespace only)');
           console.log(`   Raw length: ${responseText.length}`);
           console.log(`   Raw content (JSON): ${JSON.stringify(responseText)}`);
-          throw new Error('Empty string response from premium API');
+          throw new Error('Empty string response from premium API - possible rate limit or API error');
         }
         
         console.log(`✅ Premium API response validated (${responseText.length} chars)`);
