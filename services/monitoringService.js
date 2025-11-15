@@ -24,6 +24,9 @@ class MonitoringService {
     this.lastPrices = new Map(); // Track price changes
     this.escalationHistory = []; // Track escalations
     this.isMonitoring = false;
+    // Cache for rejected ideas to avoid re-escalating (saves costs)
+    this.rejectedIdeasCache = new Map(); // key: symbol, value: { timestamp, reason }
+    this.REJECTION_CACHE_DURATION = 4 * 60 * 60 * 1000; // 4 hours
     
     // Configuration - Support HYBRID mode (different APIs for each tier)
     this.USE_HYBRID_MODE = config.USE_HYBRID_MODE || false;
@@ -171,18 +174,45 @@ class MonitoringService {
   }
 
   /**
+   * Check if this idea was recently rejected to avoid unnecessary costs
+   */
+  isRecentlyRejected(symbol) {
+    const cached = this.rejectedIdeasCache.get(symbol);
+    if (!cached) return false;
+    
+    const age = Date.now() - cached.timestamp;
+    if (age > this.REJECTION_CACHE_DURATION) {
+      // Cache expired, remove it
+      this.rejectedIdeasCache.delete(symbol);
+      return false;
+    }
+    
+    console.log(`⏭️ Skipping ${symbol} - recently rejected (${Math.floor(age / 60000)} min ago): ${cached.reason}`);
+    return true;
+  }
+
+  /**
    * Escalate to premium model for confirmation
    */
   async escalateToR1(coinData, v3Analysis) {
     try {
       const { symbol } = coinData;
       
+      // Check if this was recently rejected to avoid unnecessary costs
+      if (this.isRecentlyRejected(symbol)) {
+        return {
+          decision: 'SKIPPED',
+          reason: 'Recently rejected by Premium AI',
+          timestamp: Date.now()
+        };
+      }
+      
       console.log(`🚨 ESCALATING ${symbol} to Premium Model for confirmation!`);
       console.log(`   Free Model Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%`);
       console.log(`   Free Model Reason: ${v3Analysis.reason}`);
 
       // Send Telegram notification about escalation
-      await this.notifyEscalation(symbol, v3Analysis);
+      await this.notifyEscalation(symbol, v3Analysis, coinData);
 
       // Create detailed prompt for premium model
       const prompt = this.createConfirmationPrompt(coinData, v3Analysis);
@@ -220,8 +250,17 @@ class MonitoringService {
         executed: r1Decision.decision === 'CONFIRMED'
       });
 
+      // If rejected, cache it to avoid re-escalating soon
+      if (r1Decision.decision === 'REJECTED') {
+        this.rejectedIdeasCache.set(symbol, {
+          timestamp: Date.now(),
+          reason: r1Decision.reason.substring(0, 100)
+        });
+        console.log(`💾 Cached rejection for ${symbol} - won't re-escalate for 4 hours`);
+      }
+
       // Send result notification
-      await this.notifyR1Decision(symbol, v3Analysis, r1Decision);
+      await this.notifyR1Decision(symbol, v3Analysis, r1Decision, coinData);
 
       return r1Decision;
 
@@ -415,12 +454,14 @@ Be thorough and conservative. Only confirm high-probability setups.`;
   /**
    * Send Telegram notification about escalation
    */
-  async notifyEscalation(symbol, v3Analysis) {
-    const message = `🚨 AI ESCALATION ALERT
+  async notifyEscalation(symbol, v3Analysis, coinData) {
+    const message = `🚨 *Free AI Escalation*
 
-📊 Coin: ${symbol}
-🤖 Free AI (${this.FREE_MODEL}) detected opportunity
-📈 Signal: ${v3Analysis.signal}
+📊 Coin: *${symbol}*
+💰 Price: $${coinData?.currentPrice || 'N/A'}
+📈 Change 24h: ${coinData?.priceChange24h?.toFixed(2) || 'N/A'}%
+🤖 Free Model: ${this.FREE_MODEL}
+📊 Signal: ${v3Analysis.signal}
 💪 Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%
 📝 Reason: ${v3Analysis.reason}
 
