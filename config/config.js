@@ -70,12 +70,17 @@ console.log(`   Free Tier will use: ${MONITORING_API_TYPE.toUpperCase()} (${MONI
 
 // Premium confirmation model (Tier 2)
 // Default: DeepSeek R1 (best reasoning via OpenRouter)
+// Note: R1 is slower but more accurate. Use 'deepseek/deepseek-chat' for faster responses.
 const AI_MODEL = process.env.AI_MODEL || 'deepseek/deepseek-r1';
 // Use PREMIUM_TIER_API_KEY first, fallback to FREE_TIER_API_KEY (same OpenRouter key), then legacy keys
 const PREMIUM_API_KEY = PREMIUM_TIER_API_KEY || FREE_TIER_API_KEY || OPENROUTER_API_KEY || AI_API_KEY;
 const PREMIUM_API_TYPE = 'openrouter';
 
 console.log(`   Premium Tier will use: ${PREMIUM_API_TYPE.toUpperCase()} (${AI_MODEL})`);
+if (AI_MODEL.includes('r1')) {
+  console.log(`   ⚠️ Note: R1 is slow (30-60s per request) but more accurate`);
+  console.log(`   💡 Tip: Set AI_MODEL=deepseek/deepseek-chat for faster responses`);
+}
 console.log('');
 
 // Two-Tier Monitoring Configuration
