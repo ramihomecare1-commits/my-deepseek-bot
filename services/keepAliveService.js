@@ -80,10 +80,13 @@ class KeepAliveService {
       
       const options = {
         method: 'GET',
-        timeout: 5000,
-        path: url.pathname + '/health' || '/health',
+        timeout: 10000, // Increased timeout to 10 seconds
+        path: '/health',
         hostname: url.hostname,
-        port: url.port || (url.protocol === 'https:' ? 443 : 80)
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        headers: {
+          'User-Agent': 'KeepAlive-Service/1.0'
+        }
       };
 
       const req = client.request(options, (res) => {
@@ -95,6 +98,10 @@ class KeepAliveService {
           if (res.statusCode === 200) {
             const time = new Date().toLocaleTimeString();
             console.log(`💓 Keep-alive ping successful (${time})`);
+          } else if (res.statusCode === 404) {
+            // Try alternative health check endpoint
+            console.log(`⚠️ /health returned 404, trying /api/health...`);
+            this.pingAlternative();
           } else {
             console.log(`⚠️ Keep-alive ping returned status ${res.statusCode}`);
           }
@@ -102,9 +109,8 @@ class KeepAliveService {
       });
 
       req.on('error', (err) => {
-        // Don't spam logs on errors (might be network issues)
-        // Only log if it's a persistent problem
-        if (err.code !== 'ECONNREFUSED') {
+        // Only log non-connection errors
+        if (err.code !== 'ECONNREFUSED' && err.code !== 'ECONNRESET') {
           console.log(`❌ Keep-alive ping failed: ${err.message}`);
         }
       });
@@ -114,13 +120,54 @@ class KeepAliveService {
         console.log('⏱️ Keep-alive ping timeout');
       });
 
-      req.setTimeout(5000);
+      req.setTimeout(10000);
       req.end();
     } catch (error) {
       // Silently handle URL parsing errors
       if (error.message && !error.message.includes('Invalid URL')) {
         console.log(`❌ Keep-alive ping error: ${error.message}`);
       }
+    }
+  }
+
+  /**
+   * Ping alternative endpoint (/api/health)
+   */
+  async pingAlternative() {
+    if (!this.url) {
+      return;
+    }
+
+    try {
+      const url = new URL(this.url);
+      const client = url.protocol === 'https:' ? https : http;
+      
+      const options = {
+        method: 'GET',
+        timeout: 10000,
+        path: '/api/health',
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        headers: {
+          'User-Agent': 'KeepAlive-Service/1.0'
+        }
+      };
+
+      const req = client.request(options, (res) => {
+        if (res.statusCode === 200) {
+          const time = new Date().toLocaleTimeString();
+          console.log(`💓 Keep-alive ping successful via /api/health (${time})`);
+        }
+      });
+
+      req.on('error', () => {
+        // Silently fail - main endpoint already failed
+      });
+
+      req.setTimeout(10000);
+      req.end();
+    } catch (error) {
+      // Silently fail
     }
   }
 
