@@ -22,34 +22,35 @@
     }
     .main-content, .sidebar {
       background: rgba(255, 255, 255, 0.95);
-      border-radius: 24px;
-      padding: 32px;
-      box-shadow: 0 24px 48px rgba(15, 23, 42, 0.35);
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.3);
     }
-    .header { text-align: center; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid rgba(148, 163, 184, 0.2); }
+    .header { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid rgba(148, 163, 184, 0.2); }
     .header h1 {
       color: #0f172a;
-      font-size: 2.75em;
+      font-size: 1.8em;
       font-weight: 700;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
       background: linear-gradient(135deg, #6366f1, #22d3ee);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
     .subtitle {
       color: #334155;
       font-weight: 500;
+      font-size: 0.85em;
       letter-spacing: 0.05em;
       text-transform: uppercase;
     }
     .fg-indicator {
-      margin-top: 16px;
-      padding: 8px 16px;
-      border-radius: 20px;
-      font-size: 0.9em;
+      margin-top: 12px;
+      padding: 6px 12px;
+      border-radius: 16px;
+      font-size: 0.75em;
       font-weight: 600;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
       transition: background-color 0.5s, color 0.5s;
     }
     .fg-label { opacity: 0.7; }
@@ -62,9 +63,9 @@
     .fg-indicator.extreme-greed { background: rgba(34, 197, 94, 0.15); color: #15803d; }
     .controls {
       background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9));
-      padding: 28px;
-      border-radius: 20px;
-      margin-bottom: 28px;
+      padding: 16px;
+      border-radius: 12px;
+      margin-bottom: 16px;
       border: 1px solid rgba(148, 163, 184, 0.2);
     }
     .heatmap-section {
@@ -146,17 +147,17 @@
       margin-bottom: 20px;
     }
     button {
-      padding: 8px 16px;
+      padding: 6px 12px;
       border: none;
-      border-radius: 8px;
+      border-radius: 6px;
       cursor: pointer;
       font-weight: 500;
-      font-size: 13px;
+      font-size: 11px;
       transition: all 0.2s;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      gap: 4px;
       color: white;
       white-space: nowrap;
     }
@@ -184,11 +185,11 @@
     .status-meta { font-size: 0.85em; opacity: 0.85; margin-top: 8px; }
     .opportunity {
       background: white;
-      border-radius: 20px;
-      padding: 24px;
-      margin-bottom: 20px;
-      border-left: 6px solid;
-      box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+      border-left: 4px solid;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
       transition: transform 0.3s ease, box-shadow 0.3s ease;
       position: relative;
     }
@@ -958,10 +959,10 @@
       </div>
 
       <!-- Trade Monitoring Panel (Collapsible) -->
-      <div id="tradeMonitoringPanel" style="display:none; background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9)); padding: 28px; border-radius: 20px; margin-bottom: 28px; border: 1px solid rgba(148,163,184,0.2);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-          <h3 style="color: #0f172a; font-size: 1.5em; font-weight: 700;">🎯 Trade Monitoring Settings</h3>
-          <button onclick="toggleTradeMonitoring()" style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">✕ Close</button>
+      <div id="tradeMonitoringPanel" style="display:none; background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9)); padding: 16px; border-radius: 12px; margin-bottom: 16px; border: 1px solid rgba(148,163,184,0.2);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="color: #0f172a; font-size: 1.2em; font-weight: 700;">🎯 Trade Monitoring</h3>
+          <button onclick="toggleTradeMonitoring()" style="background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 11px;">✕</button>
         </div>
         
         <div style="color: #0f172a;">
