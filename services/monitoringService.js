@@ -551,7 +551,7 @@ class MonitoringService {
       // Use trigger settings from UI (dynamically updated)
       const settings = this.triggerSettings;
       const {
-        maxCoins = 200,
+        maxCoins = 25, // Reduced to 25 to avoid rate limits (was 200)
         rsiThreshold = settings.rsiOversold || 30,
         minTriggers = settings.minTriggers || 2,
         enableBollinger = settings.enableBollinger !== false, // Default true
