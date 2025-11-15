@@ -140,9 +140,9 @@ class MonitoringService {
   async callOpenRouterAPI(prompt, model, maxTokens, apiKey) {
     try {
       // DeepSeek R1 is VERY slow - needs much longer timeout
-      // Use 60s for batch requests (R1 reasoning takes time), 15s for single
+      // Use 90s for batch requests with high token limits (R1 reasoning takes time), 15s for single
       const isR1Model = model.includes('deepseek-r1') || model.includes('r1');
-      const timeout = maxTokens > 500 ? (isR1Model ? 60000 : 30000) : 15000;
+      const timeout = maxTokens > 500 ? (isR1Model ? (maxTokens > 3000 ? 90000 : 60000) : 30000) : 15000;
       
       console.log(`📡 Calling OpenRouter API: ${model} (${maxTokens} tokens, ${timeout/1000}s timeout)`);
       if (isR1Model) {
@@ -183,13 +183,35 @@ class MonitoringService {
         return '';
       }
 
-      const content = response.data.choices[0]?.message?.content;
+      const choice = response.data.choices[0];
+      const content = choice?.message?.content;
+      const finishReason = choice?.finish_reason;
+      
+      // Check finish_reason first - this tells us why the model stopped
+      if (finishReason === 'length') {
+        console.log('⚠️ OpenRouter API response was truncated due to token limit');
+        console.log(`   finish_reason: ${finishReason}`);
+        if (response.data.usage) {
+          console.log(`   Usage: ${JSON.stringify(response.data.usage)}`);
+          console.log(`   ⚠️ Model hit max_tokens limit (${response.data.usage.completion_tokens}/${maxTokens})`);
+          console.log(`   💡 Consider increasing max_tokens for this model`);
+        }
+        // If content is empty or very short, this is a problem
+        if (!content || content.trim().length === 0) {
+          throw new Error(`Model response truncated at token limit (${response.data.usage?.completion_tokens || 'unknown'}/${maxTokens} tokens) - response was empty. Increase max_tokens.`);
+        }
+        // If content exists but was truncated, log a warning but continue
+        console.log(`   ⚠️ Response was truncated but has content (${content.length} chars) - may be incomplete`);
+      }
       
       // More strict validation - don't use default empty string
       if (content === null || content === undefined) {
         console.log('⚠️ OpenRouter API returned null/undefined content');
         console.log('   Full response:', JSON.stringify(response.data).substring(0, 500));
-        console.log('   Choices structure:', JSON.stringify(response.data.choices[0]).substring(0, 300));
+        console.log('   Choices structure:', JSON.stringify(choice).substring(0, 300));
+        if (finishReason) {
+          console.log(`   finish_reason: ${finishReason}`);
+        }
         
         // Check if there's an error message in the response
         if (response.data.error) {
@@ -216,16 +238,25 @@ class MonitoringService {
         console.log('   - Content filtering (response blocked)');
         console.log('   - Rate limiting (check OpenRouter dashboard)');
         console.log('   - max_tokens too low (try increasing)');
+        if (finishReason) {
+          console.log(`   - finish_reason: ${finishReason} (model stopped due to ${finishReason === 'length' ? 'token limit' : finishReason})`);
+        }
         
         // Check if there are any usage or error indicators in response
         if (response.data.usage) {
           console.log('   Usage:', JSON.stringify(response.data.usage));
+          if (finishReason === 'length' && response.data.usage.completion_tokens >= maxTokens) {
+            throw new Error(`Model hit max_tokens limit (${response.data.usage.completion_tokens}/${maxTokens}) - response was empty. Increase max_tokens.`);
+          }
         }
         if (response.data.model) {
           console.log('   Model used:', response.data.model);
         }
       } else {
         console.log(`✅ OpenRouter API response received (${content.length} chars)`);
+        if (finishReason === 'length') {
+          console.log(`   ⚠️ Note: Response was truncated at token limit but has content`);
+        }
       }
       
       return content;
@@ -552,7 +583,7 @@ class MonitoringService {
       // Call premium tier API with longer timeout for batch
       // Increase max_tokens for R1 reasoning model (needs more tokens for thinking)
       const isR1Model = this.PREMIUM_MODEL.includes('r1');
-      const maxTokens = isR1Model ? 2000 : 1000; // R1 needs more tokens for reasoning
+      const maxTokens = isR1Model ? 5000 : 1000; // R1 needs significantly more tokens for reasoning (increased from 2000 to 5000)
       
       let responseText;
       try {
