@@ -732,6 +732,7 @@
           <button class="btn-primary" onclick="manualScan()">🔍 Scan Now</button>
           <button class="btn-telegram" onclick="testTelegram(event)">📱 Test Telegram</button>
           <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
+          <button class="btn-secondary" onclick="toggleTradeMonitoring()">🎯 Trade Monitoring</button>
           <button class="btn-secondary" onclick="runDiagnostics()">🔧 Diagnostics</button>
         </div>
         
@@ -949,6 +950,64 @@
               <h4 style="color: #0f172a; margin-bottom: 12px;">Win Rate by Coin</h4>
               <div id="analytics-winrate-by-coin" style="background: #f8fafc; padding: 16px; border-radius: 12px; min-height: 100px;">
                 <p style="color: #64748b; text-align: center;">No trade data available</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trade Monitoring Panel (Collapsible) -->
+      <div id="tradeMonitoringPanel" style="display:none; background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9)); padding: 28px; border-radius: 20px; margin-bottom: 28px; border: 1px solid rgba(148,163,184,0.2);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <h3 style="color: #0f172a; font-size: 1.5em; font-weight: 700;">🎯 Trade Monitoring Settings</h3>
+          <button onclick="toggleTradeMonitoring()" style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">✕ Close</button>
+        </div>
+        
+        <div style="color: #0f172a;">
+          <div style="margin-bottom: 24px;">
+            <h4 style="color: #6366f1; margin-bottom: 12px; font-size: 1.2em;">📏 Proximity Threshold</h4>
+            <div style="background: white; padding: 20px; border-radius: 12px; border-left: 4px solid #6366f1;">
+              <p style="color: #64748b; margin-bottom: 16px;">Trigger Premium AI evaluation when trade is within this percentage of DCA, Stop Loss, or Take Profit levels.</p>
+              
+              <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+                <label style="font-weight: 600; min-width: 120px;">Threshold:</label>
+                <input type="range" id="proximitySlider" min="0.5" max="10" value="1.0" step="0.5" style="flex: 1;" oninput="updateProximityDisplay(this.value)">
+                <span id="proximityValue" style="font-size: 1.3em; font-weight: 700; color: #6366f1; min-width: 60px;">1.0%</span>
+              </div>
+              
+              <button onclick="saveProximityThreshold()" style="background: #22c55e; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">💾 Save Settings</button>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 24px;">
+            <h4 style="color: #8b5cf6; margin-bottom: 12px; font-size: 1.2em;">ℹ️ How It Works</h4>
+            <div style="background: white; padding: 20px; border-radius: 12px; border-left: 4px solid #8b5cf6;">
+              <ul style="margin: 0; padding-left: 20px; color: #64748b; line-height: 1.8;">
+                <li><strong>DCA Proximity:</strong> AI evaluates if you should add to position</li>
+                <li><strong>Stop Loss Proximity:</strong> AI checks if SL should be adjusted</li>
+                <li><strong>Take Profit Proximity:</strong> AI decides to hold or close</li>
+                <li><strong>Cooldown:</strong> 5 minutes between AI evaluations per trade</li>
+                <li><strong>Notifications:</strong> Get Telegram alerts with AI recommendations</li>
+              </ul>
+            </div>
+          </div>
+
+          <div>
+            <h4 style="color: #f59e0b; margin-bottom: 12px; font-size: 1.2em;">📊 Current Status</h4>
+            <div style="background: white; padding: 20px; border-radius: 12px; border-left: 4px solid #f59e0b;">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                <div>
+                  <div style="color: #64748b; font-size: 0.9em; margin-bottom: 4px;">Service Status</div>
+                  <div id="monitoringStatus" style="font-size: 1.2em; font-weight: 700;">🟢 Active</div>
+                </div>
+                <div>
+                  <div style="color: #64748b; font-size: 0.9em; margin-bottom: 4px;">Check Interval</div>
+                  <div style="font-size: 1.2em; font-weight: 700;">30 seconds</div>
+                </div>
+                <div>
+                  <div style="color: #64748b; font-size: 0.9em; margin-bottom: 4px;">Active Trades</div>
+                  <div id="monitoredTrades" style="font-size: 1.2em; font-weight: 700;">0</div>
+                </div>
               </div>
             </div>
           </div>
@@ -1700,6 +1759,93 @@
 
     function cancelEdit() {
       toggleEditMode();
+    }
+
+    // Trade Monitoring functions (with null checks)
+    function toggleTradeMonitoring() {
+      const panel = document.getElementById('tradeMonitoringPanel');
+      if (!panel) {
+        console.warn('⚠️ Trade monitoring panel not found in DOM');
+        return;
+      }
+      
+      if (panel.style.display === 'none' || !panel.style.display) {
+        panel.style.display = 'block';
+        loadTradeMonitoringSettings();
+      } else {
+        panel.style.display = 'none';
+      }
+    }
+
+    async function loadTradeMonitoringSettings() {
+      try {
+        const response = await fetch(API_BASE + '/trade-monitoring/settings');
+        const settings = await response.json();
+        
+        // Update proximity threshold slider with null checks
+        const slider = document.getElementById('proximitySlider');
+        const valueDisplay = document.getElementById('proximityValue');
+        if (slider && valueDisplay) {
+          slider.value = settings.proximityThreshold || 1.0;
+          valueDisplay.textContent = (settings.proximityThreshold || 1.0) + '%';
+        }
+        
+        // Update status indicators with null checks
+        const statusEl = document.getElementById('monitoringStatus');
+        if (statusEl) {
+          statusEl.textContent = settings.isRunning ? '🟢 Active' : '🔴 Stopped';
+        }
+        
+        // Update monitored trades count
+        const tradesCountEl = document.getElementById('monitoredTrades');
+        if (tradesCountEl) {
+          try {
+            const tradesResponse = await fetch(API_BASE + '/active-trades');
+            const trades = await tradesResponse.json();
+            tradesCountEl.textContent = trades.length || 0;
+          } catch (err) {
+            console.warn('Could not fetch active trades count:', err);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error loading trade monitoring settings:', error);
+      }
+    }
+
+    function updateProximityDisplay(value) {
+      const valueDisplay = document.getElementById('proximityValue');
+      if (valueDisplay) {
+        valueDisplay.textContent = value + '%';
+      }
+    }
+
+    async function saveProximityThreshold() {
+      try {
+        const slider = document.getElementById('proximitySlider');
+        if (!slider) {
+          alert('❌ Slider not found');
+          return;
+        }
+        
+        const threshold = parseFloat(slider.value);
+        
+        const response = await fetch(API_BASE + '/trade-monitoring/proximity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ threshold })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert(`✅ ${result.message}\n\nThe bot will now trigger AI evaluation when trades are within ${threshold}% of DCA, Stop Loss, or Take Profit levels.`);
+        } else {
+          alert('❌ Failed to update threshold: ' + (result.error || 'Unknown error'));
+        }
+      } catch (error) {
+        console.error('❌ Error saving proximity threshold:', error);
+        alert('❌ Error saving settings: ' + error.message);
+      }
     }
 
     // Active Trades Dashboard functions
