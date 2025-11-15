@@ -28,6 +28,13 @@ class MonitoringService {
     this.rejectedIdeasCache = new Map(); // key: symbol, value: { timestamp, reason }
     this.REJECTION_CACHE_DURATION = 4 * 60 * 60 * 1000; // 4 hours
     
+    // Cooldown cache - prevent re-escalation for 30 minutes after ANY escalation (confirmed or rejected)
+    this.escalationCooldownCache = new Map(); // key: symbol, value: { timestamp, decision }
+    this.ESCALATION_COOLDOWN_DURATION = 30 * 60 * 1000; // 30 minutes
+    
+    // Track coins currently being escalated (to prevent duplicate escalations in same batch)
+    this.escalationInProgress = new Set(); // Set of symbols currently being escalated
+    
     // Configuration - Support HYBRID mode (different APIs for each tier)
     this.USE_HYBRID_MODE = config.USE_HYBRID_MODE || false;
     
@@ -255,6 +262,57 @@ class MonitoringService {
   }
 
   /**
+   * Check if coin is on cooldown (recently escalated - confirmed or rejected)
+   */
+  isOnCooldown(symbol) {
+    const cached = this.escalationCooldownCache.get(symbol);
+    if (!cached) return false;
+    
+    const age = Date.now() - cached.timestamp;
+    if (age > this.ESCALATION_COOLDOWN_DURATION) {
+      // Cooldown expired, remove it
+      this.escalationCooldownCache.delete(symbol);
+      return false;
+    }
+    
+    const minutesLeft = Math.floor((this.ESCALATION_COOLDOWN_DURATION - age) / 60000);
+    console.log(`⏭️ Skipping ${symbol} - on cooldown (${minutesLeft} min left, last decision: ${cached.decision})`);
+    return true;
+  }
+
+  /**
+   * Check if coin is currently being escalated (in progress)
+   */
+  isEscalationInProgress(symbol) {
+    return this.escalationInProgress.has(symbol);
+  }
+
+  /**
+   * Mark coin as being escalated
+   */
+  markEscalationInProgress(symbol) {
+    this.escalationInProgress.add(symbol);
+  }
+
+  /**
+   * Clear escalation in progress flag
+   */
+  clearEscalationInProgress(symbol) {
+    this.escalationInProgress.delete(symbol);
+  }
+
+  /**
+   * Add coin to cooldown cache (after any escalation - confirmed or rejected)
+   */
+  addToCooldown(symbol, decision) {
+    this.escalationCooldownCache.set(symbol, {
+      timestamp: Date.now(),
+      decision: decision
+    });
+    console.log(`💾 Added ${symbol} to cooldown (30 min) - decision: ${decision}`);
+  }
+
+  /**
    * Batch escalate multiple coins to premium model in one API call
    */
   async batchEscalateToR1(escalations) {
@@ -263,13 +321,39 @@ class MonitoringService {
         return [];
       }
 
-      // Filter out recently rejected coins
-      const validEscalations = escalations.filter(esc => {
+      // Deduplicate escalations - remove duplicates within the same batch
+      const seenSymbols = new Set();
+      const uniqueEscalations = escalations.filter(esc => {
         const { symbol } = esc.coinData;
+        if (seenSymbols.has(symbol)) {
+          console.log(`⏭️ Skipping duplicate ${symbol} in same batch`);
+          return false;
+        }
+        seenSymbols.add(symbol);
+        return true;
+      });
+
+      // Filter out coins on cooldown or recently rejected
+      const validEscalations = uniqueEscalations.filter(esc => {
+        const { symbol } = esc.coinData;
+        
+        // Check if currently being escalated (shouldn't happen, but safety check)
+        if (this.isEscalationInProgress(symbol)) {
+          console.log(`⏭️ Skipping ${symbol} - escalation already in progress`);
+          return false;
+        }
+        
+        // Check cooldown (30 min after any escalation)
+        if (this.isOnCooldown(symbol)) {
+          return false;
+        }
+        
+        // Check if recently rejected (4 hour cache)
         if (this.isRecentlyRejected(symbol)) {
           console.log(`⏭️ Skipping ${symbol} - recently rejected, won't escalate (saves cost)`);
           return false;
         }
+        
         return true;
       });
 
@@ -286,6 +370,8 @@ class MonitoringService {
       console.log(`🚨 BATCH ESCALATING ${validEscalations.length} coins to Premium Model in one API call!`);
       validEscalations.forEach(esc => {
         console.log(`   - ${esc.coinData.symbol}: ${esc.v3Analysis.signal} (${(esc.v3Analysis.confidence * 100).toFixed(0)}%)`);
+        // Mark as in progress immediately
+        this.markEscalationInProgress(esc.coinData.symbol);
       });
 
       // Check premium API key
@@ -331,7 +417,13 @@ class MonitoringService {
           executed: r1Decision.decision === 'CONFIRMED'
         });
 
-        // If rejected, cache it
+        // Clear escalation in progress flag
+        this.clearEscalationInProgress(esc.coinData.symbol);
+        
+        // Add to cooldown cache (30 min) for ANY decision (confirmed or rejected)
+        this.addToCooldown(esc.coinData.symbol, r1Decision.decision);
+        
+        // If rejected, also add to rejection cache (4 hours)
         if (r1Decision.decision === 'REJECTED') {
           this.rejectedIdeasCache.set(esc.coinData.symbol, {
             timestamp: Date.now(),
@@ -348,19 +440,35 @@ class MonitoringService {
         });
       }
 
-      // Add skipped escalations to results
+      // Add skipped escalations to results (for coins that were filtered out)
       escalations.forEach(esc => {
-        if (this.isRecentlyRejected(esc.coinData.symbol)) {
-          results.push({
-            symbol: esc.coinData.symbol,
-            coinData: esc.coinData,
-            v3Analysis: esc.v3Analysis,
-            r1Decision: {
-              decision: 'SKIPPED',
-              reason: 'Recently rejected by Premium AI',
-              timestamp: Date.now()
-            }
-          });
+        const symbol = esc.coinData.symbol;
+        // Check if this coin was already in results
+        const alreadyInResults = results.some(r => r.symbol === symbol);
+        if (!alreadyInResults) {
+          if (this.isOnCooldown(symbol)) {
+            results.push({
+              symbol: symbol,
+              coinData: esc.coinData,
+              v3Analysis: esc.v3Analysis,
+              r1Decision: {
+                decision: 'SKIPPED',
+                reason: 'On cooldown (recently escalated)',
+                timestamp: Date.now()
+              }
+            });
+          } else if (this.isRecentlyRejected(symbol)) {
+            results.push({
+              symbol: symbol,
+              coinData: esc.coinData,
+              v3Analysis: esc.v3Analysis,
+              r1Decision: {
+                decision: 'SKIPPED',
+                reason: 'Recently rejected by Premium AI',
+                timestamp: Date.now()
+              }
+            });
+          }
         }
       });
 

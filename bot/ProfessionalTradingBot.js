@@ -639,8 +639,14 @@ class ProfessionalTradingBot {
             
             // Check if escalation is needed - collect for batch escalation
             if (analysis.shouldEscalate && analysis.confidence >= monitoringService.ESCALATION_THRESHOLD) {
-              escalations.push({ coinData, v3Analysis: analysis, isPriority: true });
-              console.log(`🔴 [OPEN TRADE] ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%) - Will escalate to premium`);
+              // Check if already in escalation queue (deduplication)
+              const alreadyQueued = escalations.some(e => e.coinData.symbol === coinData.symbol);
+              if (!alreadyQueued) {
+                escalations.push({ coinData, v3Analysis: analysis, isPriority: true });
+                console.log(`🔴 [OPEN TRADE] ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%) - Will escalate to premium`);
+              } else {
+                console.log(`🔴 [OPEN TRADE] ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%) - Already queued for escalation`);
+              }
             } else {
               console.log(`🔴 [OPEN TRADE] ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%)`);
             }
@@ -740,8 +746,14 @@ class ProfessionalTradingBot {
             
             // Check if escalation is needed - collect for batch escalation
             if (analysis.shouldEscalate && analysis.confidence >= monitoringService.ESCALATION_THRESHOLD) {
-              escalations.push({ coinData, v3Analysis: analysis, isPriority: false });
-              console.log(`🔍 ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%) - Will escalate to premium`);
+              // Check if already in escalation queue (deduplication)
+              const alreadyQueued = escalations.some(e => e.coinData.symbol === coinData.symbol);
+              if (!alreadyQueued) {
+                escalations.push({ coinData, v3Analysis: analysis, isPriority: false });
+                console.log(`🔍 ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%) - Will escalate to premium`);
+              } else {
+                console.log(`🔍 ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%) - Already queued for escalation`);
+              }
             } else {
               console.log(`🔍 ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%)`);
             }
