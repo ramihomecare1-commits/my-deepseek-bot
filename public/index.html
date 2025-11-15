@@ -1829,6 +1829,11 @@
         const activeTrades = await response.json();
         console.log('📊 Active trades data:', activeTrades);
         const container = document.getElementById('active-trades-container');
+        
+        if (!container) {
+          console.warn('⚠️ Active trades container not found in DOM');
+          return;
+        }
 
         if (!activeTrades || activeTrades.length === 0) {
           container.innerHTML = `
@@ -1837,6 +1842,7 @@
               <p>Active trades will appear here when BUY or SELL signals are triggered.</p>
             </div>
           `;
+          console.log('✅ Active trades display updated (empty)');
           return;
         }
 
@@ -1908,6 +1914,11 @@
         const closedTrades = await response.json();
         console.log('📊 Closed trades data:', closedTrades);
         const container = document.getElementById('closed-trades-container');
+        
+        if (!container) {
+          console.warn('⚠️ Closed trades container not found in DOM');
+          return;
+        }
 
         if (!closedTrades || closedTrades.length === 0) {
           container.innerHTML = `
@@ -1916,6 +1927,7 @@
               <p>Closed trades will appear here for performance tracking.</p>
             </div>
           `;
+          console.log('✅ Closed trades display updated (empty)');
           return;
         }
 
@@ -1992,31 +2004,50 @@
         const portfolio = await response.json();
         console.log('📊 Portfolio data:', portfolio);
         
+        // Get all elements with null checks
+        const initialEl = document.getElementById('portfolio-initial');
+        const balanceEl = document.getElementById('portfolio-balance');
+        const equityEl = document.getElementById('portfolio-equity');
+        const pnlEl = document.getElementById('portfolio-pnl');
+        const roiEl = document.getElementById('portfolio-roi');
+        const winrateEl = document.getElementById('portfolio-winrate');
+        const tradesEl = document.getElementById('portfolio-trades');
+        const openEl = document.getElementById('portfolio-open');
+        
+        if (!initialEl || !balanceEl || !equityEl) {
+          console.warn('⚠️ Portfolio elements not found in DOM');
+          return;
+        }
+        
         // Update portfolio metrics
-        document.getElementById('portfolio-initial').textContent = `$${Number(portfolio.initialCapital || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        document.getElementById('portfolio-balance').textContent = `$${Number(portfolio.currentBalance || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        document.getElementById('portfolio-equity').textContent = `$${Number(portfolio.totalEquity || portfolio.currentBalance || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        if (initialEl) initialEl.textContent = `$${Number(portfolio.initialCapital || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        if (balanceEl) balanceEl.textContent = `$${Number(portfolio.currentBalance || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        if (equityEl) equityEl.textContent = `$${Number(portfolio.totalEquity || portfolio.currentBalance || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         
         // P&L with color coding
         const totalPnl = portfolio.totalPnl || 0;
-        const pnlEl = document.getElementById('portfolio-pnl');
-        pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${Number(totalPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        pnlEl.className = 'portfolio-metric-value' + (totalPnl > 0 ? ' positive' : totalPnl < 0 ? ' negative' : '');
+        if (pnlEl) {
+          pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${Number(totalPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          pnlEl.className = 'portfolio-metric-value' + (totalPnl > 0 ? ' positive' : totalPnl < 0 ? ' negative' : '');
+        }
         
         // ROI with color coding
         const roi = portfolio.roi || 0;
-        const roiEl = document.getElementById('portfolio-roi');
-        roiEl.textContent = `${roi >= 0 ? '+' : ''}${Number(roi).toFixed(2)}%`;
-        roiEl.className = 'portfolio-metric-value' + (roi > 0 ? ' positive' : roi < 0 ? ' negative' : '');
+        if (roiEl) {
+          roiEl.textContent = `${roi >= 0 ? '+' : ''}${Number(roi).toFixed(2)}%`;
+          roiEl.className = 'portfolio-metric-value' + (roi > 0 ? ' positive' : roi < 0 ? ' negative' : '');
+        }
         
         // Win rate
-        document.getElementById('portfolio-winrate').textContent = `${Number(portfolio.winRate || 0).toFixed(2)}%`;
+        if (winrateEl) winrateEl.textContent = `${Number(portfolio.winRate || 0).toFixed(2)}%`;
         
         // Total trades
-        document.getElementById('portfolio-trades').textContent = portfolio.totalTrades || 0;
+        if (tradesEl) tradesEl.textContent = portfolio.totalTrades || 0;
         
         // Open positions
-        document.getElementById('portfolio-open').textContent = portfolio.openPositions || 0;
+        if (openEl) openEl.textContent = portfolio.openPositions || 0;
+        
+        console.log('✅ Portfolio display updated successfully');
         
       } catch (error) {
         console.error('❌ Error updating portfolio display:', error);
