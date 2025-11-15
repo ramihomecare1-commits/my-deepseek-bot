@@ -536,60 +536,95 @@ class ProfessionalTradingBot {
 
   async runMonitoringCycle() {
     try {
-      // Monitor top coins with recent price changes
-      const coinsToMonitor = this.trackedCoins.slice(0, 20); // Top 20 coins
+      // PRIORITY 1: Monitor active/open trades first
+      const activeTradeSymbols = this.trades
+        .filter(t => t.status === 'OPEN')
+        .map(t => t.symbol);
       
-      console.log(`👀 Monitoring ${coinsToMonitor.length} coins for opportunities...`);
+      console.log(`🔴 Priority monitoring ${activeTradeSymbols.length} open trades...`);
+      
+      for (const symbol of activeTradeSymbols) {
+        const coin = this.trackedCoins.find(c => c.symbol === symbol);
+        if (coin) {
+          await this.monitorSingleCoin(coin, true); // priority = true
+        }
+      }
+      
+      // PRIORITY 2: Monitor other top coins for new opportunities
+      const otherCoins = this.trackedCoins
+        .filter(c => !activeTradeSymbols.includes(c.symbol))
+        .slice(0, 7); // Monitor 7 other coins
+      
+      console.log(`👀 Monitoring ${otherCoins.length} other coins for opportunities...`);
 
-      for (const coin of coinsToMonitor) {
-        try {
-          // Fetch current price data (need to pass coin object, cache, stats, and config)
-          const coinDataForFetch = { symbol: coin.symbol, id: coin.id };
-          
-          // Ensure all required parameters are available
-          if (!config) {
-            console.log(`⚠️ Config not available, skipping ${coin.symbol}`);
-            continue;
-          }
-          if (!this.priceCache) {
-            this.priceCache = new Map();
-          }
-          if (!this.stats) {
-            this.stats = { coinmarketcapUsage: 0, coinpaprikaUsage: 0 };
-          }
-          
-          const priceResult = await fetchEnhancedPriceData(coinDataForFetch, this.priceCache, this.stats, config);
-          
-          if (!priceResult || !priceResult.data || !priceResult.data.price) continue;
+      for (const coin of otherCoins) {
+        await this.monitorSingleCoin(coin, false); // priority = false
+        
+        // Small delay between coins
+        await sleep(1000);
+      }
 
-          // Extract price data from result
-          const priceData = priceResult.data;
-          const coinData = {
-            symbol: coin.symbol,
-            name: coin.name,
-            id: coin.id,
-            currentPrice: priceData.price,
-            priceChange24h: priceData.change_24h || priceData.priceChange24h || 0,
-            volume24h: priceData.volume_24h || priceData.volume24h || 0,
-          };
+      console.log('✅ Monitoring cycle complete');
 
-          // Monitor with v3
-          const result = await monitoringService.monitorCoin(coinData);
+    } catch (error) {
+      console.log('⚠️ Monitoring cycle error:', error.message);
+    }
+  }
 
-          // Log monitoring activity to web UI
-          if (result && result.v3Analysis) {
-            const { addMonitoringActivity, setMonitoringActive } = require('../routes/api');
-            setMonitoringActive(true);
-            addMonitoringActivity({
-              symbol: coin.symbol,
-              volatility: result.v3Analysis.volatilityLevel,
-              priceChange: result.v3Analysis.priceChangePercent.toFixed(2),
-              confidence: result.v3Analysis.confidence,
-              escalated: !!result.r1Decision
-            });
-          }
+  /**
+   * Monitor a single coin
+   */
+  async monitorSingleCoin(coin, isPriority = false) {
+    try {
+      const priorityLabel = isPriority ? '🔴 [OPEN TRADE]' : '🔍';
+      
+      // Fetch current price data (need to pass coin object, cache, stats, and config)
+      const coinDataForFetch = { symbol: coin.symbol, id: coin.id };
+      
+      // Ensure all required parameters are available
+      if (!config) {
+        console.log(`⚠️ Config not available, skipping ${coin.symbol}`);
+        return;
+      }
+      if (!this.priceCache) {
+        this.priceCache = new Map();
+      }
+      if (!this.stats) {
+        this.stats = { coinmarketcapUsage: 0, coinpaprikaUsage: 0 };
+      }
+      
+      const priceResult = await fetchEnhancedPriceData(coinDataForFetch, this.priceCache, this.stats, config);
+      
+      if (!priceResult || !priceResult.data || !priceResult.data.price) return;
 
-          if (result && result.r1Decision) {
+      // Extract price data from result
+      const priceData = priceResult.data;
+      const coinData = {
+        symbol: coin.symbol,
+        name: coin.name,
+        id: coin.id,
+        currentPrice: priceData.price,
+        priceChange24h: priceData.change_24h || priceData.priceChange24h || 0,
+        volume24h: priceData.volume_24h || priceData.volume24h || 0,
+      };
+
+      // Monitor with v3
+      const result = await monitoringService.monitorCoin(coinData);
+
+      // Log monitoring activity to web UI
+      if (result && result.v3Analysis) {
+        const { addMonitoringActivity, setMonitoringActive } = require('../routes/api');
+        setMonitoringActive(true);
+        addMonitoringActivity({
+          symbol: coin.symbol,
+          volatility: result.v3Analysis.volatilityLevel,
+          priceChange: result.v3Analysis.priceChangePercent.toFixed(2),
+          confidence: result.v3Analysis.confidence,
+          escalated: !!result.r1Decision
+        });
+      }
+
+      if (result && result.r1Decision) {
             // R1 was triggered and made a decision
             if (result.r1Decision.decision === 'CONFIRMED') {
               console.log(`✅ R1 CONFIRMED opportunity for ${coin.symbol}!`);
