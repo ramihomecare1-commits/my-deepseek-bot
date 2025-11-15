@@ -592,15 +592,33 @@ class BulkIndicatorService {
 
       // 2. Filter out stablecoins and wrapped/derivative tokens
       const stablecoins = [
+        // USD-pegged stablecoins
         'USDT', 'USDC', 'BUSD', 'DAI', 'USDE', 'FDUSD', 'TUSD', 'USDP', 
         'GUSD', 'PYUSD', 'USDD', 'FRAX', 'LUSD', 'USDJ', 'BSC-USD',
-        'SUSD', 'TRIBE', 'FEI', 'EURS', 'EURT', 'USDN'
+        'SUSD', 'TRIBE', 'FEI', 'EURS', 'EURT', 'USDN', 'USDS', 'USDX',
+        'OUSD', 'MUSD', 'HUSD', 'CUSD', 'DUSD', 'YUSD', 'XUSD', 'USDK',
+        // Other pegged assets
+        'PAXG', 'XAUT', 'TGOLD', 'PAXG', 'GOLD', // Gold-pegged
+        'GHO', // Aave stablecoin
+        'CRVUSD', 'MKUSD', 'USDB', 'DOLA', 'MAI', 'BEAN'
       ];
       
       const wrappedDerivatives = [
-        'WETH', 'WBTC', 'WBETH', 'WSTETH', 'WEETH', 'STETH', 'RETH', 
-        'CBETH', 'EETH', 'ETHX', 'SETH2', 'ANKR', 'SFRXETH', 'SWETH',
-        'CBBTC', 'GTETH', 'FRXETH', 'OSETH'
+        // Wrapped/staked ETH
+        'WETH', 'STETH', 'WSTETH', 'RETH', 'CBETH', 'EETH', 'WEETH',
+        'ETHX', 'SETH2', 'SFRXETH', 'SWETH', 'FRXETH', 'OSETH', 'BETH',
+        'WBETH', 'METH', 'ANKRETH', 'OETH', 'RETH2', 'STETH', 'LSETH',
+        // Wrapped BTC
+        'WBTC', 'TBTC', 'RENBTC', 'HBTC', 'SBTC', 'OBTC', 'BBTC',
+        'CBBTC', 'GTETH',
+        // Other wrapped tokens
+        'WBNB', 'WMATIC', 'WAVAX', 'WFTM', 'WSOL', 'WROSE', 'WMOVR',
+        // Liquid staking derivatives (LSDs)
+        'ANKR', 'MSOL', 'STSOL', 'SCNSOL', 'JSOL', 'BSOL',
+        'STMATIC', 'MATICX', 'WSTMATIC', 'RMATIC',
+        'SAVAX', 'GGAVAX', 'YAVAX',
+        // Others
+        'ETHW', 'ETHF', 'SETH', 'AETH'
       ];
       
       const excludedCoins = [...stablecoins, ...wrappedDerivatives];
