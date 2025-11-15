@@ -111,22 +111,104 @@ class MonitoringService {
    * Call OpenRouter API
    */
   async callOpenRouterAPI(prompt, model, maxTokens, apiKey) {
-    const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-      model: model,
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: maxTokens,
-      temperature: 0.3,
-    }, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
-        'X-Title': 'Crypto Monitoring Bot',
-      },
-      timeout: 10000,
-    });
+    try {
+      // Use longer timeout for batch requests (1000 tokens = ~30s, single = 10s)
+      const timeout = maxTokens > 500 ? 30000 : 10000;
+      
+      console.log(`📡 Calling OpenRouter API: ${model} (${maxTokens} tokens, ${timeout/1000}s timeout)`);
+      
+      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+        model: model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: maxTokens,
+        temperature: 0.3,
+      }, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
+          'X-Title': 'Crypto Monitoring Bot',
+        },
+        timeout: timeout,
+      });
 
-    return response.data.choices[0].message.content;
+      // Validate response structure
+      if (!response.data) {
+        console.log('⚠️ OpenRouter API returned no data');
+        console.log('   Response:', JSON.stringify(response).substring(0, 500));
+        return '';
+      }
+
+      if (!response.data.choices || !Array.isArray(response.data.choices) || response.data.choices.length === 0) {
+        console.log('⚠️ OpenRouter API returned no choices in response');
+        console.log('   Response data:', JSON.stringify(response.data).substring(0, 500));
+        return '';
+      }
+
+      const content = response.data.choices[0]?.message?.content || '';
+      
+      if (!content || content.trim().length === 0) {
+        console.log('⚠️ OpenRouter API returned empty content');
+        console.log('   Full response:', JSON.stringify(response.data).substring(0, 500));
+        console.log('   Choices structure:', JSON.stringify(response.data.choices[0]).substring(0, 300));
+      } else {
+        console.log(`✅ OpenRouter API response received (${content.length} chars)`);
+      }
+      
+      return content;
+      
+    } catch (error) {
+      // Enhanced error logging
+      if (error.response) {
+        const status = error.response.status;
+        const statusText = error.response.statusText;
+        const errorData = error.response.data;
+        
+        console.log('⚠️ OpenRouter API error:');
+        console.log(`   Status: ${status} ${statusText}`);
+        console.log(`   Error data: ${JSON.stringify(errorData).substring(0, 500)}`);
+        
+        // Check for rate limit
+        if (status === 429) {
+          const retryAfter = error.response.headers['retry-after'] || 'unknown';
+          console.log(`   ⚠️ RATE LIMIT HIT - Too many requests to OpenRouter`);
+          console.log(`   Retry after: ${retryAfter} seconds`);
+          throw new Error(`Rate limit exceeded (429) - retry after ${retryAfter}s`);
+        }
+        
+        // Check for authentication errors
+        if (status === 401 || status === 403) {
+          console.log(`   ⚠️ AUTHENTICATION ERROR - Check your API key`);
+          throw new Error(`Authentication failed (${status}) - invalid API key`);
+        }
+        
+        // Check for server errors
+        if (status >= 500) {
+          console.log(`   ⚠️ SERVER ERROR - OpenRouter service issue`);
+          throw new Error(`OpenRouter server error (${status})`);
+        }
+        
+        throw new Error(`OpenRouter API error: ${status} ${statusText}`);
+        
+      } else if (error.code === 'ECONNABORTED') {
+        console.log('⚠️ OpenRouter API timeout - request took too long');
+        console.log(`   Timeout was: ${error.config?.timeout || 'unknown'}ms`);
+        throw new Error('API request timeout - request took too long');
+        
+      } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+        console.log('⚠️ OpenRouter API network error:', error.message);
+        console.log(`   Code: ${error.code}`);
+        throw new Error(`Network error: ${error.message}`);
+        
+      } else {
+        console.log('⚠️ OpenRouter API unexpected error:', error.message);
+        console.log(`   Error type: ${error.constructor.name}`);
+        if (error.stack) {
+          console.log(`   Stack: ${error.stack.substring(0, 300)}`);
+        }
+        throw error;
+      }
+    }
   }
 
   /**
@@ -387,9 +469,34 @@ class MonitoringService {
 
       // Create batch prompt
       const prompt = this.createBatchConfirmationPrompt(validEscalations);
+      console.log(`📝 Batch prompt created (${prompt.length} chars) for ${validEscalations.length} coins`);
 
       // Call premium tier API with longer timeout for batch
-      const responseText = await this.callAI(prompt, this.PREMIUM_MODEL, 1000, 'premium');
+      let responseText;
+      try {
+        responseText = await this.callAI(prompt, this.PREMIUM_MODEL, 1000, 'premium');
+        
+        if (!responseText || responseText.trim().length === 0) {
+          console.log('⚠️ Premium API returned empty response - possible rate limit, timeout, or API error');
+          throw new Error('Empty response from premium API');
+        }
+        
+        console.log(`✅ Premium API response received (${responseText.length} chars)`);
+      } catch (error) {
+        console.log(`⚠️ Premium API call failed: ${error.message}`);
+        // Return error responses for all escalations
+        return validEscalations.map(esc => ({
+          symbol: esc.coinData.symbol,
+          coinData: esc.coinData,
+          v3Analysis: esc.v3Analysis,
+          r1Decision: {
+            decision: 'ERROR',
+            reason: `Premium API error: ${error.message}`,
+            confidence: 0
+          }
+        }));
+      }
+      
       const batchR1Decisions = this.parseBatchR1Response(responseText, validEscalations);
 
       // Process results and store evaluations
