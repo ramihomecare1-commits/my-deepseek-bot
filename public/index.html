@@ -2167,8 +2167,8 @@
       }
     }
     
-    // Poll monitoring activity every 5 seconds
-    setInterval(updateMonitoringDisplay, 5000);
+    // Poll monitoring activity every 15 seconds (reduced to minimize log noise)
+    setInterval(updateMonitoringDisplay, 15000);
     updateMonitoringDisplay(); // Initial load
     // Trigger Settings Modal Functions
     function openTriggerSettings() {
@@ -2331,8 +2331,8 @@
       }
     }
     
-    // Poll triggers every 10 seconds
-    setInterval(updateTriggerDisplay, 10000);
+    // Poll triggers every 30 seconds (reduced to minimize log noise)
+    setInterval(updateTriggerDisplay, 30000);
     updateTriggerDisplay();
   </script>
   

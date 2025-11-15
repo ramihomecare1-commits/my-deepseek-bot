@@ -612,10 +612,9 @@ router.post('/rebalancing/execute', async (req, res) => {
 // API endpoint for monitoring activity
 router.get('/monitoring-activity', (req, res) => {
   const data = getMonitoringData();
-  console.log(`📊 Monitoring API called - ${data.activity.length} activities, isActive: ${data.isActive}`);
-  console.log(`   Activities:`, data.activity.map(a => `${a.symbol} (${a.volatility})`).join(', '));
-  if (data.activity.length > 0) {
-    console.log(`   Latest activity:`, data.activity[data.activity.length - 1]);
+  // Only log when monitoring becomes active or has activities (reduce log noise)
+  if (data.isActive && data.activity.length > 0) {
+    console.log(`📊 Monitoring: ${data.activity.length} coins monitored`);
   }
   res.json(data);
 });
@@ -625,7 +624,10 @@ router.get('/active-triggers', (req, res) => {
   try {
     const monitoringService = require('../services/monitoringService');
     const triggers = monitoringService.getActiveTriggers();
-    console.log(`🎯 Active triggers API called - ${triggers.length} coins with triggers`);
+    // Only log when there are active triggers (reduce log noise)
+    if (triggers.length > 0) {
+      console.log(`🎯 Triggers: ${triggers.length} coins with active signals`);
+    }
     res.json({
       success: true,
       triggers,
