@@ -55,8 +55,9 @@ console.log(`   Hybrid Mode: ${USE_HYBRID_MODE ? '✅ ENABLED' : '❌ DISABLED (
 
 // Free monitoring model (Tier 1)
 // Default: Gemini Flash (FREE) if Gemini key available, else DeepSeek Chat
+// Note: Use 'gemini-1.5-flash-latest' or 'gemini-1.5-flash-002' for v1beta API
 const MONITORING_MODEL = process.env.MONITORING_MODEL || 
-  (GEMINI_API_KEY ? 'gemini-1.5-flash' : 'deepseek/deepseek-chat');
+  (GEMINI_API_KEY ? 'gemini-1.5-flash-latest' : 'deepseek/deepseek-chat');
 const MONITORING_API_KEY = GEMINI_API_KEY || OPENROUTER_API_KEY || AI_API_KEY;
 const MONITORING_API_TYPE = GEMINI_API_KEY ? 'gemini' : 'openrouter';
 
