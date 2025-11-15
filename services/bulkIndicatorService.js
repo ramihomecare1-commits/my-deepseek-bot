@@ -249,7 +249,12 @@ class BulkIndicatorService {
       'PUMP': 'pump-fun',
       'JITOSOL': 'jito-governance-token',
       'JLP': 'jupiter-exchange-solana',
-      'ASTER': 'aster'
+      'ASTER': 'aster',
+      'RENDER': 'render-token',
+      'RSETH': 'kelp-dao-restaked-eth',
+      'USDG': 'global-dollar',
+      'FBTC': 'ignition-fbtc',
+      'FLR': 'flare-networks'
     };
 
     if (symbolToId[symbol]) {
@@ -425,8 +430,15 @@ class BulkIndicatorService {
   /**
    * Find CoinGecko ID by searching with symbol/name
    * Fallback when direct mapping fails
+   * Uses cached results to avoid repeated API calls
    */
   async findCoinGeckoIdBySearch(symbol, name) {
+    // Check cache first
+    const cacheKey = symbol.toLowerCase();
+    if (this.idCache.has(cacheKey)) {
+      return this.idCache.get(cacheKey);
+    }
+
     const coinGeckoKey = process.env.COINGECKO_API_KEY || config.COINGECKO_API_KEY;
     const baseUrl = 'https://api.coingecko.com/api/v3';
     
@@ -440,6 +452,9 @@ class BulkIndicatorService {
       const searchTerms = [symbol.toLowerCase(), name?.toLowerCase()].filter(Boolean);
       
       for (const term of searchTerms) {
+        // Small delay before search API call to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
         const response = await axios.get(
           `${baseUrl}/search`,
           {
@@ -455,15 +470,22 @@ class BulkIndicatorService {
             coin => coin.symbol?.toLowerCase() === symbol.toLowerCase()
           );
           if (exactMatch) {
+            this.idCache.set(cacheKey, exactMatch.id);
             return exactMatch.id;
           }
           // Otherwise return first result
-          return response.data.coins[0].id;
+          const foundId = response.data.coins[0].id;
+          this.idCache.set(cacheKey, foundId);
+          return foundId;
         }
       }
       
       return null;
     } catch (error) {
+      // If rate limited, don't retry immediately
+      if (error.response?.status === 429) {
+        return null; // Will be skipped, can retry on next scan
+      }
       return null;
     }
   }
@@ -481,11 +503,16 @@ class BulkIndicatorService {
       // Try fetching historical prices
       let prices = await this.fetchHistoricalPrices(coinId, 60);
       
-      // If 404 error, try to find correct ID via search
+      // If 404 error, try to find correct ID via search (only if we got 0 prices)
+      // Note: We check prices.length === 0 instead of checking error status
+      // because fetchHistoricalPrices returns [] on error, not throwing
       if (prices.length === 0) {
+        // Only search if we haven't tried this coin before (avoid rate limits)
         const foundId = await this.findCoinGeckoIdBySearch(coin.symbol, coin.name);
-        if (foundId) {
+        if (foundId && foundId !== coinId) {
           coinId = foundId;
+          // Small delay before retry to avoid rate limits
+          await new Promise(resolve => setTimeout(resolve, 300));
           prices = await this.fetchHistoricalPrices(coinId, 60);
         }
       }
@@ -548,15 +575,25 @@ class BulkIndicatorService {
 
       // 3. Calculate indicators for each coin (with rate limiting to avoid CoinGecko limits)
       const analyzedCoins = [];
-      const batchSize = 5; // Process 5 coins at a time to avoid rate limits
+      const batchSize = 3; // Reduced to 3 to avoid rate limits (was 5)
+      const delayBetweenBatches = 3000; // 3 seconds between batches (was 2)
+      const delayBetweenCoins = 500; // 500ms between individual coins in a batch
       
       for (let i = 0; i < coinsToScan.length; i += batchSize) {
         const batch = coinsToScan.slice(i, i + batchSize);
         console.log(`   Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(coinsToScan.length / batchSize)} (${batch.map(c => c.symbol).join(', ')})...`);
         
-        // Process batch in parallel
-        const batchPromises = batch.map(coin => this.calculateIndicatorsForCoin(coin));
-        const batchResults = await Promise.all(batchPromises);
+        // Process batch sequentially with delays to respect rate limits
+        const batchResults = [];
+        for (const coin of batch) {
+          const result = await this.calculateIndicatorsForCoin(coin);
+          batchResults.push(result);
+          
+          // Small delay between coins in same batch
+          if (batch.indexOf(coin) < batch.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, delayBetweenCoins));
+          }
+        }
         
         // Analyze results
         for (let j = 0; j < batch.length; j++) {
@@ -635,9 +672,9 @@ class BulkIndicatorService {
           }
         }
         
-        // Small delay between batches to respect CoinGecko rate limits
+        // Delay between batches to respect CoinGecko rate limits
         if (i + batchSize < coinsToScan.length) {
-          await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+          await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
         }
       }
 
