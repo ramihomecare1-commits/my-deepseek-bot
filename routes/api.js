@@ -623,7 +623,6 @@ router.post('/rebalancing/execute', async (req, res) => {
   }
 });
 
-module.exports = router;
 // API endpoint for monitoring activity
 router.get('/monitoring-activity', (req, res) => {
   res.json({
@@ -632,4 +631,5 @@ router.get('/monitoring-activity', (req, res) => {
   });
 });
 
+module.exports = router;
 module.exports.addLogEntry = addLogEntry;

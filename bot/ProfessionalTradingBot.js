@@ -536,17 +536,24 @@ class ProfessionalTradingBot {
 
   async runMonitoringCycle() {
     try {
+      // Ensure trades array exists
+      if (!this.trades || !Array.isArray(this.trades)) {
+        this.trades = [];
+      }
+
       // PRIORITY 1: Monitor active/open trades first
       const activeTradeSymbols = this.trades
-        .filter(t => t.status === 'OPEN')
+        .filter(t => t && t.status === 'OPEN')
         .map(t => t.symbol);
       
-      console.log(`🔴 Priority monitoring ${activeTradeSymbols.length} open trades...`);
-      
-      for (const symbol of activeTradeSymbols) {
-        const coin = this.trackedCoins.find(c => c.symbol === symbol);
-        if (coin) {
-          await this.monitorSingleCoin(coin, true); // priority = true
+      if (activeTradeSymbols.length > 0) {
+        console.log(`🔴 Priority monitoring ${activeTradeSymbols.length} open trades...`);
+        
+        for (const symbol of activeTradeSymbols) {
+          const coin = this.trackedCoins.find(c => c.symbol === symbol);
+          if (coin) {
+            await this.monitorSingleCoin(coin, true); // priority = true
+          }
         }
       }
       
@@ -613,15 +620,21 @@ class ProfessionalTradingBot {
 
       // Log monitoring activity to web UI
       if (result && result.v3Analysis) {
-        const { addMonitoringActivity, setMonitoringActive } = require('../routes/api');
-        setMonitoringActive(true);
-        addMonitoringActivity({
-          symbol: coin.symbol,
-          volatility: result.v3Analysis.volatilityLevel,
-          priceChange: result.v3Analysis.priceChangePercent.toFixed(2),
-          confidence: result.v3Analysis.confidence,
-          escalated: !!result.r1Decision
-        });
+        try {
+          const apiModule = require('../routes/api');
+          if (apiModule.setMonitoringActive && apiModule.addMonitoringActivity) {
+            apiModule.setMonitoringActive(true);
+            apiModule.addMonitoringActivity({
+              symbol: coin.symbol,
+              volatility: result.v3Analysis.volatilityLevel,
+              priceChange: result.v3Analysis.priceChangePercent.toFixed(2),
+              confidence: result.v3Analysis.confidence,
+              escalated: !!result.r1Decision
+            });
+          }
+        } catch (err) {
+          // Silently fail - web UI logging is not critical
+        }
       }
 
       if (result && result.r1Decision) {
