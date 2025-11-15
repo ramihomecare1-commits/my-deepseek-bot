@@ -86,7 +86,7 @@ console.log('');
 // Two-Tier Monitoring Configuration
 const MONITORING_ENABLED = (process.env.MONITORING_ENABLED || 'true').toLowerCase() === 'true';
 const MONITORING_INTERVAL = Number(process.env.MONITORING_INTERVAL || 120000); // 2 minutes
-const ESCALATION_THRESHOLD = Number(process.env.ESCALATION_THRESHOLD || 0.70); // 70% confidence
+const ESCALATION_THRESHOLD = Number(process.env.ESCALATION_THRESHOLD || 0.85); // 85% confidence
 const VOLATILITY_THRESHOLD = Number(process.env.VOLATILITY_THRESHOLD || 3.0); // 3% price change
 const VOLUME_SPIKE_THRESHOLD = Number(process.env.VOLUME_SPIKE_THRESHOLD || 2.0); // 2x volume
 

@@ -49,7 +49,7 @@ class MonitoringService {
     this.PREMIUM_API_TYPE = config.PREMIUM_API_TYPE;
     
     // Thresholds
-    this.ESCALATION_THRESHOLD = config.ESCALATION_THRESHOLD || 0.70; // 70% confidence
+    this.ESCALATION_THRESHOLD = config.ESCALATION_THRESHOLD || 0.85; // 85% confidence
     this.VOLATILITY_THRESHOLD = config.VOLATILITY_THRESHOLD || 3.0; // 3% price change
     this.VOLUME_SPIKE_THRESHOLD = config.VOLUME_SPIKE_THRESHOLD || 2.0; // 2x average volume
     
