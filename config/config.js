@@ -91,6 +91,11 @@ const ESCALATION_THRESHOLD = Number(process.env.ESCALATION_THRESHOLD || 0.85); /
 const VOLATILITY_THRESHOLD = Number(process.env.VOLATILITY_THRESHOLD || 3.0); // 3% price change
 const VOLUME_SPIKE_THRESHOLD = Number(process.env.VOLUME_SPIKE_THRESHOLD || 2.0); // 2x volume
 
+// Trade Management Configuration
+const TRADE_PROXIMITY_THRESHOLD = Number(process.env.TRADE_PROXIMITY_THRESHOLD || 1.0); // 1% proximity to trigger AI evaluation
+const TRADE_CHECK_INTERVAL = Number(process.env.TRADE_CHECK_INTERVAL || 30000); // 30 seconds - check open trades
+const AI_EVALUATION_COOLDOWN = Number(process.env.AI_EVALUATION_COOLDOWN || 300000); // 5 minutes - min time between AI evaluations for same trade
+
 // Notifications behavior
 const ALLOW_MOCK_NOTIFICATIONS = (process.env.ALLOW_MOCK_NOTIFICATIONS || 'false').toLowerCase() === 'true';
 
@@ -169,6 +174,10 @@ module.exports = {
   ESCALATION_THRESHOLD,
   VOLATILITY_THRESHOLD,
   VOLUME_SPIKE_THRESHOLD,
+  // Trade Management Configuration
+  TRADE_PROXIMITY_THRESHOLD,
+  TRADE_CHECK_INTERVAL,
+  AI_EVALUATION_COOLDOWN,
   // TAAPI.IO Configuration
   TAAPI_API_KEY,
   TAAPI_ENABLED,

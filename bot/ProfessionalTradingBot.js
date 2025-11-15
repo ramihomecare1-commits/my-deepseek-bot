@@ -25,6 +25,7 @@ const { fetchCryptoNews } = require('../services/newsService');
 const { detectTradingPatterns } = require('./patternDetection');
 const { storeAIEvaluation, retrieveRelatedData } = require('../services/dataStorageService');
 const monitoringService = require('../services/monitoringService');
+const tradeMonitoringService = require('../services/tradeMonitoringService');
 const {
   isExchangeTradingEnabled,
   executeTakeProfit,
@@ -236,6 +237,12 @@ class ProfessionalTradingBot {
       await recalculateFromTrades(this.activeTrades);
       addLogEntry('Portfolio metrics recalculated from restored trades', 'info');
       console.log('✅ Portfolio metrics recalculated');
+      
+      // Start trade monitoring service for AI evaluation at key levels
+      if (this.activeTrades && this.activeTrades.length > 0) {
+        tradeMonitoringService.start(this);
+        console.log('✅ Trade monitoring service started');
+      }
     } catch (error) {
       console.error('❌ Error initializing bot:', error);
       console.error('Error stack:', error.stack);

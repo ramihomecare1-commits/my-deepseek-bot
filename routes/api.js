@@ -411,6 +411,38 @@ router.get('/portfolio', (req, res) => {
   }
 });
 
+// Trade Monitoring Service Endpoints
+const tradeMonitoringService = require('../services/tradeMonitoringService');
+
+// Get trade monitoring settings
+router.get('/trade-monitoring/settings', (req, res) => {
+  try {
+    const settings = tradeMonitoringService.getSettings();
+    res.json(settings);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update proximity threshold
+router.post('/trade-monitoring/proximity', (req, res) => {
+  try {
+    const { threshold } = req.body;
+    if (!threshold || isNaN(threshold)) {
+      return res.status(400).json({ error: 'Invalid threshold value' });
+    }
+    
+    const newThreshold = tradeMonitoringService.updateProximityThreshold(parseFloat(threshold));
+    res.json({ 
+      success: true, 
+      proximityThreshold: newThreshold,
+      message: `Proximity threshold updated to ${newThreshold}%`
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Exchange trading status endpoint
 router.get('/exchange-status', (req, res) => {
   try {
