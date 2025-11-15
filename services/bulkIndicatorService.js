@@ -119,7 +119,7 @@ class BulkIndicatorService {
 
   /**
    * Fetch bulk indicators from TAAPI.IO for multiple symbols
-   * Returns indicators: RSI, Bollinger Bands, MACD, etc.
+   * Uses TAAPI.IO's bulk endpoint with POST request
    */
   async fetchBulkIndicators(symbols, indicators = ['rsi', 'bbands2']) {
     if (!this.apiKey) {
@@ -131,27 +131,44 @@ class BulkIndicatorService {
     }
 
     try {
-      // TAAPI.IO bulk endpoint allows multiple symbols and indicators
-      const symbolsStr = symbols.join(',');
-      const indicatorsStr = indicators.join(',');
+      // TAAPI.IO bulk endpoint requires POST with JSON body containing array of requests
+      // Build array of indicator requests
+      const requests = [];
+      
+      for (const symbol of symbols) {
+        for (const indicator of indicators) {
+          requests.push({
+            id: `${symbol}_${indicator}`,
+            indicator: indicator,
+            exchange: this.exchange,
+            symbol: symbol,
+            interval: this.interval
+          });
+        }
+      }
 
-      const response = await axios.get(`${this.baseUrl}/bulk`, {
-        params: {
+      console.log(`   Making bulk request for ${symbols.length} symbols x ${indicators.length} indicators = ${requests.length} total requests`);
+
+      const response = await axios.post(
+        `${this.baseUrl}/bulk`,
+        {
           secret: this.apiKey,
-          exchange: this.exchange,
-          symbol: symbolsStr,
-          interval: this.interval,
-          indicators: indicatorsStr
+          construct: requests
         },
-        timeout: 30000 // 30 second timeout for bulk requests
-      });
+        {
+          timeout: 60000, // 60 second timeout for bulk requests
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
 
       return response.data;
     } catch (error) {
       console.error('❌ Error fetching bulk indicators from TAAPI.IO:', error.message);
       if (error.response) {
         console.error('   Status:', error.response.status);
-        console.error('   Data:', error.response.data);
+        console.error('   Data:', JSON.stringify(error.response.data).substring(0, 200));
       }
       throw error;
     }
