@@ -778,25 +778,30 @@ class ProfessionalTradingBot {
             console.log(`   Stop Loss: ${r1Decision.stopLoss}%, Take Profit: ${r1Decision.takeProfit}%`);
             console.log(`   Reason: ${r1Decision.reason?.substring(0, 150) || 'No reason provided'}...`);
             
-            // Execute trade if paper trading is enabled
-            if (this.tradingRules.paperTradingEnabled) {
-              try {
-                const tradeResult = await this.executePaperTrade({
-                  symbol: symbol,
-                  action: r1Decision.action,
-                  price: coinData.currentPrice,
-                  reason: r1Decision.reason,
-                  confidence: r1Decision.confidence,
-                  stopLoss: r1Decision.stopLoss,
-                  takeProfit: r1Decision.takeProfit,
-                  source: 'monitoring'
-                });
-                console.log(`${priorityLabel} ✅ Trade executed successfully for ${symbol}`);
-              } catch (error) {
+            // Execute trade (will check for existing trades and handle accordingly)
+            try {
+              const tradeResult = await this.executePaperTrade({
+                symbol: symbol,
+                action: r1Decision.action,
+                price: coinData.currentPrice,
+                reason: r1Decision.reason,
+                confidence: r1Decision.confidence,
+                stopLoss: r1Decision.stopLoss,
+                takeProfit: r1Decision.takeProfit,
+                source: 'monitoring'
+              });
+              
+              if (tradeResult && tradeResult.handled) {
+                console.log(`${priorityLabel} ✅ Trade handled for ${symbol} (existing position managed)`);
+              } else {
+                console.log(`${priorityLabel} ✅ New trade executed successfully for ${symbol}`);
+              }
+            } catch (error) {
+              if (error.message === 'Paper trading is disabled') {
+                console.log(`${priorityLabel} ⚠️ Paper trading disabled - trade not executed for ${symbol}`);
+              } else {
                 console.log(`${priorityLabel} ⚠️ Failed to execute trade for ${symbol}: ${error.message}`);
               }
-            } else {
-              console.log(`${priorityLabel} ⚠️ Paper trading disabled - trade not executed for ${symbol}`);
             }
           } else if (r1Decision.decision === 'SKIPPED') {
             console.log(`⏭️ ${symbol} - Skipped: ${r1Decision.reason || 'On cooldown or recently rejected'}`);
@@ -922,10 +927,159 @@ class ProfessionalTradingBot {
     }
   }
 
+  /**
+   * Handle existing trade when new signal is confirmed
+   * Returns true if handled, false if should create new trade
+   */
+  async handleExistingTrade(symbol, newAction, newPrice, newStopLoss, newTakeProfit, newConfidence, newReason) {
+    // Find existing open trade for this symbol
+    const existingTrade = this.activeTrades.find(t => 
+      t.symbol === symbol && (t.status === 'OPEN' || t.status === 'DCA_HIT')
+    );
+
+    if (!existingTrade) {
+      return false; // No existing trade, proceed with new trade
+    }
+
+    console.log(`🔍 Found existing ${existingTrade.action} trade for ${symbol}`);
+    
+    // Calculate current P&L
+    const currentPrice = newPrice; // Use the new signal price as current price
+    const entryPrice = existingTrade.averageEntryPrice || existingTrade.entryPrice;
+    const pnlPercent = existingTrade.action === 'BUY' 
+      ? ((currentPrice - entryPrice) / entryPrice) * 100
+      : ((entryPrice - currentPrice) / entryPrice) * 100;
+
+    console.log(`   Current P&L: ${pnlPercent.toFixed(2)}%`);
+    console.log(`   Entry: $${entryPrice.toFixed(2)}, Current: $${currentPrice.toFixed(2)}`);
+    console.log(`   Current TP: $${existingTrade.takeProfit.toFixed(2)}, SL: $${existingTrade.stopLoss.toFixed(2)}`);
+
+    // Same direction - consider adding to position or adjusting TP/SL
+    if (existingTrade.action === newAction) {
+      console.log(`   ✅ Same direction (${newAction}) - evaluating position management...`);
+
+      // If in profit and new signal has higher confidence, consider adjusting TP
+      if (pnlPercent > 0 && newConfidence > (existingTrade.confidence || 0.5)) {
+        const newTPPrice = newPrice * (1 + newTakeProfit / 100);
+        const newSLPrice = newPrice * (1 - newStopLoss / 100);
+        
+        // Only adjust if new TP is better (higher for BUY, lower for SELL)
+        const shouldAdjustTP = existingTrade.action === 'BUY' 
+          ? newTPPrice > existingTrade.takeProfit
+          : newTPPrice < existingTrade.takeProfit;
+        
+        // Only adjust SL if it's tighter (better protection)
+        const shouldAdjustSL = existingTrade.action === 'BUY'
+          ? newSLPrice > existingTrade.stopLoss
+          : newSLPrice < existingTrade.stopLoss;
+
+        if (shouldAdjustTP || shouldAdjustSL) {
+          const oldTP = existingTrade.takeProfit;
+          const oldSL = existingTrade.stopLoss;
+          
+          if (shouldAdjustTP) {
+            existingTrade.takeProfit = newTPPrice;
+            console.log(`   📈 Adjusted Take Profit: $${oldTP.toFixed(2)} → $${newTPPrice.toFixed(2)}`);
+          }
+          
+          if (shouldAdjustSL) {
+            existingTrade.stopLoss = newSLPrice;
+            console.log(`   🛡️ Adjusted Stop Loss: $${oldSL.toFixed(2)} → $${newSLPrice.toFixed(2)}`);
+          }
+
+          existingTrade.reason = `${existingTrade.reason || ''} | Updated: ${newReason?.substring(0, 100)}`;
+          existingTrade.confidence = Math.max(existingTrade.confidence || 0.5, newConfidence);
+          
+          await saveTrades(this.activeTrades);
+          
+          await sendTelegramMessage(`📊 Position Updated: ${symbol}
+
+${existingTrade.action} position adjusted based on new signal
+Current P&L: ${pnlPercent.toFixed(2)}%
+Entry: $${entryPrice.toFixed(2)} → Current: $${currentPrice.toFixed(2)}
+
+${shouldAdjustTP ? `Take Profit: $${oldTP.toFixed(2)} → $${newTPPrice.toFixed(2)}` : ''}
+${shouldAdjustSL ? `Stop Loss: $${oldSL.toFixed(2)} → $${newSLPrice.toFixed(2)}` : ''}
+
+New Signal Confidence: ${(newConfidence * 100).toFixed(0)}%
+Reason: ${newReason?.substring(0, 200)}`);
+
+          return true; // Handled by adjusting TP/SL
+        } else {
+          console.log(`   ℹ️ New signal doesn't improve TP/SL - keeping existing levels`);
+          return true; // Handled (no change needed)
+        }
+      } else if (pnlPercent < -2 && newConfidence > 0.7) {
+        // In loss but high confidence new signal - could add to position (DCA)
+        console.log(`   💰 Position in loss (-${Math.abs(pnlPercent).toFixed(2)}%) but high confidence signal - could DCA`);
+        // For now, just adjust SL to protect better
+        const newSLPrice = newPrice * (1 - newStopLoss / 100);
+        if (existingTrade.action === 'BUY' && newSLPrice > existingTrade.stopLoss) {
+          existingTrade.stopLoss = newSLPrice;
+          console.log(`   🛡️ Tightened Stop Loss to $${newSLPrice.toFixed(2)}`);
+          await saveTrades(this.activeTrades);
+          return true;
+        }
+        return true; // Handled
+      } else {
+        console.log(`   ℹ️ No action needed - position already open with similar signal`);
+        return true; // Handled (no change needed)
+      }
+    } else {
+      // Opposite direction - consider closing early if strong signal
+      console.log(`   ⚠️ Opposite direction (${existingTrade.action} → ${newAction})`);
+      
+      if (newConfidence > 0.75 && pnlPercent > -1) {
+        // Strong opposite signal and not in big loss - close early
+        console.log(`   🔄 Closing position early due to strong opposite signal`);
+        
+        const { closeTrade } = require('../services/portfolioService');
+        await closeTrade(existingTrade.id, currentPrice, 'EARLY_CLOSE', 
+          `Closed due to opposite ${newAction} signal (confidence: ${(newConfidence * 100).toFixed(0)}%)`);
+        
+        // Remove from active trades
+        this.activeTrades = this.activeTrades.filter(t => t.id !== existingTrade.id);
+        await saveTrades(this.activeTrades);
+        
+        await sendTelegramMessage(`🔄 Position Closed Early: ${symbol}
+
+Closed ${existingTrade.action} position due to strong opposite ${newAction} signal
+Entry: $${entryPrice.toFixed(2)} → Exit: $${currentPrice.toFixed(2)}
+P&L: ${pnlPercent.toFixed(2)}%
+
+New Signal Confidence: ${(newConfidence * 100).toFixed(0)}%
+Reason: ${newReason?.substring(0, 200)}`);
+
+        return false; // Position closed, can create new trade
+      } else if (pnlPercent < -3) {
+        // In significant loss - keep position, don't reverse
+        console.log(`   ⚠️ Position in significant loss (-${Math.abs(pnlPercent).toFixed(2)}%) - keeping position`);
+        return true; // Handled (keep existing position)
+      } else {
+        console.log(`   ℹ️ Opposite signal not strong enough or position in loss - keeping existing position`);
+        return true; // Handled (keep existing position)
+      }
+    }
+  }
+
   async executePaperTrade(tradeData) {
     try {
       const { symbol, action, price, reason, confidence, stopLoss, takeProfit, source } = tradeData;
 
+      // Check if paper trading is enabled
+      if (!this.tradingRules.paperTradingEnabled) {
+        console.log(`⚠️ Paper trading disabled - cannot execute trade for ${symbol}`);
+        throw new Error('Paper trading is disabled');
+      }
+
+      // Check for existing trade and handle it
+      const handled = await this.handleExistingTrade(symbol, action, price, stopLoss, takeProfit, confidence, reason);
+      if (handled) {
+        console.log(`✅ Existing trade handled for ${symbol} - no new trade created`);
+        return { handled: true, message: 'Existing trade managed' };
+      }
+
+      // No existing trade or position was closed - create new trade
       // Calculate position size based on portfolio
       const portfolioValue = this.getPortfolioValue();
       const positionSize = portfolioValue * 0.02; // 2% of portfolio
@@ -968,8 +1122,11 @@ Reason: ${reason}
 Confidence: ${(confidence * 100).toFixed(0)}%
 Source: ${source}`);
 
+      return { handled: false, trade };
+
     } catch (error) {
       console.log('⚠️ Error executing paper trade:', error.message);
+      throw error;
     }
   }
 
