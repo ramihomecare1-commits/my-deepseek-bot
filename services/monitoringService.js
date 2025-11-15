@@ -686,6 +686,12 @@ Be thorough and conservative. Only confirm high-probability setups.`;
     const emoji = r1Decision.decision === 'CONFIRMED' ? '✅' : '❌';
     const action = r1Decision.decision === 'CONFIRMED' ? 'EXECUTING' : 'REJECTED';
 
+    // Filter out parsing error messages from reason
+    let reason = r1Decision.reason || 'No reason provided';
+    if (reason.includes('Failed to parse R1 response')) {
+      reason = 'Premium AI analysis completed, but response format was unexpected. Decision: REJECTED for safety.';
+    }
+
     const message = `${emoji} *Premium AI Decision: ${r1Decision.decision}*
 
 📊 Coin: *${symbol}*
@@ -695,7 +701,7 @@ Be thorough and conservative. Only confirm high-probability setups.`;
 🤖 Model: ${this.PREMIUM_MODEL}
 
 📝 Analysis:
-${r1Decision.reason.substring(0, 400)}${r1Decision.reason.length > 400 ? '...' : ''}
+${reason.substring(0, 400)}${reason.length > 400 ? '...' : ''}
 
 ${r1Decision.decision === 'CONFIRMED' ? `
 🛡️ Stop Loss: ${r1Decision.stopLoss}%
