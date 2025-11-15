@@ -74,10 +74,12 @@ class MonitoringService {
     return {
       rsiOversold: 30,
       rsiOverbought: 70,
+      enableBollinger: true,
       minPriceChange: 5,
       volumeMultiplier: 2,
       minTriggers: 2,
-      requireVolume: false
+      requireVolume: false,
+      monitoringMode: config.MONITORING_MODE || 'ai'
     };
   }
   
@@ -87,6 +89,14 @@ class MonitoringService {
   saveTriggerSettings(settings) {
     this.triggerSettings = { ...this.triggerSettings, ...settings };
     console.log(`💾 Trigger settings saved:`, this.triggerSettings);
+    
+    // If monitoring mode changed, update config (requires restart to take full effect)
+    if (settings.monitoringMode && settings.monitoringMode !== config.MONITORING_MODE) {
+      console.log(`🔄 Monitoring mode changed: ${config.MONITORING_MODE} → ${settings.monitoringMode}`);
+      console.log(`   ⚠️ Note: Full restart recommended for mode change to take effect`);
+      // Update config for immediate effect (will persist in memory until restart)
+      config.MONITORING_MODE = settings.monitoringMode;
+    }
   }
   
   /**
@@ -465,8 +475,8 @@ class MonitoringService {
     const triggers = {
       rsiOversold: rsi !== null && rsi < settings.rsiOversold,
       rsiOverbought: rsi !== null && rsi > settings.rsiOverbought,
-      bollingerLower: bollingerPosition === 'LOWER',
-      bollingerUpper: bollingerPosition === 'UPPER',
+      bollingerLower: settings.enableBollinger !== false && bollingerPosition === 'LOWER',
+      bollingerUpper: settings.enableBollinger !== false && bollingerPosition === 'UPPER',
       highVolatility: volatilityLevel === 'high',
       bigPriceMove: priceChangePercent > settings.minPriceChange,
       // volumeSpike: volume24h > (coinData.avgVolume || volume24h) * settings.volumeMultiplier

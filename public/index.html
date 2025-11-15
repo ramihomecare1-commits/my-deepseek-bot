@@ -2180,6 +2180,8 @@
       document.getElementById('trigger-settings-modal').style.display = 'none';
     }
     
+    let currentMode = 'ai'; // Track current mode
+    
     async function loadTriggerSettings() {
       try {
         const response = await fetch(API_BASE + '/trigger-settings');
@@ -2187,21 +2189,54 @@
         
         document.getElementById('rsi-oversold').value = settings.rsiOversold || 30;
         document.getElementById('rsi-overbought').value = settings.rsiOverbought || 70;
+        document.getElementById('enable-bollinger').checked = settings.enableBollinger !== false;
         document.getElementById('min-price-change').value = settings.minPriceChange || 5;
         document.getElementById('min-triggers').value = settings.minTriggers || 2;
         document.getElementById('require-volume').checked = settings.requireVolume || false;
+        
+        // Load current mode
+        currentMode = settings.monitoringMode || 'ai';
+        updateModeButtons(currentMode);
       } catch (error) {
         console.error('Error loading settings:', error);
       }
+    }
+    
+    function updateModeButtons(mode) {
+      const aiBtn = document.getElementById('mode-ai');
+      const algBtn = document.getElementById('mode-algorithmic');
+      
+      if (mode === 'ai') {
+        aiBtn.style.background = 'rgba(99, 102, 241, 0.3)';
+        aiBtn.style.borderColor = 'rgba(99, 102, 241, 0.6)';
+        aiBtn.style.color = '#a5b4fc';
+        algBtn.style.background = 'rgba(34, 197, 94, 0.1)';
+        algBtn.style.borderColor = 'rgba(34, 197, 94, 0.3)';
+        algBtn.style.color = '#4ade80';
+      } else {
+        algBtn.style.background = 'rgba(34, 197, 94, 0.3)';
+        algBtn.style.borderColor = 'rgba(34, 197, 94, 0.6)';
+        algBtn.style.color = '#86efac';
+        aiBtn.style.background = 'rgba(99, 102, 241, 0.1)';
+        aiBtn.style.borderColor = 'rgba(99, 102, 241, 0.3)';
+        aiBtn.style.color = '#818cf8';
+      }
+      currentMode = mode;
+    }
+    
+    function setMonitoringMode(mode) {
+      updateModeButtons(mode);
     }
     
     async function saveTriggerSettings() {
       const settings = {
         rsiOversold: parseInt(document.getElementById('rsi-oversold').value),
         rsiOverbought: parseInt(document.getElementById('rsi-overbought').value),
+        enableBollinger: document.getElementById('enable-bollinger').checked,
         minPriceChange: parseFloat(document.getElementById('min-price-change').value),
         minTriggers: parseInt(document.getElementById('min-triggers').value),
-        requireVolume: document.getElementById('require-volume').checked
+        requireVolume: document.getElementById('require-volume').checked,
+        monitoringMode: currentMode
       };
       
       try {
@@ -2302,15 +2337,32 @@
   </script>
   
   <!-- Trigger Settings Modal -->
-  <div id="trigger-settings-modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); align-items: center; justify-content: center;">
-    <div style="background: #1e293b; padding: 32px; border-radius: 16px; max-width: 600px; width: 90%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid rgba(59,130,246,0.3);">
+  <div id="trigger-settings-modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; overflow-y: auto;">
+    <div style="background: #1e293b; padding: 32px; border-radius: 16px; max-width: 650px; width: 90%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid rgba(59,130,246,0.3); margin: 20px auto; max-height: 90vh; overflow-y: auto;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-        <h2 style="margin: 0; color: #22d3ee; font-size: 1.5em;">⚙️ Trigger Settings</h2>
+        <h2 style="margin: 0; color: #22d3ee; font-size: 1.5em;">⚙️ Monitoring Settings</h2>
         <button onclick="closeTriggerSettings()" style="background: none; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; padding: 0; width: 32px; height: 32px;">&times;</button>
       </div>
       
+      <!-- Mode Toggle -->
+      <div style="margin-bottom: 24px; padding: 20px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(34, 211, 238, 0.1)); border-radius: 8px; border: 1px solid rgba(59,130,246,0.3);">
+        <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1.1em;">🔄 Monitoring Mode</h3>
+        <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+          <button id="mode-ai" onclick="setMonitoringMode('ai')" style="flex: 1; padding: 12px; border-radius: 8px; border: 2px solid rgba(99, 102, 241, 0.3); background: rgba(99, 102, 241, 0.2); color: #818cf8; font-weight: 600; cursor: pointer; transition: all 0.3s;">
+            🤖 AI Mode
+          </button>
+          <button id="mode-algorithmic" onclick="setMonitoringMode('algorithmic')" style="flex: 1; padding: 12px; border-radius: 8px; border: 2px solid rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.1); color: #4ade80; font-weight: 600; cursor: pointer; transition: all 0.3s;">
+            🎯 Algorithmic Mode
+          </button>
+        </div>
+        <div id="mode-description" style="font-size: 13px; color: #94a3b8; line-height: 1.5;">
+          <strong>AI Mode:</strong> Uses DeepSeek AI for monitoring (~$0.001/hour)<br>
+          <strong>Algorithmic Mode:</strong> Uses technical indicators ($0, instant)
+        </div>
+      </div>
+      
       <div style="margin-bottom: 20px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
-        <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1em;">RSI Thresholds</h3>
+        <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1em;">📊 RSI Thresholds</h3>
         <label style="display: block; margin-bottom: 8px; color: #e2e8f0; font-size: 14px;">
           Oversold (Buy Signal): 
           <input type="number" id="rsi-oversold" value="30" min="0" max="100" style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
@@ -2322,7 +2374,18 @@
       </div>
       
       <div style="margin-bottom: 20px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
-        <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1em;">Price Movement</h3>
+        <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1em;">📈 Bollinger Bands</h3>
+        <label style="display: flex; align-items: center; margin-bottom: 8px; color: #e2e8f0; font-size: 14px;">
+          <input type="checkbox" id="enable-bollinger" checked style="margin-right: 8px;">
+          Enable Bollinger Band triggers
+        </label>
+        <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">
+          Triggers on upper/lower band breakouts
+        </div>
+      </div>
+      
+      <div style="margin-bottom: 20px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
+        <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1em;">💸 Price Movement</h3>
         <label style="display: block; color: #e2e8f0; font-size: 14px;">
           Min Price Change (%): 
           <input type="number" id="min-price-change" value="5" min="1" max="20" step="0.5" style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
