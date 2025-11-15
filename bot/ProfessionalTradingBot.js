@@ -740,7 +740,7 @@ class ProfessionalTradingBot {
         // Process batch escalation results
         for (const result of batchEscalationResults) {
           const { symbol, coinData, v3Analysis, r1Decision } = result;
-              this.priceCache = new Map();
+          const priorityLabel = escalations.find(e => e.coinData.symbol === symbol)?.isPriority ? '🔴 [OPEN TRADE]' : '🔍';
             }
             if (!this.stats) {
               this.stats = { coinmarketcapUsage: 0, coinpaprikaUsage: 0 };
