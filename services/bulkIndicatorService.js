@@ -221,7 +221,7 @@ class BulkIndicatorService {
    * Most symbols match, but some need mapping
    */
   getCoinGeckoId(symbol, name) {
-    // Special mappings for common coins
+    // Expanded mappings for common coins (top 200)
     const symbolToId = {
       'BTC': 'bitcoin',
       'ETH': 'ethereum',
@@ -235,15 +235,237 @@ class BulkIndicatorService {
       'DOT': 'polkadot',
       'MATIC': 'matic-network',
       'LTC': 'litecoin',
-      'XMR': 'monero'
+      'XMR': 'monero',
+      'ETC': 'ethereum-classic',
+      'APT': 'aptos',
+      'XAUT': 'tether-gold',
+      'ENA': 'ethena',
+      'PI': 'pinetwork',
+      'OKB': 'okb',
+      'PEPE': 'pepe',
+      'ONDO': 'ondo-finance',
+      'WETH': 'weth',
+      'USDF': 'usdf',
+      'PUMP': 'pump-fun',
+      'JITOSOL': 'jito-governance-token',
+      'JLP': 'jupiter-exchange-solana',
+      'ASTER': 'aster'
     };
 
     if (symbolToId[symbol]) {
       return symbolToId[symbol];
     }
 
-    // Default: use lowercase symbol (works for most coins)
-    return symbol.toLowerCase();
+    // Try common variations
+    const lowerSymbol = symbol.toLowerCase();
+    
+    // Some coins use hyphenated names
+    const commonMappings = {
+      'usdc': 'usd-coin',
+      'usdt': 'tether',
+      'dai': 'dai',
+      'shib': 'shiba-inu',
+      'trx': 'tron',
+      'atom': 'cosmos',
+      'algo': 'algorand',
+      'vet': 'vechain',
+      'icp': 'internet-computer',
+      'fil': 'filecoin',
+      'near': 'near',
+      'egld': 'elrond-erd-2',
+      'hbar': 'hedera-hashgraph',
+      'axs': 'axie-infinity',
+      'sand': 'the-sandbox',
+      'mana': 'decentraland',
+      'gala': 'gala',
+      'enj': 'enjincoin',
+      'chz': 'chiliz',
+      'flow': 'flow',
+      'theta': 'theta-token',
+      'zil': 'zilliqa',
+      'bat': 'basic-attention-token',
+      'zec': 'zcash',
+      'dash': 'dash',
+      'xlm': 'stellar',
+      'eos': 'eos',
+      'xtz': 'tezos',
+      'mkr': 'maker',
+      'comp': 'compound-governance-token',
+      'yfi': 'yearn-finance',
+      'sushi': 'sushi',
+      'aave': 'aave',
+      'uni': 'uniswap',
+      'crv': 'curve-dao-token',
+      'snx': 'havven',
+      '1inch': '1inch',
+      'grt': 'the-graph',
+      'ftm': 'fantom',
+      'celo': 'celo',
+      'kava': 'kava',
+      'band': 'band-protocol',
+      'zrx': '0x',
+      'ren': 'republic-protocol',
+      'uma': 'uma',
+      'bal': 'balancer',
+      'knc': 'kyber-network-crystal',
+      'lrc': 'loopring',
+      'omg': 'omisego',
+      'poly': 'polymath',
+      'storj': 'storj',
+      'gnt': 'golem',
+      'rep': 'augur',
+      'ant': 'aragon',
+      'zcn': '0chain',
+      'skl': 'skale',
+      'ogn': 'origin-protocol',
+      'rad': 'radicle',
+      'api3': 'api3',
+      'dg': 'degate',
+      'rndr': 'render-token',
+      'cro': 'crypto-com-chain',
+      'cake': 'pancakeswap-token',
+      'bake': 'bakerytoken',
+      'burger': 'burger-swap',
+      'sxp': 'swipe',
+      'xvs': 'venus',
+      'alpaca': 'alpaca-finance',
+      'tko': 'tokocrypto',
+      'perl': 'perlin',
+      'linear': 'linear',
+      'auto': 'auto',
+      'dodo': 'dodo',
+      'swingby': 'swingby',
+      'bondly': 'bondly',
+      'troy': 'troy',
+      'vite': 'vite',
+      'lit': 'litentry',
+      'sfp': 'safepal',
+      'dusk': 'dusk-network',
+      'bcha': 'bitcoin-cash-abc-2',
+      'qkc': 'quarkchain',
+      'btt': 'bittorrent',
+      'matic': 'matic-network',
+      'celr': 'celer-network',
+      'atm': 'atletico-madrid',
+      'ctsi': 'cartesi',
+      'lrc': 'loopring',
+      'adx': 'adex',
+      'auction': 'auction',
+      'dar': 'mines-of-dalarnia',
+      'bnx': 'binaryx',
+      'rgt': 'rari-governance-token',
+      'movr': 'moonriver',
+      'cvg': 'convergence',
+      'ctk': 'certik',
+      'badger': 'badger-dao',
+      'fis': 'stafi',
+      'om': 'mantra-dao',
+      'pond': 'marinade-staked-sol',
+      'dydx': 'dydx',
+      'gala': 'gala',
+      'celo': 'celo',
+      'klay': 'klay-token',
+      'rune': 'thorchain',
+      'luna': 'terra-luna',
+      'ust': 'terrausd',
+      'rose': 'oasis-network',
+      'wbtc': 'wrapped-bitcoin',
+      'paxg': 'pax-gold',
+      'mim': 'magic-internet-money',
+      'ohm': 'olympus',
+      'gohm': 'governance-ohm',
+      'spell': 'spell-token',
+      'farm': 'harvest-finance',
+      'boo': 'spookyswap',
+      'alpha': 'alpha-finance',
+      'fxs': 'frax-share',
+      'synthetix': 'havven',
+      'snx': 'havven',
+      'ousd': 'origin-dollar',
+      'eurt': 'tether-eurt',
+      'cusdc': 'compound-usd-coin',
+      'cdai': 'cdai',
+      'cwbtc': 'compound-wrapped-btc',
+      'ccomp': 'compound-governance-token',
+      'cuni': 'compound-uniswap',
+      'clink': 'compound-chainlink-token',
+      'cbat': 'compound-basic-attention-token',
+      'czrx': 'compound-0x',
+      'cusdt': 'compound-usdt',
+      'crep': 'compound-augur',
+      'cweth': 'compound-weth',
+      'csai': 'compound-sai',
+      'ctusd': 'compound-true-usd',
+      'cusdp': 'compound-usd-coin-pos',
+      'cusdcv2': 'compound-usd-coin-v2',
+      'cdai2': 'compound-dai-v2',
+      'cwbtc2': 'compound-wrapped-btc-v2',
+      'ccomp2': 'compound-governance-token-v2',
+      'cuni2': 'compound-uniswap-v2',
+      'clink2': 'compound-chainlink-token-v2',
+      'cbat2': 'compound-basic-attention-token-v2',
+      'czrx2': 'compound-0x-v2',
+      'cusdt2': 'compound-usdt-v2',
+      'crep2': 'compound-augur-v2',
+      'cweth2': 'compound-weth-v2',
+      'csai2': 'compound-sai-v2',
+      'ctusd2': 'compound-true-usd-v2',
+      'cusdp2': 'compound-usd-coin-pos-v2'
+    };
+
+    // Check common mappings first
+    if (commonMappings[lowerSymbol]) {
+      return commonMappings[lowerSymbol];
+    }
+
+    // Default: use lowercase symbol (works for many coins)
+    return lowerSymbol;
+  }
+
+  /**
+   * Find CoinGecko ID by searching with symbol/name
+   * Fallback when direct mapping fails
+   */
+  async findCoinGeckoIdBySearch(symbol, name) {
+    const coinGeckoKey = process.env.COINGECKO_API_KEY || config.COINGECKO_API_KEY;
+    const baseUrl = 'https://api.coingecko.com/api/v3';
+    
+    try {
+      const headers = {};
+      if (coinGeckoKey) {
+        headers['x-cg-demo-api-key'] = coinGeckoKey;
+      }
+
+      // Try searching by symbol first, then by name
+      const searchTerms = [symbol.toLowerCase(), name?.toLowerCase()].filter(Boolean);
+      
+      for (const term of searchTerms) {
+        const response = await axios.get(
+          `${baseUrl}/search`,
+          {
+            params: { query: term },
+            timeout: 5000,
+            headers
+          }
+        );
+
+        if (response.data?.coins && response.data.coins.length > 0) {
+          // Find exact symbol match
+          const exactMatch = response.data.coins.find(
+            coin => coin.symbol?.toLowerCase() === symbol.toLowerCase()
+          );
+          if (exactMatch) {
+            return exactMatch.id;
+          }
+          // Otherwise return first result
+          return response.data.coins[0].id;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      return null;
+    }
   }
 
   /**
@@ -254,11 +476,19 @@ class BulkIndicatorService {
   async calculateIndicatorsForCoin(coin) {
     try {
       // Get CoinGecko ID
-      const coinId = this.getCoinGeckoId(coin.symbol, coin.name);
+      let coinId = this.getCoinGeckoId(coin.symbol, coin.name);
       
-      // Fetch historical prices (last 60 days, daily candles)
-      // This matches TradingView/exchanges which use daily candles
-      const prices = await this.fetchHistoricalPrices(coinId, 60);
+      // Try fetching historical prices
+      let prices = await this.fetchHistoricalPrices(coinId, 60);
+      
+      // If 404 error, try to find correct ID via search
+      if (prices.length === 0) {
+        const foundId = await this.findCoinGeckoIdBySearch(coin.symbol, coin.name);
+        if (foundId) {
+          coinId = foundId;
+          prices = await this.fetchHistoricalPrices(coinId, 60);
+        }
+      }
       
       if (prices.length < this.bbPeriod) {
         // Not enough data for indicators (need at least 20 days for BB)
@@ -276,7 +506,7 @@ class BulkIndicatorService {
         bollinger
       };
     } catch (error) {
-      console.error(`⚠️ Error calculating indicators for ${coin.symbol}:`, error.message);
+      // Silently skip coins that can't be found (reduce log noise)
       return null;
     }
   }
