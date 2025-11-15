@@ -741,17 +741,8 @@ class ProfessionalTradingBot {
         for (const result of batchEscalationResults) {
           const { symbol, coinData, v3Analysis, r1Decision } = result;
           const priorityLabel = escalations.find(e => e.coinData.symbol === symbol)?.isPriority ? '🔴 [OPEN TRADE]' : '🔍';
-            }
-            if (!this.stats) {
-              this.stats = { coinmarketcapUsage: 0, coinpaprikaUsage: 0 };
-            }
-            
-            const priceResult = await fetchEnhancedPriceData(coinDataForFetch, this.priceCache, this.stats, config);
-            
-            if (!priceResult || !priceResult.data || !priceResult.data.price) {
-              console.log(`⚠️ ${coin.symbol}: No price data available, skipping`);
-              continue;
-            }
+          
+          // Safety check for r1Decision
 
             // Extract price data
             const priceData = priceResult.data;
