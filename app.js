@@ -260,7 +260,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`🎯 Coins: ${tradingBot.trackedCoins.length}`);
       console.log(`📱 Telegram: ${config.TELEGRAM_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
       console.log(`📰 News: ${config.NEWS_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
-      console.log(`🤖 AI: ${config.AI_API_KEY ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
+      console.log(`🤖 AI: ${(config.MONITORING_API_KEY || config.PREMIUM_API_KEY || config.AI_API_KEY) ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
     }
     
     console.log('🔔 Test Telegram: POST /api/test-telegram');

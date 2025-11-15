@@ -49,7 +49,7 @@ console.log(`   GEMINI_API_KEY: ${GEMINI_API_KEY ? '✅ Found (' + GEMINI_API_KE
 console.log(`   OPENROUTER_API_KEY: ${OPENROUTER_API_KEY ? '✅ Found (' + OPENROUTER_API_KEY.substring(0, 15) + '...)' : '❌ Not set (legacy)'}`);
 
 // Fallback to generic AI_API_KEY if specific ones not set
-const AI_API_KEY = process.env.API_KEY || process.env.AI_API_KEY || OPENROUTER_API_KEY || GEMINI_API_KEY || '';
+const AI_API_KEY = process.env.API_KEY || process.env.AI_API_KEY || FREE_TIER_API_KEY || PREMIUM_TIER_API_KEY || OPENROUTER_API_KEY || GEMINI_API_KEY || '';
 
 // Detect API type for backward compatibility
 const API_TYPE = AI_API_KEY.startsWith('AIza') ? 'gemini' : 'openrouter';
