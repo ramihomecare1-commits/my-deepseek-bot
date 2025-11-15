@@ -611,16 +611,13 @@ router.post('/rebalancing/execute', async (req, res) => {
 
 // API endpoint for monitoring activity
 router.get('/monitoring-activity', (req, res) => {
-  const store = getMonitoringStore();
-  console.log(`📊 Monitoring API called - ${store.activities.length} activities, isActive: ${store.isActive}`);
-  console.log(`   Activities:`, store.activities.map(a => `${a.symbol} (${a.volatility})`).join(', '));
-  if (store.activities.length > 0) {
-    console.log(`   Latest activity:`, store.activities[store.activities.length - 1]);
+  const data = getMonitoringData();
+  console.log(`📊 Monitoring API called - ${data.activity.length} activities, isActive: ${data.isActive}`);
+  console.log(`   Activities:`, data.activity.map(a => `${a.symbol} (${a.volatility})`).join(', '));
+  if (data.activity.length > 0) {
+    console.log(`   Latest activity:`, data.activity[data.activity.length - 1]);
   }
-  res.json({
-    activity: store.activities,
-    isActive: store.isActive
-  });
+  res.json(data);
 });
 
 module.exports = router;
