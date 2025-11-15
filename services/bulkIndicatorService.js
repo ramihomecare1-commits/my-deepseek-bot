@@ -38,20 +38,21 @@ class BulkIndicatorService {
         page: 1,
         sparkline: false
       };
-      
-      // Add API key if available
-      if (coinGeckoKey) {
-        params.x_cg_pro_api_key = coinGeckoKey;
-      }
 
       console.log(`📡 Fetching top 200 coins from CoinGecko (${coinGeckoKey ? 'Pro' : 'Free'} API)...`);
+      
+      // CoinGecko Pro API key goes in header, NOT in params
+      const headers = {};
+      if (coinGeckoKey) {
+        headers['x-cg-pro-api-key'] = coinGeckoKey;
+      }
       
       const response = await axios.get(
         `${baseUrl}/coins/markets`,
         {
           params,
           timeout: 15000,
-          headers: coinGeckoKey ? { 'x-cg-pro-api-key': coinGeckoKey } : {}
+          headers
         }
       );
 
@@ -67,10 +68,22 @@ class BulkIndicatorService {
       console.log(`✅ Fetched ${coins.length} coins from CoinGecko`);
       return coins;
     } catch (error) {
-      if (error.response && error.response.status === 429) {
-        console.error('❌ CoinGecko rate limit exceeded (429)');
-        console.error('   💡 Consider setting COINGECKO_API_KEY for higher rate limits');
-        console.error('   💡 Or wait 60 seconds before trying again');
+      if (error.response) {
+        if (error.response.status === 429) {
+          console.error('❌ CoinGecko rate limit exceeded (429)');
+          console.error('   💡 Consider setting COINGECKO_API_KEY for higher rate limits');
+          console.error('   💡 Or wait 60 seconds before trying again');
+        } else if (error.response.status === 400) {
+          console.error('❌ CoinGecko bad request (400)');
+          console.error('   Response:', error.response.data);
+          console.error('   💡 Check if COINGECKO_API_KEY is valid');
+        } else if (error.response.status === 401) {
+          console.error('❌ CoinGecko unauthorized (401)');
+          console.error('   💡 Your COINGECKO_API_KEY may be invalid or expired');
+        } else {
+          console.error('❌ Error fetching top 200 coins:', error.message);
+          console.error('   Status:', error.response.status);
+        }
       } else {
         console.error('❌ Error fetching top 200 coins:', error.message);
       }
