@@ -1,105 +1,136 @@
 const fs = require('fs').promises;
 const path = require('path');
+const { docClient, TABLES } = require('../config/awsConfig');
+const { v4: uuidv4 } = require('uuid');
 
 /**
  * Trade Persistence Service
- * Handles saving and loading active trades to/from disk or MongoDB
+ * Handles saving and loading active trades to/from disk or DynamoDB
  * Ensures trades survive bot restarts
  * 
- * Priority: MongoDB (if MONGODB_URI set) → File System
+ * Priority: DynamoDB (if AWS credentials set) → File System
  */
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const TRADES_FILE = path.join(DATA_DIR, 'active-trades.json');
 
-// MongoDB connection (lazy initialization)
-let mongoClient = null;
-let mongoDb = null;
-let useMongoDB = false;
+// DynamoDB connection (lazy initialization)
+let useDynamoDB = false;
 
 /**
- * Initialize MongoDB connection if URI is provided
+ * Initialize DynamoDB connection if credentials are provided
  */
-async function initMongoDB() {
-  const mongoUri = process.env.MONGODB_URI;
-  if (!mongoUri) {
+async function initDynamoDB() {
+  const hasCredentials = process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY;
+  if (!hasCredentials) {
     return false;
   }
 
   try {
-    const { MongoClient } = require('mongodb');
-    mongoClient = new MongoClient(mongoUri);
-    await mongoClient.connect();
-    mongoDb = mongoClient.db();
-    useMongoDB = true;
-    console.log('✅ MongoDB connected for trade persistence');
+    useDynamoDB = true;
+    console.log('✅ DynamoDB connected for trade persistence');
     return true;
   } catch (error) {
-    console.error('❌ MongoDB connection failed:', error.message);
+    console.error('❌ DynamoDB connection failed:', error.message);
     console.log('📂 Falling back to file system storage');
     return false;
   }
 }
 
 /**
- * Load trades from MongoDB
+ * Load trades from DynamoDB
  */
-async function loadTradesFromMongo() {
+async function loadTradesFromDynamo() {
   try {
-    if (!mongoDb) {
-      const connected = await initMongoDB();
+    if (!useDynamoDB) {
+      const connected = await initDynamoDB();
       if (!connected) return [];
     }
 
-    const collection = mongoDb.collection('activeTrades');
-    const trades = await collection.find({}).toArray();
-    
-    // Remove MongoDB _id field and convert dates
-    return trades.map(trade => {
-      const { _id, ...tradeData } = trade;
-      if (tradeData.entryTime && typeof tradeData.entryTime === 'string') {
-        tradeData.entryTime = new Date(tradeData.entryTime);
+    const result = await docClient.scan({
+      TableName: TABLES.ACTIVE_TRADES
+    });
+
+    return (result.Items || []).map(trade => {
+      // Convert timestamp back to Date object
+      if (trade.entryTime && typeof trade.entryTime === 'number') {
+        trade.entryTime = new Date(trade.entryTime);
       }
-      return tradeData;
+      // Ensure id exists
+      if (!trade.id) {
+        trade.id = uuidv4();
+      }
+      return trade;
     });
   } catch (error) {
-    console.error('❌ Error loading trades from MongoDB:', error);
+    console.error('❌ Error loading trades from DynamoDB:', error);
     return [];
   }
 }
 
 /**
- * Save trades to MongoDB
+ * Save trades to DynamoDB
  */
-async function saveTradesToMongo(trades) {
+async function saveTradesToDynamo(trades) {
   try {
-    if (!mongoDb) {
-      const connected = await initMongoDB();
+    if (!useDynamoDB) {
+      const connected = await initDynamoDB();
       if (!connected) return false;
     }
 
-    const collection = mongoDb.collection('activeTrades');
-    
-    // Clear existing trades and insert new ones
-    await collection.deleteMany({});
-    
-    // Convert dates to ISO strings for MongoDB
-    const tradesToSave = trades.map(trade => {
-      const tradeCopy = { ...trade };
-      if (tradeCopy.entryTime instanceof Date) {
-        tradeCopy.entryTime = tradeCopy.entryTime.toISOString();
+    // Delete all existing trades first
+    const existing = await docClient.scan({ TableName: TABLES.ACTIVE_TRADES });
+    if (existing.Items && existing.Items.length > 0) {
+      const deleteOps = existing.Items.map(item => ({
+        DeleteRequest: { Key: { id: item.id } }
+      }));
+
+      // DynamoDB batch write (max 25 items per batch)
+      const batches = [];
+      for (let i = 0; i < deleteOps.length; i += 25) {
+        batches.push(deleteOps.slice(i, i + 25));
       }
-      return tradeCopy;
-    });
-    
-    if (tradesToSave.length > 0) {
-      await collection.insertMany(tradesToSave);
+
+      for (const batch of batches) {
+        await docClient.batchWrite({
+          RequestItems: {
+            [TABLES.ACTIVE_TRADES]: batch
+          }
+        });
+      }
     }
-    
-    console.log(`💾 Saved ${tradesToSave.length} trades to MongoDB`);
+
+    // Insert new trades
+    if (trades.length > 0) {
+      const putOps = trades.map(trade => ({
+        PutRequest: {
+          Item: {
+            id: trade.id || uuidv4(),
+            ...trade,
+            entryTime: trade.entryTime instanceof Date ? trade.entryTime.getTime() : trade.entryTime
+          }
+        }
+      }));
+
+      // DynamoDB batch write (max 25 items per batch)
+      const batches = [];
+      for (let i = 0; i < putOps.length; i += 25) {
+        batches.push(putOps.slice(i, i + 25));
+      }
+
+      for (const batch of batches) {
+        await docClient.batchWrite({
+          RequestItems: {
+            [TABLES.ACTIVE_TRADES]: batch
+          }
+        });
+      }
+    }
+
+    console.log(`💾 Saved ${trades.length} trades to DynamoDB`);
     return true;
   } catch (error) {
-    console.error('❌ Error saving trades to MongoDB:', error);
+    console.error('❌ Error saving trades to DynamoDB:', error);
     return false;
   }
 }
@@ -116,22 +147,22 @@ async function ensureDataDir() {
 }
 
 /**
- * Load trades from MongoDB or file
+ * Load trades from DynamoDB or file
  * @returns {Promise<Array>} Array of trade objects
  */
 async function loadTrades() {
-  // Try MongoDB first if URI is set
-  if (process.env.MONGODB_URI) {
-    console.log('📂 Attempting to load trades from MongoDB...');
-    const mongoTrades = await loadTradesFromMongo();
-    if (mongoTrades && mongoTrades.length > 0) {
-      console.log(`✅ Loaded ${mongoTrades.length} trades from MongoDB`);
-      return mongoTrades;
-    } else if (useMongoDB) {
-      console.log('📂 No trades found in MongoDB');
+  // Try DynamoDB first if credentials are set
+  if (process.env.AWS_ACCESS_KEY_ID) {
+    console.log('📂 Attempting to load trades from DynamoDB...');
+    const dynamoTrades = await loadTradesFromDynamo();
+    if (dynamoTrades && dynamoTrades.length > 0) {
+      console.log(`✅ Loaded ${dynamoTrades.length} trades from DynamoDB`);
+      return dynamoTrades;
+    } else if (useDynamoDB) {
+      console.log('📂 No trades found in DynamoDB');
       return [];
     }
-    // If MongoDB connection failed, fall through to file system
+    // If DynamoDB connection failed, fall through to file system
   }
 
   // Fallback to file system
@@ -146,7 +177,7 @@ async function loadTrades() {
       console.log(`📂 Trades file does not exist at: ${TRADES_FILE}`);
       console.log(`📂 Data directory: ${DATA_DIR}`);
       console.log(`⚠️ NOTE: On Render, filesystem is ephemeral - files don't persist between deployments.`);
-      console.log(`💡 Solution: Use MongoDB Atlas (free) for persistent storage. Set MONGODB_URI environment variable.`);
+      console.log(`💡 Solution: Use AWS DynamoDB (free tier) for persistent storage. Set AWS_ACCESS_KEY_ID environment variable.`);
       return [];
     }
     
@@ -190,18 +221,18 @@ async function loadTrades() {
 }
 
 /**
- * Save trades to MongoDB or file
+ * Save trades to DynamoDB or file
  * @param {Array} trades - Array of trade objects
  * @returns {Promise<boolean>} Success status
  */
 async function saveTrades(trades) {
-  // Try MongoDB first if URI is set
-  if (process.env.MONGODB_URI) {
-    const saved = await saveTradesToMongo(trades);
+  // Try DynamoDB first if credentials are set
+  if (process.env.AWS_ACCESS_KEY_ID) {
+    const saved = await saveTradesToDynamo(trades);
     if (saved) {
       return true;
     }
-    // If MongoDB save failed, fall through to file system
+    // If DynamoDB save failed, fall through to file system
   }
 
   // Fallback to file system
@@ -237,34 +268,39 @@ function getTradesFilePath() {
 }
 
 /**
- * Load closed trades from MongoDB or file
+ * Load closed trades from DynamoDB or file
  * @returns {Promise<Array>} Array of closed trade objects
  */
 async function loadClosedTrades() {
-  // Try MongoDB first if URI is set
-  if (process.env.MONGODB_URI) {
+  // Try DynamoDB first if credentials are set
+  if (process.env.AWS_ACCESS_KEY_ID) {
     try {
-      if (!mongoDb) {
-        const connected = await initMongoDB();
+      if (!useDynamoDB) {
+        const connected = await initDynamoDB();
         if (!connected) return [];
       }
       
-      const collection = mongoDb.collection('closedTrades');
-      const trades = await collection.find({}).sort({ closedAt: -1 }).limit(100).toArray();
-      
-      // Remove MongoDB _id field and convert dates
-      return trades.map(trade => {
-        const { _id, ...tradeData } = trade;
-        if (tradeData.entryTime && typeof tradeData.entryTime === 'string') {
-          tradeData.entryTime = new Date(tradeData.entryTime);
-        }
-        if (tradeData.closedAt && typeof tradeData.closedAt === 'string') {
-          tradeData.closedAt = new Date(tradeData.closedAt);
-        }
-        return tradeData;
+      const result = await docClient.scan({
+        TableName: TABLES.CLOSED_TRADES
       });
+      
+      const trades = (result.Items || [])
+        .sort((a, b) => (b.closedAt || 0) - (a.closedAt || 0))
+        .slice(0, 100)
+        .map(trade => {
+          // Convert timestamps back to Date objects
+          if (trade.entryTime && typeof trade.entryTime === 'number') {
+            trade.entryTime = new Date(trade.entryTime);
+          }
+          if (trade.closedAt && typeof trade.closedAt === 'number') {
+            trade.closedAt = new Date(trade.closedAt);
+          }
+          return trade;
+        });
+      
+      return trades;
     } catch (error) {
-      console.error('❌ Error loading closed trades from MongoDB:', error);
+      console.error('❌ Error loading closed trades from DynamoDB:', error);
       return [];
     }
   }
@@ -306,56 +342,74 @@ async function loadClosedTrades() {
 }
 
 /**
- * Save closed trades to MongoDB or file
+ * Save closed trades to DynamoDB or file
  * @param {Array} trades - Array of closed trade objects
  * @returns {Promise<boolean>} Success status
  */
 async function saveClosedTrades(trades) {
-  // Try MongoDB first if URI is set
-  if (process.env.MONGODB_URI) {
+  // Try DynamoDB first if credentials are set
+  if (process.env.AWS_ACCESS_KEY_ID) {
     try {
-      if (!mongoDb) {
-        const connected = await initMongoDB();
+      if (!useDynamoDB) {
+        const connected = await initDynamoDB();
         if (!connected) return false;
       }
       
-      const collection = mongoDb.collection('closedTrades');
-      
-      // Convert dates to ISO strings for MongoDB
+      // Convert dates to timestamps for DynamoDB
       const tradesToSave = trades.map(trade => {
         const tradeCopy = { ...trade };
         if (tradeCopy.entryTime instanceof Date) {
-          tradeCopy.entryTime = tradeCopy.entryTime.toISOString();
+          tradeCopy.entryTime = tradeCopy.entryTime.getTime();
         }
         if (tradeCopy.closedAt instanceof Date) {
-          tradeCopy.closedAt = tradeCopy.closedAt.toISOString();
+          tradeCopy.closedAt = tradeCopy.closedAt.getTime();
+        }
+        // Ensure id exists
+        if (!tradeCopy.id) {
+          tradeCopy.id = uuidv4();
         }
         return tradeCopy;
       });
       
       // Upsert closed trades (update if exists, insert if not)
-      // Use symbol + closedAt as unique identifier
+      // Use id as unique identifier
       for (const trade of tradesToSave) {
-        await collection.updateOne(
-          { symbol: trade.symbol, closedAt: trade.closedAt },
-          { $set: trade },
-          { upsert: true }
-        );
+        await docClient.put({
+          TableName: TABLES.CLOSED_TRADES,
+          Item: trade
+        });
       }
       
-      // Keep only last 500 closed trades in MongoDB
-      const totalCount = await collection.countDocuments();
-      if (totalCount > 500) {
-        const excess = totalCount - 500;
-        const oldestTrades = await collection.find({}).sort({ closedAt: 1 }).limit(excess).toArray();
-        const idsToDelete = oldestTrades.map(t => t._id);
-        await collection.deleteMany({ _id: { $in: idsToDelete } });
+      // Keep only last 500 closed trades in DynamoDB
+      const allTrades = await docClient.scan({ TableName: TABLES.CLOSED_TRADES });
+      if (allTrades.Items && allTrades.Items.length > 500) {
+        // Sort by closedAt and delete oldest
+        const sorted = allTrades.Items.sort((a, b) => (a.closedAt || 0) - (b.closedAt || 0));
+        const excess = sorted.slice(0, sorted.length - 500);
+        
+        // Delete in batches
+        const deleteOps = excess.map(trade => ({
+          DeleteRequest: { Key: { id: trade.id } }
+        }));
+        
+        const batches = [];
+        for (let i = 0; i < deleteOps.length; i += 25) {
+          batches.push(deleteOps.slice(i, i + 25));
+        }
+        
+        for (const batch of batches) {
+          await docClient.batchWrite({
+            RequestItems: {
+              [TABLES.CLOSED_TRADES]: batch
+            }
+          });
+        }
       }
       
-      console.log(`💾 Saved ${tradesToSave.length} closed trades to MongoDB`);
+      console.log(`💾 Saved ${tradesToSave.length} closed trades to DynamoDB`);
       return true;
     } catch (error) {
-      console.error('❌ Error saving closed trades to MongoDB:', error);
+      console.error('❌ Error saving closed trades to DynamoDB:', error);
       return false;
     }
   }
@@ -394,4 +448,3 @@ module.exports = {
   saveClosedTrades,
   getTradesFilePath
 };
-

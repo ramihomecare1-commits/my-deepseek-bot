@@ -1,81 +1,67 @@
-const { MongoClient } = require('mongodb');
+const { docClient, TABLES } = require('../config/awsConfig');
 
 /**
  * Data Storage Service
  * Stores and retrieves AI evaluations and news articles linked to trades/coins
  * Enables AI to access historical context for better evaluations
+ * Now using AWS DynamoDB instead of MongoDB
  */
 
-let mongoClient = null;
-let mongoDb = null;
-let useMongoDB = false;
-let mongoInitPromise = null; // Guard to prevent multiple simultaneous initializations
-let mongoInitInProgress = false; // Flag to track initialization status
+let useDynamoDB = false;
+let dynamoInitPromise = null;
+let dynamoInitInProgress = false;
 
 /**
- * Initialize MongoDB connection
- * Uses a promise guard to prevent multiple simultaneous connection attempts
+ * Initialize DynamoDB connection
+ * Uses a promise guard to prevent multiple simultaneous initialization attempts
  */
-async function initMongoDB() {
-  const mongoUri = process.env.MONGODB_URI;
-  if (!mongoUri) {
-    console.log('⚠️ MONGODB_URI not set - data storage disabled');
+async function initDynamoDB() {
+  const hasCredentials = process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY;
+  if (!hasCredentials) {
+    console.log('⚠️ AWS credentials not set - data storage disabled');
     return false;
   }
 
-  // If already connected, return immediately
-  if (mongoClient && mongoDb && useMongoDB) {
+  // If already initialized, return immediately
+  if (useDynamoDB) {
     return true;
   }
 
   // If initialization is already in progress, wait for it
-  if (mongoInitInProgress && mongoInitPromise) {
+  if (dynamoInitInProgress && dynamoInitPromise) {
     try {
-      return await mongoInitPromise;
+      return await dynamoInitPromise;
     } catch (error) {
-      // If initialization failed, allow retry
-      mongoInitPromise = null;
-      mongoInitInProgress = false;
+      dynamoInitPromise = null;
+      dynamoInitInProgress = false;
     }
   }
 
   // Start new initialization
-  mongoInitInProgress = true;
-  mongoInitPromise = (async () => {
+  dynamoInitInProgress = true;
+  dynamoInitPromise = (async () => {
     try {
       // Double-check after acquiring lock
-      if (mongoClient && mongoDb && useMongoDB) {
+      if (useDynamoDB) {
         return true;
       }
 
-      if (!mongoClient || !mongoDb) {
-        mongoClient = new MongoClient(mongoUri);
-        await mongoClient.connect();
-        mongoDb = mongoClient.db();
-        useMongoDB = true;
-        console.log('✅ MongoDB connected for data storage');
-      }
-      
-      // Verify connection is still valid
-      if (!mongoDb) {
-        console.error('❌ MongoDB connection established but db is null');
-        return false;
-      }
-      
+      // Test connection by doing a simple operation (list tables would require extra permissions)
+      // For now, just mark as initialized if credentials exist
+      useDynamoDB = true;
+      console.log('✅ DynamoDB initialized for data storage');
       return true;
     } catch (error) {
-      console.error('❌ MongoDB connection failed:', error.message);
-      mongoDb = null;
-      mongoClient = null;
-      useMongoDB = false;
+      console.error('❌ DynamoDB initialization failed:', error.message);
+      useDynamoDB = false;
       return false;
     } finally {
-      mongoInitInProgress = false;
-      mongoInitPromise = null;
+      dynamoInitInProgress = false;
+      dynamoInitPromise = null;
     }
   })();
 
-  return await mongoInitPromise;
+  return await dynamoInitPromise;
 }
 
 /**
@@ -91,23 +77,18 @@ async function initMongoDB() {
 async function storeAIEvaluation(evaluation) {
   try {
     // Check connection status first (fast path)
-    if (!useMongoDB || !mongoDb) {
-      const connected = await initMongoDB();
-      if (!connected || !mongoDb) {
-        // Don't log for every failed attempt - only log once
+    if (!useDynamoDB) {
+      const connected = await initDynamoDB();
+      if (!connected) {
         return false;
       }
     }
 
-    // Double-check after potential initialization
-    if (!mongoDb) {
-      return false;
-    }
-    const collection = mongoDb.collection('aiEvaluations');
+    const timestamp = evaluation.timestamp ? new Date(evaluation.timestamp).getTime() : Date.now();
     
-    // Limit context data to prevent MongoDB 16MB document size limit
-    const MAX_NEWS_ARTICLES = 5; // Only store last 5 articles
-    const MAX_CONTEXT_SIZE = 10000; // Max characters for context summary
+    // Limit context data to prevent large items (DynamoDB item limit is 400KB)
+    const MAX_NEWS_ARTICLES = 5;
+    const MAX_CONTEXT_SIZE = 10000;
     
     let limitedContext = {};
     if (evaluation.context) {
@@ -119,16 +100,13 @@ async function storeAIEvaluation(evaluation) {
             title: article.title?.substring(0, 200) || '',
             source: article.source || '',
             publishedAt: article.publishedAt || null
-            // Don't store full content - too large
           }));
       }
       
       // Don't store full historical data - it's too large
-      // Only store summary if needed
       if (evaluation.context.historicalData) {
         limitedContext.historicalData = {
           hasData: true,
-          // Don't store actual arrays - they can be huge
           summary: 'Historical data available'
         };
       }
@@ -136,7 +114,6 @@ async function storeAIEvaluation(evaluation) {
       // Limit total context size
       const contextString = JSON.stringify(limitedContext);
       if (contextString.length > MAX_CONTEXT_SIZE) {
-        // Truncate further if still too large
         limitedContext = {
           news: limitedContext.news?.slice(0, 3) || [],
           historicalData: { hasData: true, summary: 'Data truncated due to size' }
@@ -144,55 +121,64 @@ async function storeAIEvaluation(evaluation) {
       }
     }
     
-    const doc = {
+    const item = {
       symbol: evaluation.symbol,
+      timestamp: timestamp,
       tradeId: evaluation.tradeId || null,
-      type: evaluation.type, // 'trade_evaluation', 'coin_analysis', 'batch_analysis'
+      type: evaluation.type,
       data: evaluation.data,
       model: evaluation.model || 'unknown',
-      context: limitedContext, // Limited context to prevent size issues
-      timestamp: new Date(),
-      createdAt: new Date()
+      context: limitedContext,
+      createdAt: timestamp
     };
 
-    // Check document size before inserting (MongoDB limit is 16MB)
-    const docSize = JSON.stringify(doc).length;
-    if (docSize > 15 * 1024 * 1024) { // 15MB safety margin
-      console.error(`⚠️ Document too large (${(docSize / 1024 / 1024).toFixed(2)}MB) - skipping storage for ${evaluation.symbol}`);
-      // Store minimal version
-      const minimalDoc = {
+    // Check item size before inserting (DynamoDB limit is 400KB)
+    const itemSize = JSON.stringify(item).length;
+    if (itemSize > 350 * 1024) { // 350KB safety margin
+      console.error(`⚠️ Item too large (${(itemSize / 1024).toFixed(2)}KB) - storing minimal version for ${evaluation.symbol}`);
+      const minimalItem = {
         symbol: evaluation.symbol,
+        timestamp: timestamp,
         tradeId: evaluation.tradeId || null,
         type: evaluation.type,
         data: evaluation.data,
         model: evaluation.model || 'unknown',
-        timestamp: new Date(),
-        createdAt: new Date()
+        createdAt: timestamp
       };
-      await collection.insertOne(minimalDoc);
+      await docClient.put({
+        TableName: TABLES.AI_EVALUATIONS,
+        Item: minimalItem
+      });
       console.log(`💾 Stored minimal AI evaluation for ${evaluation.symbol}${evaluation.tradeId ? ` (trade: ${evaluation.tradeId})` : ''} (context removed due to size)`);
       return true;
     }
 
-    await collection.insertOne(doc);
+    await docClient.put({
+      TableName: TABLES.AI_EVALUATIONS,
+      Item: item
+    });
+
     console.log(`💾 Stored AI evaluation for ${evaluation.symbol}${evaluation.tradeId ? ` (trade: ${evaluation.tradeId})` : ''}`);
     return true;
   } catch (error) {
     console.error('❌ Error storing AI evaluation:', error);
     // If it's a size error, try storing minimal version
-    if (error.message && error.message.includes('out of range')) {
+    if (error.message && (error.message.includes('size') || error.message.includes('400'))) {
       try {
-        const collection = mongoDb.collection('aiEvaluations');
-        const minimalDoc = {
+        const timestamp = evaluation.timestamp ? new Date(evaluation.timestamp).getTime() : Date.now();
+        const minimalItem = {
           symbol: evaluation.symbol,
+          timestamp: timestamp,
           tradeId: evaluation.tradeId || null,
           type: evaluation.type,
           data: evaluation.data,
           model: evaluation.model || 'unknown',
-          timestamp: new Date(),
-          createdAt: new Date()
+          createdAt: timestamp
         };
-        await collection.insertOne(minimalDoc);
+        await docClient.put({
+          TableName: TABLES.AI_EVALUATIONS,
+          Item: minimalItem
+        });
         console.log(`💾 Stored minimal AI evaluation for ${evaluation.symbol} (context removed due to size error)`);
         return true;
       } catch (retryError) {
@@ -217,50 +203,61 @@ async function storeAIEvaluation(evaluation) {
  */
 async function storeNews(news) {
   try {
-    if (!useMongoDB || !mongoDb) {
-      const connected = await initMongoDB();
-      if (!connected || !mongoDb) {
-        console.log('⚠️ Cannot store news - MongoDB not available');
+    if (!useDynamoDB) {
+      const connected = await initDynamoDB();
+      if (!connected) {
+        console.log('⚠️ Cannot store news - DynamoDB not available');
         return false;
       }
     }
 
-    if (!mongoDb) {
-      console.log('⚠️ Cannot store news - MongoDB connection not established');
-      return false;
-    }
-    const collection = mongoDb.collection('newsArticles');
+    const publishedAt = news.publishedAt ? new Date(news.publishedAt).getTime() : Date.now();
     
-    // Check if article already exists (by URL to avoid duplicates)
-    const existing = await collection.findOne({ url: news.url });
-    if (existing) {
-      // Update existing article to add new links
-      if (news.tradeId && !existing.tradeIds) {
-        existing.tradeIds = [];
+    // Check if article already exists
+    try {
+      const existing = await docClient.get({
+        TableName: TABLES.NEWS_ARTICLES,
+        Key: { url: news.url }
+      });
+
+      if (existing.Item) {
+        // Update existing article to add new links
+        const tradeIds = existing.Item.tradeIds || [];
+        if (news.tradeId && !tradeIds.includes(news.tradeId)) {
+          tradeIds.push(news.tradeId);
+          await docClient.update({
+            TableName: TABLES.NEWS_ARTICLES,
+            Key: { url: news.url },
+            UpdateExpression: 'SET tradeIds = :tradeIds, updatedAt = :now',
+            ExpressionAttributeValues: {
+              ':tradeIds': tradeIds,
+              ':now': Date.now()
+            }
+          });
+        }
+        return true;
       }
-      if (news.tradeId && existing.tradeIds && !existing.tradeIds.includes(news.tradeId)) {
-        existing.tradeIds.push(news.tradeId);
-        await collection.updateOne(
-          { _id: existing._id },
-          { $set: { tradeIds: existing.tradeIds, updatedAt: new Date() } }
-        );
-      }
-      return true;
+    } catch (getError) {
+      // If get fails, continue to insert
     }
     
-    const doc = {
+    const item = {
+      url: news.url,
       symbol: news.symbol,
       tradeIds: news.tradeId ? [news.tradeId] : [],
       title: news.title,
       source: news.source,
-      url: news.url,
-      publishedAt: news.publishedAt ? new Date(news.publishedAt) : new Date(),
+      publishedAt: publishedAt,
       content: news.content || '',
-      storedAt: new Date(),
-      createdAt: new Date()
+      storedAt: Date.now(),
+      createdAt: Date.now()
     };
 
-    await collection.insertOne(doc);
+    await docClient.put({
+      TableName: TABLES.NEWS_ARTICLES,
+      Item: item
+    });
+
     console.log(`💾 Stored news article: ${news.title} for ${news.symbol}`);
     return true;
   } catch (error) {
@@ -278,70 +275,43 @@ async function storeNewsBatch(newsArray) {
   }
 
   try {
-    if (!useMongoDB || !mongoDb) {
-      const connected = await initMongoDB();
-      if (!connected || !mongoDb) return;
+    if (!useDynamoDB) {
+      const connected = await initDynamoDB();
+      if (!connected) return;
     }
 
-    if (!mongoDb) {
-      console.log('⚠️ Cannot store news batch - MongoDB connection not established');
-      return;
-    }
-    
-    // Double-check mongoDb is still valid
-    if (!mongoDb || typeof mongoDb.collection !== 'function') {
-      console.log('⚠️ MongoDB collection method not available, skipping news batch storage');
-      return;
-    }
-    
-    const collection = mongoDb.collection('newsArticles');
-    const operations = [];
-
-    for (const news of newsArray) {
-      // Check if exists
-      const existing = await collection.findOne({ url: news.url });
-      if (existing) {
-        // Update to add symbol/tradeId if not present
-        const update = {};
-        if (news.symbol && !existing.symbols) {
-          update.symbols = [news.symbol];
-        } else if (news.symbol && existing.symbols && !existing.symbols.includes(news.symbol)) {
-          update.symbols = [...existing.symbols, news.symbol];
-        }
-        if (news.tradeId && existing.tradeIds && !existing.tradeIds.includes(news.tradeId)) {
-          update.tradeIds = [...(existing.tradeIds || []), news.tradeId];
-        }
-        if (Object.keys(update).length > 0) {
-          update.updatedAt = new Date();
-          operations.push({
-            updateOne: {
-              filter: { _id: existing._id },
-              update: { $set: update }
-            }
-          });
-        }
-      } else {
-        // Insert new
-        const doc = {
-          symbol: news.symbol,
-          symbols: news.symbol ? [news.symbol] : [],
-          tradeIds: news.tradeId ? [news.tradeId] : [],
-          title: news.title,
-          source: news.source,
-          url: news.url,
-          publishedAt: news.publishedAt ? new Date(news.publishedAt) : new Date(),
-          content: news.content || '',
-          storedAt: new Date(),
-          createdAt: new Date()
-        };
-        operations.push({ insertOne: { document: doc } });
-      }
+    // DynamoDB batch write (max 25 items per batch)
+    const batches = [];
+    for (let i = 0; i < newsArray.length; i += 25) {
+      batches.push(newsArray.slice(i, i + 25));
     }
 
-    if (operations.length > 0) {
-      await collection.bulkWrite(operations, { ordered: false });
-      console.log(`💾 Stored ${operations.length} news articles`);
+    for (const batch of batches) {
+      const putRequests = batch.map(news => ({
+        PutRequest: {
+          Item: {
+            url: news.url,
+            symbol: news.symbol,
+            symbols: news.symbol ? [news.symbol] : [],
+            tradeIds: news.tradeId ? [news.tradeId] : [],
+            title: news.title,
+            source: news.source,
+            publishedAt: news.publishedAt ? new Date(news.publishedAt).getTime() : Date.now(),
+            content: news.content || '',
+            storedAt: Date.now(),
+            createdAt: Date.now()
+          }
+        }
+      }));
+
+      await docClient.batchWrite({
+        RequestItems: {
+          [TABLES.NEWS_ARTICLES]: putRequests
+        }
+      });
     }
+
+    console.log(`💾 Stored ${newsArray.length} news articles`);
   } catch (error) {
     console.error('❌ Error storing news batch:', error);
   }
@@ -358,16 +328,15 @@ async function storeNewsBatch(newsArray) {
  */
 async function retrieveRelatedData(options) {
   try {
-    if (!useMongoDB || !mongoDb) {
-      const connected = await initMongoDB();
-      if (!connected || !mongoDb) {
+    if (!useDynamoDB) {
+      const connected = await initDynamoDB();
+      if (!connected) {
         return { evaluations: [], news: [] };
       }
     }
 
     const { symbol, tradeId, limit = 50, days = 30 } = options;
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - days);
+    const cutoffTimestamp = Date.now() - (days * 24 * 60 * 60 * 1000);
 
     const results = {
       evaluations: [],
@@ -375,57 +344,46 @@ async function retrieveRelatedData(options) {
     };
 
     // Retrieve AI evaluations
-    if (!mongoDb) {
-      console.log('⚠️ MongoDB not connected for retrieveRelatedData, returning empty data');
-      return { evaluations: [], news: [] };
+    if (symbol) {
+      try {
+        const evalResult = await docClient.query({
+          TableName: TABLES.AI_EVALUATIONS,
+          KeyConditionExpression: 'symbol = :symbol AND #ts >= :cutoff',
+          ExpressionAttributeNames: {
+            '#ts': 'timestamp'
+          },
+          ExpressionAttributeValues: {
+            ':symbol': symbol,
+            ':cutoff': cutoffTimestamp
+          },
+          Limit: limit,
+          ScanIndexForward: false // Sort descending
+        });
+        results.evaluations = evalResult.Items || [];
+      } catch (error) {
+        console.error('❌ Error querying evaluations:', error);
+      }
     }
-    const evalCollection = mongoDb.collection('aiEvaluations');
-    const evalQuery = {
-      timestamp: { $gte: cutoffDate }
-    };
-    
-    if (tradeId) {
-      evalQuery.tradeId = tradeId;
-    } else if (symbol) {
-      evalQuery.symbol = symbol;
-    }
-
-    const evaluations = await evalCollection
-      .find(evalQuery)
-      .sort({ timestamp: -1 })
-      .limit(limit)
-      .toArray();
-
-    results.evaluations = evaluations.map(evaluation => {
-      const { _id, ...data } = evaluation;
-      return data;
-    });
 
     // Retrieve news articles
-    const newsCollection = mongoDb.collection('newsArticles');
-    const newsQuery = {
-      storedAt: { $gte: cutoffDate }
-    };
-
-    if (tradeId) {
-      newsQuery.tradeIds = tradeId;
-    } else if (symbol) {
-      newsQuery.$or = [
-        { symbol: symbol },
-        { symbols: symbol }
-      ];
+    if (symbol) {
+      try {
+        const newsResult = await docClient.query({
+          TableName: TABLES.NEWS_ARTICLES,
+          IndexName: 'symbol-timestamp-index',
+          KeyConditionExpression: 'symbol = :symbol AND publishedAt >= :cutoff',
+          ExpressionAttributeValues: {
+            ':symbol': symbol,
+            ':cutoff': cutoffTimestamp
+          },
+          Limit: limit,
+          ScanIndexForward: false
+        });
+        results.news = newsResult.Items || [];
+      } catch (error) {
+        console.error('❌ Error querying news:', error);
+      }
     }
-
-    const news = await newsCollection
-      .find(newsQuery)
-      .sort({ publishedAt: -1 })
-      .limit(limit)
-      .toArray();
-
-    results.news = news.map(article => {
-      const { _id, ...data } = article;
-      return data;
-    });
 
     console.log(`📚 Retrieved ${results.evaluations.length} evaluations and ${results.news.length} news articles for ${symbol}${tradeId ? ` (trade: ${tradeId})` : ''}`);
     return results;
@@ -440,22 +398,33 @@ async function retrieveRelatedData(options) {
  */
 async function linkNewsToTrade(newsUrl, tradeId) {
   try {
-    if (!useMongoDB || !mongoDb) {
-      const connected = await initMongoDB();
-      if (!connected || !mongoDb) return false;
+    if (!useDynamoDB) {
+      const connected = await initDynamoDB();
+      if (!connected) return false;
     }
 
-    if (!mongoDb) {
-      return false;
-    }
-    const collection = mongoDb.collection('newsArticles');
-    await collection.updateOne(
-      { url: newsUrl },
-      { 
-        $addToSet: { tradeIds: tradeId },
-        $set: { updatedAt: new Date() }
+    // Get existing item first
+    const existing = await docClient.get({
+      TableName: TABLES.NEWS_ARTICLES,
+      Key: { url: newsUrl }
+    });
+
+    if (existing.Item) {
+      const tradeIds = existing.Item.tradeIds || [];
+      if (!tradeIds.includes(tradeId)) {
+        tradeIds.push(tradeId);
+        await docClient.update({
+          TableName: TABLES.NEWS_ARTICLES,
+          Key: { url: newsUrl },
+          UpdateExpression: 'SET tradeIds = :tradeIds, updatedAt = :now',
+          ExpressionAttributeValues: {
+            ':tradeIds': tradeIds,
+            ':now': Date.now()
+          }
+        });
       }
-    );
+    }
+
     return true;
   } catch (error) {
     console.error('❌ Error linking news to trade:', error);
@@ -468,27 +437,29 @@ async function linkNewsToTrade(newsUrl, tradeId) {
  */
 async function getStorageStats() {
   try {
-    if (!useMongoDB || !mongoDb) {
-      const connected = await initMongoDB();
-      if (!connected || !mongoDb) {
+    if (!useDynamoDB) {
+      const connected = await initDynamoDB();
+      if (!connected) {
         return { evaluations: 0, news: 0 };
       }
     }
 
-    if (!mongoDb) {
-      return { evaluations: 0, news: 0 };
-    }
-    const evalCollection = mongoDb.collection('aiEvaluations');
-    const newsCollection = mongoDb.collection('newsArticles');
-
-    const [evalCount, newsCount] = await Promise.all([
-      evalCollection.countDocuments(),
-      newsCollection.countDocuments()
+    // Note: DynamoDB scan with COUNT is expensive for large tables
+    // For production, consider using CloudWatch metrics or maintaining a counter
+    const [evalResult, newsResult] = await Promise.all([
+      docClient.scan({ 
+        TableName: TABLES.AI_EVALUATIONS, 
+        Select: 'COUNT' 
+      }).catch(() => ({ Count: 0 })),
+      docClient.scan({ 
+        TableName: TABLES.NEWS_ARTICLES, 
+        Select: 'COUNT' 
+      }).catch(() => ({ Count: 0 }))
     ]);
 
     return {
-      evaluations: evalCount,
-      news: newsCount
+      evaluations: evalResult.Count || 0,
+      news: newsResult.Count || 0
     };
   } catch (error) {
     console.error('❌ Error getting storage stats:', error);
@@ -503,6 +474,5 @@ module.exports = {
   retrieveRelatedData,
   linkNewsToTrade,
   getStorageStats,
-  initMongoDB
+  initDynamoDB
 };
-
