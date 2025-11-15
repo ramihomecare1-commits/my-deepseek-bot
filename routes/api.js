@@ -42,9 +42,8 @@ function addMonitoringActivity(activity) {
   }
 }
 
-// Export for use in bot
-module.exports.addMonitoringActivity = addMonitoringActivity;
-module.exports.setMonitoringActive = (active) => { monitoringIsActive = active; };
+// Export for use in bot (before module.exports = router)
+// These will be attached to the router export
 
 // Health check endpoint (for Render deployment)
 router.get('/health', (req, res) => {
@@ -633,3 +632,5 @@ router.get('/monitoring-activity', (req, res) => {
 
 module.exports = router;
 module.exports.addLogEntry = addLogEntry;
+module.exports.addMonitoringActivity = addMonitoringActivity;
+module.exports.setMonitoringActive = (active) => { monitoringIsActive = active; };
