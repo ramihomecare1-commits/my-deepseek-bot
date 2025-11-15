@@ -255,7 +255,209 @@ class MonitoringService {
   }
 
   /**
-   * Escalate to premium model for confirmation
+   * Batch escalate multiple coins to premium model in one API call
+   */
+  async batchEscalateToR1(escalations) {
+    try {
+      if (!escalations || escalations.length === 0) {
+        return [];
+      }
+
+      // Filter out recently rejected coins
+      const validEscalations = escalations.filter(esc => {
+        const { symbol } = esc.coinData;
+        if (this.isRecentlyRejected(symbol)) {
+          console.log(`⏭️ Skipping ${symbol} - recently rejected, won't escalate (saves cost)`);
+          return false;
+        }
+        return true;
+      });
+
+      if (validEscalations.length === 0) {
+        console.log('⏭️ All escalations were recently rejected - skipping batch escalation');
+        return escalations.map(esc => ({
+          symbol: esc.coinData.symbol,
+          decision: 'SKIPPED',
+          reason: 'Recently rejected by Premium AI',
+          timestamp: Date.now()
+        }));
+      }
+
+      console.log(`🚨 BATCH ESCALATING ${validEscalations.length} coins to Premium Model in one API call!`);
+      validEscalations.forEach(esc => {
+        console.log(`   - ${esc.coinData.symbol}: ${esc.v3Analysis.signal} (${(esc.v3Analysis.confidence * 100).toFixed(0)}%)`);
+      });
+
+      // Check premium API key
+      if (!this.PREMIUM_API_KEY) {
+        console.log(`⚠️ No premium tier API key - cannot escalate`);
+        return validEscalations.map(esc => ({
+          symbol: esc.coinData.symbol,
+          decision: 'ERROR',
+          reason: 'Premium API key not configured',
+          confidence: 0
+        }));
+      }
+
+      // Create batch prompt
+      const prompt = this.createBatchConfirmationPrompt(validEscalations);
+
+      // Call premium tier API with longer timeout for batch
+      const responseText = await this.callAI(prompt, this.PREMIUM_MODEL, 1000, 'premium');
+      const batchR1Decisions = this.parseBatchR1Response(responseText, validEscalations);
+
+      // Process results and store evaluations
+      const results = [];
+      for (let i = 0; i < validEscalations.length; i++) {
+        const esc = validEscalations[i];
+        const r1Decision = batchR1Decisions[i] || this.getDefaultR1Response('No response for this coin');
+        
+        // Store R1 evaluation
+        await storeAIEvaluation({
+          symbol: esc.coinData.symbol,
+          model: this.PREMIUM_MODEL,
+          analysis: r1Decision,
+          v3Analysis: esc.v3Analysis,
+          timestamp: new Date(),
+          type: 'confirmation'
+        });
+
+        // Track escalation
+        this.escalationHistory.push({
+          symbol: esc.coinData.symbol,
+          timestamp: new Date(),
+          v3Analysis: esc.v3Analysis,
+          r1Decision,
+          executed: r1Decision.decision === 'CONFIRMED'
+        });
+
+        // If rejected, cache it
+        if (r1Decision.decision === 'REJECTED') {
+          this.rejectedIdeasCache.set(esc.coinData.symbol, {
+            timestamp: Date.now(),
+            reason: r1Decision.reason.substring(0, 100)
+          });
+          console.log(`💾 Cached rejection for ${esc.coinData.symbol} - won't re-escalate for 4 hours`);
+        }
+
+        results.push({
+          symbol: esc.coinData.symbol,
+          coinData: esc.coinData,
+          v3Analysis: esc.v3Analysis,
+          r1Decision
+        });
+      }
+
+      // Add skipped escalations to results
+      escalations.forEach(esc => {
+        if (this.isRecentlyRejected(esc.coinData.symbol)) {
+          results.push({
+            symbol: esc.coinData.symbol,
+            coinData: esc.coinData,
+            v3Analysis: esc.v3Analysis,
+            r1Decision: {
+              decision: 'SKIPPED',
+              reason: 'Recently rejected by Premium AI',
+              timestamp: Date.now()
+            }
+          });
+        }
+      });
+
+      console.log(`✅ Batch escalation complete: ${results.length} coins processed`);
+      return results;
+
+    } catch (error) {
+      console.log(`⚠️ Batch escalation error:`, error.message);
+      if (error.response) {
+        console.log(`   API Status: ${error.response.status}`);
+        console.log(`   API Error: ${JSON.stringify(error.response.data).substring(0, 200)}`);
+      }
+      
+      // Return error for all escalations
+      return escalations.map(esc => ({
+        symbol: esc.coinData.symbol,
+        coinData: esc.coinData,
+        v3Analysis: esc.v3Analysis,
+        r1Decision: {
+          decision: 'ERROR',
+          reason: `Premium model escalation failed: ${error.message}`,
+          confidence: 0
+        }
+      }));
+    }
+  }
+
+  /**
+   * Parse batch R1 response (multiple coins)
+   */
+  parseBatchR1Response(content, escalations) {
+    const results = [];
+    
+    if (!content || typeof content !== 'string') {
+      console.log('⚠️ Batch R1 response is empty or not a string');
+      return escalations.map(() => this.getDefaultR1Response('Empty response'));
+    }
+
+    try {
+      // Strategy 1: Look for JSON array in markdown code blocks
+      const codeBlockMatch = content.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/);
+      if (codeBlockMatch) {
+        const parsed = JSON.parse(codeBlockMatch[1]);
+        if (Array.isArray(parsed)) {
+          return this.mapBatchR1Results(parsed, escalations);
+        }
+      }
+      
+      // Strategy 2: Look for JSON array anywhere in text
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed)) {
+          return this.mapBatchR1Results(parsed, escalations);
+        }
+      }
+      
+      // Strategy 3: Try parsing entire content as JSON array
+      const parsed = JSON.parse(content.trim());
+      if (Array.isArray(parsed)) {
+        return this.mapBatchR1Results(parsed, escalations);
+      }
+      
+    } catch (error) {
+      console.log('⚠️ Failed to parse batch R1 response:', error.message);
+      console.log('   Response preview (first 500 chars):', content.substring(0, 500));
+    }
+
+    // Fallback: return default for all
+    return escalations.map(() => this.getDefaultR1Response('No valid JSON array found'));
+  }
+
+  /**
+   * Map batch R1 results to escalations
+   */
+  mapBatchR1Results(parsedArray, escalations) {
+    const results = [];
+    
+    for (let i = 0; i < escalations.length; i++) {
+      const esc = escalations[i];
+      const coinSymbol = esc.coinData.symbol;
+      
+      // Try to find by symbol, fallback to index
+      const analysis = parsedArray.find(a => a.symbol === coinSymbol) || parsedArray[i] || null;
+      
+      if (analysis) {
+        results.push(this.validateR1Response(analysis));
+      } else {
+        results.push(this.getDefaultR1Response(`No response for ${coinSymbol}`));
+      }
+    }
+    
+    return results;
+  }
+
+  /**
+   * Escalate to premium model for confirmation (single coin - kept for backward compatibility)
    */
   async escalateToR1(coinData, v3Analysis) {
     try {
@@ -274,8 +476,7 @@ class MonitoringService {
       console.log(`   Free Model Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%`);
       console.log(`   Free Model Reason: ${v3Analysis.reason}`);
 
-      // Send Telegram notification about escalation
-      await this.notifyEscalation(symbol, v3Analysis, coinData);
+      // Note: Telegram notification will be sent after premium response in batch mode
 
       // Create detailed prompt for premium model
       const prompt = this.createConfirmationPrompt(coinData, v3Analysis);
@@ -322,7 +523,7 @@ class MonitoringService {
         console.log(`💾 Cached rejection for ${symbol} - won't re-escalate for 4 hours`);
       }
 
-      // Send result notification
+      // Send result notification (only for single escalation, batch uses notifyR1DecisionBatch)
       await this.notifyR1Decision(symbol, v3Analysis, r1Decision, coinData);
 
       return r1Decision;
@@ -453,7 +654,7 @@ Keep it brief and actionable.`;
   }
 
   /**
-   * Create confirmation prompt for R1
+   * Create confirmation prompt for R1 (single coin)
    */
   createConfirmationPrompt(coinData, v3Analysis) {
     const { symbol, name, currentPrice, priceChange24h, volume24h } = coinData;
@@ -484,6 +685,53 @@ Respond in JSON format:
 }
 
 Be thorough and conservative. Only confirm high-probability setups.`;
+  }
+
+  /**
+   * Create batch confirmation prompt for multiple coins
+   */
+  createBatchConfirmationPrompt(escalations) {
+    let prompt = `BATCH CONFIRMATION REQUEST FROM MONITORING AI\n\n`;
+    prompt += `Analyze ${escalations.length} coins that were flagged by the free monitoring AI.\n\n`;
+    
+    escalations.forEach((esc, index) => {
+      const { coinData, v3Analysis } = esc;
+      const { symbol, name, currentPrice, priceChange24h, volume24h } = coinData;
+      
+      prompt += `[${index + 1}] ${symbol} - ${name}
+Current Price: $${currentPrice}
+24h Change: ${priceChange24h?.toFixed(2)}%
+24h Volume: $${volume24h?.toLocaleString()}
+
+Free AI Detection:
+- Signal: ${v3Analysis.signal}
+- Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%
+- Reason: ${v3Analysis.reason}
+
+`;
+
+    });
+
+    prompt += `\nYOUR TASK:
+For each coin above, provide a final trading decision. Confirm or reject each opportunity.
+
+Respond in JSON array format (one object per coin, in order):
+[
+  {
+    "symbol": "SYMBOL",
+    "decision": "CONFIRMED/REJECTED",
+    "action": "BUY/SELL/HOLD",
+    "confidence": 0.0-1.0,
+    "reason": "detailed reasoning",
+    "stopLoss": percentage,
+    "takeProfit": percentage
+  },
+  ...
+]
+
+Be thorough and conservative. Only confirm high-probability setups.`;
+
+    return prompt;
   }
 
   /**
@@ -680,7 +928,7 @@ Be thorough and conservative. Only confirm high-probability setups.`;
   }
 
   /**
-   * Send Telegram notification about R1 decision
+   * Send Telegram notification about R1 decision (single coin)
    */
   async notifyR1Decision(symbol, v3Analysis, r1Decision, coinData) {
     const emoji = r1Decision.decision === 'CONFIRMED' ? '✅' : '❌';
@@ -692,25 +940,47 @@ Be thorough and conservative. Only confirm high-probability setups.`;
       reason = 'Premium AI analysis completed, but response format was unexpected. Decision: REJECTED for safety.';
     }
 
-    const message = `${emoji} *Premium AI Decision: ${r1Decision.decision}*
+    const message = `${emoji} *AI Analysis: ${symbol}*
 
 📊 Coin: *${symbol}*
 💰 Price: $${coinData?.currentPrice || 'N/A'}
-🎯 Action: ${r1Decision.action}
-💪 Premium Confidence: ${(r1Decision.confidence * 100).toFixed(0)}%
-🤖 Model: ${this.PREMIUM_MODEL}
 
-📝 Analysis:
-${reason.substring(0, 400)}${reason.length > 400 ? '...' : ''}
+🤖 *Free AI (Monitoring):*
+📊 Signal: ${v3Analysis.signal}
+💪 Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%
+📝 Reason: ${v3Analysis.reason.substring(0, 150)}${v3Analysis.reason.length > 150 ? '...' : ''}
+
+💎 *Premium AI (Decision):*
+🎯 Decision: ${r1Decision.decision}
+🎯 Action: ${r1Decision.action}
+💪 Confidence: ${(r1Decision.confidence * 100).toFixed(0)}%
+📝 Analysis: ${reason.substring(0, 200)}${reason.length > 200 ? '...' : ''}
 
 ${r1Decision.decision === 'CONFIRMED' ? `
 🛡️ Stop Loss: ${r1Decision.stopLoss}%
 🎯 Take Profit: ${r1Decision.takeProfit}%
-` : ''}
----
-🤖 Free AI Initial: ${v3Analysis.signal} (${(v3Analysis.confidence * 100).toFixed(0)}%)`;
+` : ''}`;
 
     await sendTelegramMessage(message);
+  }
+
+  /**
+   * Send batch Telegram notifications (one per coin with both free and premium insights)
+   */
+  async notifyR1DecisionBatch(results) {
+    for (const result of results) {
+      const { symbol, coinData, v3Analysis, r1Decision } = result;
+      
+      // Skip notifications for skipped/error decisions
+      if (r1Decision.decision === 'SKIPPED' || r1Decision.decision === 'ERROR') {
+        continue;
+      }
+      
+      await this.notifyR1Decision(symbol, v3Analysis, r1Decision, coinData);
+      
+      // Small delay between messages to avoid rate limits
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
   }
 
   /**

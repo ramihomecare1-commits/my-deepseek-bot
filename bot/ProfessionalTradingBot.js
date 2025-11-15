@@ -541,6 +541,9 @@ class ProfessionalTradingBot {
         this.trades = [];
       }
 
+      // Array to collect all coins that need escalation
+      const escalations = [];
+
       // PRIORITY 1: Batch monitor active/open trades (one API call for all)
       const activeTradeSymbols = this.trades
         .filter(t => t && t.status === 'OPEN')
@@ -605,7 +608,7 @@ class ProfessionalTradingBot {
         if (openTradeCoinsData.length > 0) {
           const batchResults = await monitoringService.batchVolatilityCheck(openTradeCoinsData);
           
-          // Process batch results
+          // Process batch results and collect escalations
           for (const batchResult of batchResults) {
             const coinData = openTradeCoinsData.find(c => c.symbol === batchResult.symbol);
             if (!coinData) continue;
@@ -634,30 +637,10 @@ class ProfessionalTradingBot {
               console.log(`⚠️ Failed to log monitoring activity for ${coinData.symbol}: ${err.message}`);
             }
             
-            // Check if escalation is needed
+            // Check if escalation is needed - collect for batch escalation
             if (analysis.shouldEscalate && analysis.confidence >= monitoringService.ESCALATION_THRESHOLD) {
-              const r1Decision = await monitoringService.escalateToR1(coinData, analysis);
-              
-              if (r1Decision && r1Decision.decision === 'CONFIRMED') {
-                console.log(`🔴 [OPEN TRADE] ✅ R1 CONFIRMED opportunity for ${coinData.symbol}!`);
-                
-                if (this.tradingRules.paperTradingEnabled) {
-                  await this.executePaperTrade({
-                    symbol: coinData.symbol,
-                    action: r1Decision.action,
-                    price: coinData.currentPrice,
-                    reason: r1Decision.reason,
-                    confidence: r1Decision.confidence,
-                    stopLoss: r1Decision.stopLoss,
-                    takeProfit: r1Decision.takeProfit,
-                    source: 'monitoring'
-                  });
-                }
-              } else if (r1Decision && r1Decision.decision === 'SKIPPED') {
-                console.log(`⏭️ ${coinData.symbol} - Recently rejected, skipped escalation (saves cost)`);
-              } else {
-                console.log(`🔴 [OPEN TRADE] ❌ R1 rejected ${coinData.symbol}`);
-              }
+              escalations.push({ coinData, v3Analysis: analysis, isPriority: true });
+              console.log(`🔴 [OPEN TRADE] ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%) - Will escalate to premium`);
             } else {
               console.log(`🔴 [OPEN TRADE] ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%)`);
             }
@@ -726,7 +709,7 @@ class ProfessionalTradingBot {
         if (otherCoinsData.length > 0) {
           const batchResults = await monitoringService.batchVolatilityCheck(otherCoinsData);
           
-          // Process batch results
+          // Process batch results and collect escalations
           for (const batchResult of batchResults) {
             const coinData = otherCoinsData.find(c => c.symbol === batchResult.symbol);
             if (!coinData) continue;
@@ -755,35 +738,56 @@ class ProfessionalTradingBot {
               console.log(`⚠️ Failed to log monitoring activity for ${coinData.symbol}: ${err.message}`);
             }
             
-            // Check if escalation is needed
+            // Check if escalation is needed - collect for batch escalation
             if (analysis.shouldEscalate && analysis.confidence >= monitoringService.ESCALATION_THRESHOLD) {
-              const r1Decision = await monitoringService.escalateToR1(coinData, analysis);
-              
-              if (r1Decision && r1Decision.decision === 'CONFIRMED') {
-                console.log(`🔍 ✅ R1 CONFIRMED opportunity for ${coinData.symbol}!`);
-                
-                if (this.tradingRules.paperTradingEnabled) {
-                  await this.executePaperTrade({
-                    symbol: coinData.symbol,
-                    action: r1Decision.action,
-                    price: coinData.currentPrice,
-                    reason: r1Decision.reason,
-                    confidence: r1Decision.confidence,
-                    stopLoss: r1Decision.stopLoss,
-                    takeProfit: r1Decision.takeProfit,
-                    source: 'monitoring'
-                  });
-                }
-              } else if (r1Decision && r1Decision.decision === 'SKIPPED') {
-                console.log(`⏭️ ${coinData.symbol} - Recently rejected, skipped escalation (saves cost)`);
-              } else {
-                console.log(`🔍 ❌ R1 rejected ${coinData.symbol}`);
-              }
+              escalations.push({ coinData, v3Analysis: analysis, isPriority: false });
+              console.log(`🔍 ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%) - Will escalate to premium`);
             } else {
               console.log(`🔍 ${coinData.symbol}: ${analysis.signal} (${(analysis.confidence * 100).toFixed(0)}%)`);
             }
           }
         }
+      }
+
+      // STEP 3: Batch escalate all coins that need escalation in ONE premium API call
+      if (escalations.length > 0) {
+        console.log(`\n🚨 Batch escalating ${escalations.length} coins to Premium AI in one API call...`);
+        
+        const batchEscalationResults = await monitoringService.batchEscalateToR1(escalations);
+        
+        // Process batch escalation results
+        for (const result of batchEscalationResults) {
+          const { symbol, coinData, v3Analysis, r1Decision } = result;
+          const priorityLabel = escalations.find(e => e.coinData.symbol === symbol)?.isPriority ? '🔴 [OPEN TRADE]' : '🔍';
+          
+          if (r1Decision.decision === 'CONFIRMED') {
+            console.log(`${priorityLabel} ✅ R1 CONFIRMED opportunity for ${symbol}!`);
+            
+            if (this.tradingRules.paperTradingEnabled) {
+              await this.executePaperTrade({
+                symbol: symbol,
+                action: r1Decision.action,
+                price: coinData.currentPrice,
+                reason: r1Decision.reason,
+                confidence: r1Decision.confidence,
+                stopLoss: r1Decision.stopLoss,
+                takeProfit: r1Decision.takeProfit,
+                source: 'monitoring'
+              });
+            }
+          } else if (r1Decision.decision === 'SKIPPED') {
+            console.log(`⏭️ ${symbol} - Recently rejected, skipped escalation (saves cost)`);
+          } else if (r1Decision.decision === 'ERROR') {
+            console.log(`${priorityLabel} ❌ Premium AI error for ${symbol}: ${r1Decision.reason}`);
+          } else {
+            console.log(`${priorityLabel} ❌ R1 rejected ${symbol}`);
+          }
+        }
+        
+        // Send Telegram notifications (one per coin with both free and premium insights)
+        await monitoringService.notifyR1DecisionBatch(batchEscalationResults);
+      } else {
+        console.log('✅ No coins need escalation to premium AI');
       }
 
       console.log('✅ Monitoring cycle complete');
