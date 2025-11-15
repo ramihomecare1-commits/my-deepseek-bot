@@ -590,14 +590,36 @@ class BulkIndicatorService {
 
       console.log(`✅ Fetched ${topCoins.length} coins from CoinGecko`);
 
-      // 2. Limit to maxCoins (now we can scan ALL coins, not just 5!)
-      const coinsToScan = topCoins.slice(0, maxCoins);
+      // 2. Filter out stablecoins and wrapped/derivative tokens
+      const stablecoins = [
+        'USDT', 'USDC', 'BUSD', 'DAI', 'USDE', 'FDUSD', 'TUSD', 'USDP', 
+        'GUSD', 'PYUSD', 'USDD', 'FRAX', 'LUSD', 'USDJ', 'BSC-USD',
+        'SUSD', 'TRIBE', 'FEI', 'EURS', 'EURT', 'USDN'
+      ];
+      
+      const wrappedDerivatives = [
+        'WETH', 'WBTC', 'WBETH', 'WSTETH', 'WEETH', 'STETH', 'RETH', 
+        'CBETH', 'EETH', 'ETHX', 'SETH2', 'ANKR', 'SFRXETH', 'SWETH',
+        'CBBTC', 'GTETH', 'FRXETH', 'OSETH'
+      ];
+      
+      const excludedCoins = [...stablecoins, ...wrappedDerivatives];
+      
+      const filteredCoins = topCoins.filter(coin => {
+        const symbol = coin.symbol.toUpperCase();
+        return !excludedCoins.includes(symbol);
+      });
+      
+      console.log(`🔍 Filtered out ${topCoins.length - filteredCoins.length} stablecoins/wrapped tokens`);
+
+      // 3. Limit to maxCoins from filtered list
+      const coinsToScan = filteredCoins.slice(0, maxCoins);
       
       console.log(`📊 Calculating indicators for ${coinsToScan.length} coins (RSI(14) + BB(20,2))...`);
       console.log(`   Using daily candles to match TradingView/exchanges format`);
       console.log(`   This may take a minute - fetching 60 days of daily data from CoinGecko...`);
 
-      // 3. Calculate indicators for each coin (ONE AT A TIME to avoid rate limits)
+      // 4. Calculate indicators for each coin (ONE AT A TIME to avoid rate limits)
       const analyzedCoins = [];
       const delayBetweenCoins = 4000; // 4 seconds between each coin (safer for CoinGecko free tier - 15 req/min max)
       
@@ -691,7 +713,7 @@ class BulkIndicatorService {
         }
       }
 
-      // 7. Sort by most oversold (highest trigger count, lowest RSI)
+      // 5. Sort by most oversold (highest trigger count, lowest RSI)
       const sorted = analyzedCoins.sort((a, b) => {
         if (b.triggerCount !== a.triggerCount) {
           return b.triggerCount - a.triggerCount;
