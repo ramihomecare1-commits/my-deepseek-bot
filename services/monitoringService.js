@@ -123,7 +123,7 @@ class MonitoringService {
   }
 
   /**
-   * Quick volatility check using free v3 model
+   * Quick volatility check using free v3 model (single coin)
    */
   async quickVolatilityCheck(coinData) {
     try {
@@ -134,7 +134,7 @@ class MonitoringService {
       const volatilityLevel = this.calculateVolatilityLevel(priceChangePercent);
       
       // No volatility filter - monitor everything for real-time opportunities
-      // (Since we're monitoring every minute, 24h volatility is not relevant)
+      // (Since we're monitoring every 2 minutes, 24h volatility is not relevant)
       
       console.log(`🔍 Free model monitoring ${symbol} (${volatilityLevel} volatility: ${priceChangePercent.toFixed(2)}%)`);
 
@@ -166,8 +166,73 @@ class MonitoringService {
       if (error.response) {
         console.log(`   API Status: ${error.response.status}`);
         console.log(`   API Error: ${JSON.stringify(error.response.data).substring(0, 200)}`);
+      } else {
+        console.log(`   Error stack: ${error.stack?.substring(0, 200)}`);
       }
       return null;
+    }
+  }
+
+  /**
+   * Batch volatility check for multiple coins in one API call
+   */
+  async batchVolatilityCheck(coinsData) {
+    try {
+      if (!coinsData || coinsData.length === 0) {
+        return [];
+      }
+
+      console.log(`📦 Batch monitoring ${coinsData.length} coins in one API call...`);
+
+      // Check for API key
+      if (!this.FREE_API_KEY) {
+        console.log(`⚠️ No free tier API key - skipping batch monitoring`);
+        return coinsData.map(c => ({ symbol: c.symbol, analysis: null }));
+      }
+
+      // Create batch prompt
+      const batchPrompt = this.createBatchMonitoringPrompt(coinsData);
+      
+      // Call AI with larger token limit for batch
+      const responseText = await this.callAI(batchPrompt, this.FREE_MODEL, 500, 'free');
+      const batchAnalysis = this.parseBatchMonitoringResponse(responseText, coinsData);
+      
+      // Store evaluations and return results
+      const results = [];
+      for (let i = 0; i < coinsData.length; i++) {
+        const coinData = coinsData[i];
+        const analysis = batchAnalysis[i] || null;
+        
+        if (analysis) {
+          // Store v3 evaluation
+          await storeAIEvaluation({
+            symbol: coinData.symbol,
+            model: this.FREE_MODEL,
+            analysis,
+            timestamp: new Date(),
+            type: 'monitoring'
+          });
+        }
+        
+        results.push({
+          symbol: coinData.symbol,
+          analysis
+        });
+      }
+
+      console.log(`✅ Batch monitoring complete: ${results.filter(r => r.analysis).length}/${coinsData.length} analyzed`);
+      return results;
+
+    } catch (error) {
+      console.log(`⚠️ Batch monitoring error:`, error.message);
+      if (error.response) {
+        console.log(`   API Status: ${error.response.status}`);
+        console.log(`   API Error: ${JSON.stringify(error.response.data).substring(0, 200)}`);
+      } else {
+        console.log(`   Error stack: ${error.stack?.substring(0, 200)}`);
+      }
+      // Return null for all coins on error
+      return coinsData.map(c => ({ symbol: c.symbol, analysis: null }));
     }
   }
 
@@ -314,7 +379,7 @@ class MonitoringService {
   }
 
   /**
-   * Create monitoring prompt for v3
+   * Create monitoring prompt for v3 (single coin)
    */
   createMonitoringPrompt(coinData) {
     const { symbol, name, currentPrice, priceChange24h, volume24h, minutePriceChange } = coinData;
@@ -343,6 +408,48 @@ Consider:
 - Risk signals
 
 Keep it brief and actionable.`;
+  }
+
+  /**
+   * Create batch monitoring prompt for multiple coins
+   */
+  createBatchMonitoringPrompt(coinsData) {
+    let prompt = `BATCH VOLATILITY CHECK - Analyze ${coinsData.length} coins\n\n`;
+    
+    coinsData.forEach((coinData, index) => {
+      const { symbol, name, currentPrice, priceChange24h, volume24h, minutePriceChange } = coinData;
+      prompt += `[${index + 1}] ${symbol} - ${name}
+Price: $${currentPrice}
+24h Change: ${priceChange24h?.toFixed(2) || 'N/A'}%
+${minutePriceChange ? `1min Change: ${minutePriceChange.toFixed(2)}%\n` : ''}
+24h Volume: $${volume24h?.toLocaleString() || 'N/A'}
+
+`;
+    });
+
+    prompt += `\nTask: Analyze each coin and detect if any need escalation to premium AI for trading decision.
+
+Respond in JSON array format (one object per coin, in order):
+[
+  {
+    "symbol": "SYMBOL",
+    "shouldEscalate": true/false,
+    "confidence": 0.0-1.0,
+    "reason": "brief reason",
+    "signal": "OPPORTUNITY/CAUTION/NORMAL"
+  },
+  ...
+]
+
+Consider for each:
+- Unusual volatility (>3% moves)
+- Volume spikes
+- Potential breakouts
+- Risk signals
+
+Keep it brief and actionable.`;
+
+    return prompt;
   }
 
   /**
@@ -380,7 +487,7 @@ Be thorough and conservative. Only confirm high-probability setups.`;
   }
 
   /**
-   * Parse v3 monitoring response
+   * Parse v3 monitoring response (single coin)
    */
   parseMonitoringResponse(content) {
     try {
@@ -406,6 +513,48 @@ Be thorough and conservative. Only confirm high-probability setups.`;
       reason: 'Failed to parse response',
       signal: 'NORMAL'
     };
+  }
+
+  /**
+   * Parse batch monitoring response (multiple coins)
+   */
+  parseBatchMonitoringResponse(content, coinsData) {
+    const results = [];
+    
+    try {
+      // Try to extract JSON array
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        
+        if (Array.isArray(parsed)) {
+          // Map results to coins
+          for (let i = 0; i < coinsData.length; i++) {
+            const coinSymbol = coinsData[i].symbol;
+            const analysis = parsed.find(a => a.symbol === coinSymbol) || parsed[i] || null;
+            
+            if (analysis) {
+              results.push({
+                shouldEscalate: analysis.shouldEscalate || false,
+                confidence: analysis.confidence || 0.5,
+                reason: analysis.reason || 'No reason provided',
+                signal: analysis.signal || 'NORMAL'
+              });
+            } else {
+              results.push(null);
+            }
+          }
+          
+          return results;
+        }
+      }
+    } catch (error) {
+      console.log('⚠️ Failed to parse batch response:', error.message);
+      console.log('   Response preview:', content.substring(0, 200));
+    }
+
+    // Fallback: return null for all coins
+    return coinsData.map(() => null);
   }
 
   /**
