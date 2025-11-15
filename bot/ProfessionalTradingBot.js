@@ -545,12 +545,20 @@ class ProfessionalTradingBot {
         try {
           // Fetch current price data (need to pass coin object, cache, stats, and config)
           const coinDataForFetch = { symbol: coin.symbol, id: coin.id };
-          // Ensure config is available (imported at top of file)
+          
+          // Ensure all required parameters are available
           if (!config) {
-            console.log(`⚠️ Config not available for ${coin.symbol}, skipping`);
+            console.log(`⚠️ Config not available, skipping ${coin.symbol}`);
             continue;
           }
-          const priceResult = await fetchEnhancedPriceData(coinDataForFetch, this.priceCache || new Map(), this.stats, config);
+          if (!this.priceCache) {
+            this.priceCache = new Map();
+          }
+          if (!this.stats) {
+            this.stats = { coinmarketcapUsage: 0, coinpaprikaUsage: 0 };
+          }
+          
+          const priceResult = await fetchEnhancedPriceData(coinDataForFetch, this.priceCache, this.stats, config);
           
           if (!priceResult || !priceResult.data || !priceResult.data.price) continue;
 
