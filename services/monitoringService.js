@@ -139,16 +139,27 @@ class MonitoringService {
    */
   async callOpenRouterAPI(prompt, model, maxTokens, apiKey) {
     try {
-      // Use longer timeout for batch requests (1000 tokens = ~30s, single = 10s)
-      const timeout = maxTokens > 500 ? 30000 : 10000;
+      // DeepSeek R1 is VERY slow - needs much longer timeout
+      // Use 60s for batch requests (R1 reasoning takes time), 15s for single
+      const isR1Model = model.includes('deepseek-r1') || model.includes('r1');
+      const timeout = maxTokens > 500 ? (isR1Model ? 60000 : 30000) : 15000;
       
       console.log(`📡 Calling OpenRouter API: ${model} (${maxTokens} tokens, ${timeout/1000}s timeout)`);
+      if (isR1Model) {
+        console.log(`   ⏱️ Using extended timeout for R1 reasoning model`);
+      }
       
       const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
         model: model,
         messages: [{ role: 'user', content: prompt }],
         max_tokens: maxTokens,
         temperature: 0.3,
+        // Add extra parameters for better R1 performance
+        ...(isR1Model && {
+          top_p: 0.9,
+          frequency_penalty: 0.0,
+          presence_penalty: 0.0,
+        })
       }, {
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -200,7 +211,19 @@ class MonitoringService {
       
       if (content.trim().length === 0) {
         console.log('⚠️ OpenRouter API returned empty string');
-        console.log('   This might indicate rate limiting or API issues');
+        console.log('   This might indicate:');
+        console.log('   - Model timeout (R1 takes 30-60s to respond)');
+        console.log('   - Content filtering (response blocked)');
+        console.log('   - Rate limiting (check OpenRouter dashboard)');
+        console.log('   - max_tokens too low (try increasing)');
+        
+        // Check if there are any usage or error indicators in response
+        if (response.data.usage) {
+          console.log('   Usage:', JSON.stringify(response.data.usage));
+        }
+        if (response.data.model) {
+          console.log('   Model used:', response.data.model);
+        }
       } else {
         console.log(`✅ OpenRouter API response received (${content.length} chars)`);
       }
@@ -527,10 +550,15 @@ class MonitoringService {
       console.log(`📝 Batch prompt created (${prompt.length} chars) for ${validEscalations.length} coins`);
 
       // Call premium tier API with longer timeout for batch
+      // Increase max_tokens for R1 reasoning model (needs more tokens for thinking)
+      const isR1Model = this.PREMIUM_MODEL.includes('r1');
+      const maxTokens = isR1Model ? 2000 : 1000; // R1 needs more tokens for reasoning
+      
       let responseText;
       try {
         console.log(`🚀 Starting premium API call for ${validEscalations.length} coins...`);
-        responseText = await this.callAI(prompt, this.PREMIUM_MODEL, 1000, 'premium');
+        console.log(`   Model: ${this.PREMIUM_MODEL}, Max tokens: ${maxTokens}`);
+        responseText = await this.callAI(prompt, this.PREMIUM_MODEL, maxTokens, 'premium');
         
         // Detailed validation of response
         console.log(`📥 Premium API call completed`);
