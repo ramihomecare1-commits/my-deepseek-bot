@@ -96,6 +96,22 @@ const TRADE_PROXIMITY_THRESHOLD = Number(process.env.TRADE_PROXIMITY_THRESHOLD |
 const TRADE_CHECK_INTERVAL = Number(process.env.TRADE_CHECK_INTERVAL || 30000); // 30 seconds - check open trades
 const AI_EVALUATION_COOLDOWN = Number(process.env.AI_EVALUATION_COOLDOWN || 300000); // 5 minutes - min time between AI evaluations for same trade
 
+// Risk Management Configuration
+const MAX_RISK_PER_TRADE = Number(process.env.MAX_RISK_PER_TRADE || 2.0); // 2% max risk per trade
+const DEFAULT_RISK_PER_TRADE = Number(process.env.DEFAULT_RISK_PER_TRADE || 1.0); // 1% default risk
+const MAX_TOTAL_EXPOSURE = Number(process.env.MAX_TOTAL_EXPOSURE || 10.0); // 10% max total exposure
+const MIN_RISK_REWARD = Number(process.env.MIN_RISK_REWARD || 1.5); // Minimum 1.5:1 R:R
+const MAX_CONCURRENT_TRADES = Number(process.env.MAX_CONCURRENT_TRADES || 5); // Max 5 open trades
+
+// Strategy Configuration
+const ACTIVE_STRATEGY = process.env.ACTIVE_STRATEGY || 'ai_hybrid'; // 'rsi_bollinger' or 'ai_hybrid'
+const USE_SENTIMENT_ANALYSIS = (process.env.USE_SENTIMENT_ANALYSIS || 'true').toLowerCase() === 'true';
+const USE_MARKET_REGIME_DETECTION = (process.env.USE_MARKET_REGIME_DETECTION || 'true').toLowerCase() === 'true';
+
+// Performance Analytics Configuration
+const ENABLE_PERFORMANCE_TRACKING = (process.env.ENABLE_PERFORMANCE_TRACKING || 'true').toLowerCase() === 'true';
+const PERFORMANCE_REPORT_INTERVAL = Number(process.env.PERFORMANCE_REPORT_INTERVAL || 86400000); // 24 hours
+
 // Notifications behavior
 const ALLOW_MOCK_NOTIFICATIONS = (process.env.ALLOW_MOCK_NOTIFICATIONS || 'false').toLowerCase() === 'true';
 
@@ -178,6 +194,19 @@ module.exports = {
   TRADE_PROXIMITY_THRESHOLD,
   TRADE_CHECK_INTERVAL,
   AI_EVALUATION_COOLDOWN,
+  // Risk Management Configuration
+  MAX_RISK_PER_TRADE,
+  DEFAULT_RISK_PER_TRADE,
+  MAX_TOTAL_EXPOSURE,
+  MIN_RISK_REWARD,
+  MAX_CONCURRENT_TRADES,
+  // Strategy Configuration
+  ACTIVE_STRATEGY,
+  USE_SENTIMENT_ANALYSIS,
+  USE_MARKET_REGIME_DETECTION,
+  // Performance Analytics Configuration
+  ENABLE_PERFORMANCE_TRACKING,
+  PERFORMANCE_REPORT_INTERVAL,
   // TAAPI.IO Configuration
   TAAPI_API_KEY,
   TAAPI_ENABLED,

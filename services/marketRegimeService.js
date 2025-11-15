@@ -1,162 +1,349 @@
 /**
  * Market Regime Detection Service
- * Detects market conditions (trending, ranging, volatile, low volatility)
- * and adapts trading strategy accordingly
+ * Identifies bull/bear/sideways market conditions
  */
 
-const { calculateRSI, identifyTrend, calculateBollingerBands } = require('../bot/indicators');
+const { calculateRSI } = require('../bot/indicators');
 
 /**
- * Detect market regime based on price action and indicators
- * @param {Array} prices - Array of price data
- * @param {Object} indicators - Pre-calculated indicators (optional)
- * @returns {Object} Market regime classification
+ * Market regime types
  */
-function detectMarketRegime(prices, indicators = {}) {
-  if (!prices || prices.length < 50) {
+const REGIME_TYPES = {
+  BULL: 'bull',
+  BEAR: 'bear',
+  SIDEWAYS: 'sideways',
+  VOLATILE: 'volatile',
+  UNKNOWN: 'unknown'
+};
+
+/**
+ * Detect market regime from price history
+ * @param {Array} priceHistory - Array of historical prices {timestamp, price}
+ * @param {Object} globalMetrics - Global market metrics (optional)
+ * @returns {Object} Market regime analysis
+ */
+function detectMarketRegime(priceHistory, globalMetrics = null) {
+  if (!priceHistory || priceHistory.length < 20) {
     return {
-      regime: 'unknown',
+      regime: REGIME_TYPES.UNKNOWN,
       confidence: 0,
-      recommendation: {
-        minConfidence: 0.65,
-        useBreakouts: false,
-        useMeanReversion: false,
-        reducePositionSize: false,
-        increasePositionSize: false
-      }
+      indicators: {}
     };
   }
+
+  const prices = priceHistory.map(p => p.price || p.close || p.c || 0);
+  const recent = prices.slice(-20); // Last 20 periods
   
-  // Extract price values
-  const priceValues = prices.map(p => typeof p === 'number' ? p : (p.price || p.close || 0)).filter(p => p > 0);
+  // Calculate trend indicators
+  const trendAnalysis = analyzeTrend(recent);
+  const volatilityAnalysis = analyzeVolatility(recent);
+  const momentumAnalysis = analyzeMomentum(prices);
   
-  if (priceValues.length < 50) {
-    return {
-      regime: 'unknown',
-      confidence: 0,
-      recommendation: {
-        minConfidence: 0.65,
-        useBreakouts: false,
-        useMeanReversion: false,
-        reducePositionSize: false,
-        increasePositionSize: false
-      }
-    };
-  }
-  
-  // Calculate indicators if not provided
-  const rsi = indicators.rsi || calculateRSI(priceValues, 14);
-  const trend = indicators.trend || identifyTrend(priceValues);
-  const bollinger = indicators.bollinger || calculateBollingerBands(priceValues, 20, 2);
-  
-  // Calculate volatility (standard deviation of returns)
-  const returns = [];
-  for (let i = 1; i < priceValues.length; i++) {
-    returns.push((priceValues[i] - priceValues[i - 1]) / priceValues[i - 1]);
-  }
-  const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
-  const variance = returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length;
-  const volatility = Math.sqrt(variance) * 100; // As percentage
-  
-  // Calculate trend strength
-  const trendStrength = Math.abs(trend.slope || 0);
-  const isUptrend = trend.direction === 'BULLISH' || trend.slope > 0;
-  const isDowntrend = trend.direction === 'BEARISH' || trend.slope < 0;
-  
-  // Calculate price range (for ranging detection)
-  const recentPrices = priceValues.slice(-20);
-  const priceRange = (Math.max(...recentPrices) - Math.min(...recentPrices)) / Math.min(...recentPrices) * 100;
-  
-  // Calculate Bollinger Band width (for volatility)
-  const bbWidth = bollinger.upper && bollinger.lower && bollinger.middle
-    ? ((bollinger.upper[bollinger.upper.length - 1] - bollinger.lower[bollinger.lower.length - 1]) / bollinger.middle[bollinger.middle.length - 1]) * 100
-    : 0;
-  
-  // Classify regime
-  let regime = 'neutral';
-  let confidence = 0.5;
-  const recommendation = {
-    minConfidence: 0.65,
-    useBreakouts: false,
-    useMeanReversion: false,
-    reducePositionSize: false,
-    increasePositionSize: false
-  };
-  
-  // High volatility regime (> 3% daily volatility)
-  if (volatility > 3 || bbWidth > 5) {
-    regime = 'volatile';
-    confidence = 0.7;
-    recommendation.minConfidence = 0.80;
-    recommendation.reducePositionSize = true;
-    recommendation.useBreakouts = false;
-  }
-  // Low volatility regime (< 1% daily volatility)
-  else if (volatility < 1 && bbWidth < 2) {
-    regime = 'lowVolatility';
-    confidence = 0.6;
-    recommendation.minConfidence = 0.60;
-    recommendation.increasePositionSize = true;
-    recommendation.useMeanReversion = true;
-  }
-  // Trending regime (strong trend + low range)
-  else if (trendStrength > 0.5 && priceRange < 5 && (isUptrend || isDowntrend)) {
-    regime = 'trending';
-    confidence = 0.75;
-    recommendation.minConfidence = 0.65;
-    recommendation.useBreakouts = true;
-    recommendation.useMeanReversion = false;
-  }
-  // Ranging regime (weak trend + high range)
-  else if (trendStrength < 0.3 && priceRange > 3) {
-    regime = 'ranging';
-    confidence = 0.7;
-    recommendation.minConfidence = 0.75;
-    recommendation.useMeanReversion = true;
-    recommendation.useBreakouts = false;
-  }
-  // Neutral/default
-  else {
-    regime = 'neutral';
-    confidence = 0.5;
-    recommendation.minConfidence = 0.65;
-  }
-  
+  // Determine regime
+  const regime = determineRegime(trendAnalysis, volatilityAnalysis, momentumAnalysis, globalMetrics);
+
   return {
-    regime,
-    confidence: Math.round(confidence * 100) / 100,
-    metrics: {
-      volatility: Math.round(volatility * 100) / 100,
-      trendStrength: Math.round(trendStrength * 100) / 100,
-      priceRange: Math.round(priceRange * 100) / 100,
-      bbWidth: Math.round(bbWidth * 100) / 100,
-      rsi: rsi[rsi.length - 1] || 50,
-      trendDirection: trend.direction || 'NEUTRAL'
+    regime: regime.type,
+    confidence: regime.confidence,
+    indicators: {
+      trend: trendAnalysis,
+      volatility: volatilityAnalysis,
+      momentum: momentumAnalysis
     },
-    recommendation
+    tradingStrategy: getRegimeStrategy(regime.type),
+    timestamp: new Date()
   };
 }
 
 /**
- * Get market regime for multiple coins
- * @param {Array} coinsData - Array of coin data with prices
- * @returns {Object} Regime analysis for each coin
+ * Analyze price trend
+ * @param {Array} prices - Recent price array
+ * @returns {Object} Trend analysis
  */
-function detectMarketRegimes(coinsData) {
-  const regimes = {};
-  
-  coinsData.forEach(coin => {
-    if (coin.frames && coin.frames.daily && coin.frames.daily.length > 0) {
-      const prices = coin.frames.daily.map(f => f.price || f.close || 0).filter(p => p > 0);
-      regimes[coin.symbol] = detectMarketRegime(prices);
+function analyzeTrend(prices) {
+  const length = prices.length;
+  const firstHalf = prices.slice(0, Math.floor(length / 2));
+  const secondHalf = prices.slice(Math.floor(length / 2));
+
+  const firstAvg = firstHalf.reduce((sum, p) => sum + p, 0) / firstHalf.length;
+  const secondAvg = secondHalf.reduce((sum, p) => sum + p, 0) / secondHalf.length;
+
+  const change = ((secondAvg - firstAvg) / firstAvg) * 100;
+
+  // Simple Moving Averages
+  const sma10 = prices.slice(-10).reduce((sum, p) => sum + p, 0) / 10;
+  const sma20 = prices.reduce((sum, p) => sum + p, 0) / prices.length;
+
+  let direction = 'sideways';
+  if (change > 5) {
+    direction = 'up';
+  } else if (change < -5) {
+    direction = 'down';
+  }
+
+  return {
+    direction: direction,
+    change: Number(change.toFixed(2)),
+    sma10: Number(sma10.toFixed(2)),
+    sma20: Number(sma20.toFixed(2)),
+    sma10Above20: sma10 > sma20
+  };
+}
+
+/**
+ * Analyze volatility
+ * @param {Array} prices - Recent price array
+ * @returns {Object} Volatility analysis
+ */
+function analyzeVolatility(prices) {
+  const returns = [];
+  for (let i = 1; i < prices.length; i++) {
+    returns.push((prices[i] - prices[i - 1]) / prices[i - 1]);
+  }
+
+  // Calculate standard deviation
+  const mean = returns.reduce((sum, r) => sum + r, 0) / returns.length;
+  const squaredDiffs = returns.map(r => Math.pow(r - mean, 2));
+  const variance = squaredDiffs.reduce((sum, d) => sum + d, 0) / squaredDiffs.length;
+  const stdDev = Math.sqrt(variance) * 100; // As percentage
+
+  let level = 'medium';
+  if (stdDev > 5) {
+    level = 'extreme';
+  } else if (stdDev > 3) {
+    level = 'high';
+  } else if (stdDev < 1.5) {
+    level = 'low';
+  }
+
+  return {
+    level: level,
+    value: Number(stdDev.toFixed(2)),
+    isHighVolatility: stdDev > 3
+  };
+}
+
+/**
+ * Analyze momentum
+ * @param {Array} prices - Full price array
+ * @returns {Object} Momentum analysis
+ */
+function analyzeMomentum(prices) {
+  if (prices.length < 14) {
+    return {
+      rsi: 50,
+      momentum: 'neutral'
+    };
+  }
+
+  const rsi = calculateRSI(prices, 14);
+
+  let momentum = 'neutral';
+  if (rsi > 70) {
+    momentum = 'overbought';
+  } else if (rsi > 55) {
+    momentum = 'strong';
+  } else if (rsi < 30) {
+    momentum = 'oversold';
+  } else if (rsi < 45) {
+    momentum = 'weak';
+  }
+
+  return {
+    rsi: Number(rsi.toFixed(2)),
+    momentum: momentum
+  };
+}
+
+/**
+ * Determine market regime from indicators
+ * @param {Object} trend - Trend analysis
+ * @param {Object} volatility - Volatility analysis
+ * @param {Object} momentum - Momentum analysis
+ * @param {Object} globalMetrics - Global metrics (optional)
+ * @returns {Object} Regime determination
+ */
+function determineRegime(trend, volatility, momentum, globalMetrics) {
+  let score = 0;
+  let confidence = 0;
+
+  // Extreme volatility overrides other factors
+  if (volatility.level === 'extreme') {
+    return {
+      type: REGIME_TYPES.VOLATILE,
+      confidence: 0.9
+    };
+  }
+
+  // Trend scoring
+  if (trend.direction === 'up') {
+    score += 3;
+    confidence += 0.3;
+  } else if (trend.direction === 'down') {
+    score -= 3;
+    confidence += 0.3;
+  } else {
+    confidence += 0.1;
+  }
+
+  // SMA alignment
+  if (trend.sma10Above20 && trend.direction === 'up') {
+    score += 2;
+    confidence += 0.2;
+  } else if (!trend.sma10Above20 && trend.direction === 'down') {
+    score -= 2;
+    confidence += 0.2;
+  }
+
+  // Momentum scoring
+  if (momentum.momentum === 'strong' || momentum.momentum === 'overbought') {
+    score += 1;
+    confidence += 0.1;
+  } else if (momentum.momentum === 'weak' || momentum.momentum === 'oversold') {
+    score -= 1;
+    confidence += 0.1;
+  }
+
+  // Volatility adjustment
+  if (volatility.isHighVolatility) {
+    confidence -= 0.2; // Lower confidence in high volatility
+  }
+
+  // Global metrics (if available)
+  if (globalMetrics && globalMetrics.coinpaprika) {
+    const btcDominance = globalMetrics.coinpaprika.bitcoin_dominance_percentage;
+    if (btcDominance > 60) {
+      // High BTC dominance often indicates alt-coin bear market
+      score -= 1;
+    } else if (btcDominance < 40) {
+      // Low BTC dominance often indicates alt-coin bull market
+      score += 1;
     }
-  });
-  
-  return regimes;
+    confidence += 0.1;
+  }
+
+  // Determine regime type
+  let type = REGIME_TYPES.SIDEWAYS;
+  if (score >= 4) {
+    type = REGIME_TYPES.BULL;
+  } else if (score <= -4) {
+    type = REGIME_TYPES.BEAR;
+  }
+
+  // Clamp confidence
+  confidence = Math.max(0, Math.min(1, confidence));
+
+  return {
+    type: type,
+    confidence: Number(confidence.toFixed(2))
+  };
+}
+
+/**
+ * Get trading strategy for market regime
+ * @param {string} regime - Market regime type
+ * @returns {Object} Trading strategy recommendations
+ */
+function getRegimeStrategy(regime) {
+  const strategies = {
+    [REGIME_TYPES.BULL]: {
+      strategy: 'TREND_FOLLOWING',
+      advice: 'Focus on breakouts and momentum trades. Buy dips.',
+      positionSizing: 'Normal to aggressive',
+      stopLoss: 'Wider stops to avoid whipsaws',
+      takeProfit: 'Trail profits, let winners run',
+      riskReward: 'Can accept lower R:R (1.5:1)',
+      preferredSetups: ['Pullback to support', 'Breakout continuation', 'Uptrend reversal']
+    },
+    [REGIME_TYPES.BEAR]: {
+      strategy: 'CAPITAL_PRESERVATION',
+      advice: 'Be selective. Wait for strong reversal signals. Protect capital.',
+      positionSizing: 'Conservative',
+      stopLoss: 'Tight stops',
+      takeProfit: 'Take profits quickly',
+      riskReward: 'Require higher R:R (2:1+)',
+      preferredSetups: ['Oversold bounce', 'Double bottom', 'Bull divergence']
+    },
+    [REGIME_TYPES.SIDEWAYS]: {
+      strategy: 'RANGE_TRADING',
+      advice: 'Trade the range. Buy support, sell resistance.',
+      positionSizing: 'Normal',
+      stopLoss: 'Tight stops at range boundaries',
+      takeProfit: 'Quick profits at opposite range boundary',
+      riskReward: 'Standard R:R (2:1)',
+      preferredSetups: ['Range support bounce', 'Range resistance rejection', 'Breakout of range']
+    },
+    [REGIME_TYPES.VOLATILE]: {
+      strategy: 'WAIT_AND_SEE',
+      advice: 'Reduce position sizes. Wait for regime clarity. High risk.',
+      positionSizing: 'Very conservative (50% normal)',
+      stopLoss: 'Very tight stops',
+      takeProfit: 'Very quick profits',
+      riskReward: 'Require high R:R (3:1+)',
+      preferredSetups: ['Only highest confidence setups', 'Wait for volatility to decrease']
+    },
+    [REGIME_TYPES.UNKNOWN]: {
+      strategy: 'WAIT',
+      advice: 'Insufficient data. Wait for clear signals.',
+      positionSizing: 'No positions',
+      stopLoss: 'N/A',
+      takeProfit: 'N/A',
+      riskReward: 'N/A',
+      preferredSetups: ['Wait for more data']
+    }
+  };
+
+  return strategies[regime] || strategies[REGIME_TYPES.UNKNOWN];
+}
+
+/**
+ * Adjust trade parameters based on market regime
+ * @param {Object} trade - Trade parameters
+ * @param {string} regime - Market regime
+ * @returns {Object} Adjusted trade parameters
+ */
+function adjustTradeForRegime(trade, regime) {
+  const strategy = getRegimeStrategy(regime);
+  const adjustments = {};
+
+  // Position size adjustment
+  if (regime === REGIME_TYPES.VOLATILE) {
+    adjustments.positionSizeMultiplier = 0.5;
+  } else if (regime === REGIME_TYPES.BEAR) {
+    adjustments.positionSizeMultiplier = 0.7;
+  } else if (regime === REGIME_TYPES.BULL) {
+    adjustments.positionSizeMultiplier = 1.2;
+  } else {
+    adjustments.positionSizeMultiplier = 1.0;
+  }
+
+  // Confidence adjustment
+  if (regime === REGIME_TYPES.BULL && trade.direction === 'long') {
+    adjustments.confidenceBoost = 0.05;
+  } else if (regime === REGIME_TYPES.BEAR && trade.direction === 'short') {
+    adjustments.confidenceBoost = 0.05;
+  } else if ((regime === REGIME_TYPES.BULL && trade.direction === 'short') ||
+             (regime === REGIME_TYPES.BEAR && trade.direction === 'long')) {
+    adjustments.confidenceBoost = -0.1;
+  } else {
+    adjustments.confidenceBoost = 0;
+  }
+
+  return {
+    ...trade,
+    regime: regime,
+    regimeStrategy: strategy.strategy,
+    adjustments: adjustments,
+    regimeAdvice: strategy.advice
+  };
 }
 
 module.exports = {
+  REGIME_TYPES,
   detectMarketRegime,
-  detectMarketRegimes
+  getRegimeStrategy,
+  adjustTradeForRegime,
+  analyzeTrend,
+  analyzeVolatility,
+  analyzeMomentum
 };
-

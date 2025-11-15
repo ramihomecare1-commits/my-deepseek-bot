@@ -699,6 +699,166 @@ router.post('/trigger-settings', (req, res) => {
   }
 });
 
+// Performance Analytics Endpoints
+router.get('/performance-report', async (req, res) => {
+  try {
+    const { generatePerformanceReport, calculatePerformanceScore, getImprovementRecommendations } = require('../services/performanceAnalyticsService');
+    const { loadClosedTrades } = require('../services/tradePersistenceService');
+    const { getPortfolioStats } = require('../services/portfolioService');
+    
+    const closedTrades = await loadClosedTrades();
+    const portfolio = await getPortfolioStats();
+    const accountBalance = portfolio.totalValue || 1000;
+    
+    const report = generatePerformanceReport(closedTrades, accountBalance);
+    const score = calculatePerformanceScore(report.overview);
+    const recommendations = getImprovementRecommendations(report.overview);
+    
+    res.json({
+      ...report,
+      performanceScore: score,
+      recommendations: recommendations
+    });
+  } catch (error) {
+    console.error('Error generating performance report:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Market Regime Detection Endpoint
+router.get('/market-regime', async (req, res) => {
+  try {
+    const { detectMarketRegime } = require('../services/marketRegimeService');
+    const { fetchHistoricalData, fetchGlobalMetrics } = require('../services/dataFetcher');
+    
+    const symbol = req.query.symbol || 'BTC';
+    const coin = { symbol: symbol, id: 'bitcoin', name: 'Bitcoin' };
+    
+    const priceHistory = await fetchHistoricalData(coin, 30);
+    const globalMetrics = await fetchGlobalMetrics();
+    
+    const regime = detectMarketRegime(priceHistory, globalMetrics);
+    
+    res.json(regime);
+  } catch (error) {
+    console.error('Error detecting market regime:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Sentiment Analysis Endpoint
+router.post('/sentiment-analysis', async (req, res) => {
+  try {
+    const { analyzeNewsSentiment } = require('../services/sentimentService');
+    const { articles } = req.body;
+    
+    if (!articles || !Array.isArray(articles)) {
+      return res.status(400).json({ error: 'Articles array required' });
+    }
+    
+    const sentiment = analyzeNewsSentiment(articles);
+    res.json(sentiment);
+  } catch (error) {
+    console.error('Error analyzing sentiment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Strategy Management Endpoints
+router.get('/strategies', (req, res) => {
+  try {
+    const strategyManager = require('../strategies/strategyManager');
+    const strategies = strategyManager.listStrategies();
+    res.json(strategies);
+  } catch (error) {
+    console.error('Error listing strategies:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/strategies/set-active', (req, res) => {
+  try {
+    const strategyManager = require('../strategies/strategyManager');
+    const { strategyId } = req.body;
+    
+    if (!strategyId) {
+      return res.status(400).json({ error: 'Strategy ID required' });
+    }
+    
+    const success = strategyManager.setActiveStrategy(strategyId);
+    
+    if (success) {
+      res.json({ 
+        success: true, 
+        message: `Active strategy set to ${strategyId}`,
+        activeStrategy: strategyManager.getActiveStrategy().name
+      });
+    } else {
+      res.status(404).json({ error: 'Strategy not found' });
+    }
+  } catch (error) {
+    console.error('Error setting active strategy:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/strategies/toggle', (req, res) => {
+  try {
+    const strategyManager = require('../strategies/strategyManager');
+    const { strategyId, enabled } = req.body;
+    
+    if (!strategyId) {
+      return res.status(400).json({ error: 'Strategy ID required' });
+    }
+    
+    const success = strategyManager.setStrategyEnabled(strategyId, enabled);
+    
+    if (success) {
+      res.json({ 
+        success: true, 
+        message: `Strategy ${strategyId} ${enabled ? 'enabled' : 'disabled'}`
+      });
+    } else {
+      res.status(404).json({ error: 'Strategy not found' });
+    }
+  } catch (error) {
+    console.error('Error toggling strategy:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Risk Management Validation Endpoint
+router.post('/validate-trade', (req, res) => {
+  try {
+    const { validateTradeSetup, calculateOptimalPositionSize } = require('../utils/riskManagement');
+    const { getPortfolioStats } = require('../services/portfolioService');
+    
+    const trade = req.body;
+    
+    // Validate trade setup
+    const validation = validateTradeSetup(trade);
+    
+    // Calculate optimal position size
+    const portfolio = getPortfolioStats();
+    const positionSizing = calculateOptimalPositionSize({
+      accountBalance: portfolio.totalValue || 1000,
+      entryPrice: trade.entryPrice,
+      stopLoss: trade.stopLoss,
+      volatility: trade.volatility || 0,
+      openTradesCount: portfolio.openTradesCount || 0,
+      totalExposure: portfolio.exposure || 0
+    });
+    
+    res.json({
+      validation: validation,
+      positionSizing: positionSizing
+    });
+  } catch (error) {
+    console.error('Error validating trade:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
 module.exports.addLogEntry = addLogEntry;
 module.exports.addMonitoringActivity = addMonitoringActivity;
