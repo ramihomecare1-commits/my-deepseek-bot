@@ -620,6 +620,47 @@ router.get('/monitoring-activity', (req, res) => {
   res.json(data);
 });
 
+// API endpoint for active triggers (algorithmic mode)
+router.get('/active-triggers', (req, res) => {
+  try {
+    const monitoringService = require('../services/monitoringService');
+    const triggers = monitoringService.getActiveTriggers();
+    console.log(`🎯 Active triggers API called - ${triggers.length} coins with triggers`);
+    res.json({
+      success: true,
+      triggers,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error fetching active triggers:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API endpoint to get trigger settings
+router.get('/trigger-settings', (req, res) => {
+  try {
+    const monitoringService = require('../services/monitoringService');
+    const settings = monitoringService.getTriggerSettings();
+    res.json(settings);
+  } catch (error) {
+    console.error('❌ Error fetching trigger settings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API endpoint to save trigger settings
+router.post('/trigger-settings', (req, res) => {
+  try {
+    const monitoringService = require('../services/monitoringService');
+    monitoringService.saveTriggerSettings(req.body);
+    res.json({ success: true, message: 'Settings saved successfully' });
+  } catch (error) {
+    console.error('❌ Error saving trigger settings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;
 module.exports.addLogEntry = addLogEntry;
 module.exports.addMonitoringActivity = addMonitoringActivity;

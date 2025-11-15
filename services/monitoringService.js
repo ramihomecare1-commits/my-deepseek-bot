@@ -53,6 +53,10 @@ class MonitoringService {
     this.VOLATILITY_THRESHOLD = config.VOLATILITY_THRESHOLD || 3.0; // 3% price change
     this.VOLUME_SPIKE_THRESHOLD = config.VOLUME_SPIKE_THRESHOLD || 2.0; // 2x average volume
     
+    // Trigger tracking for algorithmic mode
+    this.activeTriggers = new Map(); // symbol -> trigger data
+    this.triggerSettings = this.loadTriggerSettings();
+    
     if (this.USE_HYBRID_MODE) {
       console.log(`🤖 Monitoring Service initialized in HYBRID mode 🔥`);
       console.log(`   Free Tier: ${this.FREE_MODEL} (${this.FREE_API_TYPE.toUpperCase()})`);
@@ -60,6 +64,67 @@ class MonitoringService {
     } else {
       console.log(`🤖 Monitoring Service initialized with ${this.FREE_API_TYPE.toUpperCase()} API`);
     }
+    console.log(`   Monitoring Mode: ${config.MONITORING_MODE.toUpperCase()}`);
+  }
+  
+  /**
+   * Load default trigger settings
+   */
+  loadTriggerSettings() {
+    return {
+      rsiOversold: 30,
+      rsiOverbought: 70,
+      minPriceChange: 5,
+      volumeMultiplier: 2,
+      minTriggers: 2,
+      requireVolume: false
+    };
+  }
+  
+  /**
+   * Save trigger settings
+   */
+  saveTriggerSettings(settings) {
+    this.triggerSettings = { ...this.triggerSettings, ...settings };
+    console.log(`💾 Trigger settings saved:`, this.triggerSettings);
+  }
+  
+  /**
+   * Get trigger settings
+   */
+  getTriggerSettings() {
+    return this.triggerSettings;
+  }
+  
+  /**
+   * Get active triggers for UI display
+   */
+  getActiveTriggers() {
+    const now = Date.now();
+    const activeList = [];
+    
+    // Clean up old entries (older than 5 minutes)
+    for (const [symbol, data] of this.activeTriggers.entries()) {
+      const age = now - new Date(data.lastUpdate).getTime();
+      if (age > 5 * 60 * 1000) {
+        this.activeTriggers.delete(symbol);
+      } else {
+        activeList.push(data);
+      }
+    }
+    
+    return activeList;
+  }
+  
+  /**
+   * Update active triggers (called after each monitoring cycle)
+   */
+  updateActiveTriggers(symbol, triggerData) {
+    this.activeTriggers.set(symbol, {
+      symbol,
+      ...triggerData,
+      lastUpdate: new Date().toISOString()
+    });
   }
 
   /**
@@ -367,6 +432,102 @@ class MonitoringService {
   }
 
   /**
+   * Algorithmic trigger check (no AI, just technical indicators)
+   * Fast, free, and deterministic
+   */
+  async algorithmicTriggerCheck(coinData) {
+    const { symbol, currentPrice, priceChange24h, volume24h } = coinData;
+    
+    // Calculate volatility level
+    const priceChangePercent = Math.abs(priceChange24h || 0);
+    const volatilityLevel = this.calculateVolatilityLevel(priceChangePercent);
+    
+    // Initialize indicators
+    let rsi = null;
+    let bollingerPosition = 'MIDDLE';
+    let trend = 'SIDEWAYS';
+    
+    // Try to calculate indicators if we have price history
+    if (coinData.priceHistory && coinData.priceHistory.length >= 14) {
+      const { calculateRSI, calculateBollingerBands, identifyTrend } = require('../bot/indicators');
+      rsi = calculateRSI(coinData.priceHistory, 14);
+      const bollinger = calculateBollingerBands(coinData.priceHistory, 20, 2);
+      trend = identifyTrend(coinData.priceHistory);
+      
+      // Determine Bollinger position
+      if (currentPrice >= bollinger.upper) bollingerPosition = 'UPPER';
+      else if (currentPrice <= bollinger.lower) bollingerPosition = 'LOWER';
+      else bollingerPosition = 'MIDDLE';
+    }
+    
+    // Trigger conditions based on settings
+    const settings = this.triggerSettings;
+    const triggers = {
+      rsiOversold: rsi !== null && rsi < settings.rsiOversold,
+      rsiOverbought: rsi !== null && rsi > settings.rsiOverbought,
+      bollingerLower: bollingerPosition === 'LOWER',
+      bollingerUpper: bollingerPosition === 'UPPER',
+      highVolatility: volatilityLevel === 'high',
+      bigPriceMove: priceChangePercent > settings.minPriceChange,
+      // volumeSpike: volume24h > (coinData.avgVolume || volume24h) * settings.volumeMultiplier
+    };
+    
+    // Count active triggers
+    const activeTriggers = Object.entries(triggers)
+      .filter(([_, active]) => active)
+      .map(([name]) => name);
+    const triggerCount = activeTriggers.length;
+    
+    // Apply volume requirement if enabled
+    const meetsVolumeReq = !settings.requireVolume || triggers.volumeSpike;
+    
+    // Escalation logic: meets min triggers AND volume requirement
+    const shouldEscalate = triggerCount >= settings.minTriggers && meetsVolumeReq;
+    const confidence = Math.min(0.95, 0.4 + (triggerCount * 0.15)); // Base 40% + 15% per trigger
+    
+    // Determine signal based on triggers
+    let signal = 'HOLD';
+    let reason = 'No significant triggers detected';
+    
+    if (shouldEscalate) {
+      if (triggers.rsiOversold || triggers.bollingerLower) {
+        signal = 'BUY';
+        reason = `Buy signals detected: ${activeTriggers.join(', ')}`;
+      } else if (triggers.rsiOverbought || triggers.bollingerUpper) {
+        signal = 'SELL';
+        reason = `Sell signals detected: ${activeTriggers.join(', ')}`;
+      } else {
+        signal = 'WATCH';
+        reason = `High activity: ${activeTriggers.join(', ')}`;
+      }
+    }
+    
+    const analysis = {
+      signal,
+      confidence,
+      reason,
+      shouldEscalate,
+      volatilityLevel,
+      activeTriggers,
+      indicators: { rsi, bollingerPosition, trend }
+    };
+    
+    console.log(`📊 ${symbol} Algorithmic: ${signal} (${triggerCount} triggers, ${(confidence * 100).toFixed(0)}%)`);
+    
+    // Update active triggers for UI
+    this.updateActiveTriggers(symbol, {
+      ...analysis,
+      currentPrice,
+      priceChange24h: priceChangePercent
+    });
+    
+    return {
+      symbol,
+      analysis
+    };
+  }
+
+  /**
    * Batch volatility check for multiple coins in one API call
    */
   async batchVolatilityCheck(coinsData) {
@@ -375,8 +536,22 @@ class MonitoringService {
         return [];
       }
 
-      console.log(`📦 Batch monitoring ${coinsData.length} coins in one API call...`);
+      const monitoringMode = config.MONITORING_MODE || 'ai';
+      console.log(`📦 Batch monitoring ${coinsData.length} coins in ${monitoringMode.toUpperCase()} mode...`);
 
+      // ALGORITHMIC MODE: Use triggers instead of AI (fast & free)
+      if (monitoringMode === 'algorithmic') {
+        const results = [];
+        for (const coinData of coinsData) {
+          const result = await this.algorithmicTriggerCheck(coinData);
+          results.push(result);
+        }
+        return results;
+      }
+
+      // AI MODE: Use free AI (existing behavior)
+      console.log(`🔍 Using AI for batch monitoring...`);
+      
       // Check for API key
       if (!this.FREE_API_KEY) {
         console.log(`⚠️ No free tier API key - skipping batch monitoring`);

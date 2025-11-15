@@ -86,6 +86,7 @@ console.log('');
 // Two-Tier Monitoring Configuration
 const MONITORING_ENABLED = (process.env.MONITORING_ENABLED || 'true').toLowerCase() === 'true';
 const MONITORING_INTERVAL = Number(process.env.MONITORING_INTERVAL || 120000); // 2 minutes
+const MONITORING_MODE = (process.env.MONITORING_MODE || 'ai').toLowerCase(); // 'ai' or 'algorithmic'
 const ESCALATION_THRESHOLD = Number(process.env.ESCALATION_THRESHOLD || 0.85); // 85% confidence
 const VOLATILITY_THRESHOLD = Number(process.env.VOLATILITY_THRESHOLD || 3.0); // 3% price change
 const VOLUME_SPIKE_THRESHOLD = Number(process.env.VOLUME_SPIKE_THRESHOLD || 2.0); // 2x volume
@@ -125,6 +126,7 @@ console.log(`      Cost: ${PREMIUM_API_TYPE === 'gemini' ? 'FREE! 🎉' : '~$0.0
 console.log('');
 console.log(`   ⚙️  Settings:`);
 console.log(`      Interval: ${MONITORING_INTERVAL / 1000}s`);
+console.log(`      Mode: ${MONITORING_MODE.toUpperCase()} ${MONITORING_MODE === 'algorithmic' ? '(No AI cost! 🎉)' : '(AI-powered)'}`);
 console.log(`      Escalation: ${(ESCALATION_THRESHOLD * 100).toFixed(0)}% confidence`);
 console.log(`      Volatility: ${VOLATILITY_THRESHOLD}% trigger`);
 
@@ -156,6 +158,7 @@ module.exports = {
   PREMIUM_API_KEY,
   PREMIUM_API_TYPE,
   MONITORING_INTERVAL,
+  MONITORING_MODE,
   ESCALATION_THRESHOLD,
   VOLATILITY_THRESHOLD,
   VOLUME_SPIKE_THRESHOLD
