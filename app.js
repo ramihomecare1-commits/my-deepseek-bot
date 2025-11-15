@@ -17,14 +17,32 @@ const PORT = process.env.PORT || 10000;
 // Environment validation
 function validateEnvironment() {
   const warnings = [];
-  if (!process.env.API_KEY) {
-    warnings.push('⚠️  API_KEY not set - AI analysis will use deterministic fallback');
+  
+  // Check for tier-specific API keys (new system)
+  const hasFreeTierKey = !!process.env.FREE_TIER_API_KEY;
+  const hasPremiumTierKey = !!process.env.PREMIUM_TIER_API_KEY;
+  const hasLegacyKey = !!process.env.API_KEY || !!process.env.AI_API_KEY;
+  const hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
+  
+  // AI analysis warning (only if no keys at all)
+  if (!hasFreeTierKey && !hasPremiumTierKey && !hasLegacyKey && !hasOpenRouterKey) {
+    warnings.push('⚠️  No AI API keys found - AI analysis will use deterministic fallback');
+    warnings.push('   Set FREE_TIER_API_KEY and/or PREMIUM_TIER_API_KEY for monitoring');
+  } else {
+    // Show which keys are set
+    if (!hasFreeTierKey && !hasOpenRouterKey && !hasLegacyKey) {
+      warnings.push('⚠️  FREE_TIER_API_KEY not set - free tier monitoring disabled');
+    }
+    if (!hasPremiumTierKey && !hasOpenRouterKey && !hasLegacyKey) {
+      warnings.push('⚠️  PREMIUM_TIER_API_KEY not set - premium tier will use free tier key');
+    }
   }
+  
   if (!config.TELEGRAM_ENABLED) {
     warnings.push('⚠️  Telegram credentials not configured - notifications disabled');
   }
   if (!config.NEWS_ENABLED) {
-    warnings.push('⚠️  CRYPTOPANIC_API_KEY not set - news features disabled');
+    warnings.push('⚠️  CRYPTOPANIC_API_KEY not set - news features disabled (optional)');
   }
   if (warnings.length > 0) {
     console.log('\n📋 Environment Configuration:');
