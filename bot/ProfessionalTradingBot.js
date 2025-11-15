@@ -583,7 +583,7 @@ class ProfessionalTradingBot {
 
   stopMonitoringTimer() {
     if (this.monitoringTimer) {
-      clearInterval(this.monitoringTimer);
+      clearTimeout(this.monitoringTimer); // Changed from clearInterval to clearTimeout
       this.monitoringTimer = null;
       console.log('🛑 Monitoring timer stopped');
     }
