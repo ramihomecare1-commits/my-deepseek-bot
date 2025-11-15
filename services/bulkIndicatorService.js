@@ -255,7 +255,17 @@ class BulkIndicatorService {
       'RSETH': 'kelp-dao-restaked-eth',
       'USDG': 'global-dollar',
       'FBTC': 'ignition-fbtc',
-      'FLR': 'flare-networks'
+      'FLR': 'flare-networks',
+      'WBETH': 'wrapped-beacon-eth',
+      'HYPE': 'hyperliquid',
+      'BCH': 'bitcoin-cash',
+      'WETH': 'weth',
+      'XLM': 'stellar',
+      'WEETH': 'wrapped-eeth',
+      'LEO': 'leo-token',
+      'USDE': 'usde',
+      'BSC-USD': 'binance-bridged-usdt-bnb-smart-chain',
+      'CBBTC': 'compound-wrapped-btc'
     };
 
     if (symbolToId[symbol]) {
@@ -574,108 +584,97 @@ class BulkIndicatorService {
       console.log(`   Using daily candles to match TradingView/exchanges format`);
       console.log(`   This may take a minute - fetching 60 days of daily data from CoinGecko...`);
 
-      // 3. Calculate indicators for each coin (with rate limiting to avoid CoinGecko limits)
+      // 3. Calculate indicators for each coin (ONE AT A TIME to avoid rate limits)
       const analyzedCoins = [];
-      const batchSize = 3; // Reduced to 3 to avoid rate limits (was 5)
-      const delayBetweenBatches = 3000; // 3 seconds between batches (was 2)
-      const delayBetweenCoins = 500; // 500ms between individual coins in a batch
+      const delayBetweenCoins = 2000; // 2 seconds between each coin (safe for CoinGecko free tier)
       
-      for (let i = 0; i < coinsToScan.length; i += batchSize) {
-        const batch = coinsToScan.slice(i, i + batchSize);
-        console.log(`   Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(coinsToScan.length / batchSize)} (${batch.map(c => c.symbol).join(', ')})...`);
+      console.log(`   Processing ${coinsToScan.length} coins one at a time (2s delay between each)...`);
+      
+      for (let i = 0; i < coinsToScan.length; i++) {
+        const coin = coinsToScan[i];
+        const progress = `[${i + 1}/${coinsToScan.length}]`;
+        console.log(`   ${progress} Processing ${coin.symbol}...`);
         
-        // Process batch sequentially with delays to respect rate limits
-        const batchResults = [];
-        for (const coin of batch) {
-          const result = await this.calculateIndicatorsForCoin(coin);
-          batchResults.push(result);
+        const indicators = await this.calculateIndicatorsForCoin(coin);
           
-          // Small delay between coins in same batch
-          if (batch.indexOf(coin) < batch.length - 1) {
+        if (!indicators) {
+          // Skip if indicators couldn't be calculated (silently continue)
+          if (i < coinsToScan.length - 1) {
             await new Promise(resolve => setTimeout(resolve, delayBetweenCoins));
           }
+          continue;
         }
-        
-        // Analyze results
-        for (let j = 0; j < batch.length; j++) {
-          const coin = batch[j];
-          const indicators = batchResults[j];
-          
-          if (!indicators) {
-            continue; // Skip if indicators couldn't be calculated
-          }
 
-          // Extract indicator values
-          const rsi = indicators.rsi;
-          const bollinger = indicators.bollinger;
-          const bbUpper = bollinger?.upper;
-          const bbMiddle = bollinger?.middle;
-          const bbLower = bollinger?.lower;
-          const currentPrice = coin.price;
+        // Extract indicator values
+        const rsi = indicators.rsi;
+        const bollinger = indicators.bollinger;
+        const bbUpper = bollinger?.upper;
+        const bbMiddle = bollinger?.middle;
+        const bbLower = bollinger?.lower;
+        const currentPrice = coin.price;
 
-          // Count triggers (oversold conditions) based on UI settings
-          let triggerCount = 0;
-          const triggers = [];
+        // Count triggers (oversold conditions) based on UI settings
+        let triggerCount = 0;
+        const triggers = [];
 
-          // RSI oversold trigger
-          if (rsi !== undefined && rsi !== null && rsi < rsiThreshold) {
+        // RSI oversold trigger
+        if (rsi !== undefined && rsi !== null && rsi < rsiThreshold) {
+          triggerCount++;
+          triggers.push(`RSI: ${rsi.toFixed(2)}`);
+        }
+
+        // Bollinger Bands triggers (only if enabled in UI)
+        if (enableBollinger && bollinger) {
+          // Price below lower band
+          if (bbLower && currentPrice < bbLower) {
             triggerCount++;
-            triggers.push(`RSI: ${rsi.toFixed(2)}`);
+            triggers.push(`BB: Below lower band (${((currentPrice - bbLower) / bbLower * 100).toFixed(2)}%)`);
           }
-
-          // Bollinger Bands triggers (only if enabled in UI)
-          if (enableBollinger && bollinger) {
-            // Price below lower band
-            if (bbLower && currentPrice < bbLower) {
-              triggerCount++;
-              triggers.push(`BB: Below lower band (${((currentPrice - bbLower) / bbLower * 100).toFixed(2)}%)`);
-            }
-            // Price near lower band (within 1%)
-            else if (bbLower && currentPrice >= bbLower && currentPrice < bbLower * 1.01) {
-              triggerCount++;
-              triggers.push(`BB: Near lower band`);
-            }
-          }
-
-          // Price change trigger (if minPriceChange is set)
-          const priceChangeAbs = Math.abs(coin.priceChange24h || 0);
-          if (minPriceChange > 0 && priceChangeAbs >= minPriceChange) {
+          // Price near lower band (within 1%)
+          else if (bbLower && currentPrice >= bbLower && currentPrice < bbLower * 1.01) {
             triggerCount++;
-            triggers.push(`Price change: ${priceChangeAbs.toFixed(2)}%`);
+            triggers.push(`BB: Near lower band`);
           }
+        }
 
-          // Only include if meets minimum trigger threshold
-          if (triggerCount >= minTriggers) {
-            analyzedCoins.push({
-              symbol: coin.symbol,
-              name: coin.name,
-              rank: coin.rank,
-              price: currentPrice,
-              priceChange24h: coin.priceChange24h,
-              marketCap: coin.marketCap,
-              indicators: {
-                rsi,
-                bollinger: {
-                  upper: bbUpper,
-                  middle: bbMiddle,
-                  lower: bbLower
-                }
-              },
-              triggerCount,
-              triggers,
-              confidence: this.calculateConfidence(rsi, bbLower, currentPrice, triggerCount),
-              analysis: {
-                recommendation: rsi !== null && rsi !== undefined && rsi < rsiThreshold ? 'BUY' : 'HOLD',
-                confidence: this.calculateConfidence(rsi, bbLower, currentPrice, triggerCount),
-                reason: triggers.join(', ')
+        // Price change trigger (if minPriceChange is set)
+        const priceChangeAbs = Math.abs(coin.priceChange24h || 0);
+        if (minPriceChange > 0 && priceChangeAbs >= minPriceChange) {
+          triggerCount++;
+          triggers.push(`Price change: ${priceChangeAbs.toFixed(2)}%`);
+        }
+
+        // Only include if meets minimum trigger threshold
+        if (triggerCount >= minTriggers) {
+          analyzedCoins.push({
+            symbol: coin.symbol,
+            name: coin.name,
+            rank: coin.rank,
+            price: currentPrice,
+            priceChange24h: coin.priceChange24h,
+            marketCap: coin.marketCap,
+            indicators: {
+              rsi,
+              bollinger: {
+                upper: bbUpper,
+                middle: bbMiddle,
+                lower: bbLower
               }
-            });
-          }
+            },
+            triggerCount,
+            triggers,
+            confidence: this.calculateConfidence(rsi, bbLower, currentPrice, triggerCount),
+            analysis: {
+              recommendation: rsi !== null && rsi !== undefined && rsi < rsiThreshold ? 'BUY' : 'HOLD',
+              confidence: this.calculateConfidence(rsi, bbLower, currentPrice, triggerCount),
+              reason: triggers.join(', ')
+            }
+          });
         }
         
-        // Delay between batches to respect CoinGecko rate limits
-        if (i + batchSize < coinsToScan.length) {
-          await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+        // Delay between coins to respect CoinGecko rate limits
+        if (i < coinsToScan.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, delayBetweenCoins));
         }
       }
 
