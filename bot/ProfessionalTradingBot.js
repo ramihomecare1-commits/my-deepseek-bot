@@ -585,6 +585,8 @@ class ProfessionalTradingBot {
     try {
       const priorityLabel = isPriority ? '🔴 [OPEN TRADE]' : '🔍';
       
+      console.log(`${priorityLabel} Monitoring ${coin.symbol}...`);
+      
       // Fetch current price data (need to pass coin object, cache, stats, and config)
       const coinDataForFetch = { symbol: coin.symbol, id: coin.id };
       
@@ -602,7 +604,10 @@ class ProfessionalTradingBot {
       
       const priceResult = await fetchEnhancedPriceData(coinDataForFetch, this.priceCache, this.stats, config);
       
-      if (!priceResult || !priceResult.data || !priceResult.data.price) return;
+      if (!priceResult || !priceResult.data || !priceResult.data.price) {
+        console.log(`⚠️ ${coin.symbol}: No price data available, skipping`);
+        return;
+      }
 
       // Extract price data from result
       const priceData = priceResult.data;
@@ -616,7 +621,9 @@ class ProfessionalTradingBot {
       };
 
       // Monitor with v3
+      console.log(`${priorityLabel} Calling monitoring service for ${coin.symbol} at $${coinData.currentPrice}...`);
       const result = await monitoringService.monitorCoin(coinData);
+      console.log(`${priorityLabel} Monitoring service result for ${coin.symbol}:`, result ? 'received' : 'null');
 
       // Log monitoring activity to web UI using shared store
       if (result && result.v3Analysis) {
