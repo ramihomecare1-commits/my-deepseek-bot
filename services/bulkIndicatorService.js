@@ -147,12 +147,11 @@ class BulkIndicatorService {
         return this.fetchHistoricalPrices(coinId, days, retryCount + 1, maxRetries);
       }
       
-      // Only log non-429 errors or exhausted retries
-      if (!error.response || error.response.status !== 429) {
-        console.error(`⚠️ Error fetching historical prices for ${coinId}:`, error.message);
-      } else {
+      // Only log rate limit errors (429) - silently skip 404s (coin not found)
+      if (error.response && error.response.status === 429) {
         console.log(`⏭️ Skipping ${coinId} after ${maxRetries} retries (will try on next scan)`);
       }
+      // Silently skip 404s (coin not found/delisted) and other errors
       return [];
     }
   }
