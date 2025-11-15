@@ -200,7 +200,8 @@ class BulkIndicatorService {
         rank: index + 1,
         marketCap: coin.market_cap,
         price: coin.current_price,
-        priceChange24h: coin.price_change_percentage_24h || 0
+        priceChange24h: coin.price_change_percentage_24h || 0,
+        volume24h: coin.total_volume || 0 // 24h trading volume in USD
       }));
       
       console.log(`✅ Fetched ${coins.length} coins from CoinGecko`);
@@ -623,12 +624,27 @@ class BulkIndicatorService {
       
       const excludedCoins = [...stablecoins, ...wrappedDerivatives];
       
+      // Minimum 24h volume threshold: $10 million USD
+      const minVolume24h = 10_000_000;
+      
       const filteredCoins = topCoins.filter(coin => {
         const symbol = coin.symbol.toUpperCase();
-        return !excludedCoins.includes(symbol);
+        
+        // Exclude stablecoins/wrapped tokens
+        if (excludedCoins.includes(symbol)) {
+          return false;
+        }
+        
+        // Exclude coins with low/zero volume (illiquid/data errors)
+        if (!coin.volume24h || coin.volume24h < minVolume24h) {
+          return false;
+        }
+        
+        return true;
       });
       
-      console.log(`🔍 Filtered out ${topCoins.length - filteredCoins.length} stablecoins/wrapped tokens`);
+      const removedCount = topCoins.length - filteredCoins.length;
+      console.log(`🔍 Filtered out ${removedCount} coins (stablecoins/wrapped/low volume < $${(minVolume24h / 1_000_000).toFixed(0)}M)`);
 
       // 3. Limit to maxCoins from filtered list
       const coinsToScan = filteredCoins.slice(0, maxCoins);
@@ -706,6 +722,7 @@ class BulkIndicatorService {
             price: currentPrice,
             priceChange24h: coin.priceChange24h,
             marketCap: coin.marketCap,
+            volume24h: coin.volume24h || 0, // Include volume for AI analysis
             indicators: {
               rsi,
               bollinger: {
