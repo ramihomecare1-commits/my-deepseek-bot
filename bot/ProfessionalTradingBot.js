@@ -1889,9 +1889,11 @@ Source: ${source}`);
       this.updateLiveAnalysis();
 
       // Fetch price first, then historical data in parallel (pass price to avoid duplicate fetch)
-      this.currentlyAnalyzing.stage = 'Fetching price and historical data...';
-      this.currentlyAnalyzing.progress = 30;
-      this.updateLiveAnalysis();
+      if (this.currentlyAnalyzing) {
+        this.currentlyAnalyzing.stage = 'Fetching price and historical data...';
+        this.currentlyAnalyzing.progress = 30;
+        this.updateLiveAnalysis();
+      }
 
       // Fetch price first
       const priceResult = await fetchEnhancedPriceData(coin, this.priceCache, this.stats, config);
@@ -1908,9 +1910,11 @@ Source: ${source}`);
       let hourlyPatterns = [];
       
       if (this.tradingRules.patternDetection && this.tradingRules.patternDetection.enabled) {
-        this.currentlyAnalyzing.stage = 'Detecting trading patterns...';
-        this.currentlyAnalyzing.progress = 50;
-        this.updateLiveAnalysis();
+        if (this.currentlyAnalyzing) {
+          this.currentlyAnalyzing.stage = 'Detecting trading patterns...';
+          this.currentlyAnalyzing.progress = 50;
+          this.updateLiveAnalysis();
+        }
 
         // Detect all patterns once, then filter based on enabled types
         const allDailyPatterns = detectTradingPatterns(dailyData || []);
@@ -1985,10 +1989,10 @@ Source: ${source}`);
           const bollingerPosition = bbPosition < 20 ? 'LOWER' : bbPosition > 80 ? 'UPPER' : 'MIDDLE';
           
           framesWithIndicators[timeframe] = {
-            rsi: (rsi !== null && rsi !== undefined) ? Number(rsi).toFixed(2) : 'N/A',
-            bollingerPosition: bollingerPosition,
-            trend: trend,
-            momentum: momentum,
+            rsi: (rsi !== null && rsi !== undefined && !isNaN(rsi)) ? Number(rsi).toFixed(2) : 'N/A',
+            bollingerPosition: bollingerPosition || 'MIDDLE',
+            trend: trend || 'SIDEWAYS',
+            momentum: momentum || 'NEUTRAL',
             price: currentPrice,
             support: Math.min(...prices.slice(-20)), // Support from last 20 periods
             resistance: Math.max(...prices.slice(-20)), // Resistance from last 20 periods
@@ -2006,7 +2010,7 @@ Source: ${source}`);
         coinmarketcap_id: coin.coinmarketcap_id,
         coinpaprika_id: coin.coinpaprika_id,
         action: 'HOLD',
-        price: `$${currentPrice.toFixed(2)}`,
+        price: currentPrice && !isNaN(currentPrice) ? `$${Number(currentPrice).toFixed(2)}` : '$0.00',
         confidence: 0.5,
         signal: 'HOLD | Technical Analysis',
         reason: 'Analysis completed',
