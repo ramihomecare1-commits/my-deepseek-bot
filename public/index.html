@@ -1483,6 +1483,12 @@
         const aiContent = document.getElementById('aiContent');
         const aiStatus = document.getElementById('aiStatus');
         
+        // Check if elements exist before using them
+        if (!aiContent || !aiStatus) {
+          console.warn('⚠️ AI evaluation elements not found in DOM');
+          return;
+        }
+        
         if (data.currentlyAnalyzing) {
           const current = data.currentlyAnalyzing;
           aiStatus.textContent = 'Analyzing';
@@ -1500,9 +1506,11 @@
           `;
         } else if (data.batchAI && data.batchAI.results && Object.keys(data.batchAI.results).length > 0) {
           const batchAI = data.batchAI;
-          aiStatus.textContent = 'Complete';
-          aiStatus.style.background = 'rgba(34, 197, 94, 0.2)';
-          aiStatus.style.color = '#22c55e';
+          if (aiStatus) {
+            aiStatus.textContent = 'Complete';
+            aiStatus.style.background = 'rgba(34, 197, 94, 0.2)';
+            aiStatus.style.color = '#22c55e';
+          }
           
           const results = batchAI.results;
           const buyCount = Object.values(results).filter(r => r.action === 'BUY').length;
@@ -1558,17 +1566,22 @@
           
           // Stats elements removed
         } else {
-          aiStatus.textContent = 'Ready';
-          aiStatus.style.background = 'rgba(148, 163, 184, 0.2)';
-          aiStatus.style.color = '#94a3b8';
-          aiContent.innerHTML = `
+          if (aiStatus) {
+            aiStatus.textContent = 'Ready';
+            aiStatus.style.background = 'rgba(148, 163, 184, 0.2)';
+            aiStatus.style.color = '#94a3b8';
+          }
+          if (aiContent) {
+            aiContent.innerHTML = `
             <div style="font-size: 2em; margin-bottom: 10px;">🤖</div>
             <div>Waiting for batch AI analysis...</div>
             <div style="font-size: 0.85em; color: #94a3b8; margin-top: 10px;">All coins analyzed together in one API call</div>
           `;
+          }
         }
       } catch (error) {
-        console.log('Error updating AI evaluation:', error);
+        console.error('❌ Error updating AI evaluation:', error);
+        console.error('Error stack:', error.stack);
       }
     }
 
