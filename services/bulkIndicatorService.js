@@ -207,10 +207,24 @@ class BulkIndicatorService {
 
       console.log(`✅ Fetched ${topCoins.length} coins from CoinGecko`);
 
-      // 2. Convert to Binance pairs (TAAPI.IO format)
-      const binancePairs = topCoins
+      // 2. Filter to TAAPI.IO supported symbols (free plan only supports 5 symbols)
+      // Free plan: BTC/USDT, ETH/USDT, XRP/USDT, LTC/USDT, XMR/USDT
+      // Paid plans: All Binance symbols
+      const supportedSymbols = ['BTC', 'ETH', 'XRP', 'LTC', 'XMR'];
+      const filteredCoins = topCoins
         .slice(0, maxCoins)
-        .map(coin => this.convertToBinancePair(coin.symbol));
+        .filter(coin => supportedSymbols.includes(coin.symbol));
+      
+      if (filteredCoins.length === 0) {
+        console.warn('⚠️ No supported symbols found in top coins (free plan supports: BTC, ETH, XRP, LTC, XMR)');
+        console.warn('   💡 Upgrade TAAPI.IO plan to scan all 200 coins');
+        return [];
+      }
+      
+      console.log(`📊 Filtered to ${filteredCoins.length} supported symbols (${filteredCoins.map(c => c.symbol).join(', ')})`);
+      
+      // 3. Convert to Binance pairs (TAAPI.IO format)
+      const binancePairs = filteredCoins.map(coin => this.convertToBinancePair(coin.symbol));
 
       // 3. Determine which indicators to fetch based on settings
       const indicatorsToFetch = ['rsi']; // Always fetch RSI
@@ -223,23 +237,31 @@ class BulkIndicatorService {
       // 4. Fetch bulk indicators (all at once - fast!)
       const indicatorsData = await this.fetchBulkIndicators(binancePairs, indicatorsToFetch);
 
-      console.log(`✅ Received indicators for ${indicatorsData.length} pairs`);
+      console.log(`✅ Received indicators for ${indicatorsData.length} requests`);
 
       // 5. Process and filter coins
       const analyzedCoins = [];
       const indicatorsMap = new Map();
 
       // Group indicators by symbol for easy lookup
-      indicatorsData.forEach(indicator => {
-        const symbol = indicator.symbol.replace('/USDT', '');
-        if (!indicatorsMap.has(symbol)) {
-          indicatorsMap.set(symbol, {});
-        }
-        indicatorsMap.get(symbol)[indicator.indicator] = indicator;
-      });
+      // TAAPI.IO bulk returns array of results with id, indicator, value, etc.
+      if (Array.isArray(indicatorsData)) {
+        indicatorsData.forEach(result => {
+          // Parse the id format: "BTC/USDT_rsi" -> symbol: "BTC", indicator: "rsi"
+          const parts = result.id ? result.id.split('_') : [];
+          if (parts.length >= 2) {
+            const symbol = parts[0].replace('/USDT', '');
+            const indicator = parts[1];
+            if (!indicatorsMap.has(symbol)) {
+              indicatorsMap.set(symbol, {});
+            }
+            indicatorsMap.get(symbol)[indicator] = result;
+          }
+        });
+      }
 
-      // 6. Analyze each coin
-      for (const coin of topCoins.slice(0, maxCoins)) {
+      // 6. Analyze each filtered coin
+      for (const coin of filteredCoins) {
         const coinIndicators = indicatorsMap.get(coin.symbol);
         if (!coinIndicators) continue;
 
