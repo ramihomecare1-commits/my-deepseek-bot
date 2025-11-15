@@ -1,6 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
-const { docClient, TABLES } = require('../config/awsConfig');
+const { docClient, TABLES, ScanCommand, BatchWriteCommand, PutCommand } = require('../config/awsConfig');
 const { v4: uuidv4 } = require('uuid');
 
 /**
@@ -47,9 +47,9 @@ async function loadTradesFromDynamo() {
       if (!connected) return [];
     }
 
-    const result = await docClient.scan({
+    const result = await docClient.send(new ScanCommand({
       TableName: TABLES.ACTIVE_TRADES
-    });
+    }));
 
     return (result.Items || []).map(trade => {
       // Convert timestamp back to Date object
@@ -79,7 +79,7 @@ async function saveTradesToDynamo(trades) {
     }
 
     // Delete all existing trades first
-    const existing = await docClient.scan({ TableName: TABLES.ACTIVE_TRADES });
+    const existing = await docClient.send(new ScanCommand({ TableName: TABLES.ACTIVE_TRADES }));
     if (existing.Items && existing.Items.length > 0) {
       const deleteOps = existing.Items.map(item => ({
         DeleteRequest: { Key: { id: item.id } }
@@ -92,11 +92,11 @@ async function saveTradesToDynamo(trades) {
       }
 
       for (const batch of batches) {
-        await docClient.batchWrite({
+        await docClient.send(new BatchWriteCommand({
           RequestItems: {
             [TABLES.ACTIVE_TRADES]: batch
           }
-        });
+        }));
       }
     }
 
@@ -119,11 +119,11 @@ async function saveTradesToDynamo(trades) {
       }
 
       for (const batch of batches) {
-        await docClient.batchWrite({
+        await docClient.send(new BatchWriteCommand({
           RequestItems: {
             [TABLES.ACTIVE_TRADES]: batch
           }
-        });
+        }));
       }
     }
 
@@ -280,9 +280,9 @@ async function loadClosedTrades() {
         if (!connected) return [];
       }
       
-      const result = await docClient.scan({
+      const result = await docClient.send(new ScanCommand({
         TableName: TABLES.CLOSED_TRADES
-      });
+      }));
       
       const trades = (result.Items || [])
         .sort((a, b) => (b.closedAt || 0) - (a.closedAt || 0))
@@ -374,14 +374,14 @@ async function saveClosedTrades(trades) {
       // Upsert closed trades (update if exists, insert if not)
       // Use id as unique identifier
       for (const trade of tradesToSave) {
-        await docClient.put({
+        await docClient.send(new PutCommand({
           TableName: TABLES.CLOSED_TRADES,
           Item: trade
-        });
+        }));
       }
       
       // Keep only last 500 closed trades in DynamoDB
-      const allTrades = await docClient.scan({ TableName: TABLES.CLOSED_TRADES });
+      const allTrades = await docClient.send(new ScanCommand({ TableName: TABLES.CLOSED_TRADES }));
       if (allTrades.Items && allTrades.Items.length > 500) {
         // Sort by closedAt and delete oldest
         const sorted = allTrades.Items.sort((a, b) => (a.closedAt || 0) - (b.closedAt || 0));
@@ -398,11 +398,11 @@ async function saveClosedTrades(trades) {
         }
         
         for (const batch of batches) {
-          await docClient.batchWrite({
+          await docClient.send(new BatchWriteCommand({
             RequestItems: {
               [TABLES.CLOSED_TRADES]: batch
             }
-          });
+          }));
         }
       }
       

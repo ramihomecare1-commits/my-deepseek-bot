@@ -1,4 +1,4 @@
-const { docClient, TABLES } = require('../config/awsConfig');
+const { docClient, TABLES, PutCommand, GetCommand, UpdateCommand, QueryCommand, ScanCommand, BatchWriteCommand } = require('../config/awsConfig');
 
 /**
  * Data Storage Service
@@ -145,18 +145,18 @@ async function storeAIEvaluation(evaluation) {
         model: evaluation.model || 'unknown',
         createdAt: timestamp
       };
-      await docClient.put({
+      await docClient.send(new PutCommand({
         TableName: TABLES.AI_EVALUATIONS,
         Item: minimalItem
-      });
+      }));
       console.log(`💾 Stored minimal AI evaluation for ${evaluation.symbol}${evaluation.tradeId ? ` (trade: ${evaluation.tradeId})` : ''} (context removed due to size)`);
       return true;
     }
 
-    await docClient.put({
+    await docClient.send(new PutCommand({
       TableName: TABLES.AI_EVALUATIONS,
       Item: item
-    });
+    }));
 
     console.log(`💾 Stored AI evaluation for ${evaluation.symbol}${evaluation.tradeId ? ` (trade: ${evaluation.tradeId})` : ''}`);
     return true;
@@ -215,17 +215,17 @@ async function storeNews(news) {
     
     // Check if article already exists
     try {
-      const existing = await docClient.get({
+      const existing = await docClient.send(new GetCommand({
         TableName: TABLES.NEWS_ARTICLES,
         Key: { url: news.url }
-      });
+      }));
 
       if (existing.Item) {
         // Update existing article to add new links
         const tradeIds = existing.Item.tradeIds || [];
         if (news.tradeId && !tradeIds.includes(news.tradeId)) {
           tradeIds.push(news.tradeId);
-          await docClient.update({
+          await docClient.send(new UpdateCommand({
             TableName: TABLES.NEWS_ARTICLES,
             Key: { url: news.url },
             UpdateExpression: 'SET tradeIds = :tradeIds, updatedAt = :now',
@@ -233,7 +233,7 @@ async function storeNews(news) {
               ':tradeIds': tradeIds,
               ':now': Date.now()
             }
-          });
+          }));
         }
         return true;
       }
@@ -253,10 +253,10 @@ async function storeNews(news) {
       createdAt: Date.now()
     };
 
-    await docClient.put({
+    await docClient.send(new PutCommand({
       TableName: TABLES.NEWS_ARTICLES,
       Item: item
-    });
+    }));
 
     console.log(`💾 Stored news article: ${news.title} for ${news.symbol}`);
     return true;
@@ -304,11 +304,11 @@ async function storeNewsBatch(newsArray) {
         }
       }));
 
-      await docClient.batchWrite({
+      await docClient.send(new BatchWriteCommand({
         RequestItems: {
           [TABLES.NEWS_ARTICLES]: putRequests
         }
-      });
+      }));
     }
 
     console.log(`💾 Stored ${newsArray.length} news articles`);
@@ -346,7 +346,7 @@ async function retrieveRelatedData(options) {
     // Retrieve AI evaluations
     if (symbol) {
       try {
-        const evalResult = await docClient.query({
+        const evalResult = await docClient.send(new QueryCommand({
           TableName: TABLES.AI_EVALUATIONS,
           KeyConditionExpression: 'symbol = :symbol AND #ts >= :cutoff',
           ExpressionAttributeNames: {
@@ -358,7 +358,7 @@ async function retrieveRelatedData(options) {
           },
           Limit: limit,
           ScanIndexForward: false // Sort descending
-        });
+        }));
         results.evaluations = evalResult.Items || [];
       } catch (error) {
         console.error('❌ Error querying evaluations:', error);
@@ -368,7 +368,7 @@ async function retrieveRelatedData(options) {
     // Retrieve news articles
     if (symbol) {
       try {
-        const newsResult = await docClient.query({
+        const newsResult = await docClient.send(new QueryCommand({
           TableName: TABLES.NEWS_ARTICLES,
           IndexName: 'symbol-timestamp-index',
           KeyConditionExpression: 'symbol = :symbol AND publishedAt >= :cutoff',
@@ -378,7 +378,7 @@ async function retrieveRelatedData(options) {
           },
           Limit: limit,
           ScanIndexForward: false
-        });
+        }));
         results.news = newsResult.Items || [];
       } catch (error) {
         console.error('❌ Error querying news:', error);
@@ -404,16 +404,16 @@ async function linkNewsToTrade(newsUrl, tradeId) {
     }
 
     // Get existing item first
-    const existing = await docClient.get({
+    const existing = await docClient.send(new GetCommand({
       TableName: TABLES.NEWS_ARTICLES,
       Key: { url: newsUrl }
-    });
+    }));
 
     if (existing.Item) {
       const tradeIds = existing.Item.tradeIds || [];
       if (!tradeIds.includes(tradeId)) {
         tradeIds.push(tradeId);
-        await docClient.update({
+        await docClient.send(new UpdateCommand({
           TableName: TABLES.NEWS_ARTICLES,
           Key: { url: newsUrl },
           UpdateExpression: 'SET tradeIds = :tradeIds, updatedAt = :now',
@@ -421,7 +421,7 @@ async function linkNewsToTrade(newsUrl, tradeId) {
             ':tradeIds': tradeIds,
             ':now': Date.now()
           }
-        });
+        }));
       }
     }
 
@@ -447,14 +447,14 @@ async function getStorageStats() {
     // Note: DynamoDB scan with COUNT is expensive for large tables
     // For production, consider using CloudWatch metrics or maintaining a counter
     const [evalResult, newsResult] = await Promise.all([
-      docClient.scan({ 
+      docClient.send(new ScanCommand({ 
         TableName: TABLES.AI_EVALUATIONS, 
         Select: 'COUNT' 
-      }).catch(() => ({ Count: 0 })),
-      docClient.scan({ 
+      })).catch(() => ({ Count: 0 })),
+      docClient.send(new ScanCommand({ 
         TableName: TABLES.NEWS_ARTICLES, 
         Select: 'COUNT' 
-      }).catch(() => ({ Count: 0 }))
+      })).catch(() => ({ Count: 0 }))
     ]);
 
     return {
