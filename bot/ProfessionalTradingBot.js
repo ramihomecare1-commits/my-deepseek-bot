@@ -774,25 +774,36 @@ class ProfessionalTradingBot {
           
           if (r1Decision.decision === 'CONFIRMED') {
             console.log(`${priorityLabel} ✅ R1 CONFIRMED opportunity for ${symbol}!`);
+            console.log(`   Action: ${r1Decision.action}, Confidence: ${(r1Decision.confidence * 100).toFixed(0)}%`);
+            console.log(`   Stop Loss: ${r1Decision.stopLoss}%, Take Profit: ${r1Decision.takeProfit}%`);
+            console.log(`   Reason: ${r1Decision.reason?.substring(0, 150) || 'No reason provided'}...`);
             
+            // Execute trade if paper trading is enabled
             if (this.tradingRules.paperTradingEnabled) {
-              await this.executePaperTrade({
-                symbol: symbol,
-                action: r1Decision.action,
-                price: coinData.currentPrice,
-                reason: r1Decision.reason,
-                confidence: r1Decision.confidence,
-                stopLoss: r1Decision.stopLoss,
-                takeProfit: r1Decision.takeProfit,
-                source: 'monitoring'
-              });
+              try {
+                const tradeResult = await this.executePaperTrade({
+                  symbol: symbol,
+                  action: r1Decision.action,
+                  price: coinData.currentPrice,
+                  reason: r1Decision.reason,
+                  confidence: r1Decision.confidence,
+                  stopLoss: r1Decision.stopLoss,
+                  takeProfit: r1Decision.takeProfit,
+                  source: 'monitoring'
+                });
+                console.log(`${priorityLabel} ✅ Trade executed successfully for ${symbol}`);
+              } catch (error) {
+                console.log(`${priorityLabel} ⚠️ Failed to execute trade for ${symbol}: ${error.message}`);
+              }
+            } else {
+              console.log(`${priorityLabel} ⚠️ Paper trading disabled - trade not executed for ${symbol}`);
             }
           } else if (r1Decision.decision === 'SKIPPED') {
-            console.log(`⏭️ ${symbol} - Recently rejected, skipped escalation (saves cost)`);
+            console.log(`⏭️ ${symbol} - Skipped: ${r1Decision.reason || 'On cooldown or recently rejected'}`);
           } else if (r1Decision.decision === 'ERROR') {
             console.log(`${priorityLabel} ❌ Premium AI error for ${symbol}: ${r1Decision.reason}`);
           } else {
-            console.log(`${priorityLabel} ❌ R1 rejected ${symbol}`);
+            console.log(`${priorityLabel} ❌ R1 rejected ${symbol}: ${r1Decision.reason?.substring(0, 100) || 'No reason provided'}`);
           }
         }
         
