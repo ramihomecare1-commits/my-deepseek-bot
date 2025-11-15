@@ -19,11 +19,23 @@ function addMonitoringActivity(activity) {
       ...activity,
       timestamp: new Date().toISOString()
     };
+    
+    // Remove any existing entries for this symbol (deduplication)
+    // This ensures each symbol only appears once with the most recent data
+    const beforeCount = monitoringStore.activities.length;
+    monitoringStore.activities = monitoringStore.activities.filter(
+      a => a.symbol !== activity.symbol
+    );
+    const removedCount = beforeCount - monitoringStore.activities.length;
+    
+    // Add the new entry
     monitoringStore.activities.push(activityEntry);
     
-    console.log(`📊 Added monitoring activity: ${activity.symbol} - ${activity.volatility} volatility, ${activity.priceChange}%`);
+    console.log(`📊 Updated monitoring activity: ${activity.symbol} - ${activity.volatility} volatility, ${activity.priceChange}%`);
+    if (removedCount > 0) {
+      console.log(`   Removed ${removedCount} duplicate entry/entries for ${activity.symbol}`);
+    }
     console.log(`   Total activities: ${monitoringStore.activities.length}`);
-    console.log(`   Activity entry:`, JSON.stringify(activityEntry));
     
     if (monitoringStore.activities.length > monitoringStore.MAX_ENTRIES) {
       monitoringStore.activities = monitoringStore.activities.slice(-monitoringStore.MAX_ENTRIES);
