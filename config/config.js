@@ -98,6 +98,10 @@ const ALLOW_MOCK_NOTIFICATIONS = (process.env.ALLOW_MOCK_NOTIFICATIONS || 'false
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
 const SCRAPER_API_ENABLED = SCRAPER_API_KEY.length > 0;
 
+// TAAPI.IO Configuration for bulk technical indicators
+const TAAPI_API_KEY = process.env.TAAPI_API_KEY || '';
+const TAAPI_ENABLED = Boolean(TAAPI_API_KEY);
+
 // Log configuration status
 console.log('🔧 Configuration Status:');
 console.log(`   Telegram: ${TELEGRAM_ENABLED ? 'ENABLED' : 'DISABLED'}`);
@@ -161,5 +165,8 @@ module.exports = {
   MONITORING_MODE,
   ESCALATION_THRESHOLD,
   VOLATILITY_THRESHOLD,
-  VOLUME_SPIKE_THRESHOLD
+  VOLUME_SPIKE_THRESHOLD,
+  // TAAPI.IO Configuration
+  TAAPI_API_KEY,
+  TAAPI_ENABLED
 };

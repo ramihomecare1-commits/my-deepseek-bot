@@ -654,17 +654,84 @@ class ProfessionalTradingBot {
         }
       }
       
-      // PRIORITY 2: Batch monitor other top coins for new opportunities (one API call for all)
-      const otherCoins = this.trackedCoins
-        .filter(c => !activeTradeSymbols.includes(c.symbol))
-        .slice(0, 7); // Monitor 7 other coins
+      // PRIORITY 2: Bulk scan top 200 coins using TAAPI.IO (fast, all indicators)
+      console.log(`🚀 Bulk scanning top 200 coins for oversold opportunities...`);
       
-      if (otherCoins.length > 0) {
-        console.log(`👀 Batch monitoring ${otherCoins.length} other coins for opportunities in one API call...`);
+      // Use bulk indicator service to scan top 200 coins
+      // Pass all trigger settings from UI (automatically uses latest saved settings)
+      const bulkScanResults = await monitoringService.bulkScanTop200Coins({
+        maxCoins: 200
+        // All other settings (rsiThreshold, minTriggers, enableBollinger, etc.) 
+        // are automatically read from monitoringService.triggerSettings
+      });
+      
+      if (bulkScanResults.length > 0) {
+        console.log(`✅ Found ${bulkScanResults.length} oversold coins from bulk scan`);
         
-        // Gather price data for all other coins first
-        const otherCoinsData = [];
-        for (const coin of otherCoins) {
+        // Process bulk scan results and collect escalations
+        for (const bulkResult of bulkScanResults) {
+          // Skip if this coin is already in an open trade (handled in PRIORITY 1)
+          if (activeTradeSymbols.includes(bulkResult.symbol)) {
+            continue;
+          }
+          
+          // Convert to coinData format for escalation
+          const coinData = {
+            symbol: bulkResult.symbol,
+            name: bulkResult.name,
+            id: bulkResult.symbol.toLowerCase(),
+            currentPrice: bulkResult.price,
+            priceChange24h: bulkResult.priceChange24h || 0,
+            volume24h: 0,
+            rank: bulkResult.rank
+          };
+          
+          // Track price
+          monitoringService.lastPrices.set(coinData.symbol, coinData.currentPrice);
+          
+          const analysis = bulkResult.analysis;
+          if (!analysis) {
+            continue;
+          }
+          
+          // Log monitoring activity
+          try {
+            const { addMonitoringActivity, setMonitoringActive } = require('../services/monitoringStore');
+            setMonitoringActive(true);
+            const priceChangePercent = Math.abs(coinData.priceChange24h || 0);
+            const volatilityLevel = monitoringService.calculateVolatilityLevel(priceChangePercent);
+            const activityData = {
+              symbol: coinData.symbol,
+              volatility: volatilityLevel,
+              priceChange: priceChangePercent.toFixed(2),
+              confidence: analysis.confidence || 0,
+              escalated: false
+            };
+            addMonitoringActivity(activityData);
+          } catch (err) {
+            console.log(`⚠️ Failed to log monitoring activity for ${coinData.symbol}: ${err.message}`);
+          }
+          
+          // Check if escalation is needed
+          if (analysis.confidence >= monitoringService.ESCALATION_THRESHOLD) {
+            const alreadyQueued = escalations.some(e => e.coinData.symbol === coinData.symbol);
+            if (!alreadyQueued) {
+              const v3Analysis = {
+                signal: analysis.recommendation,
+                confidence: analysis.confidence,
+                reason: analysis.reason,
+                shouldEscalate: true
+              };
+              escalations.push({ coinData, v3Analysis, isPriority: false });
+              console.log(`🔍 ${coinData.symbol} (Rank #${bulkResult.rank}): ${analysis.recommendation} (${(analysis.confidence * 100).toFixed(0)}%) - ${bulkResult.triggerCount} triggers - Will escalate to premium`);
+            }
+          } else {
+            console.log(`🔍 ${coinData.symbol} (Rank #${bulkResult.rank}): ${analysis.recommendation} (${(analysis.confidence * 100).toFixed(0)}%) - ${bulkResult.triggerCount} triggers`);
+          }
+        }
+      }
+
+      // STEP 3: Batch escalate all coins that need escalation in ONE premium API call
           try {
             const coinDataForFetch = { symbol: coin.symbol, id: coin.id };
             

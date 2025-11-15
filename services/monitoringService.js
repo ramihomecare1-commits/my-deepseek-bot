@@ -2,6 +2,7 @@ const axios = require('axios');
 const config = require('../config/config');
 const { sendTelegramMessage } = require('./notificationService');
 const { storeAIEvaluation } = require('./dataStorageService');
+const bulkIndicatorService = require('./bulkIndicatorService');
 
 /**
  * Two-Tier AI Monitoring System
@@ -534,6 +535,76 @@ class MonitoringService {
       symbol,
       analysis
     };
+  }
+
+  /**
+   * Bulk scan top 200 coins using TAAPI.IO for fast indicator analysis
+   * Returns coins sorted by most oversold (RSI < threshold, below BB lower, etc.)
+   */
+  async bulkScanTop200Coins(options = {}) {
+    try {
+      if (!config.TAAPI_ENABLED) {
+        console.log('⚠️ TAAPI.IO not enabled - skipping bulk scan');
+        return [];
+      }
+
+      // Use trigger settings from UI (dynamically updated)
+      const settings = this.triggerSettings;
+      const {
+        maxCoins = 200,
+        rsiThreshold = settings.rsiOversold || 30,
+        minTriggers = settings.minTriggers || 2,
+        enableBollinger = settings.enableBollinger !== false, // Default true
+        minPriceChange = settings.minPriceChange || 5,
+        requireVolume = settings.requireVolume || false,
+        volumeMultiplier = settings.volumeMultiplier || 2
+      } = options;
+
+      console.log(`🚀 Bulk scanning top ${maxCoins} coins with TAAPI.IO...`);
+      console.log(`   Filters: RSI < ${rsiThreshold}, Min triggers: ${minTriggers}, BB: ${enableBollinger ? 'ON' : 'OFF'}, Min price change: ${minPriceChange}%`);
+
+      // Use bulk indicator service to scan with all trigger settings
+      const oversoldCoins = await bulkIndicatorService.scanBulkCoinsForOversold({
+        maxCoins,
+        rsiThreshold,
+        minTriggers,
+        enableBollinger,
+        minPriceChange,
+        requireVolume,
+        volumeMultiplier
+      });
+
+      if (oversoldCoins.length === 0) {
+        console.log(`✅ Bulk scan complete: No oversold opportunities found`);
+        return [];
+      }
+
+      console.log(`✅ Bulk scan complete: Found ${oversoldCoins.length} oversold coins`);
+      console.log(`   Top 10: ${oversoldCoins.slice(0, 10).map(c => `${c.symbol} (RSI: ${c.indicators.rsi?.toFixed(1) || 'N/A'}, ${c.triggerCount} triggers)`).join(', ')}`);
+
+      // Convert to monitoring service format
+      return oversoldCoins.map(coin => ({
+        symbol: coin.symbol,
+        name: coin.name,
+        rank: coin.rank,
+        price: coin.price,
+        priceChange24h: coin.priceChange24h,
+        marketCap: coin.marketCap,
+        indicators: coin.indicators,
+        triggerCount: coin.triggerCount,
+        triggers: coin.triggers,
+        confidence: coin.confidence,
+        analysis: {
+          recommendation: coin.confidence >= this.ESCALATION_THRESHOLD ? 'OPPORTUNITY' : 'CAUTION',
+          confidence: coin.confidence,
+          reason: `RSI: ${coin.indicators.rsi?.toFixed(1) || 'N/A'}, ${coin.triggers.join(', ')}`
+        }
+      }));
+
+    } catch (error) {
+      console.error('❌ Error in bulk scan:', error.message);
+      return [];
+    }
   }
 
   /**
