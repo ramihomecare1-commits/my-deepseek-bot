@@ -571,22 +571,25 @@ class ProfessionalTradingBot {
       }, msUntilNext);
     };
 
-    // Run initial scan on startup
-    console.log('🚀 Running initial bulk scan on startup...');
-    (async () => {
-      if (this.isMonitoring) {
-        console.log('⏭️ Skipping initial scan - already in progress');
-        return;
-      }
-      this.isMonitoring = true;
-      try {
-        await this.runMonitoringCycle();
-      } catch (error) {
-        console.log(`⚠️ Monitoring error: ${error.message}`);
-      } finally {
-        this.isMonitoring = false;
-      }
-    })();
+    // Run initial scan on startup (delayed to allow server to respond to health checks first)
+    console.log('🚀 Initial bulk scan will start in 10 seconds...');
+    setTimeout(() => {
+      console.log('🚀 Running initial bulk scan...');
+      (async () => {
+        if (this.isMonitoring) {
+          console.log('⏭️ Skipping initial scan - already in progress');
+          return;
+        }
+        this.isMonitoring = true;
+        try {
+          await this.runMonitoringCycle();
+        } catch (error) {
+          console.log(`⚠️ Monitoring error: ${error.message}`);
+        } finally {
+          this.isMonitoring = false;
+        }
+      })();
+    }, 10000); // Delay 10 seconds to allow server to be fully ready
 
     // Schedule future runs (9 AM and 9 PM)
     scheduleNextRun();
