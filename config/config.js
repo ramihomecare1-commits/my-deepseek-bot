@@ -54,21 +54,18 @@ const USE_HYBRID_MODE = Boolean(GEMINI_API_KEY && OPENROUTER_API_KEY);
 console.log(`   Hybrid Mode: ${USE_HYBRID_MODE ? '✅ ENABLED' : '❌ DISABLED (need both keys)'}`);
 
 // Free monitoring model (Tier 1)
-// Default: Gemini Flash (FREE) if Gemini key available, else DeepSeek Chat
-// Note: Use 'gemini-1.5-flash-latest' or 'gemini-1.5-flash-002' for v1beta API
-const MONITORING_MODEL = process.env.MONITORING_MODEL || 
-  (GEMINI_API_KEY ? 'gemini-1.5-flash-latest' : 'deepseek/deepseek-chat');
-const MONITORING_API_KEY = GEMINI_API_KEY || OPENROUTER_API_KEY || AI_API_KEY;
-const MONITORING_API_TYPE = GEMINI_API_KEY ? 'gemini' : 'openrouter';
+// Default: DeepSeek Chat (FREE via OpenRouter)
+const MONITORING_MODEL = process.env.MONITORING_MODEL || 'deepseek/deepseek-chat';
+const MONITORING_API_KEY = OPENROUTER_API_KEY || AI_API_KEY;
+const MONITORING_API_TYPE = 'openrouter';
 
 console.log(`   Free Tier will use: ${MONITORING_API_TYPE.toUpperCase()} (${MONITORING_MODEL})`);
 
 // Premium confirmation model (Tier 2)
-// Default: DeepSeek R1 (best reasoning) if OpenRouter key available, else Gemini Pro
-const AI_MODEL = process.env.AI_MODEL || 
-  (OPENROUTER_API_KEY ? 'deepseek/deepseek-r1' : 'gemini-1.5-pro');
-const PREMIUM_API_KEY = OPENROUTER_API_KEY || GEMINI_API_KEY || AI_API_KEY;
-const PREMIUM_API_TYPE = OPENROUTER_API_KEY ? 'openrouter' : 'gemini';
+// Default: DeepSeek R1 (best reasoning via OpenRouter)
+const AI_MODEL = process.env.AI_MODEL || 'deepseek/deepseek-r1';
+const PREMIUM_API_KEY = OPENROUTER_API_KEY || AI_API_KEY;
+const PREMIUM_API_TYPE = 'openrouter';
 
 console.log(`   Premium Tier will use: ${PREMIUM_API_TYPE.toUpperCase()} (${AI_MODEL})`);
 console.log('');
