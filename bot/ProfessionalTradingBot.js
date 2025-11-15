@@ -618,32 +618,24 @@ class ProfessionalTradingBot {
       // Monitor with v3
       const result = await monitoringService.monitorCoin(coinData);
 
-      // Log monitoring activity to web UI
+      // Log monitoring activity to web UI using shared store
       if (result && result.v3Analysis) {
         try {
-          // Use the same module instance that the router uses
-          const apiModule = require('../routes/api');
-          if (apiModule && apiModule.setMonitoringActive && apiModule.addMonitoringActivity) {
-            apiModule.setMonitoringActive(true);
-            const activityData = {
-              symbol: coin.symbol,
-              volatility: result.v3Analysis.volatilityLevel || 'low',
-              priceChange: (result.v3Analysis.priceChangePercent || 0).toFixed(2),
-              confidence: result.v3Analysis.confidence || 0,
-              escalated: !!result.r1Decision
-            };
-            console.log(`📊 Attempting to add monitoring activity:`, activityData);
-            apiModule.addMonitoringActivity(activityData);
-            console.log(`✅ Monitoring activity added for ${coin.symbol}`);
-          } else {
-            console.log(`⚠️ Monitoring API functions not available:`, {
-              hasModule: !!apiModule,
-              hasSetActive: !!apiModule?.setMonitoringActive,
-              hasAddActivity: !!apiModule?.addMonitoringActivity
-            });
-          }
+          // Use the shared monitoring store (same instance as API endpoint)
+          const { addMonitoringActivity, setMonitoringActive } = require('../services/monitoringStore');
+          setMonitoringActive(true);
+          const activityData = {
+            symbol: coin.symbol,
+            volatility: result.v3Analysis.volatilityLevel || 'low',
+            priceChange: (result.v3Analysis.priceChangePercent || 0).toFixed(2),
+            confidence: result.v3Analysis.confidence || 0,
+            escalated: !!result.r1Decision
+          };
+          console.log(`📊 Attempting to add monitoring activity:`, activityData);
+          addMonitoringActivity(activityData);
+          console.log(`✅ Monitoring activity added for ${coin.symbol}`);
         } catch (err) {
-          console.log(`⚠️ Failed to log monitoring activity: ${err.message}`, err.stack);
+          console.log(`⚠️ Failed to log monitoring activity: ${err.message}`);
         }
       }
 

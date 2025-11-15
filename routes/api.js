@@ -26,43 +26,8 @@ function addLogEntry(message, level = 'info') {
   return logEntry;
 }
 
-// In-memory monitoring activity store - use module-level object to ensure same instance
-const monitoringStore = {
-  activities: [],
-  isActive: false,
-  MAX_ENTRIES: 50
-};
-
-function addMonitoringActivity(activity) {
-  try {
-    if (!activity || !activity.symbol) {
-      console.log(`⚠️ Invalid monitoring activity data:`, activity);
-      return;
-    }
-    
-    const activityEntry = {
-      ...activity,
-      timestamp: new Date().toISOString()
-    };
-    monitoringStore.activities.push(activityEntry);
-    
-    console.log(`📊 Added monitoring activity: ${activity.symbol} - ${activity.volatility} volatility, ${activity.priceChange}%`);
-    console.log(`   Total activities: ${monitoringStore.activities.length}`);
-    console.log(`   Store reference:`, monitoringStore);
-    
-    if (monitoringStore.activities.length > monitoringStore.MAX_ENTRIES) {
-      monitoringStore.activities = monitoringStore.activities.slice(-monitoringStore.MAX_ENTRIES);
-      console.log(`   Trimmed to ${monitoringStore.MAX_ENTRIES} entries`);
-    }
-  } catch (error) {
-    console.log(`⚠️ Error adding monitoring activity:`, error.message, error.stack);
-  }
-}
-
-function setMonitoringActive(active) {
-  monitoringStore.isActive = active;
-  console.log(`📊 Monitoring active status set to: ${active}`);
-}
+// Import shared monitoring store (ensures same instance everywhere)
+const { getMonitoringStore, addMonitoringActivity, setMonitoringActive } = require('../services/monitoringStore');
 
 // Export for use in bot (before module.exports = router)
 // These will be attached to the router export
@@ -646,12 +611,15 @@ router.post('/rebalancing/execute', async (req, res) => {
 
 // API endpoint for monitoring activity
 router.get('/monitoring-activity', (req, res) => {
-  console.log(`📊 Monitoring API called - ${monitoringStore.activities.length} activities, isActive: ${monitoringStore.isActive}`);
-  console.log(`   Store reference:`, monitoringStore);
-  console.log(`   Activities:`, monitoringStore.activities.map(a => `${a.symbol} (${a.volatility})`).join(', '));
+  const store = getMonitoringStore();
+  console.log(`📊 Monitoring API called - ${store.activities.length} activities, isActive: ${store.isActive}`);
+  console.log(`   Activities:`, store.activities.map(a => `${a.symbol} (${a.volatility})`).join(', '));
+  if (store.activities.length > 0) {
+    console.log(`   Latest activity:`, store.activities[store.activities.length - 1]);
+  }
   res.json({
-    activity: monitoringStore.activities,
-    isActive: monitoringStore.isActive
+    activity: store.activities,
+    isActive: store.isActive
   });
 });
 
