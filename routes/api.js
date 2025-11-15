@@ -32,13 +32,18 @@ const MAX_MONITORING_ENTRIES = 50;
 let monitoringIsActive = false;
 
 function addMonitoringActivity(activity) {
-  monitoringActivity.push({
+  const activityEntry = {
     ...activity,
     timestamp: new Date().toISOString()
-  });
+  };
+  monitoringActivity.push(activityEntry);
+  
+  console.log(`📊 Added monitoring activity: ${activity.symbol} - ${activity.volatility} volatility, ${activity.priceChange}%`);
+  console.log(`   Total activities: ${monitoringActivity.length}`);
   
   if (monitoringActivity.length > MAX_MONITORING_ENTRIES) {
     monitoringActivity = monitoringActivity.slice(-MAX_MONITORING_ENTRIES);
+    console.log(`   Trimmed to ${MAX_MONITORING_ENTRIES} entries`);
   }
 }
 
@@ -624,6 +629,7 @@ router.post('/rebalancing/execute', async (req, res) => {
 
 // API endpoint for monitoring activity
 router.get('/monitoring-activity', (req, res) => {
+  console.log(`📊 Monitoring API called - ${monitoringActivity.length} activities, isActive: ${monitoringIsActive}`);
   res.json({
     activity: monitoringActivity,
     isActive: monitoringIsActive

@@ -2078,20 +2078,29 @@
         }
         const data = await response.json();
         
+        console.log('📊 Monitoring data received:', {
+          activityCount: data?.activity?.length || 0,
+          isActive: data?.isActive,
+          activities: data?.activity
+        });
+        
         const container = document.getElementById('monitoring-container');
-        if (!container) return;
+        if (!container) {
+          console.log('⚠️ Monitoring container not found');
+          return;
+        }
         
         if (!data || !data.activity || data.activity.length === 0) {
           // Show waiting message only if container is empty
-          if (container.innerHTML.includes('Waiting for monitoring cycle')) {
-            return; // Already showing waiting message
+          if (!container.innerHTML.includes('Waiting for monitoring cycle')) {
+            container.innerHTML = `
+              <div style="text-align: center; padding: 20px; color: #94a3b8;">
+                <div style="font-size: 2em; margin-bottom: 8px;">⏳</div>
+                <div>Waiting for monitoring cycle...</div>
+                <div style="font-size: 0.8em; margin-top: 8px; color: #64748b;">No activities yet</div>
+              </div>
+            `;
           }
-          container.innerHTML = `
-            <div style="text-align: center; padding: 20px; color: #94a3b8;">
-              <div style="font-size: 2em; margin-bottom: 8px;">⏳</div>
-              <div>Waiting for monitoring cycle...</div>
-            </div>
-          `;
           return;
         }
         
