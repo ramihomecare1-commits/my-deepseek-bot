@@ -492,7 +492,7 @@ class ProfessionalTradingBot {
     // Check for monitoring API key (supports hybrid mode with separate keys)
     if (!config.MONITORING_API_KEY) {
       console.log('⚠️ No monitoring API key configured - monitoring disabled');
-      console.log('   Set GEMINI_API_KEY (for free monitoring) or OPENROUTER_API_KEY');
+      console.log('   Set FREE_TIER_API_KEY (recommended) or OPENROUTER_API_KEY (legacy)');
       return;
     }
 
