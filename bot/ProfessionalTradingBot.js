@@ -933,8 +933,11 @@ class ProfessionalTradingBot {
    */
   async handleExistingTrade(symbol, newAction, newPrice, newStopLoss, newTakeProfit, newConfidence, newReason) {
     // Find existing open trade for this symbol
-    const existingTrade = this.activeTrades.find(t => 
-      t.symbol === symbol && (t.status === 'OPEN' || t.status === 'DCA_HIT')
+    // Check both activeTrades and trades arrays (trades might be used in monitoring)
+    const existingTrade = (this.activeTrades || []).find(t => 
+      t.symbol === symbol && (t.status === 'OPEN' || t.status === 'DCA_HIT' || t.status === 'ACTIVE')
+    ) || (this.trades || []).find(t => 
+      t && t.symbol === symbol && (t.status === 'OPEN' || t.status === 'DCA_HIT' || t.status === 'ACTIVE')
     );
 
     if (!existingTrade) {
