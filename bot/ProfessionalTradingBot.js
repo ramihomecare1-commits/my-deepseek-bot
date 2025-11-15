@@ -710,12 +710,12 @@ class ProfessionalTradingBot {
       }
       
       // PRIORITY 2: Bulk scan top 200 coins using TAAPI.IO (fast, all indicators)
-      console.log(`🚀 Bulk scanning top 200 coins for oversold opportunities...`);
+      console.log(`🚀 Bulk scanning top 25 coins for oversold opportunities...`);
       
-      // Use bulk indicator service to scan top 200 coins
+      // Use bulk indicator service to scan top 25 coins (reduced to avoid rate limits)
       // Pass all trigger settings from UI (automatically uses latest saved settings)
       const bulkScanResults = await monitoringService.bulkScanTop200Coins({
-        maxCoins: 200
+        maxCoins: 25 // Reduced from 200 to avoid CoinGecko rate limits
         // All other settings (rsiThreshold, minTriggers, enableBollinger, etc.) 
         // are automatically read from monitoringService.triggerSettings
       });
