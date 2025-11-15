@@ -474,16 +474,41 @@ class MonitoringService {
       // Call premium tier API with longer timeout for batch
       let responseText;
       try {
+        console.log(`🚀 Starting premium API call for ${validEscalations.length} coins...`);
         responseText = await this.callAI(prompt, this.PREMIUM_MODEL, 1000, 'premium');
         
-        if (!responseText || responseText.trim().length === 0) {
-          console.log('⚠️ Premium API returned empty response - possible rate limit, timeout, or API error');
-          throw new Error('Empty response from premium API');
+        // Detailed validation of response
+        console.log(`📥 Premium API call completed`);
+        console.log(`   Response type: ${typeof responseText}`);
+        console.log(`   Response is null/undefined: ${responseText == null}`);
+        console.log(`   Response length: ${responseText ? responseText.length : 'N/A'}`);
+        
+        if (!responseText) {
+          console.log('⚠️ Premium API returned null/undefined response');
+          throw new Error('Null/undefined response from premium API');
         }
         
-        console.log(`✅ Premium API response received (${responseText.length} chars)`);
+        if (typeof responseText !== 'string') {
+          console.log(`⚠️ Premium API returned non-string response: ${typeof responseText}`);
+          console.log(`   Value: ${JSON.stringify(responseText).substring(0, 200)}`);
+          throw new Error(`Invalid response type: ${typeof responseText}`);
+        }
+        
+        if (responseText.trim().length === 0) {
+          console.log('⚠️ Premium API returned empty string (whitespace only)');
+          console.log(`   Raw length: ${responseText.length}`);
+          console.log(`   Raw content (JSON): ${JSON.stringify(responseText)}`);
+          throw new Error('Empty string response from premium API');
+        }
+        
+        console.log(`✅ Premium API response validated (${responseText.length} chars)`);
+        console.log(`   First 300 chars: ${responseText.substring(0, 300)}`);
       } catch (error) {
         console.log(`⚠️ Premium API call failed: ${error.message}`);
+        console.log(`   Error type: ${error.constructor.name}`);
+        if (error.stack) {
+          console.log(`   Stack: ${error.stack.substring(0, 400)}`);
+        }
         // Return error responses for all escalations
         return validEscalations.map(esc => ({
           symbol: esc.coinData.symbol,
@@ -497,7 +522,9 @@ class MonitoringService {
         }));
       }
       
+      console.log(`🔍 Parsing batch R1 response...`);
       const batchR1Decisions = this.parseBatchR1Response(responseText, validEscalations);
+      console.log(`✅ Parsed ${batchR1Decisions.length} decisions from batch response`);
 
       // Process results and store evaluations
       const results = [];
@@ -609,10 +636,30 @@ class MonitoringService {
   parseBatchR1Response(content, escalations) {
     const results = [];
     
-    if (!content || typeof content !== 'string') {
-      console.log('⚠️ Batch R1 response is empty or not a string');
+    // Enhanced logging for empty/invalid responses
+    if (!content) {
+      console.log('⚠️ Batch R1 response is null or undefined');
+      console.log(`   Content type: ${typeof content}`);
+      console.log(`   Content value: ${content}`);
       return escalations.map(() => this.getDefaultR1Response('Empty response'));
     }
+    
+    if (typeof content !== 'string') {
+      console.log('⚠️ Batch R1 response is not a string');
+      console.log(`   Content type: ${typeof content}`);
+      console.log(`   Content value: ${JSON.stringify(content).substring(0, 200)}`);
+      return escalations.map(() => this.getDefaultR1Response('Invalid response type'));
+    }
+    
+    if (content.trim().length === 0) {
+      console.log('⚠️ Batch R1 response is empty string (whitespace only)');
+      console.log(`   Content length: ${content.length}`);
+      console.log(`   Content (with escapes): ${JSON.stringify(content)}`);
+      return escalations.map(() => this.getDefaultR1Response('Empty response'));
+    }
+    
+    console.log(`📝 Parsing batch R1 response (${content.length} chars)`);
+    console.log(`   First 200 chars: ${content.substring(0, 200)}`);
 
     try {
       // Strategy 1: Look for JSON array in markdown code blocks
