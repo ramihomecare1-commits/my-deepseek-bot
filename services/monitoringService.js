@@ -1306,6 +1306,29 @@ Be thorough and conservative. Only confirm high-probability setups.`;
   }
 
   /**
+   * Truncate text at word boundaries to avoid cutting words in half
+   * @param {string} text - Text to truncate
+   * @param {number} maxLength - Maximum length
+   * @returns {string} Truncated text
+   */
+  truncateAtWordBoundary(text, maxLength) {
+    if (!text || text.length <= maxLength) {
+      return text;
+    }
+    
+    // Find the last space before maxLength
+    const truncated = text.substring(0, maxLength);
+    const lastSpace = truncated.lastIndexOf(' ');
+    
+    // If we found a space, truncate there; otherwise truncate at maxLength
+    if (lastSpace > maxLength * 0.7) { // Only use space if it's not too early
+      return truncated.substring(0, lastSpace) + '...';
+    }
+    
+    return truncated + '...';
+  }
+
+  /**
    * Send Telegram notification about R1 decision (single coin)
    */
   async notifyR1Decision(symbol, v3Analysis, r1Decision, coinData) {
@@ -1318,7 +1341,12 @@ Be thorough and conservative. Only confirm high-probability setups.`;
       reason = 'Premium AI analysis completed, but response format was unexpected. Decision: REJECTED for safety.';
     }
 
-    const message = `${emoji} *AI Analysis: ${symbol}*
+    // Truncate reasons at word boundaries to avoid incomplete words
+    const freeReason = this.truncateAtWordBoundary(v3Analysis.reason || 'No reason provided', 300);
+    const premiumReason = this.truncateAtWordBoundary(reason, 400);
+
+    // Build message without truncation first
+    let message = `${emoji} *AI Analysis: ${symbol}*
 
 📊 Coin: *${symbol}*
 💰 Price: $${coinData?.currentPrice || 'N/A'}
@@ -1326,18 +1354,82 @@ Be thorough and conservative. Only confirm high-probability setups.`;
 🤖 *Free AI (Monitoring):*
 📊 Signal: ${v3Analysis.signal}
 💪 Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%
-📝 Reason: ${v3Analysis.reason.substring(0, 150)}${v3Analysis.reason.length > 150 ? '...' : ''}
+📝 Reason: ${freeReason}
 
 💎 *Premium AI (Decision):*
 🎯 Decision: ${r1Decision.decision}
 🎯 Action: ${r1Decision.action}
 💪 Confidence: ${(r1Decision.confidence * 100).toFixed(0)}%
-📝 Analysis: ${reason.substring(0, 200)}${reason.length > 200 ? '...' : ''}
+📝 Analysis: ${premiumReason}
 
 ${r1Decision.decision === 'CONFIRMED' ? `
 🛡️ Stop Loss: ${r1Decision.stopLoss}%
 🎯 Take Profit: ${r1Decision.takeProfit}%
 ` : ''}`;
+
+    // Telegram has a 4096 character limit - truncate entire message if needed
+    const TELEGRAM_MAX_LENGTH = 4096;
+    if (message.length > TELEGRAM_MAX_LENGTH) {
+      // Calculate how much we need to reduce
+      const excess = message.length - TELEGRAM_MAX_LENGTH + 100; // Add buffer
+      
+      // Reduce premium reason first (it's usually longer)
+      let finalPremiumReason = premiumReason;
+      if (premiumReason.length > excess) {
+        const newPremiumLength = Math.max(100, premiumReason.length - excess);
+        finalPremiumReason = this.truncateAtWordBoundary(reason, newPremiumLength);
+      }
+      
+      // Rebuild message with truncated premium reason
+      message = `${emoji} *AI Analysis: ${symbol}*
+
+📊 Coin: *${symbol}*
+💰 Price: $${coinData?.currentPrice || 'N/A'}
+
+🤖 *Free AI (Monitoring):*
+📊 Signal: ${v3Analysis.signal}
+💪 Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%
+📝 Reason: ${freeReason}
+
+💎 *Premium AI (Decision):*
+🎯 Decision: ${r1Decision.decision}
+🎯 Action: ${r1Decision.action}
+💪 Confidence: ${(r1Decision.confidence * 100).toFixed(0)}%
+📝 Analysis: ${finalPremiumReason}
+
+${r1Decision.decision === 'CONFIRMED' ? `
+🛡️ Stop Loss: ${r1Decision.stopLoss}%
+🎯 Take Profit: ${r1Decision.takeProfit}%
+` : ''}`;
+      
+      // If still too long, reduce free reason as well
+      if (message.length > TELEGRAM_MAX_LENGTH) {
+        const remainingExcess = message.length - TELEGRAM_MAX_LENGTH + 50;
+        const newFreeLength = Math.max(50, freeReason.length - remainingExcess);
+        const finalFreeReason = this.truncateAtWordBoundary(v3Analysis.reason || 'No reason provided', newFreeLength);
+        
+        message = `${emoji} *AI Analysis: ${symbol}*
+
+📊 Coin: *${symbol}*
+💰 Price: $${coinData?.currentPrice || 'N/A'}
+
+🤖 *Free AI (Monitoring):*
+📊 Signal: ${v3Analysis.signal}
+💪 Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%
+📝 Reason: ${finalFreeReason}
+
+💎 *Premium AI (Decision):*
+🎯 Decision: ${r1Decision.decision}
+🎯 Action: ${r1Decision.action}
+💪 Confidence: ${(r1Decision.confidence * 100).toFixed(0)}%
+📝 Analysis: ${finalPremiumReason}
+
+${r1Decision.decision === 'CONFIRMED' ? `
+🛡️ Stop Loss: ${r1Decision.stopLoss}%
+🎯 Take Profit: ${r1Decision.takeProfit}%
+` : ''}`;
+      }
+    }
 
     await sendTelegramMessage(message);
   }
