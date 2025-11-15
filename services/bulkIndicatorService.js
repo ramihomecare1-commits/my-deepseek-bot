@@ -2,18 +2,141 @@ const axios = require('axios');
 const config = require('../config/config');
 
 /**
- * Bulk Indicator Service using TAAPI.IO
- * Fetches RSI, Bollinger Bands, and other indicators for top 200 coins
+ * Bulk Indicator Service - Calculates RSI and Bollinger Bands from CoinGecko data
+ * No external indicator API needed - completely free for all 200 coins!
  */
 class BulkIndicatorService {
   constructor() {
-    this.apiKey = process.env.TAAPI_API_KEY || config.TAAPI_API_KEY || '';
-    this.baseUrl = 'https://api.taapi.io';
-    this.exchange = 'binance'; // Default exchange
-    this.interval = '1h'; // 1 hour candles
+    // No longer need TAAPI.IO - we calculate indicators ourselves!
+    this.rsiPeriod = 14; // Standard RSI period
+    this.bbPeriod = 20; // Standard Bollinger Bands period
+    this.bbStdDev = 2; // Standard deviation multiplier for Bollinger Bands
+  }
+
+  /**
+   * Calculate RSI (Relative Strength Index) from price history
+   * RSI = 100 - (100 / (1 + RS))
+   * RS = Average Gain / Average Loss over period
+   */
+  calculateRSI(prices, period = 14) {
+    if (prices.length < period + 1) {
+      return null; // Not enough data
+    }
+
+    const changes = [];
+    for (let i = 1; i < prices.length; i++) {
+      changes.push(prices[i] - prices[i - 1]);
+    }
+
+    // Calculate initial average gain and loss
+    let avgGain = 0;
+    let avgLoss = 0;
     
-    if (!this.apiKey) {
-      console.warn('⚠️ TAAPI_API_KEY not set - bulk indicator service will be disabled');
+    for (let i = 0; i < period; i++) {
+      if (changes[i] > 0) {
+        avgGain += changes[i];
+      } else {
+        avgLoss += Math.abs(changes[i]);
+      }
+    }
+    
+    avgGain /= period;
+    avgLoss /= period;
+
+    // Use Wilder's smoothing method for remaining periods
+    for (let i = period; i < changes.length; i++) {
+      const change = changes[i];
+      if (change > 0) {
+        avgGain = (avgGain * (period - 1) + change) / period;
+        avgLoss = (avgLoss * (period - 1)) / period;
+      } else {
+        avgGain = (avgGain * (period - 1)) / period;
+        avgLoss = (avgLoss * (period - 1) + Math.abs(change)) / period;
+      }
+    }
+
+    if (avgLoss === 0) {
+      return 100; // All gains, no losses
+    }
+
+    const rs = avgGain / avgLoss;
+    const rsi = 100 - (100 / (1 + rs));
+    
+    return rsi;
+  }
+
+  /**
+   * Calculate Bollinger Bands from price history
+   * Returns { upper, middle, lower }
+   */
+  calculateBollingerBands(prices, period = 20, stdDevMultiplier = 2) {
+    if (prices.length < period) {
+      return null; // Not enough data
+    }
+
+    // Get last N prices
+    const recentPrices = prices.slice(-period);
+    
+    // Calculate Simple Moving Average (middle band)
+    const sum = recentPrices.reduce((a, b) => a + b, 0);
+    const sma = sum / period;
+
+    // Calculate standard deviation
+    const variance = recentPrices.reduce((sum, price) => {
+      return sum + Math.pow(price - sma, 2);
+    }, 0) / period;
+    
+    const stdDev = Math.sqrt(variance);
+
+    // Calculate bands
+    const upper = sma + (stdDev * stdDevMultiplier);
+    const lower = sma - (stdDev * stdDevMultiplier);
+
+    return {
+      upper,
+      middle: sma,
+      lower
+    };
+  }
+
+  /**
+   * Fetch historical price data from CoinGecko for a coin
+   * Returns array of prices (last 30 days, hourly)
+   */
+  async fetchHistoricalPrices(coinId, days = 30) {
+    const coinGeckoKey = process.env.COINGECKO_API_KEY || config.COINGECKO_API_KEY;
+    const baseUrl = 'https://api.coingecko.com/api/v3';
+    
+    try {
+      const headers = {};
+      if (coinGeckoKey) {
+        headers['x-cg-demo-api-key'] = coinGeckoKey;
+      }
+
+      // Fetch market chart data (hourly candles for last N days)
+      const response = await axios.get(
+        `${baseUrl}/coins/${coinId}/market_chart`,
+        {
+          params: {
+            vs_currency: 'usd',
+            days: days,
+            interval: 'hourly' // Hourly data for better RSI/BB calculation
+          },
+          timeout: 10000,
+          headers
+        }
+      );
+
+      // Extract prices from the response
+      // Response format: { prices: [[timestamp, price], ...] }
+      if (response.data && response.data.prices) {
+        return response.data.prices.map(entry => entry[1]); // Extract just the prices
+      }
+
+      return [];
+    } catch (error) {
+      console.error(`⚠️ Error fetching historical prices for ${coinId}:`, error.message);
+      return [];
     }
   }
 
@@ -91,86 +214,65 @@ class BulkIndicatorService {
   }
 
   /**
-   * Convert CoinGecko symbol to Binance trading pair format
-   * e.g., BTC -> BTC/USDT
+   * Convert CoinGecko symbol to CoinGecko ID (needed for historical data)
+   * Most symbols match, but some need mapping
    */
-  convertToBinancePair(symbol) {
-    // Handle special cases
-    const symbolMap = {
-      'BTC': 'BTC/USDT',
-      'ETH': 'ETH/USDT',
-      'BNB': 'BNB/USDT',
-      'SOL': 'SOL/USDT',
-      'XRP': 'XRP/USDT',
-      'DOGE': 'DOGE/USDT',
-      'ADA': 'ADA/USDT',
-      'AVAX': 'AVAX/USDT',
-      'LINK': 'LINK/USDT',
-      'DOT': 'DOT/USDT'
+  getCoinGeckoId(symbol, name) {
+    // Special mappings for common coins
+    const symbolToId = {
+      'BTC': 'bitcoin',
+      'ETH': 'ethereum',
+      'BNB': 'binancecoin',
+      'SOL': 'solana',
+      'XRP': 'ripple',
+      'DOGE': 'dogecoin',
+      'ADA': 'cardano',
+      'AVAX': 'avalanche-2',
+      'LINK': 'chainlink',
+      'DOT': 'polkadot',
+      'MATIC': 'matic-network',
+      'LTC': 'litecoin',
+      'XMR': 'monero'
     };
 
-    if (symbolMap[symbol]) {
-      return symbolMap[symbol];
+    if (symbolToId[symbol]) {
+      return symbolToId[symbol];
     }
 
-    // Default: add /USDT
-    return `${symbol}/USDT`;
+    // Default: use lowercase symbol (works for most coins)
+    return symbol.toLowerCase();
   }
 
   /**
-   * Fetch bulk indicators from TAAPI.IO for multiple symbols
-   * Uses TAAPI.IO's bulk endpoint with POST request
+   * Calculate indicators for a coin from historical price data
+   * Returns { rsi, bollinger: { upper, middle, lower } }
    */
-  async fetchBulkIndicators(symbols, indicators = ['rsi', 'bbands2']) {
-    if (!this.apiKey) {
-      throw new Error('TAAPI_API_KEY not configured');
-    }
-
-    if (symbols.length === 0) {
-      return [];
-    }
-
+  async calculateIndicatorsForCoin(coin) {
     try {
-      // TAAPI.IO bulk endpoint requires POST with JSON body containing array of requests
-      // Build array of indicator requests
-      const requests = [];
+      // Get CoinGecko ID
+      const coinId = this.getCoinGeckoId(coin.symbol, coin.name);
       
-      for (const symbol of symbols) {
-        for (const indicator of indicators) {
-          requests.push({
-            id: `${symbol}_${indicator}`,
-            indicator: indicator,
-            exchange: this.exchange,
-            symbol: symbol,
-            interval: this.interval
-          });
-        }
+      // Fetch historical prices (last 30 days, hourly)
+      const prices = await this.fetchHistoricalPrices(coinId, 30);
+      
+      if (prices.length < this.bbPeriod) {
+        // Not enough data for indicators
+        return null;
       }
 
-      console.log(`   Making bulk request for ${symbols.length} symbols x ${indicators.length} indicators = ${requests.length} total requests`);
+      // Calculate RSI
+      const rsi = this.calculateRSI(prices, this.rsiPeriod);
 
-      const response = await axios.post(
-        `${this.baseUrl}/bulk`,
-        {
-          secret: this.apiKey,
-          construct: requests
-        },
-        {
-          timeout: 60000, // 60 second timeout for bulk requests
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+      // Calculate Bollinger Bands
+      const bollinger = this.calculateBollingerBands(prices, this.bbPeriod, this.bbStdDev);
 
-      return response.data;
+      return {
+        rsi,
+        bollinger
+      };
     } catch (error) {
-      console.error('❌ Error fetching bulk indicators from TAAPI.IO:', error.message);
-      if (error.response) {
-        console.error('   Status:', error.response.status);
-        console.error('   Data:', JSON.stringify(error.response.data).substring(0, 200));
-      }
-      throw error;
+      console.error(`⚠️ Error calculating indicators for ${coin.symbol}:`, error.message);
+      return null;
     }
   }
 
@@ -189,11 +291,6 @@ class BulkIndicatorService {
       volumeMultiplier = 2, // Volume multiplier threshold
       indicators = ['rsi', 'bbands2'] // RSI and Bollinger Bands
     } = options;
-
-    if (!this.apiKey) {
-      console.warn('⚠️ TAAPI_API_KEY not set - skipping bulk scan');
-      return [];
-    }
 
     try {
       console.log(`📊 Starting bulk scan for top ${maxCoins} coins...`);
@@ -304,27 +401,38 @@ class BulkIndicatorService {
           triggers.push(`Price change: ${priceChangeAbs.toFixed(2)}%`);
         }
 
-        // Only include if meets minimum trigger threshold
-        if (triggerCount >= minTriggers) {
-          analyzedCoins.push({
-            symbol: coin.symbol,
-            name: coin.name,
-            rank: coin.rank,
-            price: currentPrice,
-            priceChange24h: coin.priceChange24h,
-            marketCap: coin.marketCap,
-            indicators: {
-              rsi,
-              bollinger: {
-                upper: bbUpper,
-                middle: bbMiddle,
-                lower: bbLower
+          // Only include if meets minimum trigger threshold
+          if (triggerCount >= minTriggers) {
+            analyzedCoins.push({
+              symbol: coin.symbol,
+              name: coin.name,
+              rank: coin.rank,
+              price: currentPrice,
+              priceChange24h: coin.priceChange24h,
+              marketCap: coin.marketCap,
+              indicators: {
+                rsi,
+                bollinger: {
+                  upper: bbUpper,
+                  middle: bbMiddle,
+                  lower: bbLower
+                }
+              },
+              triggerCount,
+              triggers,
+              confidence: this.calculateConfidence(rsi, bbLower, currentPrice, triggerCount),
+              analysis: {
+                recommendation: rsi < rsiThreshold ? 'BUY' : 'HOLD',
+                confidence: this.calculateConfidence(rsi, bbLower, currentPrice, triggerCount),
+                reason: triggers.join(', ')
               }
-            },
-            triggerCount,
-            triggers,
-            confidence: this.calculateConfidence(rsi, bbLower, currentPrice, triggerCount)
-          });
+            });
+          }
+        }
+        
+        // Small delay between batches to respect CoinGecko rate limits
+        if (i + batchSize < coinsToScan.length) {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
         }
       }
 
