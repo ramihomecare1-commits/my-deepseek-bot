@@ -2934,7 +2934,7 @@ Return JSON array format:
             temperature: 0.1,
           }, {
             headers: {
-              Authorization: `Bearer ${config.AI_API_KEY}`,
+              Authorization: `Bearer ${apiKey}`, // Use the fallback apiKey variable
               'Content-Type': 'application/json',
               'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
               'X-Title': 'Technical Analysis Bot',
