@@ -27,7 +27,7 @@ function addLogEntry(message, level = 'info') {
 }
 
 // Import shared monitoring store (ensures same instance everywhere)
-const { getMonitoringStore, addMonitoringActivity, setMonitoringActive } = require('../services/monitoringStore');
+const { getMonitoringData, addMonitoringActivity, setMonitoringActive } = require('../services/monitoringStore');
 
 // Export for use in bot (before module.exports = router)
 // These will be attached to the router export
