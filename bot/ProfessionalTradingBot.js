@@ -2975,8 +2975,21 @@ Return JSON array format:
                 throw new Error('Invalid recommendations format - expected non-empty array');
               }
               
+              // Filter out null/undefined entries and validate structure
+              const validRecommendations = recommendations.filter(rec => {
+                if (!rec || typeof rec !== 'object') {
+                  console.warn(`⚠️ Skipping invalid recommendation entry:`, rec);
+                  return false;
+                }
+                if (!rec.symbol) {
+                  console.warn(`⚠️ Skipping recommendation without symbol:`, rec);
+                  return false;
+                }
+                return true;
+              });
+              
               // Add to all recommendations
-              allRecommendations.push(...recommendations);
+              allRecommendations.push(...validRecommendations);
               
             } catch (parseError) {
               console.error('❌ Failed to parse AI response:', parseError.message);
@@ -3004,13 +3017,28 @@ Return JSON array format:
       return [];
     }
     
+    // Filter out any null/undefined entries that might have slipped through
+    allRecommendations = allRecommendations.filter(rec => rec != null && typeof rec === 'object' && rec.symbol);
+    
     console.log(`✅ Total recommendations received: ${allRecommendations.length}`);
+    
+    if (allRecommendations.length === 0) {
+      console.warn('⚠️ No valid recommendations after filtering');
+      addLogEntry('⚠️ No valid recommendations received from AI', 'warning');
+      return [];
+    }
     
     // Build Telegram message
     let telegramMessage = `🤖 *AI Trade Re-evaluation*\n\n`;
     telegramMessage += `📊 *${openTrades.length} Open Trade${openTrades.length > 1 ? 's' : ''} Analyzed*\n\n`;
     
     for (const rec of allRecommendations) {
+      // Safety check - skip if rec is null or invalid
+      if (!rec || typeof rec !== 'object' || !rec.symbol) {
+        console.warn(`⚠️ Skipping invalid recommendation entry:`, rec);
+        continue;
+      }
+      
       const symbol = rec.symbol;
       const recommendation = rec.recommendation || 'HOLD';
       const confidence = (rec.confidence || 0) * 100;
