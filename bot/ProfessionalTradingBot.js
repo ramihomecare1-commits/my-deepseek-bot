@@ -2299,11 +2299,15 @@ Source: ${source}`);
       return [];
     }
     
-    if (!config.AI_API_KEY) {
+    // Check for API key (support both legacy and hybrid configurations)
+    const apiKey = config.PREMIUM_API_KEY || config.AI_API_KEY || config.MONITORING_API_KEY;
+    if (!apiKey) {
       console.log('⚠️ AI API key not configured - cannot re-evaluate');
       addLogEntry('⚠️ AI API key not configured', 'warning');
       return [];
     }
+    
+    console.log(`✅ Using API key for re-evaluation: ${apiKey.substring(0, 15)}...`);
 
     try {
       console.log(`📊 Preparing trade data for ${openTrades.length} trades...`);
