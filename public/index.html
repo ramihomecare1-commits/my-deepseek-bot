@@ -1004,7 +1004,24 @@
           </div>
         </div>
         
-        <div class="panel-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(59,130,246,0.2);">
+        <!-- Active Triggers Section -->
+        <div class="panel-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-top: 1px solid rgba(59,130,246,0.2); margin-top: 16px; padding-top: 16px;">
+          <h3 style="margin: 0; font-size: 1em; letter-spacing: 0.05em; text-transform: uppercase; color: #22d3ee; font-weight: 700;">🎯 Active Triggers</h3>
+          <button onclick="openTriggerSettings()" style="padding: 6px 12px; font-size: 12px; border-radius: 6px; cursor: pointer; background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); font-weight: 600;">⚙️ Settings</button>
+        </div>
+        
+        <div id="trigger-summary" style="margin-bottom: 8px; font-size: 11px; color: #94a3b8;">
+          <span style="background: rgba(148, 163, 184, 0.2); padding: 4px 8px; border-radius: 4px;">0 Active</span>
+        </div>
+        
+        <div id="trigger-list" style="max-height: 200px; overflow-y: auto; margin-bottom: 16px; padding: 8px; background: rgba(0, 0, 0, 0.3); border-radius: 12px; border: 1px solid rgba(59,130,246,0.2); font-size: 11px;">
+          <div style="text-align: center; padding: 20px; color: #94a3b8;">
+            <div style="font-size: 1.5em; margin-bottom: 8px;">🎯</div>
+            <div>No active triggers</div>
+          </div>
+        </div>
+        
+        <div class="panel-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-top: 1px solid rgba(59,130,246,0.2); padding-top: 16px;">
           <h3 style="margin: 0; font-size: 1em; letter-spacing: 0.05em; text-transform: uppercase; color: #22d3ee; font-weight: 700;">📋 Bot Activity Log</h3>
           <button id="clear-logs" class="btn btn-sm btn-secondary" style="padding: 6px 12px; font-size: 12px; border-radius: 6px; cursor: pointer;">Clear</button>
         </div>
@@ -2153,6 +2170,179 @@
     // Poll monitoring activity every 5 seconds
     setInterval(updateMonitoringDisplay, 5000);
     updateMonitoringDisplay(); // Initial load
+    // Trigger Settings Modal Functions
+    function openTriggerSettings() {
+      document.getElementById('trigger-settings-modal').style.display = 'flex';
+      loadTriggerSettings();
+    }
+    
+    function closeTriggerSettings() {
+      document.getElementById('trigger-settings-modal').style.display = 'none';
+    }
+    
+    async function loadTriggerSettings() {
+      try {
+        const response = await fetch(API_BASE + '/trigger-settings');
+        const settings = await response.json();
+        
+        document.getElementById('rsi-oversold').value = settings.rsiOversold || 30;
+        document.getElementById('rsi-overbought').value = settings.rsiOverbought || 70;
+        document.getElementById('min-price-change').value = settings.minPriceChange || 5;
+        document.getElementById('min-triggers').value = settings.minTriggers || 2;
+        document.getElementById('require-volume').checked = settings.requireVolume || false;
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      }
+    }
+    
+    async function saveTriggerSettings() {
+      const settings = {
+        rsiOversold: parseInt(document.getElementById('rsi-oversold').value),
+        rsiOverbought: parseInt(document.getElementById('rsi-overbought').value),
+        minPriceChange: parseFloat(document.getElementById('min-price-change').value),
+        minTriggers: parseInt(document.getElementById('min-triggers').value),
+        requireVolume: document.getElementById('require-volume').checked
+      };
+      
+      try {
+        const response = await fetch(API_BASE + '/trigger-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings)
+        });
+        
+        if (response.ok) {
+          alert('✅ Settings saved!');
+          closeTriggerSettings();
+        } else {
+          alert('❌ Failed to save settings');
+        }
+      } catch (error) {
+        alert('❌ Error: ' + error.message);
+      }
+    }
+    
+    // Update trigger display
+    async function updateTriggerDisplay() {
+      try {
+        const response = await fetch(API_BASE + '/active-triggers');
+        const data = await response.json();
+        
+        if (!data.triggers || data.triggers.length === 0) {
+          document.getElementById('trigger-summary').innerHTML = '<span style="background: rgba(148, 163, 184, 0.2); padding: 4px 8px; border-radius: 4px;">0 Active</span>';
+          document.getElementById('trigger-list').innerHTML = `
+            <div style="text-align: center; padding: 20px; color: #94a3b8;">
+              <div style="font-size: 1.5em; margin-bottom: 8px;">🎯</div>
+              <div>No active triggers</div>
+            </div>
+          `;
+          return;
+        }
+        
+        const activeCount = data.triggers.reduce((sum, t) => sum + (t.activeTriggers?.length || 0), 0);
+        const escalatedCount = data.triggers.filter(t => t.shouldEscalate).length;
+        
+        document.getElementById('trigger-summary').innerHTML = `
+          <span style="background: rgba(251, 191, 36, 0.2); padding: 4px 8px; border-radius: 4px; color: #fbbf24;">${activeCount} Active</span>
+          ${escalatedCount > 0 ? `<span style="background: rgba(239, 68, 68, 0.2); padding: 4px 8px; border-radius: 4px; color: #f87171; margin-left: 6px;">${escalatedCount} Escalated</span>` : ''}
+        `;
+        
+        document.getElementById('trigger-list').innerHTML = data.triggers.map(coin => {
+          const triggers = coin.activeTriggers || [];
+          const bgColor = coin.shouldEscalate ? 'rgba(239, 68, 68, 0.15)' : 'rgba(15, 23, 42, 0.3)';
+          const borderColor = coin.shouldEscalate ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.2)';
+          
+          const getTriggerBadge = (trigger) => {
+            const badges = {
+              rsiOversold: '📉 RSI Low',
+              rsiOverbought: '📈 RSI High',
+              bollingerLower: '⬇️ BB Lower',
+              bollingerUpper: '⬆️ BB Upper',
+              highVolatility: '🌪️ High Vol',
+              bigPriceMove: '🚀 Big Move'
+            };
+            const colors = {
+              rsiOversold: '#22c55e',
+              rsiOverbought: '#ef4444',
+              bollingerLower: '#22c55e',
+              bollingerUpper: '#ef4444',
+              highVolatility: '#f59e0b',
+              bigPriceMove: '#f59e0b'
+            };
+            return `<span style="background: rgba(148, 163, 184, 0.2); padding: 2px 6px; border-radius: 4px; font-size: 10px; color: ${colors[trigger] || '#94a3b8'}; display: inline-block; margin: 2px;">${badges[trigger] || trigger}</span>`;
+          };
+          
+          return `
+            <div style="background: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 8px; padding: 8px; margin-bottom: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-weight: 700; color: #e2e8f0;">${coin.symbol}</span>
+                <span style="font-size: 10px; color: #94a3b8;">${triggers.length} triggers</span>
+              </div>
+              ${triggers.length > 0 ? `
+                <div style="margin-bottom: 6px;">
+                  ${triggers.map(t => getTriggerBadge(t)).join(' ')}
+                </div>
+              ` : ''}
+              <div style="font-size: 10px; color: #94a3b8;">
+                ${coin.indicators?.rsi ? `RSI: ${coin.indicators.rsi.toFixed(1)}` : ''} 
+                ${coin.indicators?.bollingerPosition ? `· BB: ${coin.indicators.bollingerPosition}` : ''}
+              </div>
+              ${coin.shouldEscalate ? `<div style="margin-top: 6px; padding: 4px; background: rgba(239, 68, 68, 0.2); border-radius: 4px; font-size: 10px; color: #f87171; font-weight: 600;">⚡ Escalated to Premium AI</div>` : ''}
+            </div>
+          `;
+        }).join('');
+      } catch (error) {
+        console.error('Error updating triggers:', error);
+      }
+    }
+    
+    // Poll triggers every 10 seconds
+    setInterval(updateTriggerDisplay, 10000);
+    updateTriggerDisplay();
   </script>
+  
+  <!-- Trigger Settings Modal -->
+  <div id="trigger-settings-modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); align-items: center; justify-content: center;">
+    <div style="background: #1e293b; padding: 32px; border-radius: 16px; max-width: 600px; width: 90%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid rgba(59,130,246,0.3);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+        <h2 style="margin: 0; color: #22d3ee; font-size: 1.5em;">⚙️ Trigger Settings</h2>
+        <button onclick="closeTriggerSettings()" style="background: none; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; padding: 0; width: 32px; height: 32px;">&times;</button>
+      </div>
+      
+      <div style="margin-bottom: 20px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
+        <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1em;">RSI Thresholds</h3>
+        <label style="display: block; margin-bottom: 8px; color: #e2e8f0; font-size: 14px;">
+          Oversold (Buy Signal): 
+          <input type="number" id="rsi-oversold" value="30" min="0" max="100" style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
+        </label>
+        <label style="display: block; color: #e2e8f0; font-size: 14px;">
+          Overbought (Sell Signal): 
+          <input type="number" id="rsi-overbought" value="70" min="0" max="100" style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
+        </label>
+      </div>
+      
+      <div style="margin-bottom: 20px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
+        <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1em;">Price Movement</h3>
+        <label style="display: block; color: #e2e8f0; font-size: 14px;">
+          Min Price Change (%): 
+          <input type="number" id="min-price-change" value="5" min="1" max="20" step="0.5" style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
+        </label>
+      </div>
+      
+      <div style="margin-bottom: 24px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
+        <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1em;">Escalation Rules</h3>
+        <label style="display: block; margin-bottom: 8px; color: #e2e8f0; font-size: 14px;">
+          Min Triggers Required: 
+          <input type="number" id="min-triggers" value="2" min="1" max="5" style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
+        </label>
+        <label style="display: flex; align-items: center; color: #e2e8f0; font-size: 14px;">
+          <input type="checkbox" id="require-volume" style="margin-right: 8px;">
+          Require volume spike
+        </label>
+      </div>
+      
+      <button onclick="saveTriggerSettings()" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #6366f1, #22d3ee); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">💾 Save Settings</button>
+    </div>
+  </div>
 </body>
 </html>
