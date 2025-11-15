@@ -87,15 +87,14 @@ class MonitoringService {
    * Save trigger settings
    */
   saveTriggerSettings(settings) {
+    const oldMode = this.triggerSettings.monitoringMode;
     this.triggerSettings = { ...this.triggerSettings, ...settings };
     console.log(`💾 Trigger settings saved:`, this.triggerSettings);
     
-    // If monitoring mode changed, update config (requires restart to take full effect)
-    if (settings.monitoringMode && settings.monitoringMode !== config.MONITORING_MODE) {
-      console.log(`🔄 Monitoring mode changed: ${config.MONITORING_MODE} → ${settings.monitoringMode}`);
-      console.log(`   ⚠️ Note: Full restart recommended for mode change to take effect`);
-      // Update config for immediate effect (will persist in memory until restart)
-      config.MONITORING_MODE = settings.monitoringMode;
+    // If monitoring mode changed, log it
+    if (settings.monitoringMode && settings.monitoringMode !== oldMode) {
+      console.log(`🔄 Monitoring mode changed: ${oldMode} → ${settings.monitoringMode}`);
+      console.log(`   ✅ Mode will take effect on next monitoring cycle (within 2 minutes)`);
     }
   }
   
@@ -546,7 +545,8 @@ class MonitoringService {
         return [];
       }
 
-      const monitoringMode = config.MONITORING_MODE || 'ai';
+      // Use saved settings mode (allows runtime switching), fallback to config
+      const monitoringMode = this.triggerSettings.monitoringMode || config.MONITORING_MODE || 'ai';
       console.log(`📦 Batch monitoring ${coinsData.length} coins in ${monitoringMode.toUpperCase()} mode...`);
 
       // ALGORITHMIC MODE: Use triggers instead of AI (fast & free)
