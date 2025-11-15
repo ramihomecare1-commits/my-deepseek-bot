@@ -625,43 +625,35 @@ class ProfessionalTradingBot {
       }
 
       if (result && result.r1Decision) {
-            // R1 was triggered and made a decision
-            if (result.r1Decision.decision === 'CONFIRMED') {
-              console.log(`✅ R1 CONFIRMED opportunity for ${coin.symbol}!`);
-              
-              // Execute trade if paper trading is enabled
-              if (this.tradingRules.paperTradingEnabled) {
-                await this.executePaperTrade({
-                  symbol: coin.symbol,
-                  action: result.r1Decision.action,
-                  price: coinData.currentPrice,
-                  reason: result.r1Decision.reason,
-                  confidence: result.r1Decision.confidence,
-                  stopLoss: result.r1Decision.stopLoss,
-                  takeProfit: result.r1Decision.takeProfit,
-                  source: 'monitoring'
-                });
-              }
-            } else {
-              console.log(`❌ R1 rejected ${coin.symbol}: ${result.r1Decision.reason}`);
-            }
-          } else if (result && result.v3Analysis) {
-            // v3 analyzed but didn't escalate
-            console.log(`📊 v3 monitored ${coin.symbol}: ${result.v3Analysis.signal} (${(result.v3Analysis.confidence * 100).toFixed(0)}%)`);
+        // R1 was triggered and made a decision
+        if (result.r1Decision.decision === 'CONFIRMED') {
+          console.log(`${priorityLabel} ✅ R1 CONFIRMED opportunity for ${coin.symbol}!`);
+          
+          // Execute trade if paper trading is enabled
+          if (this.tradingRules.paperTradingEnabled) {
+            await this.executePaperTrade({
+              symbol: coin.symbol,
+              action: result.r1Decision.action,
+              price: coinData.currentPrice,
+              reason: result.r1Decision.reason,
+              confidence: result.r1Decision.confidence,
+              stopLoss: result.r1Decision.stopLoss,
+              takeProfit: result.r1Decision.takeProfit,
+              source: 'monitoring'
+            });
           }
-
-          // Small delay between coins
-          await sleep(1000);
-
-        } catch (error) {
-          console.log(`⚠️ Error monitoring ${coin.symbol}:`, error.message);
+        } else if (result.r1Decision.decision === 'SKIPPED') {
+          console.log(`⏭️ ${coin.symbol} - Recently rejected, skipped escalation (saves cost)`);
+        } else {
+          console.log(`${priorityLabel} ❌ R1 rejected ${coin.symbol}`);
         }
+      } else if (result && result.v3Analysis) {
+        // v3 analyzed but didn't escalate
+        console.log(`${priorityLabel} ${coin.symbol}: ${result.v3Analysis.signal} (${(result.v3Analysis.confidence * 100).toFixed(0)}%)`);
       }
 
-      console.log('✅ Monitoring cycle complete');
-
     } catch (error) {
-      console.log('⚠️ Monitoring cycle error:', error.message);
+      console.log(`⚠️ Error monitoring ${coin.symbol}:`, error.message);
     }
   }
 
