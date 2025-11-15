@@ -122,7 +122,7 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
   }
 
   // Fallback to CoinMarketCap (if API key available)
-  if (!primaryData && config.COINMARKETCAP_ENABLED) {
+  if (!primaryData && config && config.COINMARKETCAP_ENABLED && config.COINMARKETCAP_API_KEY) {
     try {
       const cmcResponse = await axios.get(
         `https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest`,

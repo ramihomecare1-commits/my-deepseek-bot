@@ -545,6 +545,11 @@ class ProfessionalTradingBot {
         try {
           // Fetch current price data (need to pass coin object, cache, stats, and config)
           const coinDataForFetch = { symbol: coin.symbol, id: coin.id };
+          // Ensure config is available (imported at top of file)
+          if (!config) {
+            console.log(`⚠️ Config not available for ${coin.symbol}, skipping`);
+            continue;
+          }
           const priceResult = await fetchEnhancedPriceData(coinDataForFetch, this.priceCache || new Map(), this.stats, config);
           
           if (!priceResult || !priceResult.data || !priceResult.data.price) continue;
