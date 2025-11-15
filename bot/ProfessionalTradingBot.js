@@ -732,7 +732,7 @@ class ProfessionalTradingBot {
       }
 
       // STEP 3: Batch escalate all coins that need escalation in ONE premium API call
-          try {
+      if (escalations.length > 0) {
             const coinDataForFetch = { symbol: coin.symbol, id: coin.id };
             
             if (!config) {
