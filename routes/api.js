@@ -26,10 +26,12 @@ function addLogEntry(message, level = 'info') {
   return logEntry;
 }
 
-// In-memory monitoring activity store
-let monitoringActivity = [];
-const MAX_MONITORING_ENTRIES = 50;
-let monitoringIsActive = false;
+// In-memory monitoring activity store - use module-level object to ensure same instance
+const monitoringStore = {
+  activities: [],
+  isActive: false,
+  MAX_ENTRIES: 50
+};
 
 function addMonitoringActivity(activity) {
   try {
@@ -42,19 +44,24 @@ function addMonitoringActivity(activity) {
       ...activity,
       timestamp: new Date().toISOString()
     };
-    monitoringActivity.push(activityEntry);
+    monitoringStore.activities.push(activityEntry);
     
     console.log(`📊 Added monitoring activity: ${activity.symbol} - ${activity.volatility} volatility, ${activity.priceChange}%`);
-    console.log(`   Total activities: ${monitoringActivity.length}`);
-    console.log(`   Activity entry:`, JSON.stringify(activityEntry));
+    console.log(`   Total activities: ${monitoringStore.activities.length}`);
+    console.log(`   Store reference:`, monitoringStore);
     
-    if (monitoringActivity.length > MAX_MONITORING_ENTRIES) {
-      monitoringActivity = monitoringActivity.slice(-MAX_MONITORING_ENTRIES);
-      console.log(`   Trimmed to ${MAX_MONITORING_ENTRIES} entries`);
+    if (monitoringStore.activities.length > monitoringStore.MAX_ENTRIES) {
+      monitoringStore.activities = monitoringStore.activities.slice(-monitoringStore.MAX_ENTRIES);
+      console.log(`   Trimmed to ${monitoringStore.MAX_ENTRIES} entries`);
     }
   } catch (error) {
     console.log(`⚠️ Error adding monitoring activity:`, error.message, error.stack);
   }
+}
+
+function setMonitoringActive(active) {
+  monitoringStore.isActive = active;
+  console.log(`📊 Monitoring active status set to: ${active}`);
 }
 
 // Export for use in bot (before module.exports = router)
@@ -639,14 +646,16 @@ router.post('/rebalancing/execute', async (req, res) => {
 
 // API endpoint for monitoring activity
 router.get('/monitoring-activity', (req, res) => {
-  console.log(`📊 Monitoring API called - ${monitoringActivity.length} activities, isActive: ${monitoringIsActive}`);
+  console.log(`📊 Monitoring API called - ${monitoringStore.activities.length} activities, isActive: ${monitoringStore.isActive}`);
+  console.log(`   Store reference:`, monitoringStore);
+  console.log(`   Activities:`, monitoringStore.activities.map(a => `${a.symbol} (${a.volatility})`).join(', '));
   res.json({
-    activity: monitoringActivity,
-    isActive: monitoringIsActive
+    activity: monitoringStore.activities,
+    isActive: monitoringStore.isActive
   });
 });
 
 module.exports = router;
 module.exports.addLogEntry = addLogEntry;
 module.exports.addMonitoringActivity = addMonitoringActivity;
-module.exports.setMonitoringActive = (active) => { monitoringIsActive = active; };
+module.exports.setMonitoringActive = setMonitoringActive;
