@@ -72,6 +72,7 @@ class MonitoringService {
    * Call Gemini API (Google)
    */
   async callGeminiAPI(prompt, model, maxTokens, apiKey) {
+    // Use v1beta endpoint for Gemini API (v1 is not yet stable)
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     
     const response = await axios.post(url, {
