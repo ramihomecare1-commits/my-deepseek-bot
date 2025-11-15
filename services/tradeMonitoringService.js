@@ -1,6 +1,6 @@
 const config = require('../config/config');
-const { fetchEnhancedPriceData } = require('./dataFetcher');
 const { sendTelegramMessage } = require('./notificationService');
+const axios = require('axios');
 
 /**
  * Trade Monitoring Service
@@ -34,12 +34,14 @@ class TradeMonitoringService {
     console.log(`   Check interval: ${this.checkInterval / 1000}s`);
     console.log(`   AI evaluation cooldown: ${this.evaluationCooldown / 1000}s`);
 
-    // Check immediately
-    this.checkTrades();
+    // Don't check immediately - wait for first interval to avoid startup issues
+    // this.checkTrades(); // Removed to prevent blocking during startup
 
-    // Then check at intervals
+    // Check at intervals
     this.monitorTimer = setInterval(() => {
-      this.checkTrades();
+      this.checkTrades().catch(err => {
+        console.error('❌ Error in trade monitoring check:', err.message);
+      });
     }, this.checkInterval);
   }
 
@@ -94,12 +96,34 @@ class TradeMonitoringService {
   }
 
   /**
+   * Fetch current price for a symbol (simple version for monitoring)
+   */
+  async fetchCurrentPrice(symbol) {
+    try {
+      // Use MEXC API (free, no key required)
+      const response = await axios.get(`https://api.mexc.com/api/v3/ticker/price?symbol=${symbol}USDT`, {
+        timeout: 5000
+      });
+      
+      if (response.data && response.data.price) {
+        return {
+          price: parseFloat(response.data.price),
+          source: 'mexc'
+        };
+      }
+    } catch (error) {
+      console.error(`⚠️ Error fetching price for ${symbol}:`, error.message);
+    }
+    return null;
+  }
+
+  /**
    * Check a single trade for proximity to key levels
    */
   async checkTrade(trade) {
     try {
-      // Get current price
-      const priceData = await fetchEnhancedPriceData(trade.symbol);
+      // Get current price (simple fetch for monitoring)
+      const priceData = await this.fetchCurrentPrice(trade.symbol.replace('USDT', ''));
       if (!priceData || !priceData.price) {
         return;
       }
@@ -216,7 +240,6 @@ class TradeMonitoringService {
    * Evaluate trade with Premium AI (DeepSeek R1)
    */
   async evaluateTradeWithPremiumAI(trade, triggeredLevel, priceData) {
-    const axios = require('axios');
     const apiKey = config.PREMIUM_API_KEY;
     const model = config.AI_MODEL || 'deepseek/deepseek-r1';
 
@@ -248,8 +271,8 @@ Price is within ${triggeredLevel.distance.toFixed(2)}% of ${triggeredLevel.type}
 - Current: $${triggeredLevel.currentPrice.toFixed(6)}
 
 **MARKET CONTEXT:**
-- 24h Change: ${priceData.priceChange24h?.toFixed(2) || 'N/A'}%
-- 24h Volume: $${priceData.volume24h ? (priceData.volume24h / 1000000).toFixed(2) + 'M' : 'N/A'}
+- Price Source: ${priceData.source || 'MEXC'}
+- Current Time: ${new Date().toISOString()}
 
 **YOUR TASK:**
 Provide a JSON response with your recommendations:

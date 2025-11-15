@@ -412,14 +412,15 @@ router.get('/portfolio', (req, res) => {
 });
 
 // Trade Monitoring Service Endpoints
-const tradeMonitoringService = require('../services/tradeMonitoringService');
-
 // Get trade monitoring settings
 router.get('/trade-monitoring/settings', (req, res) => {
   try {
+    // Lazy load to avoid startup issues
+    const tradeMonitoringService = require('../services/tradeMonitoringService');
     const settings = tradeMonitoringService.getSettings();
     res.json(settings);
   } catch (error) {
+    console.error('Error getting trade monitoring settings:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -432,6 +433,8 @@ router.post('/trade-monitoring/proximity', (req, res) => {
       return res.status(400).json({ error: 'Invalid threshold value' });
     }
     
+    // Lazy load to avoid startup issues
+    const tradeMonitoringService = require('../services/tradeMonitoringService');
     const newThreshold = tradeMonitoringService.updateProximityThreshold(parseFloat(threshold));
     res.json({ 
       success: true, 
@@ -439,6 +442,7 @@ router.post('/trade-monitoring/proximity', (req, res) => {
       message: `Proximity threshold updated to ${newThreshold}%`
     });
   } catch (error) {
+    console.error('Error updating proximity threshold:', error);
     res.status(500).json({ error: error.message });
   }
 });

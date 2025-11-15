@@ -238,10 +238,16 @@ class ProfessionalTradingBot {
       addLogEntry('Portfolio metrics recalculated from restored trades', 'info');
       console.log('✅ Portfolio metrics recalculated');
       
-      // Start trade monitoring service for AI evaluation at key levels
+      // Start trade monitoring service for AI evaluation at key levels (delayed to avoid blocking)
       if (this.activeTrades && this.activeTrades.length > 0) {
-        tradeMonitoringService.start(this);
-        console.log('✅ Trade monitoring service started');
+        setTimeout(() => {
+          try {
+            tradeMonitoringService.start(this);
+            console.log('✅ Trade monitoring service started');
+          } catch (error) {
+            console.error('❌ Error starting trade monitoring:', error.message);
+          }
+        }, 5000); // Start after 5 seconds to allow bot to fully initialize
       }
     } catch (error) {
       console.error('❌ Error initializing bot:', error);
