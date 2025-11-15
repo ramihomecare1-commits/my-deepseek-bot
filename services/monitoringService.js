@@ -490,12 +490,17 @@ class MonitoringService {
       });
 
       if (validEscalations.length === 0) {
-        console.log('⏭️ All escalations were recently rejected - skipping batch escalation');
+        console.log('⏭️ All escalations were recently rejected or on cooldown - skipping batch escalation');
         return escalations.map(esc => ({
           symbol: esc.coinData.symbol,
-          decision: 'SKIPPED',
-          reason: 'Recently rejected by Premium AI',
-          timestamp: Date.now()
+          coinData: esc.coinData,
+          v3Analysis: esc.v3Analysis,
+          r1Decision: {
+            decision: 'SKIPPED',
+            reason: 'On cooldown or recently rejected by Premium AI',
+            confidence: 0,
+            timestamp: Date.now()
+          }
         }));
       }
 

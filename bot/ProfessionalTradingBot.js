@@ -772,6 +772,12 @@ class ProfessionalTradingBot {
           const { symbol, coinData, v3Analysis, r1Decision } = result;
           const priorityLabel = escalations.find(e => e.coinData.symbol === symbol)?.isPriority ? '🔴 [OPEN TRADE]' : '🔍';
           
+          // Safety check for r1Decision
+          if (!r1Decision) {
+            console.log(`⚠️ ${symbol} - No r1Decision in result, skipping`);
+            continue;
+          }
+          
           if (r1Decision.decision === 'CONFIRMED') {
             console.log(`${priorityLabel} ✅ R1 CONFIRMED opportunity for ${symbol}!`);
             console.log(`   Action: ${r1Decision.action}, Confidence: ${(r1Decision.confidence * 100).toFixed(0)}%`);
