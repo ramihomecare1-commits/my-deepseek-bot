@@ -9,6 +9,7 @@ const path = require('path');
 const config = require('./config/config');
 const apiRoutes = require('./routes/api');
 const ProfessionalTradingBot = require('./bot/ProfessionalTradingBot');
+const keepAliveService = require('./services/keepAliveService');
 
 // Initialize app
 const app = express();
@@ -228,6 +229,21 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Health check: http://localhost:${PORT}/health`);
   console.log(`✅ Server ready for health checks`);
   
+  // Start keep-alive service to prevent Render from sleeping
+  // Render free tier sleeps after 15 minutes, so we ping every 10 minutes
+  try {
+    // Set the URL for keep-alive (Render provides RENDER_EXTERNAL_URL automatically)
+    if (process.env.RENDER_EXTERNAL_URL) {
+      process.env.RENDER_URL = process.env.RENDER_EXTERNAL_URL;
+    } else {
+      // For local development, use localhost
+      process.env.RENDER_URL = `http://localhost:${PORT}`;
+    }
+    keepAliveService.start();
+  } catch (error) {
+    console.log(`⚠️ Failed to start keep-alive service: ${error.message}`);
+  }
+  
   // Initialize bot AFTER server is listening (non-blocking)
   setImmediate(() => {
     initializeBotAsync();
@@ -256,8 +272,17 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
+  keepAliveService.stop();
   server.close(() => {
     console.log('Process terminated');
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully');
+  keepAliveService.stop();
+  server.close(() => {
+    process.exit(0);
   });
 });
 
