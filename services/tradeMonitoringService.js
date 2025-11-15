@@ -372,6 +372,20 @@ Respond ONLY with valid JSON.`;
       details += `• DCA Price: $${recs.dcaPrice.toFixed(6)}\n`;
     }
 
+    // AUTO-EXECUTE for paper trading
+    const autoExecuteEnabled = config.AUTO_EXECUTE_AI_RECOMMENDATIONS !== false; // Default true for paper trading
+    
+    if (autoExecuteEnabled) {
+      console.log(`🚀 AUTO-EXECUTING AI recommendation: ${aiEvaluation.action}`);
+      const executed = await this.executeAIRecommendation(trade, aiEvaluation, recs);
+      
+      if (executed) {
+        details += `\n✅ **AUTO-EXECUTED** by AI\n`;
+      } else {
+        details += `\n⚠️ **Execution failed** - see logs\n`;
+      }
+    }
+
     if (details) {
       await sendTelegramMessage(message + `**📋 Recommendations:**\n${details}`);
     } else {
@@ -384,8 +398,270 @@ Respond ONLY with valid JSON.`;
         symbol: trade.symbol,
         timestamp: new Date(),
         triggeredLevel: triggeredLevel.type,
-        aiEvaluation: aiEvaluation
+        aiEvaluation: aiEvaluation,
+        autoExecuted: autoExecuteEnabled
       });
+    }
+  }
+
+  /**
+   * Execute AI recommendation (for paper trading)
+   */
+  async executeAIRecommendation(trade, aiEvaluation, recommendations) {
+    if (!this.bot || !trade) {
+      console.error('❌ Cannot execute - bot or trade not available');
+      return false;
+    }
+
+    try {
+      const action = aiEvaluation.action;
+
+      switch (action) {
+        case 'DCA':
+          return await this.executeDCA(trade, recommendations);
+        
+        case 'ADJUST_SL':
+          return await this.adjustStopLoss(trade, recommendations);
+        
+        case 'ADJUST_TP':
+          return await this.adjustTakeProfit(trade, recommendations);
+        
+        case 'MODIFY':
+          return await this.modifyTrade(trade, recommendations);
+        
+        case 'CLOSE':
+          return await this.closeTrade(trade, aiEvaluation.reasoning);
+        
+        case 'KEEP':
+          console.log(`✅ AI recommends KEEP - no action needed for ${trade.symbol}`);
+          return true;
+        
+        default:
+          console.log(`⚠️ Unknown action: ${action}`);
+          return false;
+      }
+    } catch (error) {
+      console.error(`❌ Error executing AI recommendation:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Execute DCA (add to position)
+   */
+  async executeDCA(trade, recommendations) {
+    if (!recommendations.dcaAmount || recommendations.dcaAmount <= 0) {
+      console.log('⚠️ No DCA amount specified');
+      return false;
+    }
+
+    console.log(`💰 Executing DCA for ${trade.symbol}:`);
+    console.log(`   Amount: ${recommendations.dcaAmount}`);
+    console.log(`   Current Position: ${trade.amount || 0}`);
+
+    // Find the trade in activeTrades array
+    const tradeIndex = this.bot.activeTrades.findIndex(t => 
+      t.symbol === trade.symbol && t.entryTime === trade.entryTime
+    );
+
+    if (tradeIndex === -1) {
+      console.error('❌ Trade not found in active trades');
+      return false;
+    }
+
+    // Get current price for DCA
+    const priceData = await this.fetchCurrentPrice(trade.symbol.replace('USDT', ''));
+    if (!priceData) {
+      console.error('❌ Could not fetch current price for DCA');
+      return false;
+    }
+
+    const dcaPrice = priceData.price;
+    const dcaAmount = recommendations.dcaAmount;
+
+    // Calculate new average entry price
+    const currentAmount = trade.amount || 0;
+    const currentValue = currentAmount * trade.entryPrice;
+    const dcaValue = dcaAmount;
+    const newAmount = currentAmount + (dcaAmount / dcaPrice);
+    const newEntryPrice = (currentValue + dcaValue) / newAmount;
+
+    // Update the trade
+    this.bot.activeTrades[tradeIndex].amount = newAmount;
+    this.bot.activeTrades[tradeIndex].entryPrice = newEntryPrice;
+    this.bot.activeTrades[tradeIndex].dcaExecutions = this.bot.activeTrades[tradeIndex].dcaExecutions || [];
+    this.bot.activeTrades[tradeIndex].dcaExecutions.push({
+      price: dcaPrice,
+      amount: dcaAmount,
+      timestamp: new Date(),
+      reasoning: 'AI recommended DCA'
+    });
+
+    // Update DCA price if provided
+    if (recommendations.dcaPrice) {
+      this.bot.activeTrades[tradeIndex].dcaPrice = recommendations.dcaPrice;
+    }
+
+    // Save trades
+    const { saveTrades } = require('./tradePersistenceService');
+    await saveTrades(this.bot.activeTrades);
+
+    console.log(`✅ DCA executed successfully`);
+    console.log(`   New average entry: $${newEntryPrice.toFixed(6)}`);
+    console.log(`   New position size: ${newAmount.toFixed(8)}`);
+
+    return true;
+  }
+
+  /**
+   * Adjust stop loss
+   */
+  async adjustStopLoss(trade, recommendations) {
+    if (!recommendations.newStopLoss) {
+      console.log('⚠️ No new stop loss specified');
+      return false;
+    }
+
+    console.log(`🛡️ Adjusting Stop Loss for ${trade.symbol}:`);
+    console.log(`   Old SL: ${trade.stopLoss}%`);
+    console.log(`   New SL: ${recommendations.newStopLoss}%`);
+
+    // Find the trade
+    const tradeIndex = this.bot.activeTrades.findIndex(t => 
+      t.symbol === trade.symbol && t.entryTime === trade.entryTime
+    );
+
+    if (tradeIndex === -1) {
+      console.error('❌ Trade not found');
+      return false;
+    }
+
+    // Update stop loss
+    this.bot.activeTrades[tradeIndex].stopLoss = recommendations.newStopLoss;
+    this.bot.activeTrades[tradeIndex].slAdjustments = this.bot.activeTrades[tradeIndex].slAdjustments || [];
+    this.bot.activeTrades[tradeIndex].slAdjustments.push({
+      oldSL: trade.stopLoss,
+      newSL: recommendations.newStopLoss,
+      timestamp: new Date(),
+      reasoning: 'AI adjustment'
+    });
+
+    // Save trades
+    const { saveTrades } = require('./tradePersistenceService');
+    await saveTrades(this.bot.activeTrades);
+
+    console.log(`✅ Stop Loss adjusted successfully`);
+    return true;
+  }
+
+  /**
+   * Adjust take profit
+   */
+  async adjustTakeProfit(trade, recommendations) {
+    if (!recommendations.newTakeProfit) {
+      console.log('⚠️ No new take profit specified');
+      return false;
+    }
+
+    console.log(`🎯 Adjusting Take Profit for ${trade.symbol}:`);
+    console.log(`   Old TP: ${trade.takeProfit}%`);
+    console.log(`   New TP: ${recommendations.newTakeProfit}%`);
+
+    // Find the trade
+    const tradeIndex = this.bot.activeTrades.findIndex(t => 
+      t.symbol === trade.symbol && t.entryTime === trade.entryTime
+    );
+
+    if (tradeIndex === -1) {
+      console.error('❌ Trade not found');
+      return false;
+    }
+
+    // Update take profit
+    this.bot.activeTrades[tradeIndex].takeProfit = recommendations.newTakeProfit;
+    this.bot.activeTrades[tradeIndex].tpAdjustments = this.bot.activeTrades[tradeIndex].tpAdjustments || [];
+    this.bot.activeTrades[tradeIndex].tpAdjustments.push({
+      oldTP: trade.takeProfit,
+      newTP: recommendations.newTakeProfit,
+      timestamp: new Date(),
+      reasoning: 'AI adjustment'
+    });
+
+    // Save trades
+    const { saveTrades } = require('./tradePersistenceService');
+    await saveTrades(this.bot.activeTrades);
+
+    console.log(`✅ Take Profit adjusted successfully`);
+    return true;
+  }
+
+  /**
+   * Modify trade (adjust both SL and TP)
+   */
+  async modifyTrade(trade, recommendations) {
+    let success = true;
+
+    if (recommendations.newStopLoss) {
+      const slSuccess = await this.adjustStopLoss(trade, recommendations);
+      success = success && slSuccess;
+    }
+
+    if (recommendations.newTakeProfit) {
+      const tpSuccess = await this.adjustTakeProfit(trade, recommendations);
+      success = success && tpSuccess;
+    }
+
+    if (recommendations.dcaPrice) {
+      // Update DCA price
+      const tradeIndex = this.bot.activeTrades.findIndex(t => 
+        t.symbol === trade.symbol && t.entryTime === trade.entryTime
+      );
+      
+      if (tradeIndex !== -1) {
+        this.bot.activeTrades[tradeIndex].dcaPrice = recommendations.dcaPrice;
+        const { saveTrades } = require('./tradePersistenceService');
+        await saveTrades(this.bot.activeTrades);
+        console.log(`✅ DCA price updated to $${recommendations.dcaPrice.toFixed(6)}`);
+      }
+    }
+
+    return success;
+  }
+
+  /**
+   * Close trade early (AI decision)
+   */
+  async closeTrade(trade, reasoning) {
+    console.log(`🚪 Closing trade ${trade.symbol} - AI Decision`);
+    console.log(`   Reasoning: ${reasoning}`);
+
+    // Find the trade
+    const tradeIndex = this.bot.activeTrades.findIndex(t => 
+      t.symbol === trade.symbol && t.entryTime === trade.entryTime
+    );
+
+    if (tradeIndex === -1) {
+      console.error('❌ Trade not found');
+      return false;
+    }
+
+    // Get current price
+    const priceData = await this.fetchCurrentPrice(trade.symbol.replace('USDT', ''));
+    if (!priceData) {
+      console.error('❌ Could not fetch current price for closing');
+      return false;
+    }
+
+    const exitPrice = priceData.price;
+
+    // Close the trade using bot's method
+    if (this.bot.closeTrade) {
+      await this.bot.closeTrade(trade.symbol, 'AI_DECISION', exitPrice, reasoning);
+      console.log(`✅ Trade closed at $${exitPrice.toFixed(6)}`);
+      return true;
+    } else {
+      console.error('❌ Bot closeTrade method not available');
+      return false;
     }
   }
 }

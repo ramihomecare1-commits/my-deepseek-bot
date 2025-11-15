@@ -95,6 +95,7 @@ const VOLUME_SPIKE_THRESHOLD = Number(process.env.VOLUME_SPIKE_THRESHOLD || 2.0)
 const TRADE_PROXIMITY_THRESHOLD = Number(process.env.TRADE_PROXIMITY_THRESHOLD || 1.0); // 1% proximity to trigger AI evaluation
 const TRADE_CHECK_INTERVAL = Number(process.env.TRADE_CHECK_INTERVAL || 30000); // 30 seconds - check open trades
 const AI_EVALUATION_COOLDOWN = Number(process.env.AI_EVALUATION_COOLDOWN || 300000); // 5 minutes - min time between AI evaluations for same trade
+const AUTO_EXECUTE_AI_RECOMMENDATIONS = (process.env.AUTO_EXECUTE_AI_RECOMMENDATIONS || 'true').toLowerCase() === 'true'; // Auto-execute AI recommendations for paper trading
 
 // Risk Management Configuration
 const MAX_RISK_PER_TRADE = Number(process.env.MAX_RISK_PER_TRADE || 2.0); // 2% max risk per trade
@@ -194,6 +195,7 @@ module.exports = {
   TRADE_PROXIMITY_THRESHOLD,
   TRADE_CHECK_INTERVAL,
   AI_EVALUATION_COOLDOWN,
+  AUTO_EXECUTE_AI_RECOMMENDATIONS,
   // Risk Management Configuration
   MAX_RISK_PER_TRADE,
   DEFAULT_RISK_PER_TRADE,
