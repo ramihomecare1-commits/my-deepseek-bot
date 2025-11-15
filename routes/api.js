@@ -26,6 +26,26 @@ function addLogEntry(message, level = 'info') {
   return logEntry;
 }
 
+// In-memory monitoring activity store
+let monitoringActivity = [];
+const MAX_MONITORING_ENTRIES = 50;
+let monitoringIsActive = false;
+
+function addMonitoringActivity(activity) {
+  monitoringActivity.push({
+    ...activity,
+    timestamp: new Date().toISOString()
+  });
+  
+  if (monitoringActivity.length > MAX_MONITORING_ENTRIES) {
+    monitoringActivity = monitoringActivity.slice(-MAX_MONITORING_ENTRIES);
+  }
+}
+
+// Export for use in bot
+module.exports.addMonitoringActivity = addMonitoringActivity;
+module.exports.setMonitoringActive = (active) => { monitoringIsActive = active; };
+
 // Health check endpoint (for Render deployment)
 router.get('/health', (req, res) => {
   res.status(200).json({ 
@@ -604,4 +624,12 @@ router.post('/rebalancing/execute', async (req, res) => {
 });
 
 module.exports = router;
+// API endpoint for monitoring activity
+router.get('/monitoring-activity', (req, res) => {
+  res.json({
+    activity: monitoringActivity,
+    isActive: monitoringIsActive
+  });
+});
+
 module.exports.addLogEntry = addLogEntry;

@@ -576,6 +576,19 @@ class ProfessionalTradingBot {
           // Monitor with v3
           const result = await monitoringService.monitorCoin(coinData);
 
+          // Log monitoring activity to web UI
+          if (result && result.v3Analysis) {
+            const { addMonitoringActivity, setMonitoringActive } = require('../routes/api');
+            setMonitoringActive(true);
+            addMonitoringActivity({
+              symbol: coin.symbol,
+              volatility: result.v3Analysis.volatilityLevel,
+              priceChange: result.v3Analysis.priceChangePercent.toFixed(2),
+              confidence: result.v3Analysis.confidence,
+              escalated: !!result.r1Decision
+            });
+          }
+
           if (result && result.r1Decision) {
             // R1 was triggered and made a decision
             if (result.r1Decision.decision === 'CONFIRMED') {
