@@ -204,6 +204,25 @@ async function saveMessage(chatId, role, content) {
     );
     
     console.log(`✅ [saveMessage] Stored ${role} message for chat ${chatId} (len=${content.length})`);
+    
+    // VERIFICATION: Read it back immediately to prove it was actually written
+    try {
+      const { GetCommand } = require('../config/awsConfig');
+      const readResult = await docClient.send(
+        new GetCommand({
+          TableName: CONVO_TABLE,
+          Key: { chatId, timestamp: now }
+        })
+      );
+      
+      if (readResult.Item) {
+        console.log(`✅ [saveMessage] VERIFIED: Read back item successfully (role=${readResult.Item.role})`);
+      } else {
+        console.error(`❌ [saveMessage] VERIFICATION FAILED: Item not found after write! Table may not exist or schema mismatch.`);
+      }
+    } catch (verifyError) {
+      console.error(`❌ [saveMessage] VERIFICATION ERROR:`, verifyError.message);
+    }
   } catch (error) {
     console.error(`❌ [saveMessage] Failed for ${role}:`, error.message);
     if (error.message.includes('does not match')) {
