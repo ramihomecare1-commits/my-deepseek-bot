@@ -74,10 +74,10 @@ async function compareWithFreeTierAI(newEval, storedEval, symbol) {
   const prompt = `Compare these two crypto trading evaluations for ${symbol} and extract ONLY new information.
 
 **STORED EVALUATION (Previous):**
-${JSON.stringify(storedEval, null, 2).substring(0, 1000)}
+${(JSON.stringify(storedEval, null, 2) || 'null').substring(0, 1000)}
 
 **NEW EVALUATION (Current):**
-${JSON.stringify(newEval, null, 2).substring(0, 1000)}
+${(JSON.stringify(newEval, null, 2) || 'null').substring(0, 1000)}
 
 **TASK:**
 1. Identify what information in NEW is genuinely NEW or CHANGED vs STORED.
