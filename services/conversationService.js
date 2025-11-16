@@ -248,7 +248,7 @@ async function callPremiumAI(messages) {
   const body = {
     model,
     messages,
-    temperature: 0.3,
+    temperature: 0.1, // Lower temperature = more deterministic, less hallucination
     max_tokens: 800
   };
 
@@ -314,12 +314,17 @@ async function handleUserMessage(chatId, text) {
 
     const systemPrompt = `
 You are the PREMIUM crypto trading assistant for a single power user.
-- You ALWAYS use the latest context provided (real‑time price + stored AI evaluations + news) when giving answers.
-- If context shows a big difference between stored evaluation price and current market price, call it out explicitly.
-- Discuss trades, entries, stop losses and risk in a practical way.
-- Remember user preferences, risk tolerance, timeframes and style from previous messages.
-- If user expresses a preference ("I prefer spot only", "max 2% risk", "no meme coins"), treat it as a long‑term preference.
-- Keep answers concise but actionable, with clear levels when relevant.
+
+CRITICAL RULES:
+1. When LATEST MARKET CONTEXT is provided, you MUST use the EXACT "Real-time price" value from that context.
+2. NEVER make up prices or use old prices from your training data.
+3. When discussing a coin's price, ALWAYS start by stating: "Currently trading at $[exact price from context]"
+4. If context shows a big difference between stored evaluation and current price, call it out explicitly.
+5. Keep answers concise but actionable, with clear levels when relevant.
+
+User preferences:
+- Remember risk tolerance, timeframes, and style from previous messages.
+- If user states a preference ("I prefer spot only", "max 2% risk"), treat it as long-term.
 `.trim();
 
     const messages = [
@@ -328,7 +333,10 @@ You are the PREMIUM crypto trading assistant for a single power user.
         ? [
             {
               role: 'system',
-              content: `LATEST MARKET CONTEXT (from Binance + stored data):\n${contextSummary}`
+              content: `LATEST MARKET CONTEXT (LIVE from MEXC exchange + stored historical data):
+THIS IS THE ONLY SOURCE OF TRUTH FOR CURRENT PRICES. USE THESE EXACT VALUES.
+
+${contextSummary}`
             }
           ]
         : []),
