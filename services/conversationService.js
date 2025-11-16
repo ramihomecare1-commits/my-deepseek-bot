@@ -55,12 +55,16 @@ async function fetchSimpleMexcPrice(symbol) {
       throw new Error('Invalid MEXC ticker response');
     }
 
-    return {
+    const priceData = {
       price: parseFloat(data.lastPrice),
       change24h: parseFloat(data.priceChangePercent || 0),
       high24h: parseFloat(data.highPrice || 0),
       low24h: parseFloat(data.lowPrice || 0)
     };
+    
+    console.log(`💰 [MEXC Price] ${symbol}: $${priceData.price} (24h: ${priceData.change24h.toFixed(2)}%)`);
+    
+    return priceData;
   } catch (error) {
     console.error(`⚠️ fetchSimpleMexcPrice(${symbol}) failed:`, error.message);
     return null;
@@ -278,7 +282,13 @@ async function handleUserMessage(chatId, text) {
 
     // Try to infer which symbols the user is talking about (BTC, ETH, etc.)
     const symbols = extractSymbolsFromText(text);
+    console.log(`🔍 [Telegram Chat] Detected symbols: ${symbols.join(', ') || 'none'}`);
+    
     const contextSummary = await buildContextSummary(symbols);
+    
+    if (contextSummary) {
+      console.log(`📊 [Telegram Chat] Context summary:\n${contextSummary.substring(0, 500)}...`);
+    }
 
     const systemPrompt = `
 You are the PREMIUM crypto trading assistant for a single power user.
