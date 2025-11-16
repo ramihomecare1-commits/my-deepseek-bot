@@ -79,6 +79,9 @@ class ProfessionalTradingBot {
     };
 
     this.lastNotificationTime = {};
+    // Cache to avoid spamming duplicate rejection notifications
+    // Structure: { 'SYMBOL:reasonType:YYYY-MM-DD': timestamp }
+    this.rejectionNotificationCache = {};
     this.selectedIntervalKey = '1h';
     this.scanIntervalMs = config.SCAN_INTERVAL_OPTIONS[this.selectedIntervalKey];
     this.scanProgress = {
@@ -254,6 +257,26 @@ class ProfessionalTradingBot {
       console.error('Error stack:', error.stack);
       addLogEntry(`Error initializing: ${error.message}`, 'error');
     }
+  }
+
+  /**
+   * Check whether we should send a rejection notification for this symbol/reason today.
+   * Prevents multiple identical messages (e.g., RSI rule rejection) in the same day.
+   * @param {string} symbol
+   * @param {string} reasonType - e.g. 'rules', 'backtest'
+   * @returns {boolean} true if notification should be sent
+   */
+  shouldNotifyRejection(symbol, reasonType) {
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const key = `${symbol}:${reasonType}:${today}`;
+
+    if (this.rejectionNotificationCache[key]) {
+      // Already notified today for this symbol + reason
+      return false;
+    }
+
+    this.rejectionNotificationCache[key] = Date.now();
+    return true;
   }
 
   setAutoScanInterval(key) {
@@ -1669,7 +1692,7 @@ Source: ${source}`);
               console.log(`🚫 ${coin.symbol}: Does not match custom trading rules`);
               
               // Send Telegram notification with DETAILED rule diagnostics
-              if (config.ENABLE_REJECTION_NOTIFICATIONS && isActionNotifiable) {
+              if (config.ENABLE_REJECTION_NOTIFICATIONS && isActionNotifiable && this.shouldNotifyRejection(coin.symbol, 'rules')) {
                 try {
                   // Build detailed rule check diagnostics
                   const indicators = analysis.indicators || {};
@@ -1787,7 +1810,7 @@ Fix: ${
                   console.log(`🚫 ${coin.symbol}: Filtered out - Profit Factor: ${backtestResult.profitFactor.toFixed(2)}, Win Rate: ${backtestResult.winRate.toFixed(1)}%`);
                   
                   // Send Telegram notification about backtest rejection
-                  if (config.ENABLE_REJECTION_NOTIFICATIONS && isActionNotifiable) {
+                  if (config.ENABLE_REJECTION_NOTIFICATIONS && isActionNotifiable && this.shouldNotifyRejection(coin.symbol, 'backtest')) {
                     try {
                       const backtestMessage =
 `📊 AI Opportunity Failed Backtest
