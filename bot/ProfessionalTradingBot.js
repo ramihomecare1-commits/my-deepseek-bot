@@ -2572,7 +2572,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     };
     
     const newTrade = {
-      tradeId: tradeId,
+      id: tradeId, // DynamoDB primary key
+      tradeId: tradeId, // Legacy field for compatibility
       symbol: opportunity.symbol,
       name: opportunity.name,
       action: opportunity.action,

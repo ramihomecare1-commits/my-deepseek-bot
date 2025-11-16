@@ -51,17 +51,23 @@ async function loadTradesFromDynamo() {
       TableName: TABLES.ACTIVE_TRADES
     }));
 
-    return (result.Items || []).map(trade => {
+    const loadedTrades = (result.Items || []).map(trade => {
       // Convert timestamp back to Date object
       if (trade.entryTime && typeof trade.entryTime === 'number') {
         trade.entryTime = new Date(trade.entryTime);
       }
-      // Ensure id exists
-      if (!trade.id) {
-        trade.id = uuidv4();
-      }
+      // Ensure both id and tradeId exist (for compatibility)
+      const tradeId = trade.id || trade.tradeId || uuidv4();
+      trade.id = tradeId;
+      trade.tradeId = tradeId;
       return trade;
     });
+    
+    if (loadedTrades.length > 0) {
+      console.log(`📋 Loaded ${loadedTrades.length} trades from DynamoDB:`, loadedTrades.map(t => ({ symbol: t.symbol, id: t.id, status: t.status })));
+    }
+    
+    return loadedTrades;
   } catch (error) {
     console.error('❌ Error loading trades from DynamoDB:', error);
     return [];
@@ -81,9 +87,16 @@ async function saveTradesToDynamo(trades) {
     // Delete all existing trades first
     const existing = await docClient.send(new ScanCommand({ TableName: TABLES.ACTIVE_TRADES }));
     if (existing.Items && existing.Items.length > 0) {
-      const deleteOps = existing.Items.map(item => ({
-        DeleteRequest: { Key: { id: item.id } }
-      }));
+      const deleteOps = existing.Items.map(item => {
+        // Use id or tradeId (for compatibility)
+        const itemId = item.id || item.tradeId;
+        if (!itemId) {
+          console.warn(`⚠️ Trade item missing id/tradeId:`, item);
+        }
+        return {
+          DeleteRequest: { Key: { id: itemId || 'unknown' } }
+        };
+      }).filter(op => op.DeleteRequest.Key.id !== 'unknown'); // Filter out invalid keys
     
       // DynamoDB batch write (max 25 items per batch)
       const batches = [];
@@ -102,15 +115,20 @@ async function saveTradesToDynamo(trades) {
 
     // Insert new trades
     if (trades.length > 0) {
-      const putOps = trades.map(trade => ({
-        PutRequest: {
-          Item: {
-            id: trade.id || uuidv4(),
-            ...trade,
-            entryTime: trade.entryTime instanceof Date ? trade.entryTime.getTime() : trade.entryTime
+      const putOps = trades.map(trade => {
+        // Use tradeId if id doesn't exist (for compatibility)
+        const tradeId = trade.id || trade.tradeId || uuidv4();
+        return {
+          PutRequest: {
+            Item: {
+              id: tradeId,
+              ...trade,
+              tradeId: tradeId, // Ensure both fields exist for compatibility
+              entryTime: trade.entryTime instanceof Date ? trade.entryTime.getTime() : trade.entryTime
+            }
           }
-        }
-      }));
+        };
+      });
 
       // DynamoDB batch write (max 25 items per batch)
       const batches = [];
@@ -125,9 +143,15 @@ async function saveTradesToDynamo(trades) {
           }
         }));
       }
+      
+      console.log(`💾 Saved ${trades.length} trades to DynamoDB`);
+      // Debug: Log trade IDs for verification
+      const tradeIds = trades.map(t => ({ symbol: t.symbol, id: t.id || t.tradeId, status: t.status }));
+      console.log(`📋 Trade IDs saved:`, tradeIds);
+    } else {
+      console.log(`⚠️ No trades to save (trades array is empty)`);
     }
     
-    console.log(`💾 Saved ${trades.length} trades to DynamoDB`);
     return true;
   } catch (error) {
     console.error('❌ Error saving trades to DynamoDB:', error);
