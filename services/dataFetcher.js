@@ -158,6 +158,14 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
         };
         stats.coinmarketcapUsage++;
         priceCache.set(coin.id, { ...primaryData, timestamp: Date.now() });
+
+        // Debug: log fetched volume for key coins (like BCH) to verify it's not zero/undefined
+        if (['BCH'].includes((coin.symbol || '').toUpperCase())) {
+          console.log(
+            `[CMC Volume Debug] ${coin.symbol} id=${coin.coinmarketcap_id} ` +
+            `price=${primaryData.price} volume_24h=${primaryData.volume_24h}`
+          );
+        }
         // Price fetched successfully from CoinMarketCap
       }
     } catch (error) {

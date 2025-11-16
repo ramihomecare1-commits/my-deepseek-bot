@@ -848,6 +848,11 @@ class ProfessionalTradingBot {
               volume24h: priceData.volume_24h || priceData.volume24h || 0,
             };
             
+            // Debug: trace volume fed into monitoring for BCH to investigate "0 volume" rejections
+            if (coin.symbol === 'BCH') {
+              console.log('[Monitoring Input Debug] BCH coinData:', JSON.stringify(coinData));
+            }
+            
             // Track price changes
             if (lastPrice) {
               const priceChange = ((coinData.currentPrice - lastPrice) / lastPrice) * 100;
