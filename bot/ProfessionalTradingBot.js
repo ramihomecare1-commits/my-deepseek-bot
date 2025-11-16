@@ -2760,8 +2760,8 @@ Source: ${source}`);
       return [];
     }
     
-    // Check for API key (support both legacy and hybrid configurations)
-    const apiKey = config.PREMIUM_API_KEY || config.AI_API_KEY || config.MONITORING_API_KEY;
+    // Check for API key (use same path as main AI calls to avoid auth issues)
+    const apiKey = config.PREMIUM_API_KEY || config.AI_API_KEY;
     if (!apiKey) {
       console.log('⚠️ AI API key not configured - cannot re-evaluate');
       addLogEntry('⚠️ AI API key not configured', 'warning');
