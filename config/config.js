@@ -119,6 +119,9 @@ const ENABLE_NEWS_DEDUPLICATION = (process.env.ENABLE_NEWS_DEDUPLICATION || 'tru
 const EVALUATION_DEDUPLICATION_THRESHOLD = Number(process.env.EVALUATION_DEDUPLICATION_THRESHOLD || 50); // % duplicate to skip
 const NEWS_DEDUPLICATION_THRESHOLD = Number(process.env.NEWS_DEDUPLICATION_THRESHOLD || 70); // % similarity to skip
 
+// Rejection Notifications Configuration
+const ENABLE_REJECTION_NOTIFICATIONS = (process.env.ENABLE_REJECTION_NOTIFICATIONS || 'true').toLowerCase() === 'true'; // Notify on Telegram when AI opportunities are rejected
+
 // Notifications behavior
 const ALLOW_MOCK_NOTIFICATIONS = (process.env.ALLOW_MOCK_NOTIFICATIONS || 'false').toLowerCase() === 'true';
 
@@ -220,6 +223,8 @@ module.exports = {
   ENABLE_NEWS_DEDUPLICATION,
   EVALUATION_DEDUPLICATION_THRESHOLD,
   NEWS_DEDUPLICATION_THRESHOLD,
+  // Rejection Notifications
+  ENABLE_REJECTION_NOTIFICATIONS,
   // TAAPI.IO Configuration
   TAAPI_API_KEY,
   TAAPI_ENABLED,

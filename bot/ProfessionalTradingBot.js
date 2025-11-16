@@ -1656,11 +1656,81 @@ Source: ${source}`);
           if (analysis.confidence >= this.tradingRules.minConfidence && !analysis.usesMockData) {
             if (!this.applyScanFilters(analysis, options)) {
               console.log(`🚫 ${coin.symbol}: Filtered out by scan filters`);
+              
+              // Send Telegram notification about scan filter rejection
+              if (config.ENABLE_REJECTION_NOTIFICATIONS) {
+                try {
+                  const filterMessage = `⚠️ **AI Opportunity Filtered**
+
+**${coin.symbol}** - ${analysis.action}
+💪 **AI Confidence:** ${(analysis.confidence * 100).toFixed(0)}%
+💰 **Entry:** $${analysis.entryPrice?.toFixed(2) || 'N/A'}
+🎯 **TP:** $${analysis.takeProfit?.toFixed(2) || 'N/A'} (+${analysis.expectedGainPercent?.toFixed(1) || 'N/A'}%)
+🛡️ **SL:** $${analysis.stopLoss?.toFixed(2) || 'N/A'}
+
+**❌ Rejection Reason:** Filtered by scan filters
+
+**Active Filters:**
+• RSI Threshold: ${options.rsiThreshold || 'N/A'}
+• Min Triggers: ${options.minTriggers || 'N/A'}
+• Min Price Change: ${options.minPriceChange || 'N/A'}%
+• Volume Required: ${options.requireVolume ? 'Yes' : 'No'}
+
+**AI Reasoning:**
+${analysis.reason?.substring(0, 200) || 'No reasoning provided'}
+
+💡 **Action:** Check if scan filters are too restrictive`;
+
+                  sendTelegramMessage(filterMessage).catch(err => 
+                    console.error('⚠️ Failed to send filter notification:', err.message)
+                  );
+                } catch (notifError) {
+                  console.error('⚠️ Error creating filter notification:', notifError.message);
+                }
+              }
+              
               continue;
             }
             // Apply custom trading rules
             if (!this.matchesTradingRules(analysis)) {
               console.log(`🚫 ${coin.symbol}: Does not match custom trading rules`);
+              
+              // Send Telegram notification about trading rules rejection
+              if (config.ENABLE_REJECTION_NOTIFICATIONS) {
+                try {
+                  const rejectionMessage = `🚫 **AI Opportunity Rejected**
+
+**${coin.symbol}** - ${analysis.action}
+💪 **AI Confidence:** ${(analysis.confidence * 100).toFixed(0)}%
+💰 **Entry:** $${analysis.entryPrice?.toFixed(2) || 'N/A'}
+🎯 **TP:** $${analysis.takeProfit?.toFixed(2) || 'N/A'} (+${analysis.expectedGainPercent?.toFixed(1) || 'N/A'}%)
+🛡️ **SL:** $${analysis.stopLoss?.toFixed(2) || 'N/A'}
+📊 **R:R Ratio:** ${analysis.riskRewardRatio?.toFixed(2) || 'N/A'}
+
+**❌ Rejection Reason:** Does not match custom trading rules
+
+**AI Reasoning:**
+${analysis.reason?.substring(0, 300) || 'No reasoning provided'}
+
+**AI Insights:**
+${analysis.insights?.slice(0, 3).map((i, idx) => `${idx + 1}. ${i}`).join('\n') || 'None'}
+
+**Trading Rules Requirements:**
+• Min Confidence: ${(this.tradingRules.minConfidence * 100).toFixed(0)}%
+• Min R:R Ratio: ${this.tradingRules.minRiskReward || 'N/A'}
+• Pattern Detection: ${this.tradingRules.patternDetection?.enabled ? 'Required' : 'Optional'}
+• Max Concurrent Trades: ${this.tradingRules.maxConcurrentTrades || 'N/A'}
+
+💡 **Action:** Review if rules are too strict or AI needs tuning`;
+
+                  sendTelegramMessage(rejectionMessage).catch(err => 
+                    console.error('⚠️ Failed to send rejection notification:', err.message)
+                  );
+                } catch (notifError) {
+                  console.error('⚠️ Error creating rejection notification:', notifError.message);
+                }
+              }
+              
               continue;
             }
             
@@ -1691,6 +1761,41 @@ Source: ${source}`);
                 
                 if (!isProfitable) {
                   console.log(`🚫 ${coin.symbol}: Filtered out - Profit Factor: ${backtestResult.profitFactor.toFixed(2)}, Win Rate: ${backtestResult.winRate.toFixed(1)}%`);
+                  
+                  // Send Telegram notification about backtest rejection
+                  if (config.ENABLE_REJECTION_NOTIFICATIONS) {
+                    try {
+                      const backtestMessage = `📊 **AI Opportunity Failed Backtest**
+
+**${coin.symbol}** - ${analysis.action}
+💪 **AI Confidence:** ${(analysis.confidence * 100).toFixed(0)}%
+💰 **Entry:** $${analysis.entryPrice?.toFixed(2) || 'N/A'}
+🎯 **TP:** $${analysis.takeProfit?.toFixed(2) || 'N/A'} (+${analysis.expectedGainPercent?.toFixed(1) || 'N/A'}%)
+🛡️ **SL:** $${analysis.stopLoss?.toFixed(2) || 'N/A'}
+
+**❌ Rejection Reason:** Backtest shows poor historical performance
+
+**Backtest Results:**
+📉 Profit Factor: ${backtestResult.profitFactor.toFixed(2)} (Required: ${minProfitFactor})
+📊 Win Rate: ${backtestResult.winRate.toFixed(1)}% (Required: ${minWinRate}%)
+📈 Avg Return: ${backtestResult.avgReturn?.toFixed(2) || 'N/A'}%
+📉 Max Drawdown: ${backtestResult.maxDrawdown?.toFixed(2) || 'N/A'}%
+🔢 Historical Trades: ${backtestResult.totalTrades}
+📊 Data Points: ${backtestResult.dataPoints} days
+
+**AI Reasoning:**
+${analysis.reason?.substring(0, 250) || 'No reasoning provided'}
+
+💡 **Action:** AI may be overly optimistic, or backtest period may not match current market conditions`;
+
+                      sendTelegramMessage(backtestMessage).catch(err => 
+                        console.error('⚠️ Failed to send backtest notification:', err.message)
+                      );
+                    } catch (notifError) {
+                      console.error('⚠️ Error creating backtest notification:', notifError.message);
+                    }
+                  }
+                  
                   addLogEntry(`🚫 ${coin.symbol}: Filtered (PF: ${backtestResult.profitFactor.toFixed(2)}, WR: ${backtestResult.winRate.toFixed(1)}%)`, 'warning');
                   continue; // Skip this opportunity
                 }
