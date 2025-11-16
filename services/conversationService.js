@@ -174,7 +174,10 @@ async function loadConversationHistory(chatId, limit = 20) {
  * Persist one chat message into DynamoDB for long‑term memory.
  */
 async function saveMessage(chatId, role, content) {
-  if (!chatId || !role || !content) return;
+  if (!chatId || !role || !content) {
+    console.log(`⚠️ [saveMessage] Skipped (missing data): chatId=${chatId}, role=${role}, content.length=${content?.length || 0}`);
+    return;
+  }
 
   try {
     const now = Date.now();
@@ -192,8 +195,13 @@ async function saveMessage(chatId, role, content) {
         Item: item
       })
     );
+    
+    console.log(`✅ [saveMessage] Stored ${role} message for chat ${chatId} (len=${content.length})`);
   } catch (error) {
-    console.error('⚠️ saveMessage error:', error.message);
+    console.error(`❌ [saveMessage] Failed for ${role}:`, error.message);
+    if (error.message.includes('does not match')) {
+      console.error('💡 Check DynamoDB table schema: needs chatId (String) as PK and timestamp (Number) as SK');
+    }
   }
 }
 
@@ -235,11 +243,21 @@ async function callPremiumAI(messages) {
     timeout: 45000
   });
 
+  // Debug: Log full response structure if content is missing
   if (!response.data || !response.data.choices || !response.data.choices[0]) {
+    console.error('❌ [Telegram Chat] Invalid AI response:', JSON.stringify(response.data || {}).substring(0, 500));
     throw new Error('Invalid AI response format');
   }
 
-  const content = response.data.choices[0].message.content || '';
+  const choice = response.data.choices[0];
+  const content = choice.message?.content || choice.text || '';
+  
+  // Debug: If content is empty, log the full choice object
+  if (!content || content.length === 0) {
+    console.error('⚠️ [Telegram Chat] AI returned empty content. Choice object:', JSON.stringify(choice).substring(0, 500));
+    console.error('⚠️ [Telegram Chat] Full response.data:', JSON.stringify(response.data).substring(0, 1000));
+  }
+  
   console.log(
     `✅ [Telegram Chat] Premium AI responded (len=${content.length} chars)`
   );
@@ -287,7 +305,10 @@ You are the PREMIUM crypto trading assistant for a single power user.
     ];
 
     const aiContent = await callPremiumAI(messages);
-    const replyText = aiContent || 'Sorry, I could not generate a response.';
+    let replyText = aiContent || 'Sorry, I could not generate a response (AI returned empty content).';
+    
+    // Log what we're about to store and send
+    console.log(`📝 [Telegram Chat] Storing & sending reply (len=${replyText.length}): "${replyText.substring(0, 100)}..."`);
 
     // Persist both sides of the conversation
     await saveMessage(chatId, 'user', text);
