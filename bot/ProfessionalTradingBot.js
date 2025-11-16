@@ -82,12 +82,10 @@ class ProfessionalTradingBot {
     // Cache to avoid spamming duplicate rejection notifications
     // Structure: { 'SYMBOL:reasonType:YYYY-MM-DD': timestamp }
     this.rejectionNotificationCache = {};
-    // Cooldown for open-trade AI re-evaluation Telegram summary (ms)
+    // Cooldown for open-trade AI re-evaluation (ms) - applies to BOTH AI calls and Telegram summary
     this.openTradesReevalCooldownMs = 5 * 60 * 1000; // 5 minutes
-    this.lastOpenTradesReevalNotifiedAt = null;
-    // Cache to avoid spamming duplicate rejection notifications
-    // Structure: { 'SYMBOL:reasonType:YYYY-MM-DD': timestamp }
-    this.rejectionNotificationCache = {};
+    this.lastOpenTradesReevalAt = 0; // timestamp of last AI re-evaluation call
+    this.lastOpenTradesReevalNotifiedAt = null; // timestamp of last Telegram summary
     this.selectedIntervalKey = '1h';
     this.scanIntervalMs = config.SCAN_INTERVAL_OPTIONS[this.selectedIntervalKey];
     this.scanProgress = {
@@ -2909,6 +2907,27 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
   // Re-evaluate open trades with AI during scan
   async reevaluateOpenTradesWithAI() {
+    const now = Date.now();
+    const lastEval = this.lastOpenTradesReevalAt || 0;
+    const elapsed = now - lastEval;
+
+    // Global cooldown to avoid calling Premium AI too often (saves cost)
+    if (elapsed < this.openTradesReevalCooldownMs) {
+      console.log(
+        `⏱️ Skipping AI re-evaluation of open trades (cooldown ${
+          this.openTradesReevalCooldownMs / 60000
+        }min, elapsed ${(elapsed / 1000).toFixed(1)}s)`
+      );
+      addLogEntry(
+        '⏱️ Skipped AI re-evaluation of open trades due to cooldown',
+        'info'
+      );
+      return [];
+    }
+
+    // Update last evaluation timestamp BEFORE making AI calls
+    this.lastOpenTradesReevalAt = now;
+
     const openTrades = this.activeTrades.filter(t => t.status === 'OPEN' || t.status === 'DCA_HIT');
     
     console.log(`\n🤖 Starting AI re-evaluation for ${openTrades.length} open trades...`);
