@@ -33,7 +33,10 @@
       font-weight: 700;
       margin-bottom: 8px;
       background: linear-gradient(135deg, #6366f1, #22d3ee);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: transparent;
     }
     .subtitle {
       color: #334155;
@@ -928,6 +931,10 @@
           <div id="analytics-loading" style="text-align: center; padding: 40px; color: #64748b;">
             <p>Loading analytics...</p>
           </div>
+          <div id="analytics-empty" style="display: none; text-align: center; padding: 32px; color: #475569;">
+            <p style="font-size: 1.1em; margin-bottom: 8px;">No closed trades yet.</p>
+            <p style="font-size: 0.95em;">Close at least one trade to unlock performance analytics.</p>
+          </div>
           <div id="analytics-content" style="display: none;">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
               <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); padding: 16px; border-radius: 12px; border-left: 4px solid #0ea5e9;">
@@ -941,6 +948,14 @@
               <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); padding: 16px; border-radius: 12px; border-left: 4px solid #22c55e;">
                 <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Avg Holding Time</div>
                 <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-holding">-</div>
+              </div>
+              <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 16px; border-radius: 12px; border-left: 4px solid #f59e0b;">
+                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Profit Factor</div>
+                <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-profit-factor">-</div>
+              </div>
+              <div style="background: linear-gradient(135deg, #ede9fe, #ddd6fe); padding: 16px; border-radius: 12px; border-left: 4px solid #7c3aed;">
+                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Expectancy</div>
+                <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-expectancy">-</div>
               </div>
               <div style="background: linear-gradient(135deg, #faf5ff, #f3e8ff); padding: 16px; border-radius: 12px; border-left: 4px solid #a855f7;">
                 <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Best Trade</div>
@@ -2266,38 +2281,54 @@
         const response = await fetch(API_BASE + '/analytics');
         const analytics = await response.json();
         
-        if (analytics && analytics.sharpeRatio !== undefined) {
-          document.getElementById('analytics-loading').style.display = 'none';
-          document.getElementById('analytics-content').style.display = 'block';
-          
-          // Update metrics
-          document.getElementById('analytics-sharpe').textContent = analytics.sharpeRatio.toFixed(2);
-          document.getElementById('analytics-drawdown').textContent = `${analytics.maxDrawdownPercent.toFixed(2)}%`;
-          document.getElementById('analytics-holding').textContent = `${analytics.holdingTime?.avgDays.toFixed(1) || 0} days`;
-          
-          if (analytics.bestTrades && analytics.bestTrades.length > 0) {
-            const best = analytics.bestTrades[0];
-            document.getElementById('analytics-best').textContent = `${best.symbol}: +${best.pnlPercent.toFixed(2)}%`;
-          }
-          
-          // Update win rate by coin
-          const winRateContainer = document.getElementById('analytics-winrate-by-coin');
-          if (analytics.winRateByCoin && Object.keys(analytics.winRateByCoin).length > 0) {
-            let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;">';
-            Object.entries(analytics.winRateByCoin)
-              .sort((a, b) => b[1].winRate - a[1].winRate)
-              .forEach(([symbol, stats]) => {
-                html += `<div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">
-                  <div style="font-weight: 600; color: #0f172a;">${symbol}</div>
-                  <div style="font-size: 1.2em; font-weight: 700; color: ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">${stats.winRate.toFixed(1)}%</div>
-                  <div style="font-size: 0.8em; color: #64748b;">${stats.wins}W/${stats.losses}L</div>
-                </div>`;
-              });
-            html += '</div>';
-            winRateContainer.innerHTML = html;
-          } else {
-            winRateContainer.innerHTML = '<p style="color: #64748b; text-align: center;">No trade data available</p>';
-          }
+        const loading = document.getElementById('analytics-loading');
+        const empty = document.getElementById('analytics-empty');
+        const content = document.getElementById('analytics-content');
+        
+        if (!analytics || analytics.sharpeRatio === undefined) {
+          return;
+        }
+        
+        if (!analytics.totalTrades || analytics.totalTrades === 0) {
+          if (loading) loading.style.display = 'none';
+          if (content) content.style.display = 'none';
+          if (empty) empty.style.display = 'block';
+          return;
+        }
+        
+        if (loading) loading.style.display = 'none';
+        if (empty) empty.style.display = 'none';
+        if (content) content.style.display = 'block';
+        
+        // Update metrics
+        document.getElementById('analytics-sharpe').textContent = analytics.sharpeRatio.toFixed(2);
+        document.getElementById('analytics-drawdown').textContent = `${analytics.maxDrawdownPercent.toFixed(2)}%`;
+        document.getElementById('analytics-holding').textContent = `${analytics.holdingTime?.avgDays?.toFixed(1) || 0} days`;
+        document.getElementById('analytics-profit-factor').textContent = (analytics.profitFactor || 0).toFixed(2);
+        document.getElementById('analytics-expectancy').textContent = (analytics.expectancy || 0).toFixed(2);
+        
+        if (analytics.bestTrades && analytics.bestTrades.length > 0) {
+          const best = analytics.bestTrades[0];
+          document.getElementById('analytics-best').textContent = `${best.symbol}: +${best.pnlPercent.toFixed(2)}%`;
+        }
+        
+        // Update win rate by coin
+        const winRateContainer = document.getElementById('analytics-winrate-by-coin');
+        if (analytics.winRateByCoin && Object.keys(analytics.winRateByCoin).length > 0) {
+          let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;">';
+          Object.entries(analytics.winRateByCoin)
+            .sort((a, b) => b[1].winRate - a[1].winRate)
+            .forEach(([symbol, stats]) => {
+              html += `<div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">
+                <div style="font-weight: 600; color: #0f172a;">${symbol}</div>
+                <div style="font-size: 1.2em; font-weight: 700; color: ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">${stats.winRate.toFixed(1)}%</div>
+                <div style="font-size: 0.8em; color: #64748b;">${stats.wins}W/${stats.losses}L</div>
+              </div>`;
+            });
+          html += '</div>';
+          winRateContainer.innerHTML = html;
+        } else {
+          winRateContainer.innerHTML = '<p style="color: #64748b; text-align: center;">Close a few trades to unlock win rate insights.</p>';
         }
       } catch (error) {
         console.error('Error updating analytics:', error);

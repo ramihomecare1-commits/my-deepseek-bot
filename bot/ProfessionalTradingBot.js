@@ -78,6 +78,22 @@ class ProfessionalTradingBot {
       aiCalls: 0,  // Track AI API calls
     };
 
+    this.tradeAutomationRules = {
+      partialTakeProfit: {
+        enabled: true,
+        steps: [
+          { triggerPercent: 2, takePercent: 25 },
+          { triggerPercent: 4, takePercent: 25 },
+          { triggerPercent: 6, takePercent: 25 }
+        ],
+        lockStopToEntry: true
+      },
+      dca: {
+        maxPerTrade: 3,
+        cooldownMinutes: 60
+      }
+    };
+
     this.lastNotificationTime = {};
     // Cache to avoid spamming duplicate rejection notifications
     // Structure: { 'SYMBOL:reasonType:YYYY-MM-DD': timestamp }
@@ -161,6 +177,11 @@ class ProfessionalTradingBot {
       supportResistance: {
         lookbackPeriod: 20,
         breakoutThreshold: 0.02  // 2% breakout
+      },
+      multiTimeframeConsensus: {
+        enabled: true,
+        requiredMatches: 2,
+        timeframes: ['1h', '4h', '1d']
       },
       patterns: {
         buy: {
@@ -281,6 +302,144 @@ class ProfessionalTradingBot {
 
     this.rejectionNotificationCache[key] = Date.now();
     return true;
+  }
+
+  async applyPartialTakeProfits(trade, currentPrice) {
+    const rules = this.tradeAutomationRules?.partialTakeProfit;
+    if (!rules || !rules.enabled || trade.status !== 'OPEN') {
+      return;
+    }
+
+    const pnlPercent = trade.pnlPercent || 0;
+    const steps = rules.steps || [];
+    if (!trade.partialTakeProfits) {
+      trade.partialTakeProfits = [];
+    }
+
+    for (const step of steps) {
+      const trigger = step.triggerPercent;
+      const takePercent = step.takePercent || 0;
+      if (!trigger || !takePercent) continue;
+
+      const alreadyExecuted = trade.partialTakeProfits.some(
+        (p) => p.triggerPercent === trigger
+      );
+      if (alreadyExecuted) continue;
+
+      if (pnlPercent >= trigger) {
+        const quantity = trade.quantity || 0;
+        if (quantity <= 0) {
+          continue;
+        }
+        const portion = takePercent / 100;
+        const qtyToClose = quantity * portion;
+        if (qtyToClose <= 0) continue;
+
+        const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+        let realized = 0;
+        if (trade.action === 'BUY') {
+          realized = (currentPrice - avgEntry) * qtyToClose;
+        } else {
+          realized = (avgEntry - currentPrice) * qtyToClose;
+        }
+
+        trade.quantity = quantity - qtyToClose;
+        if (trade.quantity < 0) {
+          trade.quantity = 0;
+        }
+        trade.realizedPnl = (trade.realizedPnl || 0) + realized;
+        trade.partialTakeProfits.push({
+          triggerPercent: trigger,
+          takePercent,
+          qty: qtyToClose,
+          realized,
+          price: currentPrice,
+          executedAt: new Date()
+        });
+
+        addLogEntry(
+          `✂️ ${trade.symbol}: Partial TP (${takePercent}%) executed at ${pnlPercent.toFixed(
+            2
+          )}% profit (realized $${realized.toFixed(2)})`,
+          'info'
+        );
+
+        await saveTrades(this.activeTrades);
+        await sendTelegramMessage(
+          `✂️ Partial Take-Profit\n\n${trade.symbol} locked in ${takePercent}% of the position at $${currentPrice.toFixed(
+            2
+          )}\nRealized P&L: $${realized.toFixed(2)} (${pnlPercent.toFixed(
+            2
+          )}%)`
+        ).catch(() => {});
+
+        if (rules.lockStopToEntry) {
+          const avg = trade.averageEntryPrice || trade.entryPrice;
+          if (trade.action === 'BUY' && trade.stopLoss < avg) {
+            trade.stopLoss = avg;
+            addLogEntry(
+              `🔒 ${trade.symbol}: Stop loss moved to breakeven after partial TP`,
+              'info'
+            );
+          } else if (trade.action === 'SELL' && trade.stopLoss > avg) {
+            trade.stopLoss = avg;
+            addLogEntry(
+              `🔒 ${trade.symbol}: Stop loss moved to breakeven after partial TP (short)`,
+              'info'
+            );
+          }
+        }
+      }
+    }
+  }
+
+  recordTradeOutcome(trade, outcome) {
+    this.tradeInsights = this.tradeInsights || [];
+    const entryTime = new Date(trade.entryTime || trade.openedAt || Date.now());
+    const exitTime = new Date();
+    const durationHours = (exitTime - entryTime) / (1000 * 60 * 60);
+    this.tradeInsights.unshift({
+      symbol: trade.symbol,
+      outcome,
+      pnlPercent: trade.pnlPercent,
+      realizedPnl: trade.realizedPnl || trade.pnl || 0,
+      dcaCount: trade.dcaCount || 0,
+      durationHours: Number(durationHours.toFixed(2)),
+      closedAt: exitTime
+    });
+    if (this.tradeInsights.length > 100) {
+      this.tradeInsights.pop();
+    }
+  }
+
+  passesMultiTimeframeConsensus(analysis) {
+    const consensusRules = this.tradingRules.multiTimeframeConsensus;
+    if (!consensusRules || !consensusRules.enabled) {
+      return true;
+    }
+
+    const timeframes = consensusRules.timeframes || ['1h', '4h', '1d'];
+    const requiredMatches = consensusRules.requiredMatches || timeframes.length;
+    const frames =
+      analysis.frames ||
+      analysis.indicators?.frames ||
+      {};
+
+    let matches = 0;
+    timeframes.forEach((tf) => {
+      const frame = frames[tf];
+      if (!frame || !frame.trend) {
+        return;
+      }
+      const trend = (frame.trend || '').toUpperCase();
+      if (analysis.action === 'BUY' && trend === 'BULLISH') {
+        matches += 1;
+      } else if (analysis.action === 'SELL' && trend === 'BEARISH') {
+        matches += 1;
+      }
+    });
+
+    return matches >= requiredMatches;
   }
 
   setAutoScanInterval(key) {
@@ -1684,6 +1843,10 @@ Source: ${source}`);
 
           // Only add real opportunities with valid data
           if (analysis.confidence >= this.tradingRules.minConfidence && !analysis.usesMockData) {
+            if (!this.passesMultiTimeframeConsensus(analysis)) {
+              console.log(`🚫 ${coin.symbol}: Fails multi-timeframe consensus check`);
+              continue;
+            }
             if (!this.applyScanFilters(analysis, options)) {
               console.log(`🚫 ${coin.symbol}: Filtered out by scan filters`);
               // NOTE: We intentionally do NOT send Telegram notifications here anymore
@@ -2480,6 +2643,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
     // Filter only OPEN or DCA_HIT trades
     const activeTradesToUpdate = this.activeTrades.filter(t => t.status === 'OPEN' || t.status === 'DCA_HIT');
+    const maxDcaPerTrade = this.tradeAutomationRules?.dca?.maxPerTrade || 5;
+    const dcaCooldownMs = (this.tradeAutomationRules?.dca?.cooldownMinutes || 0) * 60 * 1000;
     
     if (activeTradesToUpdate.length === 0) {
       return;
@@ -2624,6 +2789,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           }
         }
 
+        await this.applyPartialTakeProfits(trade, currentPrice);
+
         let notificationNeeded = false;
         let notificationMessage = '';
         let notificationLevel = 'info';
@@ -2642,6 +2809,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationLevel = 'success';
               notificationNeeded = true;
               addLogEntry(`✅ TP EXECUTED: ${trade.symbol} - Order ID: ${tpResult.orderId}`, 'success');
+              this.recordTradeOutcome(trade, 'TAKE_PROFIT');
             } else if (!tpResult.skipped) {
               // Only log if it's an actual error (not just disabled)
               trade.status = 'TP_HIT'; // Mark as hit even if execution failed
@@ -2649,11 +2817,12 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationLevel = 'success';
               notificationNeeded = true;
               addLogEntry(`⚠️ TP hit but execution failed: ${trade.symbol} - ${tpResult.error}`, 'warning');
+              this.recordTradeOutcome(trade, 'TAKE_PROFIT');
             }
           }
           // Check DCA for BUY (BEFORE stop loss - priority!)
           // LONG: First DCA at 10% loss, then 12% from average for each subsequent DCA (max 5 total)
-          else if (trade.status === 'OPEN' && trade.dcaCount < 5) {
+          else if (trade.status === 'OPEN' && (trade.dcaCount || 0) < maxDcaPerTrade) {
             const avgEntry = trade.averageEntryPrice || trade.entryPrice;
             let dcaLevel = 0;
             
@@ -2667,6 +2836,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             
             // Check if price hit DCA level
             if (currentPrice <= dcaLevel && !trade.dcaNotified) {
+              const now = Date.now();
+              if (dcaCooldownMs > 0 && trade.lastDcaAt && (now - trade.lastDcaAt) < dcaCooldownMs) {
+                addLogEntry(`🕒 ${trade.symbol}: DCA cooldown active (${Math.round((dcaCooldownMs - (now - trade.lastDcaAt)) / 60000)}m remaining)`, 'info');
+              } else {
               // Execute Add Position (DCA) order
               const dcaResult = await executeAddPosition(trade);
               if (dcaResult.success) {
@@ -2686,6 +2859,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 notificationLevel = 'warning';
                 notificationNeeded = true;
                 trade.dcaNotified = true;
+                  trade.lastDcaAt = now;
                 addLogEntry(`💰 DCA #${trade.dcaCount} EXECUTED: ${trade.symbol} - Order ID: ${dcaResult.orderId}`, 'info');
               } else if (!dcaResult.skipped) {
                 trade.status = 'DCA_HIT';
@@ -2694,6 +2868,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 notificationLevel = 'warning';
                 notificationNeeded = true;
                 addLogEntry(`⚠️ DCA hit but execution failed: ${trade.symbol} - ${dcaResult.error}`, 'warning');
+              }
               }
             }
           }
@@ -2707,13 +2882,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               nextDcaLevel = avgEntry * 0.88;
             }
             
-            if (currentPrice > nextDcaLevel && trade.dcaCount < 5) {
+            if (currentPrice > nextDcaLevel && (trade.dcaCount || 0) < maxDcaPerTrade) {
               trade.status = 'OPEN';
               trade.dcaNotified = false; // Reset so it can trigger again if price drops back
             }
           }
           // Check Stop Loss for BUY (LAST - only after all 5 DCAs used)
-          else if (currentPrice <= trade.stopLoss && trade.status === 'OPEN' && trade.dcaCount >= 5) {
+          else if (currentPrice <= trade.stopLoss && trade.status === 'OPEN' && (trade.dcaCount || 0) >= maxDcaPerTrade) {
             // Execute Stop Loss order (only after all 5 DCAs used)
             const slResult = await executeStopLoss(trade);
             if (slResult.success) {
@@ -2725,12 +2900,14 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationLevel = 'error';
               notificationNeeded = true;
               addLogEntry(`🛑 SL EXECUTED: ${trade.symbol} - Order ID: ${slResult.orderId}`, 'error');
+              this.recordTradeOutcome(trade, 'STOP_LOSS');
             } else if (!slResult.skipped) {
               trade.status = 'SL_HIT';
               notificationMessage = `❌ STOP LOSS HIT (Execution ${slResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
               notificationLevel = 'error';
               notificationNeeded = true;
               addLogEntry(`⚠️ SL hit but execution failed: ${trade.symbol} - ${slResult.error}`, 'error');
+              this.recordTradeOutcome(trade, 'STOP_LOSS');
             }
           }
         } else if (trade.action === 'SELL') { // Short position logic
@@ -2747,17 +2924,19 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationLevel = 'success';
               notificationNeeded = true;
               addLogEntry(`✅ TP EXECUTED (SHORT): ${trade.symbol} - Order ID: ${tpResult.orderId}`, 'success');
+              this.recordTradeOutcome(trade, 'TAKE_PROFIT');
             } else if (!tpResult.skipped) {
               trade.status = 'TP_HIT';
               notificationMessage = `✅ TAKE PROFIT HIT (SHORT, Execution ${tpResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
               notificationLevel = 'success';
               notificationNeeded = true;
               addLogEntry(`⚠️ TP hit but execution failed (SHORT): ${trade.symbol} - ${tpResult.error}`, 'warning');
+              this.recordTradeOutcome(trade, 'TAKE_PROFIT');
             }
           }
           // Check DCA for SELL (BEFORE stop loss - priority!)
           // SHORT: First DCA at 15% loss, then 25% from average for each subsequent DCA (max 5 total)
-          else if (trade.status === 'OPEN' && trade.dcaCount < 5) {
+          else if (trade.status === 'OPEN' && (trade.dcaCount || 0) < maxDcaPerTrade) {
             const avgEntry = trade.averageEntryPrice || trade.entryPrice;
             let dcaLevel = 0;
             
@@ -2771,6 +2950,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             
             // Check if price hit DCA level
             if (currentPrice >= dcaLevel && !trade.dcaNotified) {
+              const now = Date.now();
+              if (dcaCooldownMs > 0 && trade.lastDcaAt && (now - trade.lastDcaAt) < dcaCooldownMs) {
+                addLogEntry(`🕒 ${trade.symbol}: DCA cooldown active (${Math.round((dcaCooldownMs - (now - trade.lastDcaAt)) / 60000)}m remaining)`, 'info');
+              } else {
               // Execute Add Position (DCA) order (short more)
               const dcaResult = await executeAddPosition(trade);
               if (dcaResult.success) {
@@ -2790,6 +2973,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 notificationLevel = 'warning';
                 notificationNeeded = true;
                 trade.dcaNotified = true;
+                  trade.lastDcaAt = now;
                 addLogEntry(`💰 DCA #${trade.dcaCount} EXECUTED (SHORT): ${trade.symbol} - Order ID: ${dcaResult.orderId}`, 'info');
               } else if (!dcaResult.skipped) {
                 trade.status = 'DCA_HIT';
@@ -2798,6 +2982,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 notificationLevel = 'warning';
                 notificationNeeded = true;
                 addLogEntry(`⚠️ DCA hit but execution failed (SHORT): ${trade.symbol} - ${dcaResult.error}`, 'warning');
+              }
               }
             }
           }
@@ -2811,13 +2996,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               nextDcaLevel = avgEntry * 1.25;
             }
             
-            if (currentPrice < nextDcaLevel && trade.dcaCount < 5) {
+            if (currentPrice < nextDcaLevel && (trade.dcaCount || 0) < maxDcaPerTrade) {
               trade.status = 'OPEN';
               trade.dcaNotified = false; // Reset so it can trigger again if price rises back
             }
           }
           // Check Stop Loss for SELL (LAST - only after all 5 DCAs used)
-          else if (currentPrice >= trade.stopLoss && trade.status === 'OPEN' && trade.dcaCount >= 5) {
+          else if (currentPrice >= trade.stopLoss && trade.status === 'OPEN' && (trade.dcaCount || 0) >= maxDcaPerTrade) {
             // Execute Stop Loss order (only after all 5 DCAs used)
             const slResult = await executeStopLoss(trade);
             if (slResult.success) {
@@ -2829,12 +3014,14 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationLevel = 'error';
               notificationNeeded = true;
               addLogEntry(`🛑 SL EXECUTED (SHORT): ${trade.symbol} - Order ID: ${slResult.orderId}`, 'error');
+              this.recordTradeOutcome(trade, 'STOP_LOSS');
             } else if (!slResult.skipped) {
               trade.status = 'SL_HIT';
               notificationMessage = `❌ STOP LOSS HIT (SHORT, Execution ${slResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
               notificationLevel = 'error';
               notificationNeeded = true;
               addLogEntry(`⚠️ SL hit but execution failed (SHORT): ${trade.symbol} - ${slResult.error}`, 'error');
+              this.recordTradeOutcome(trade, 'STOP_LOSS');
             }
           }
         }

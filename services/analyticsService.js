@@ -4,6 +4,7 @@
  */
 
 const { getPortfolio } = require('./portfolioService');
+const performanceAnalytics = require('./performanceAnalyticsService');
 
 /**
  * Calculate Sharpe Ratio
@@ -237,6 +238,12 @@ function getPerformanceAnalytics(closedTrades = [], activeTrades = []) {
   const winRateByCoin = calculateWinRateByCoin(closedTrades);
   const performanceByTime = calculatePerformanceByTime(closedTrades);
   const holdingTime = calculateHoldingTime(closedTrades);
+  const perfMetrics = performanceAnalytics.calculatePerformanceMetrics(
+    closedTrades,
+    portfolio.currentBalance || portfolio.initialCapital || 10000
+  );
+  const performanceBySymbol = performanceAnalytics.analyzePerformanceBySymbol(closedTrades);
+  const periodBreakdown = performanceAnalytics.analyzePerformanceByPeriod(closedTrades);
   
   // Best and worst trades
   const sortedTrades = [...closedTrades].sort((a, b) => {
@@ -271,6 +278,13 @@ function getPerformanceAnalytics(closedTrades = [], activeTrades = []) {
     })),
     totalTrades: closedTrades.length,
     activeTrades: activeTrades.length,
+    performanceMetrics: perfMetrics,
+    performanceBySymbol,
+    periodBreakdown,
+    profitFactor: perfMetrics.profitFactor,
+    expectancy: perfMetrics.expectancy,
+    roi: perfMetrics.roi,
+    equityCurve,
     portfolio: {
       initialCapital: portfolio.initialCapital,
       currentBalance: portfolio.currentBalance,
