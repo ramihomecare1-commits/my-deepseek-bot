@@ -271,9 +271,10 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
         const prompt = createBatchAnalysisPrompt(batch, globalMetrics, options);
 
         console.log(`🤖 AI API attempt ${attempt}/${maxRetries} - batch ${batchIndex} (${batch.length} coins)...`);
-        // Calculate tokens needed: ~250 tokens per coin for response (with risk management and backtest data)
-        const estimatedTokens = Math.min(batch.length * 250, 8000);
-        console.log(`📊 Requesting ${estimatedTokens} max tokens for ${batch.length} coins`);
+        // Calculate tokens needed: R1 reasoning model needs more tokens (internal thinking + JSON output)
+        // ~500 tokens per coin to account for reasoning overhead
+        const estimatedTokens = Math.min(batch.length * 500, 16000);
+        console.log(`📊 Requesting ${estimatedTokens} max tokens for ${batch.length} coins (R1 reasoning model)`);
         
         const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
           model: config.AI_MODEL,
