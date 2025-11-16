@@ -74,13 +74,14 @@ async function saveMessage(chatId, role, content) {
  * with full chat-style messages array.
  */
 async function callPremiumAI(messages) {
-  const apiKey = config.PREMIUM_TIER_API_KEY || config.AI_API_KEY;
+  // Use the same premium key / model as the main bot
+  const apiKey = config.PREMIUM_API_KEY || config.AI_API_KEY;
 
   if (!apiKey) {
     throw new Error('No premium AI API key configured');
   }
 
-  const model = config.PREMIUM_MODEL || config.AI_MODEL || 'deepseek/deepseek-r1';
+  const model = config.AI_MODEL || 'deepseek/deepseek-r1';
 
   const body = {
     model,
@@ -96,6 +97,11 @@ async function callPremiumAI(messages) {
     'X-Title': 'Premium Telegram Trading Assistant'
   };
 
+  console.log('🤖 [Telegram Chat] Calling Premium AI...', {
+    model,
+    apiKeyPrefix: apiKey.substring(0, 12) + '...'
+  });
+
   const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', body, {
     headers,
     timeout: 45000
@@ -105,7 +111,12 @@ async function callPremiumAI(messages) {
     throw new Error('Invalid AI response format');
   }
 
-  return response.data.choices[0].message.content || '';
+  const content = response.data.choices[0].message.content || '';
+  console.log(
+    `✅ [Telegram Chat] Premium AI responded (len=${content.length} chars)`
+  );
+
+  return content;
 }
 
 /**
