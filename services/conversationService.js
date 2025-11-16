@@ -193,6 +193,9 @@ async function saveMessage(chatId, role, content) {
       type: 'telegram_chat'
     };
 
+    const awsRegion = process.env.AWS_REGION || 'us-east-1';
+    console.log(`💾 [saveMessage] Writing to DynamoDB: table='${CONVO_TABLE}' region='${awsRegion}' chatId='${chatId}' role='${role}'`);
+
     await docClient.send(
       new PutCommand({
         TableName: CONVO_TABLE,
