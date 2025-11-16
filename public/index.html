@@ -1310,10 +1310,24 @@
     function handleSaveTradingRules() { handleUserAction('saveRules', saveTradingRules); }
     function handleSaveProximity() { handleUserAction('saveProximity', saveProximityThreshold); }
     async function handleSaveTriggerSettings() { 
-      if (window.confirm(actionConfirmations.saveTriggers || 'Save these trigger settings?')) {
-        await saveTriggerSettings();
+      console.log('🔘 handleSaveTriggerSettings called!');
+      try {
+        const confirmed = window.confirm(actionConfirmations.saveTriggers || 'Save these trigger settings?');
+        console.log('User confirmed:', confirmed);
+        if (confirmed) {
+          console.log('Calling saveTriggerSettings...');
+          await saveTriggerSettings();
+        } else {
+          console.log('User cancelled save');
+        }
+      } catch (error) {
+        console.error('❌ Error in handleSaveTriggerSettings:', error);
+        alert('Error saving settings: ' + error.message);
       }
     }
+    
+    // Make sure function is globally accessible
+    window.handleSaveTriggerSettings = handleSaveTriggerSettings;
     function handleEvaluateTrades() { handleUserAction('evaluate', evaluateTradesWithAI); }
     
     async function testTelegram(evt) {
@@ -2721,8 +2735,24 @@
     
     // Trigger Settings Modal Functions
     function openTriggerSettings() {
+      console.log('📂 Opening trigger settings modal...');
       document.getElementById('trigger-settings-modal').style.display = 'flex';
       loadTriggerSettings();
+      
+      // Add event listener as backup (in case onclick doesn't work)
+      setTimeout(() => {
+        const saveBtn = document.getElementById('save-trigger-settings-btn');
+        if (saveBtn) {
+          console.log('✅ Save button found, adding event listener');
+          saveBtn.addEventListener('click', function(e) {
+            console.log('🔘 Save button clicked via event listener!');
+            e.preventDefault();
+            handleSaveTriggerSettings();
+          });
+        } else {
+          console.error('❌ Save button not found!');
+        }
+      }, 100);
     }
     
     function closeTriggerSettings() {
@@ -2797,6 +2827,7 @@
     }
     
     async function saveTriggerSettings() {
+      console.log('💾 saveTriggerSettings function called!');
       console.log('💾 Saving trigger settings...');
       console.log('Current mode before save:', currentMode);
       
@@ -3001,7 +3032,7 @@
         </label>
       </div>
       
-      <button onclick="handleSaveTriggerSettings()" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #6366f1, #22d3ee); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">💾 Save Settings</button>
+      <button id="save-trigger-settings-btn" onclick="handleSaveTriggerSettings()" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #6366f1, #22d3ee); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">💾 Save Settings</button>
     </div>
   </div>
 
