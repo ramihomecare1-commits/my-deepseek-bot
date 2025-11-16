@@ -151,22 +151,25 @@ function generateTechnicalAnalysis(technicalData) {
   let insights = ['Wait for clearer signals', 'Monitor key levels', 'Low conviction'];
 
   const frames = technicalData.frames || {};
-  const frame10m = frames['10m'] || {};
-  const frame1h = frames['1h'] || {};
   const frame4h = frames['4h'] || {};
   const frame1d = frames['1d'] || {};
   const frame1w = frames['1w'] || {};
+
+  // Focused on swing/position trading:
+  // Only use RSI + Bollinger Bands from 4H, Daily, and Weekly timeframes.
+  const rsi4h = typeof frame4h.rsi === 'number' ? frame4h.rsi : Number(frame4h.rsi) || 50;
+  const bb4h = frame4h.bollingerPosition || 'MIDDLE';
+  const trend4h = frame4h.trend || 'SIDEWAYS';
 
   const dailyRsi = Number(frame1d.rsi) || 50;
   const dailyBB = frame1d.bollingerPosition || 'MIDDLE';
   const dailyTrend = frame1d.trend || 'SIDEWAYS';
 
-  const hourlyRsi = Number(frame1h.rsi) || 50;
-  const hourlyTrend = frame1h.trend || 'SIDEWAYS';
-
-  const momentum10m = frame10m.momentum || 'NEUTRAL';
   const weeklyTrend = frame1w.trend || 'SIDEWAYS';
+  const weeklyBB = frame1w.bollingerPosition || 'MIDDLE';
+  const weeklyRsi = typeof frame1w.rsi === 'number' ? frame1w.rsi : Number(frame1w.rsi) || dailyRsi;
 
+  // Core long-term conditions using only 4H / 1D / 1W
   if (dailyRsi < 30 && dailyBB === 'LOWER' && dailyTrend === 'BEARISH') {
     action = 'BUY';
     confidence = 0.75;
@@ -185,30 +188,33 @@ function generateTechnicalAnalysis(technicalData) {
       'Risk: Trend continuation',
       `Weekly trend backdrop: ${weeklyTrend}`,
     ];
-  } else if (dailyRsi < 35 && dailyTrend === 'BULLISH' && hourlyTrend === 'BULLISH') {
+  } else if (dailyRsi < 35 && dailyTrend === 'BULLISH' && trend4h === 'BULLISH') {
     action = 'BUY';
     confidence = 0.7;
-    reason = 'Both timeframes bullish with daily oversold signal';
-    insights = ['Trend alignment positive', 'Watch for confirmation', 'Stop below recent low'];
-  } else if (hourlyRsi < 30 && hourlyTrend === 'BULLISH') {
+    reason = 'Daily oversold in the context of aligned 4H and daily bullish trends';
+    insights = ['Trend alignment positive (4H & 1D)', 'Watch for pullback entries', 'Stop below recent swing low'];
+  } else if (rsi4h < 30 && trend4h === 'BULLISH' && weeklyTrend !== 'BEARISH') {
     action = 'BUY';
     confidence = 0.65;
-    reason = 'Hourly oversold in bullish hourly trend';
-    insights = ['Short-term mean reversion opportunity', 'Confirm with volume', 'Tight stop loss'];
-  } else if (momentum10m === 'STRONG_DOWN' && dailyTrend === 'BEARISH') {
-    action = 'SELL';
-    confidence = 0.6;
-    reason = 'Short-term momentum and daily trend both bearish';
-    insights = ['Potential continuation move', 'Watch for support breaks', 'Consider partial position sizing'];
+    reason = '4H oversold within a broader bullish structure (swing entry focus)';
+    insights = ['Swing entry opportunity on 4H', 'Confirm with higher timeframe structure', 'Use wider stop for position trade'];
   } else if (
-    frame1w.trend === 'BULLISH' &&
+    weeklyTrend === 'BULLISH' &&
     frame1d.trend === 'BULLISH' &&
     frame4h.trend === 'BULLISH'
   ) {
     action = 'BUY';
     confidence = 0.62;
     reason = 'Weekly, daily, and 4H trends aligned to the upside';
-    insights = ['Momentum building across timeframes', 'Look for pullback entries', 'Maintain disciplined stop'];
+    insights = ['Momentum building across higher timeframes', 'Look for pullback entries on 4H', 'Maintain disciplined stop below key support'];
+  } else if (
+    (weeklyRsi > 70 && (weeklyBB === 'UPPER' || weeklyTrend === 'BULLISH')) ||
+    (dailyRsi > 70 && dailyBB === 'UPPER' && weeklyTrend !== 'STRONGLY_BULLISH')
+  ) {
+    action = 'SELL';
+    confidence = 0.6;
+    reason = 'Overbought conditions on higher timeframes (daily/weekly) with Bollinger resistance';
+    insights = ['Take profit or tighten stops', 'High timeframe exhaustion risk', 'Reduce position size if extended'];
   }
 
   if (technicalData.news && technicalData.news.length > 0) {
