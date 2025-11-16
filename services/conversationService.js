@@ -72,16 +72,66 @@ async function fetchSimpleMexcPrice(symbol) {
 }
 
 /**
+ * Fetch all open trades from DynamoDB
+ */
+async function fetchOpenTrades() {
+  try {
+    const { ScanCommand } = require('../config/awsConfig');
+    const result = await docClient.send(
+      new ScanCommand({
+        TableName: TABLES.ACTIVE_TRADES
+      })
+    );
+    
+    const openTrades = (result.Items || []).filter(trade => trade.status === 'OPEN');
+    console.log(`📊 [Telegram Chat] Found ${openTrades.length} open trades: ${openTrades.map(t => t.symbol).join(', ')}`);
+    return openTrades;
+  } catch (error) {
+    console.error('⚠️ fetchOpenTrades error:', error.message);
+    return [];
+  }
+}
+
+/**
  * Build a short, token‑efficient context summary for the AI
  * using:
  * - Latest real‑time price (MEXC)
  * - Recent stored AI evaluations & news from DynamoDB
+ * - Open trades from portfolio
  */
-async function buildContextSummary(symbols) {
-  if (!symbols || symbols.length === 0) return '';
-
+async function buildContextSummary(symbols, includeAllTrades = false) {
   const lines = [];
+  
+  // First, add open trades context
+  const openTrades = await fetchOpenTrades();
+  
+  if (openTrades.length > 0) {
+    lines.push('YOUR OPEN TRADES:');
+    openTrades.forEach(trade => {
+      const pnl = trade.profitLoss || 0;
+      const pnlPercent = trade.profitLossPercent || 0;
+      const pnlSign = pnl >= 0 ? '+' : '';
+      lines.push(
+        `- ${trade.symbol}: Entry $${trade.entryPrice?.toFixed(2)}, ` +
+        `TP $${trade.takeProfit?.toFixed(2)}, SL $${trade.stopLoss?.toFixed(2)}, ` +
+        `P&L: ${pnlSign}${pnlPercent.toFixed(2)}% (${pnlSign}$${pnl.toFixed(2)})`
+      );
+    });
+    lines.push('');
+    
+    // Add symbols from open trades to the list if not already there
+    if (includeAllTrades || symbols.length === 0) {
+      openTrades.forEach(trade => {
+        if (!symbols.includes(trade.symbol)) {
+          symbols.push(trade.symbol);
+        }
+      });
+    }
+  }
+  
+  if (symbols.length === 0) return lines.join('\n');
 
+  // Then add market data for each symbol
   for (const symbol of symbols) {
     // 1) Real‑time price
     const priceData = await fetchSimpleMexcPrice(symbol);
@@ -306,7 +356,17 @@ async function handleUserMessage(chatId, text) {
     const symbols = extractSymbolsFromText(text);
     console.log(`🔍 [Telegram Chat] Detected symbols: ${symbols.join(', ') || 'none'}`);
     
-    const contextSummary = await buildContextSummary(symbols);
+    // Check if user is asking about their trades/positions
+    const textLower = text.toLowerCase();
+    const isAskingAboutTrades = 
+      textLower.includes('my trade') ||
+      textLower.includes('my position') ||
+      textLower.includes('open trade') ||
+      textLower.includes('current trade') ||
+      textLower.includes('portfolio') ||
+      textLower.includes('what should i do with');
+    
+    const contextSummary = await buildContextSummary(symbols, isAskingAboutTrades);
     
     if (contextSummary) {
       console.log(`📊 [Telegram Chat] Context summary:\n${contextSummary.substring(0, 500)}...`);
@@ -319,8 +379,10 @@ CRITICAL RULES:
 1. When LATEST MARKET CONTEXT is provided, you MUST use the EXACT "Real-time price" value from that context.
 2. NEVER make up prices or use old prices from your training data.
 3. When discussing a coin's price, ALWAYS start by stating: "Currently trading at $[exact price from context]"
-4. If context shows a big difference between stored evaluation and current price, call it out explicitly.
-5. Keep answers concise but actionable, with clear levels when relevant.
+4. If context shows open trades (YOUR OPEN TRADES section), you can discuss them and provide recommendations.
+5. For open trades, you can suggest: HOLD, ADD (DCA), ADJUST TP/SL, or CLOSE based on current market conditions.
+6. If context shows a big difference between stored evaluation and current price, call it out explicitly.
+7. Keep answers concise but actionable, with clear levels when relevant.
 
 User preferences:
 - Remember risk tolerance, timeframes, and style from previous messages.
