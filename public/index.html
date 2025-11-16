@@ -4,6 +4,8 @@
   <title>🤖 AI Crypto Trading Scanner Pro</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS for modern layout & styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -17,12 +19,12 @@
       top: 0;
       z-index: 99;
       backdrop-filter: blur(16px);
-      background: rgba(2, 6, 23, 0.85);
+      background: rgba(15, 23, 42, 0.92);
       padding: 16px 32px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.3);
     }
     .top-nav h2 {
       color: #e2e8f0;
@@ -794,13 +796,17 @@
 </head>
 <body>
   <nav class="top-nav">
-    <h2>AI Trading Console</h2>
-    <div class="nav-links">
-      <a href="#overview">Overview</a>
-      <a href="#opportunities">Opportunities</a>
-      <a href="#monitoring">Monitoring</a>
-      <a href="#performance">Performance</a>
-      <a href="#activity">Activity</a>
+    <div class="mx-auto max-w-6xl flex items-center justify-between px-3 md:px-4">
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] md:text-xs font-semibold text-emerald-300 uppercase tracking-[0.18em]">DeepSeek Bot</span>
+      </div>
+      <div class="nav-links text-[11px] md:text-xs">
+        <a href="#overview">Overview</a>
+        <a href="#opportunities">Opportunities</a>
+        <a href="#monitoring">Monitoring</a>
+        <a href="#performance">Performance</a>
+        <a href="#activity">Activity</a>
+      </div>
     </div>
   </nav>
   <div class="container">
@@ -838,7 +844,7 @@
             <option value="1w">Weekly</option>
           </select>
         </div>
-        <div class="action-grid">
+      <div class="action-grid">
           <div class="action-card">
             <h4>Primary Actions</h4>
             <div class="button-group">
@@ -1337,29 +1343,45 @@
     function handleEvaluateTrades() { handleUserAction('evaluate', evaluateTradesWithAI); }
     
     async function testTelegram(evt) {
+      const button = evt?.target || event?.target;
       try {
-        const button = evt?.target || event?.target;
-        button.disabled = true;
-        button.textContent = '⏳ Testing...';
+        if (button) {
+          button.disabled = true;
+          button.textContent = '⏳ Testing...';
+        }
         
         const response = await fetch(API_BASE + '/test-telegram', { method: 'POST' });
         const result = await response.json();
         
         if (result.success) {
-          alert('✅ ' + result.message);
+          if (typeof showToast === 'function') {
+            showToast('✅ ' + result.message, 'success');
+          } else {
+            alert('✅ ' + result.message);
+          }
         } else {
-          alert('❌ ' + (result.message || 'Failed to send test notification'));
+          const msg = '❌ ' + (result.message || 'Failed to send test notification');
+          if (typeof showToast === 'function') {
+            showToast(msg, 'error');
+          } else {
+            alert(msg);
+          }
           if (result.configStatus) {
             console.log('Config status:', result.configStatus);
           }
         }
-        
-        button.disabled = false;
-        button.textContent = '📱 Test Telegram';
       } catch (error) {
-        alert('❌ Error testing Telegram: ' + error.message);
-        event.target.disabled = false;
-        event.target.textContent = '📱 Test Telegram';
+        const msg = '❌ Error testing Telegram: ' + error.message;
+        if (typeof showToast === 'function') {
+          showToast(msg, 'error');
+        } else {
+          alert(msg);
+        }
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = '📱 Test Telegram';
+        }
       }
     }
 
@@ -1405,12 +1427,20 @@
           }
         }
         
-        // Show in alert (for quick view) and console (for details)
-        alert(message);
+        // Show quick summary via toast/alert and full details in console
+        if (typeof showToast === 'function') {
+          showToast('🔍 Diagnostics completed. See console for full details.', 'info');
+        } else {
+          alert(message);
+        }
         console.log('Full diagnostics:', data);
         
       } catch (error) {
-        alert('❌ Error running diagnostics: ' + error.message);
+        if (typeof showToast === 'function') {
+          showToast('❌ Error running diagnostics: ' + error.message, 'error');
+        } else {
+          alert('❌ Error running diagnostics: ' + error.message);
+        }
         console.error('Diagnostics error:', error);
       }
     }
@@ -1420,14 +1450,22 @@
         const response = await fetch(API_BASE + '/start-scan', { method: 'POST' });
         const result = await response.json();
         if (result.status === 'already_running') {
-          alert('Auto-scan is already running!');
+          if (typeof showToast === 'function') {
+            showToast('Auto-scan is already running!', 'info');
+          } else {
+            alert('Auto-scan is already running!');
+          }
           return;
         }
         document.getElementById('statusText').innerHTML = '🔄 Auto-Scanning Active';
         updateNextScanTime();
         manualScan();
       } catch (error) {
-        alert('Error starting auto-scan: ' + error.message);
+        if (typeof showToast === 'function') {
+          showToast('Error starting auto-scan: ' + error.message, 'error');
+        } else {
+          alert('Error starting auto-scan: ' + error.message);
+        }
       }
     }
     
@@ -1484,7 +1522,11 @@
         document.getElementById('statusText').innerHTML = '🛑 Stopped';
         document.getElementById('nextScan').textContent = 'Next scan: Manual mode';
       } catch (error) {
-        alert('Error stopping auto-scan: ' + error.message);
+        if (typeof showToast === 'function') {
+          showToast('Error stopping auto-scan: ' + error.message, 'error');
+        } else {
+          alert('Error stopping auto-scan: ' + error.message);
+        }
       }
     }
 
@@ -1777,7 +1819,12 @@
     }
 
     function viewHistory() {
-      alert('History feature coming soon!');
+      const msg = 'History feature coming soon!';
+      if (typeof showToast === 'function') {
+        showToast(msg, 'info');
+      } else {
+        alert(msg);
+      }
     }
 
     // Trading Rules functions
@@ -1920,14 +1967,28 @@
         const result = await response.json();
         
         if (result.success) {
-          alert('✅ Trading rules saved successfully!');
+          if (typeof showToast === 'function') {
+            showToast('✅ Trading rules saved successfully!', 'success');
+          } else {
+            alert('✅ Trading rules saved successfully!');
+          }
           toggleEditMode(); // Switch back to view mode
           loadTradingRules(); // Reload to show updated rules
         } else {
-          alert('❌ Error saving rules: ' + (result.error || 'Unknown error'));
+          const msg = '❌ Error saving rules: ' + (result.error || 'Unknown error');
+          if (typeof showToast === 'function') {
+            showToast(msg, 'error');
+          } else {
+            alert(msg);
+          }
         }
       } catch (error) {
-        alert('❌ Error saving rules: ' + error.message);
+        const msg = '❌ Error saving rules: ' + error.message;
+        if (typeof showToast === 'function') {
+          showToast(msg, 'error');
+        } else {
+          alert(msg);
+        }
         console.error('Error saving trading rules:', error);
       }
     }
@@ -1944,7 +2005,12 @@
       
       if (!panel) {
         console.error('❌ Trade monitoring panel not found in DOM');
-        alert('❌ Trade monitoring panel not found. Please refresh the page.');
+        const msg = '❌ Trade monitoring panel not found. Please refresh the page.';
+        if (typeof showToast === 'function') {
+          showToast(msg, 'error');
+        } else {
+          alert(msg);
+        }
         return;
       }
       
@@ -2006,7 +2072,12 @@
       try {
         const slider = document.getElementById('proximitySlider');
         if (!slider) {
-          alert('❌ Slider not found');
+          const msg = '❌ Slider not found';
+          if (typeof showToast === 'function') {
+            showToast(msg, 'error');
+          } else {
+            alert(msg);
+          }
           return;
         }
         
@@ -2021,13 +2092,28 @@
         const result = await response.json();
         
         if (result.success) {
-          alert(`✅ ${result.message}\n\nThe bot will now trigger AI evaluation when trades are within ${threshold}% of DCA, Stop Loss, or Take Profit levels.`);
+          const msg = `✅ ${result.message}\nThe bot will now trigger AI evaluation when trades are within ${threshold}% of DCA, Stop Loss, or Take Profit levels.`;
+          if (typeof showToast === 'function') {
+            showToast(msg, 'success');
+          } else {
+            alert(msg);
+          }
         } else {
-          alert('❌ Failed to update threshold: ' + (result.error || 'Unknown error'));
+          const msg = '❌ Failed to update threshold: ' + (result.error || 'Unknown error');
+          if (typeof showToast === 'function') {
+            showToast(msg, 'error');
+          } else {
+            alert(msg);
+          }
         }
       } catch (error) {
         console.error('❌ Error saving proximity threshold:', error);
-        alert('❌ Error saving settings: ' + error.message);
+        const msg = '❌ Error saving settings: ' + error.message;
+        if (typeof showToast === 'function') {
+          showToast(msg, 'error');
+        } else {
+          alert(msg);
+        }
       }
     }
 
@@ -2410,7 +2496,12 @@
           btn.style.background = 'linear-gradient(135deg, #22c55e, #16a34a)';
           
           // Show success message
-          alert(`✅ AI Re-evaluation Complete!\n\n${result.message || 'Evaluation results sent to Telegram'}`);
+          const msg = `✅ AI Re-evaluation Complete! ${result.message || 'Evaluation results sent to Telegram.'}`;
+          if (typeof showToast === 'function') {
+            showToast(msg, 'success');
+          } else {
+            alert(msg);
+          }
           
           setTimeout(() => {
             btn.textContent = originalText;
@@ -2423,7 +2514,12 @@
         console.error('Evaluation error:', error);
         btn.textContent = '❌ Error';
         btn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
-        alert(`❌ Evaluation Failed: ${error.message}`);
+        const msg = `❌ Evaluation Failed: ${error.message}`;
+        if (typeof showToast === 'function') {
+          showToast(msg, 'error');
+        } else {
+          alert(msg);
+        }
         
         setTimeout(() => {
           btn.textContent = originalText;
@@ -2700,13 +2796,27 @@
         });
         
         if (response.ok) {
-          alert('✅ Settings saved!');
+          if (typeof showToast === 'function') {
+            showToast('✅ Monitoring settings saved!', 'success');
+          } else {
+            alert('✅ Settings saved!');
+          }
           closeTriggerSettings();
         } else {
-          alert('❌ Failed to save settings');
+          const msg = '❌ Failed to save settings';
+          if (typeof showToast === 'function') {
+            showToast(msg, 'error');
+          } else {
+            alert(msg);
+          }
         }
       } catch (error) {
-        alert('❌ Error: ' + error.message);
+        const msg = '❌ Error: ' + error.message;
+        if (typeof showToast === 'function') {
+          showToast(msg, 'error');
+        } else {
+          alert(msg);
+        }
       }
     }
     
@@ -2860,5 +2970,36 @@
       <button onclick="handleSaveTriggerSettings()" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #6366f1, #22d3ee); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">💾 Save Settings</button>
     </div>
   </div>
+
+<!-- Toastify CSS (for toast notifications) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+
+<!-- Alpine.js (for simple UI state) -->
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+<!-- Toastify JS -->
+<script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+
+<script>
+  function showToast(message, type = 'info') {
+    const bg =
+      type === 'success'
+        ? "linear-gradient(to right, #22c55e, #16a34a)"
+        : type === 'error'
+        ? "linear-gradient(to right, #ef4444, #b91c1c)"
+        : "linear-gradient(to right, #3b82f6, #1d4ed8)";
+
+    Toastify({
+      text: message,
+      duration: 4000,
+      gravity: "top",
+      position: "right",
+      close: true,
+      stopOnFocus: true,
+      backgroundColor: bg,
+    }).showToast();
+  }
+</script>
+
 </body>
 </html>
