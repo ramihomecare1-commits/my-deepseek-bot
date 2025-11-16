@@ -1320,50 +1320,26 @@ Reason: ${newReason?.substring(0, 200)}`);
         return { handled: true, message: 'Existing trade managed' };
       }
 
-      // No existing trade or position was closed - create new trade
-      // Calculate position size based on portfolio
-      const portfolioValue = this.getPortfolioValue();
-      const positionSize = portfolioValue * 0.02; // 2% of portfolio
-      const quantity = positionSize / price;
-
-      const trade = {
-        id: `${Date.now()}_${symbol}`,
+      // No existing trade or position was closed - create new trade using the unified trade model
+      // Delegate to addActiveTrade so trades show correctly in the dashboard and DCA logic
+      await this.addActiveTrade({
         symbol,
+        name: symbol,
+        id: symbol.toLowerCase(),
         action,
+        // Raw signal price and derived levels
+        price,
         entryPrice: price,
-        quantity,
-        positionSize,
-        stopLoss: price * (1 - stopLoss / 100),
-        takeProfit: price * (1 + takeProfit / 100),
+        takeProfit: price * (1 + (takeProfit || 0) / 100),
+        stopLoss: price * (1 - (stopLoss || 0) / 100),
+        expectedGainPercent: typeof takeProfit === 'number' ? takeProfit : 5,
         reason,
-        confidence,
-        source,
-        timestamp: new Date(),
-        status: 'ACTIVE'
-      };
+        insights: [],
+        dataSource: source || 'monitoring'
+      });
 
-      this.activeTrades.push(trade);
-      await saveTrades(this.activeTrades);
-
-      console.log(`📝 Paper trade executed: ${action} ${symbol} @ $${price}`);
-      console.log(`   Position: ${quantity.toFixed(4)} units ($${positionSize.toFixed(2)})`);
-      console.log(`   Stop Loss: $${trade.stopLoss.toFixed(2)}`);
-      console.log(`   Take Profit: $${trade.takeProfit.toFixed(2)}`);
-
-      // Send notification
-      await sendTelegramMessage(`📝 Paper Trade Executed
-
-${action} ${symbol} @ $${price}
-Position: ${quantity.toFixed(4)} units
-Size: $${positionSize.toFixed(2)}
-Stop Loss: $${trade.stopLoss.toFixed(2)} (-${stopLoss}%)
-Take Profit: $${trade.takeProfit.toFixed(2)} (+${takeProfit}%)
-
-Reason: ${reason}
-Confidence: ${(confidence * 100).toFixed(0)}%
-Source: ${source}`);
-
-      return { handled: false, trade };
+      console.log(`📝 Paper trade executed via addActiveTrade: ${action} ${symbol} @ $${price}`);
+      return { handled: false };
 
     } catch (error) {
       console.log('⚠️ Error executing paper trade:', error.message);

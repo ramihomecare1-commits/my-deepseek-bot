@@ -121,8 +121,8 @@ Be strict: if more than ${config.EVALUATION_DEDUPLICATION_THRESHOLD || 50}% of c
     if (!jsonMatch) throw new Error('No JSON found in AI response');
 
     const parsed = JSON.parse(jsonMatch[0]);
-    const originalSize = JSON.stringify(newEval).length;
-    const newInfoSize = JSON.stringify(parsed.newInfo || {}).length;
+    const originalSize = (JSON.stringify(newEval) || '').length;
+    const newInfoSize = (JSON.stringify(parsed.newInfo || {}) || '').length;
     const reduction =
       originalSize > 0
         ? Number(((originalSize - newInfoSize) / originalSize * 100).toFixed(1))
@@ -212,8 +212,8 @@ async function compareAndExtractNewNews(newArticles, symbol) {
       }
     }
 
-    const originalSize = JSON.stringify(newArticles).length;
-    const newSize = JSON.stringify(uniques).length;
+    const originalSize = (JSON.stringify(newArticles) || '').length;
+    const newSize = (JSON.stringify(uniques) || '').length;
     const reduction =
       originalSize > 0
         ? Number(((originalSize - newSize) / originalSize * 100).toFixed(1))
