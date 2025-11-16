@@ -1286,6 +1286,10 @@
     
     // API endpoints
     const API_BASE = '/api';
+    
+    // Initialize currentMode early to avoid temporal dead zone issues
+    let currentMode = 'ai'; // Track current monitoring mode (AI or algorithmic)
+    
     const actionConfirmations = {
       start: 'Start automatic scanning with the current interval?',
       stop: 'Stop the current auto-scan session?',
@@ -2759,8 +2763,6 @@
       document.getElementById('trigger-settings-modal').style.display = 'none';
     }
     
-    let currentMode = 'ai'; // Track current mode
-    
     async function loadTriggerSettings() {
       try {
         const response = await fetch(API_BASE + '/trigger-settings');
@@ -2829,6 +2831,13 @@
     async function saveTriggerSettings() {
       console.log('💾 saveTriggerSettings function called!');
       console.log('💾 Saving trigger settings...');
+      
+      // Ensure currentMode is defined (fallback to 'ai' if not set)
+      if (typeof currentMode === 'undefined') {
+        console.warn('⚠️ currentMode was undefined, defaulting to "ai"');
+        currentMode = 'ai';
+      }
+      
       console.log('Current mode before save:', currentMode);
       
       const settings = {
@@ -2838,7 +2847,7 @@
         minPriceChange: parseFloat(document.getElementById('min-price-change').value),
         minTriggers: parseInt(document.getElementById('min-triggers').value),
         requireVolume: document.getElementById('require-volume').checked,
-        monitoringMode: currentMode
+        monitoringMode: currentMode || 'ai' // Double safety check
       };
       
       console.log('Settings to save:', settings);
