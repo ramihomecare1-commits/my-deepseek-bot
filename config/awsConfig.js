@@ -1,5 +1,13 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, ScanCommand, QueryCommand, PutCommand, GetCommand, UpdateCommand, BatchWriteCommand } = require('@aws-sdk/lib-dynamodb');
+const {
+  DynamoDBDocumentClient,
+  ScanCommand,
+  QueryCommand,
+  PutCommand,
+  GetCommand,
+  UpdateCommand,
+  BatchWriteCommand
+} = require('@aws-sdk/lib-dynamodb');
 
 // AWS Configuration
 const awsConfig = {
@@ -31,10 +39,19 @@ module.exports = {
   UpdateCommand,
   BatchWriteCommand,
   TABLES: {
+    // Stores coin/trade AI evaluations
     AI_EVALUATIONS: 'aiEvaluations',
+    // Stores news articles
     NEWS_ARTICLES: 'newsArticles',
+    // Stores open / active trades
     ACTIVE_TRADES: 'activeTrades',
-    CLOSED_TRADES: 'closedTrades'
+    // Stores closed trades / history
+    CLOSED_TRADES: 'closedTrades',
+    // NEW: Stores long‑term chat history with Telegram (per chatId)
+    // Recommended DynamoDB schema:
+    //   Partition key: chatId (String)
+    //   Sort key: timestamp (Number)
+    AI_CONVERSATIONS: 'aiConversations'
   }
 };
 

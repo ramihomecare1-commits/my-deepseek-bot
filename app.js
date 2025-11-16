@@ -153,6 +153,38 @@ async function initializeBotAsync() {
 // API routes
 app.use('/api', apiRoutes);
 
+// Telegram webhook for chatting with Premium AI
+app.post('/telegram/webhook', express.json(), async (req, res) => {
+  try {
+    const update = req.body || {};
+    const message = update.message;
+
+    // Only handle normal text messages
+    if (!message || !message.text || !message.chat || !message.chat.id) {
+      return res.status(200).send('ignored');
+    }
+
+    const chatId = String(message.chat.id);
+    const text = (message.text || '').trim();
+
+    // Lazy-load to avoid circular deps at startup
+    const conversationService = require('./services/conversationService');
+
+    if (text === '/start' || text === '/help') {
+      await conversationService.sendWelcomeMessage(chatId);
+    } else if (text === '/reset') {
+      await conversationService.resetConversation(chatId);
+    } else {
+      await conversationService.handleUserMessage(chatId, text);
+    }
+
+    return res.status(200).send('ok');
+  } catch (error) {
+    console.error('❌ Telegram webhook error:', error.message);
+    return res.status(200).send('error');
+  }
+});
+
 // Simple root route
 app.get('/', (req, res) => {
   res.send(`
