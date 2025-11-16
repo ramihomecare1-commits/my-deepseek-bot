@@ -2832,16 +2832,34 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 trade.dcaQuantity = dcaResult.executedQty;
                 
                 // Update average entry price (weighted average)
-                const totalQuantity = (trade.quantity || 1) + dcaResult.executedQty;
-                trade.averageEntryPrice = ((avgEntry * (trade.quantity || 1)) + (dcaResult.price * dcaResult.executedQty)) / totalQuantity;
+                const oldQuantity = trade.quantity || 1;
+                const totalQuantity = oldQuantity + dcaResult.executedQty;
+                const oldAvgEntry = avgEntry;
+                trade.averageEntryPrice = ((avgEntry * oldQuantity) + (dcaResult.price * dcaResult.executedQty)) / totalQuantity;
                 trade.quantity = totalQuantity;
                 
-                notificationMessage = `💰 DCA #${trade.dcaCount} EXECUTED: ${trade.symbol} bought ${dcaResult.executedQty} at $${dcaResult.price.toFixed(2)}. New avg entry: $${trade.averageEntryPrice.toFixed(2)}`;
+                // Recalculate P&L based on new average entry
+                const pnlFromAvg = currentPrice - trade.averageEntryPrice;
+                const pnlPercentFromAvg = (pnlFromAvg / trade.averageEntryPrice) * 100;
+                trade.pnl = pnlFromAvg;
+                trade.pnlPercent = pnlPercentFromAvg;
+                
+                // Update TP/SL percentages based on new average entry (optional - keep original targets or adjust)
+                // For now, we keep the original TP/SL price targets but recalculate the percentage gains
+                const tpGainPercent = ((trade.takeProfit - trade.averageEntryPrice) / trade.averageEntryPrice) * 100;
+                const slLossPercent = ((trade.averageEntryPrice - trade.stopLoss) / trade.averageEntryPrice) * 100;
+                
+                notificationMessage = `💰 DCA #${trade.dcaCount} EXECUTED: ${trade.symbol} bought ${dcaResult.executedQty} at $${dcaResult.price.toFixed(2)}\n` +
+                  `   📊 Avg Entry: $${oldAvgEntry.toFixed(2)} → $${trade.averageEntryPrice.toFixed(2)}\n` +
+                  `   📦 Position Size: ${oldQuantity.toFixed(4)} → ${totalQuantity.toFixed(4)}\n` +
+                  `   💹 Current P&L: ${pnlPercentFromAvg >= 0 ? '+' : ''}${pnlPercentFromAvg.toFixed(2)}%\n` +
+                  `   🎯 TP Target: ${tpGainPercent.toFixed(2)}% | SL Risk: ${slLossPercent.toFixed(2)}%`;
                 notificationLevel = 'warning';
                 notificationNeeded = true;
                 trade.dcaNotified = true;
                   trade.lastDcaAt = now;
                 addLogEntry(`💰 DCA #${trade.dcaCount} EXECUTED: ${trade.symbol} - Order ID: ${dcaResult.orderId}`, 'info');
+                addLogEntry(`📊 ${trade.symbol} metrics updated: Avg Entry $${trade.averageEntryPrice.toFixed(2)}, Size ${totalQuantity.toFixed(4)}, P&L ${pnlPercentFromAvg.toFixed(2)}%`, 'info');
               } else if (!dcaResult.skipped) {
                 trade.status = 'DCA_HIT';
                 trade.dcaNotified = true;
@@ -2946,16 +2964,33 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 trade.dcaQuantity = dcaResult.executedQty;
                 
                 // Update average entry price (weighted average for short)
-                const totalQuantity = (trade.quantity || 1) + dcaResult.executedQty;
-                trade.averageEntryPrice = ((avgEntry * (trade.quantity || 1)) + (dcaResult.price * dcaResult.executedQty)) / totalQuantity;
+                const oldQuantity = trade.quantity || 1;
+                const totalQuantity = oldQuantity + dcaResult.executedQty;
+                const oldAvgEntry = avgEntry;
+                trade.averageEntryPrice = ((avgEntry * oldQuantity) + (dcaResult.price * dcaResult.executedQty)) / totalQuantity;
                 trade.quantity = totalQuantity;
                 
-                notificationMessage = `💰 DCA #${trade.dcaCount} EXECUTED (SHORT): ${trade.symbol} shorted ${dcaResult.executedQty} more at $${dcaResult.price.toFixed(2)}. New avg entry: $${trade.averageEntryPrice.toFixed(2)}`;
+                // Recalculate P&L based on new average entry (SHORT: profit when price goes down)
+                const pnlFromAvg = trade.averageEntryPrice - currentPrice;
+                const pnlPercentFromAvg = (pnlFromAvg / trade.averageEntryPrice) * 100;
+                trade.pnl = pnlFromAvg;
+                trade.pnlPercent = pnlPercentFromAvg;
+                
+                // Update TP/SL percentages based on new average entry
+                const tpGainPercent = ((trade.averageEntryPrice - trade.takeProfit) / trade.averageEntryPrice) * 100;
+                const slLossPercent = ((trade.stopLoss - trade.averageEntryPrice) / trade.averageEntryPrice) * 100;
+                
+                notificationMessage = `💰 DCA #${trade.dcaCount} EXECUTED (SHORT): ${trade.symbol} shorted ${dcaResult.executedQty} more at $${dcaResult.price.toFixed(2)}\n` +
+                  `   📊 Avg Entry: $${oldAvgEntry.toFixed(2)} → $${trade.averageEntryPrice.toFixed(2)}\n` +
+                  `   📦 Position Size: ${oldQuantity.toFixed(4)} → ${totalQuantity.toFixed(4)}\n` +
+                  `   💹 Current P&L: ${pnlPercentFromAvg >= 0 ? '+' : ''}${pnlPercentFromAvg.toFixed(2)}%\n` +
+                  `   🎯 TP Target: ${tpGainPercent.toFixed(2)}% | SL Risk: ${slLossPercent.toFixed(2)}%`;
                 notificationLevel = 'warning';
                 notificationNeeded = true;
                 trade.dcaNotified = true;
                   trade.lastDcaAt = now;
                 addLogEntry(`💰 DCA #${trade.dcaCount} EXECUTED (SHORT): ${trade.symbol} - Order ID: ${dcaResult.orderId}`, 'info');
+                addLogEntry(`📊 ${trade.symbol} metrics updated: Avg Entry $${trade.averageEntryPrice.toFixed(2)}, Size ${totalQuantity.toFixed(4)}, P&L ${pnlPercentFromAvg.toFixed(2)}%`, 'info');
               } else if (!dcaResult.skipped) {
                 trade.status = 'DCA_HIT';
                 trade.dcaNotified = true;
@@ -3220,7 +3255,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         console.log(`📦 Processing trade batch ${batchIdx + 1}/${tradeBatches.length} (${batch.length} trades)...`);
         
         try {
-          const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${batch.length} open trades and provide your recommendation for each.
+        const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${batch.length} open trades and provide your recommendation for each.
 IMPORTANT: Consider technical analysis, recent news, AND historical context when making recommendations.
 - Review previous evaluations to see if patterns are consistent or changing
 - Historical news can provide context for current price movements
@@ -3287,12 +3322,13 @@ For each trade, provide:
 1. Recommendation: HOLD, CLOSE, or ADJUST
 2. Confidence: 0.0 to 1.0
 3. Reason: Brief explanation
-4. If ADJUST: provide newTakeProfit and/or newStopLoss (optional - only if adjustment needed)
-5. If CLOSE: consider DCA first - if DCA is still available (dcaCount < 5), suggest DCA instead of closing
+4. If ADJUST: provide newTakeProfit and/or newStopLoss and/or newDcaPrice (DCA level) (optional - only if adjustment needed)
+5. If CLOSE: consider DCA/addPosition first - if DCA is still available (dcaCount < 5), suggest DCA instead of closing
 
 IMPORTANT RULES:
 - Before recommending CLOSE on a losing trade, check if DCA is available (dcaCount < 5). DCA is often better than closing at a loss.
-- For ADJUST: Only provide newTakeProfit or newStopLoss if you want to change them. Leave null if no change needed.
+- For ADJUST: You can adjust Take Profit (newTakeProfit), Stop Loss (newStopLoss), and/or DCA Price (newDcaPrice). Only provide values you want to change. Leave null if no change needed.
+- For DCA Price (newDcaPrice): This is the price level where we add to the position. For BUY trades, DCA should be BELOW current price (buy the dip). For SELL trades, DCA should be ABOVE current price (short the rally).
 - For CLOSE: Only recommend if trade is profitable OR if all DCAs are exhausted (dcaCount >= 5) and loss is significant.
 
 Return JSON array format:
@@ -3301,9 +3337,10 @@ Return JSON array format:
     "symbol": "BTC",
     "recommendation": "ADJUST",
     "confidence": 0.75,
-    "reason": "Price approaching take profit, adjusting TP higher to capture more gains",
+    "reason": "Price approaching take profit, adjusting TP higher to capture more gains. Also adjusting DCA level to better support level.",
     "newTakeProfit": 101000.00,
-    "newStopLoss": null
+    "newStopLoss": null,
+    "newDcaPrice": 94500.00
   },
   {
     "symbol": "ETH",
@@ -3311,7 +3348,8 @@ Return JSON array format:
     "confidence": 0.85,
     "reason": "Take profit reached, closing position to lock in gains",
     "newTakeProfit": null,
-    "newStopLoss": null
+    "newStopLoss": null,
+    "newDcaPrice": null
   }
 ]`;
 
@@ -3490,7 +3528,7 @@ Return JSON array format:
       if (trade && recommendation !== 'HOLD') {
         try {
           if (recommendation === 'ADJUST') {
-            // Adjust take profit and/or stop loss
+            // Adjust take profit, stop loss, and/or DCA price
             let adjusted = false;
             if (rec.newTakeProfit && typeof rec.newTakeProfit === 'number' && rec.newTakeProfit > 0) {
               const oldTP = trade.takeProfit;
@@ -3505,6 +3543,16 @@ Return JSON array format:
               adjusted = true;
               addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${rec.newStopLoss.toFixed(2)}`, 'info');
               telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${rec.newStopLoss.toFixed(2)}\n`;
+            }
+            // Handle both newDcaPrice (new field) and newAddPosition (legacy field) for backward compatibility
+            const newDcaValue = rec.newDcaPrice || rec.newAddPosition;
+            if (newDcaValue && typeof newDcaValue === 'number' && newDcaValue > 0) {
+              const oldDca = trade.addPosition || trade.dcaPrice || trade.entryPrice;
+              trade.addPosition = newDcaValue;
+              trade.dcaPrice = newDcaValue; // Store in both fields for consistency
+              adjusted = true;
+              addLogEntry(`🟡 ${symbol}: AI adjusted DCA Price from $${oldDca.toFixed(2)} to $${newDcaValue.toFixed(2)}`, 'info');
+              telegramMessage += `   ⚙️ DCA: $${oldDca.toFixed(2)} → $${newDcaValue.toFixed(2)}\n`;
             }
             if (adjusted) {
               await saveTrades(this.activeTrades);

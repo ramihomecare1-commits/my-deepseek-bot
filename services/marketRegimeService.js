@@ -42,7 +42,7 @@ function detectMarketRegime(priceHistory, globalMetrics = null) {
   // Determine regime
   const regime = determineRegime(trendAnalysis, volatilityAnalysis, momentumAnalysis, globalMetrics);
 
-  return {
+    return {
     regime: regime.type,
     confidence: regime.confidence,
     indicators: {
@@ -52,9 +52,9 @@ function detectMarketRegime(priceHistory, globalMetrics = null) {
     },
     tradingStrategy: getRegimeStrategy(regime.type),
     timestamp: new Date()
-  };
-}
-
+    };
+  }
+  
 /**
  * Analyze price trend
  * @param {Array} prices - Recent price array
@@ -106,7 +106,7 @@ function analyzeVolatility(prices) {
   const squaredDiffs = returns.map(r => Math.pow(r - mean, 2));
   const variance = squaredDiffs.reduce((sum, d) => sum + d, 0) / squaredDiffs.length;
   const stdDev = Math.sqrt(variance) * 100; // As percentage
-
+  
   let level = 'medium';
   if (stdDev > 5) {
     level = 'extreme';
@@ -166,7 +166,7 @@ function analyzeMomentum(prices) {
 function determineRegime(trend, volatility, momentum, globalMetrics) {
   let score = 0;
   let confidence = 0;
-
+  
   // Extreme volatility overrides other factors
   if (volatility.level === 'extreme') {
     return {
@@ -232,7 +232,7 @@ function determineRegime(trend, volatility, momentum, globalMetrics) {
 
   // Clamp confidence
   confidence = Math.max(0, Math.min(1, confidence));
-
+  
   return {
     type: type,
     confidence: Number(confidence.toFixed(2))

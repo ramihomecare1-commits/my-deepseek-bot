@@ -850,7 +850,7 @@
       <div class="action-grid">
           <div class="action-card">
             <h4>Primary Actions</h4>
-            <div class="button-group">
+        <div class="button-group">
               <button class="btn-success" onclick="handleStartAutoScan()">🚀 Auto-Scan</button>
               <button class="btn-danger" onclick="handleStopAutoScan()">🛑 Stop</button>
               <button class="btn-primary" onclick="handleManualScan()">🔍 Scan Now</button>
@@ -865,10 +865,10 @@
             <h4>Tools & Monitoring</h4>
             <div class="button-group">
               <button class="btn-telegram" onclick="handleTestTelegram(event)">📱 Telegram Test</button>
-              <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
+          <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
               <button class="btn-secondary" onclick="toggleTradeMonitoring()" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; font-weight: 600;">🎯 Monitoring Panel</button>
               <button class="btn-primary" onclick="handleEvaluateTrades()">🤖 Re-evaluate Trades</button>
-            </div>
+        </div>
           </div>
         </div>
         <div style="font-size: 9px; color: #64748b; margin-top: 6px; text-align: center;">UI v3.0 - Compact</div>
@@ -1310,8 +1310,8 @@
       const button = evt?.target || event?.target;
       try {
         if (button) {
-          button.disabled = true;
-          button.textContent = '⏳ Testing...';
+        button.disabled = true;
+        button.textContent = '⏳ Testing...';
         }
         
         const response = await fetch(API_BASE + '/test-telegram', { method: 'POST' });
@@ -1321,7 +1321,7 @@
           if (typeof showToast === 'function') {
             showToast('✅ ' + result.message, 'success');
           } else {
-            alert('✅ ' + result.message);
+          alert('✅ ' + result.message);
           }
         } else {
           const msg = '❌ ' + (result.message || 'Failed to send test notification');
@@ -1343,8 +1343,8 @@
         }
       } finally {
         if (button) {
-          button.disabled = false;
-          button.textContent = '📱 Test Telegram';
+        button.disabled = false;
+        button.textContent = '📱 Test Telegram';
         }
       }
     }
@@ -1395,7 +1395,7 @@
         if (typeof showToast === 'function') {
           showToast('🔍 Diagnostics completed. See console for full details.', 'info');
         } else {
-          alert(message);
+        alert(message);
         }
         console.log('Full diagnostics:', data);
         
@@ -1403,7 +1403,7 @@
         if (typeof showToast === 'function') {
           showToast('❌ Error running diagnostics: ' + error.message, 'error');
         } else {
-          alert('❌ Error running diagnostics: ' + error.message);
+        alert('❌ Error running diagnostics: ' + error.message);
         }
         console.error('Diagnostics error:', error);
       }
@@ -1417,7 +1417,7 @@
           if (typeof showToast === 'function') {
             showToast('Auto-scan is already running!', 'info');
           } else {
-            alert('Auto-scan is already running!');
+          alert('Auto-scan is already running!');
           }
           return;
         }
@@ -1428,7 +1428,7 @@
         if (typeof showToast === 'function') {
           showToast('Error starting auto-scan: ' + error.message, 'error');
         } else {
-          alert('Error starting auto-scan: ' + error.message);
+        alert('Error starting auto-scan: ' + error.message);
         }
       }
     }
@@ -1489,7 +1489,7 @@
         if (typeof showToast === 'function') {
           showToast('Error stopping auto-scan: ' + error.message, 'error');
         } else {
-          alert('Error stopping auto-scan: ' + error.message);
+        alert('Error stopping auto-scan: ' + error.message);
         }
       }
     }
@@ -1688,9 +1688,9 @@
         } else if (data.batchAI && data.batchAI.results && Object.keys(data.batchAI.results).length > 0) {
           const batchAI = data.batchAI;
           if (aiStatus) {
-            aiStatus.textContent = 'Complete';
-            aiStatus.style.background = 'rgba(34, 197, 94, 0.2)';
-            aiStatus.style.color = '#22c55e';
+          aiStatus.textContent = 'Complete';
+          aiStatus.style.background = 'rgba(34, 197, 94, 0.2)';
+          aiStatus.style.color = '#22c55e';
           }
           
           const results = batchAI.results;
@@ -1748,12 +1748,12 @@
           // Stats elements removed
         } else {
           if (aiStatus) {
-            aiStatus.textContent = 'Ready';
-            aiStatus.style.background = 'rgba(148, 163, 184, 0.2)';
-            aiStatus.style.color = '#94a3b8';
+          aiStatus.textContent = 'Ready';
+          aiStatus.style.background = 'rgba(148, 163, 184, 0.2)';
+          aiStatus.style.color = '#94a3b8';
           }
           if (aiContent) {
-            aiContent.innerHTML = `
+          aiContent.innerHTML = `
             <div style="font-size: 2em; margin-bottom: 10px;">🤖</div>
             <div>Waiting for batch AI analysis...</div>
             <div style="font-size: 0.85em; color: #94a3b8; margin-top: 10px;">All coins analyzed together in one API call</div>
@@ -1934,7 +1934,7 @@
           if (typeof showToast === 'function') {
             showToast('✅ Trading rules saved successfully!', 'success');
           } else {
-            alert('✅ Trading rules saved successfully!');
+          alert('✅ Trading rules saved successfully!');
           }
           toggleEditMode(); // Switch back to view mode
           loadTradingRules(); // Reload to show updated rules
@@ -2113,11 +2113,11 @@
         html += '<th>Coin</th>';
         html += '<th>Action</th>';
         html += '<th>Position</th>';
-        html += '<th>Entry</th>';
+        html += '<th>Entry / Avg</th>';
         html += '<th>Current</th>';
         html += '<th>TP</th>';
         html += '<th>SL</th>';
-        html += '<th>DCA</th>';
+        html += '<th>DCA Price</th>';
         html += '<th>P&L</th>';
         html += '<th>Status</th>';
         html += '<th>Opened</th>';
@@ -2134,15 +2134,28 @@
           const quantity = trade.quantity || (100 / trade.entryPrice); // $100 position size
           const positionValue = quantity * trade.currentPrice; // Current position value
           
+          // Show average entry if DCA has been executed
+          const dcaCount = trade.dcaCount || 0;
+          const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+          const entryDisplay = dcaCount > 0 
+            ? `$${Number(trade.entryPrice).toFixed(2)}<br><span class="trade-time-small" style="color: #f59e0b;">Avg: $${Number(avgEntry).toFixed(2)}</span>`
+            : `$${Number(trade.entryPrice).toFixed(2)}`;
+          
+          // Show DCA count if executed
+          const dcaPrice = trade.addPosition || trade.dcaPrice || trade.entryPrice;
+          const dcaDisplay = dcaCount > 0
+            ? `$${Number(dcaPrice).toFixed(2)}<br><span class="trade-time-small" style="color: #10b981;">DCA ${dcaCount}/5</span>`
+            : `$${Number(dcaPrice).toFixed(2)}`;
+          
           html += '<tr>';
           html += `<td><span class="trade-coin-name">${trade.name}</span><br><span class="trade-time-small">${trade.symbol}</span></td>`;
           html += `<td><span class="trade-action-badge ${actionBadgeClass}">${trade.action}</span></td>`;
           html += `<td class="trade-price">${quantity.toFixed(6)}<br><span class="trade-time-small">$${positionValue.toFixed(2)}</span></td>`;
-          html += `<td class="trade-price">$${Number(trade.entryPrice).toFixed(2)}</td>`;
+          html += `<td class="trade-price">${entryDisplay}</td>`;
           html += `<td class="trade-price">$${Number(trade.currentPrice).toFixed(2)}</td>`;
           html += `<td class="trade-price">$${Number(trade.takeProfit).toFixed(2)}</td>`;
           html += `<td class="trade-price">$${Number(trade.stopLoss).toFixed(2)}</td>`;
-          html += `<td class="trade-price">$${Number(trade.addPosition).toFixed(2)}</td>`;
+          html += `<td class="trade-price">${dcaDisplay}</td>`;
           html += `<td><span class="trade-pnl-value ${pnlClass}">${pnlSign}$${Number(trade.pnl).toFixed(2)}<br>${pnlSign}${trade.pnlPercent}%</span></td>`;
           html += `<td><span class="trade-status-badge ${statusBadgeClass}">${trade.status}</span></td>`;
           html += `<td class="trade-time-small">${new Date(trade.entryTime).toLocaleString()}</td>`;
@@ -2290,15 +2303,15 @@
         // P&L with color coding
         const totalPnl = portfolio.totalPnl || 0;
         if (pnlEl) {
-          pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${Number(totalPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-          pnlEl.className = 'portfolio-metric-value' + (totalPnl > 0 ? ' positive' : totalPnl < 0 ? ' negative' : '');
+        pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${Number(totalPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        pnlEl.className = 'portfolio-metric-value' + (totalPnl > 0 ? ' positive' : totalPnl < 0 ? ' negative' : '');
         }
         
         // ROI with color coding
         const roi = portfolio.roi || 0;
         if (roiEl) {
-          roiEl.textContent = `${roi >= 0 ? '+' : ''}${Number(roi).toFixed(2)}%`;
-          roiEl.className = 'portfolio-metric-value' + (roi > 0 ? ' positive' : roi < 0 ? ' negative' : '');
+        roiEl.textContent = `${roi >= 0 ? '+' : ''}${Number(roi).toFixed(2)}%`;
+        roiEl.className = 'portfolio-metric-value' + (roi > 0 ? ' positive' : roi < 0 ? ' negative' : '');
         }
         
         // Win rate
@@ -2518,35 +2531,35 @@
         if (loading) loading.style.display = 'none';
         if (empty) empty.style.display = 'none';
         if (content) content.style.display = 'block';
-        
-        // Update metrics
-        document.getElementById('analytics-sharpe').textContent = analytics.sharpeRatio.toFixed(2);
-        document.getElementById('analytics-drawdown').textContent = `${analytics.maxDrawdownPercent.toFixed(2)}%`;
+          
+          // Update metrics
+          document.getElementById('analytics-sharpe').textContent = analytics.sharpeRatio.toFixed(2);
+          document.getElementById('analytics-drawdown').textContent = `${analytics.maxDrawdownPercent.toFixed(2)}%`;
         document.getElementById('analytics-holding').textContent = `${analytics.holdingTime?.avgDays?.toFixed(1) || 0} days`;
         document.getElementById('analytics-profit-factor').textContent = (analytics.profitFactor || 0).toFixed(2);
         document.getElementById('analytics-expectancy').textContent = (analytics.expectancy || 0).toFixed(2);
-        
-        if (analytics.bestTrades && analytics.bestTrades.length > 0) {
-          const best = analytics.bestTrades[0];
-          document.getElementById('analytics-best').textContent = `${best.symbol}: +${best.pnlPercent.toFixed(2)}%`;
-        }
-        
-        // Update win rate by coin
-        const winRateContainer = document.getElementById('analytics-winrate-by-coin');
-        if (analytics.winRateByCoin && Object.keys(analytics.winRateByCoin).length > 0) {
-          let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;">';
-          Object.entries(analytics.winRateByCoin)
-            .sort((a, b) => b[1].winRate - a[1].winRate)
-            .forEach(([symbol, stats]) => {
-              html += `<div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">
-                <div style="font-weight: 600; color: #0f172a;">${symbol}</div>
-                <div style="font-size: 1.2em; font-weight: 700; color: ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">${stats.winRate.toFixed(1)}%</div>
-                <div style="font-size: 0.8em; color: #64748b;">${stats.wins}W/${stats.losses}L</div>
-              </div>`;
-            });
-          html += '</div>';
-          winRateContainer.innerHTML = html;
-        } else {
+          
+          if (analytics.bestTrades && analytics.bestTrades.length > 0) {
+            const best = analytics.bestTrades[0];
+            document.getElementById('analytics-best').textContent = `${best.symbol}: +${best.pnlPercent.toFixed(2)}%`;
+          }
+          
+          // Update win rate by coin
+          const winRateContainer = document.getElementById('analytics-winrate-by-coin');
+          if (analytics.winRateByCoin && Object.keys(analytics.winRateByCoin).length > 0) {
+            let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;">';
+            Object.entries(analytics.winRateByCoin)
+              .sort((a, b) => b[1].winRate - a[1].winRate)
+              .forEach(([symbol, stats]) => {
+                html += `<div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">
+                  <div style="font-weight: 600; color: #0f172a;">${symbol}</div>
+                  <div style="font-size: 1.2em; font-weight: 700; color: ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">${stats.winRate.toFixed(1)}%</div>
+                  <div style="font-size: 0.8em; color: #64748b;">${stats.wins}W/${stats.losses}L</div>
+                </div>`;
+              });
+            html += '</div>';
+            winRateContainer.innerHTML = html;
+          } else {
           winRateContainer.innerHTML = '<p style="color: #64748b; text-align: center;">Close a few trades to unlock win rate insights.</p>';
         }
       } catch (error) {
@@ -2763,7 +2776,7 @@
           if (typeof showToast === 'function') {
             showToast('✅ Monitoring settings saved!', 'success');
           } else {
-            alert('✅ Settings saved!');
+          alert('✅ Settings saved!');
           }
           closeTriggerSettings();
         } else {

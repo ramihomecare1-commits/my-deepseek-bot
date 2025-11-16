@@ -282,7 +282,7 @@ async function storeNews(news) {
       }));
 
       if (existing.Item) {
-        // Update existing article to add new links
+      // Update existing article to add new links
         const tradeIds = existing.Item.tradeIds || [];
         if (news.tradeId && !tradeIds.includes(news.tradeId)) {
           tradeIds.push(news.tradeId);
@@ -295,8 +295,8 @@ async function storeNews(news) {
               ':now': Date.now()
             }
           }));
-        }
-        return true;
+      }
+      return true;
       }
     } catch (getError) {
       // If get fails, continue to insert
@@ -341,7 +341,7 @@ async function storeNewsBatch(newsArray) {
       const connected = await initDynamoDB();
       if (!connected) return;
     }
-
+    
     // Group by symbol for deduplication
     const groupedBySymbol = {};
     for (const news of newsArray) {
@@ -383,13 +383,13 @@ async function storeNewsBatch(newsArray) {
           PutRequest: {
             Item: {
               url: news.url,
-              symbol: news.symbol,
-              symbols: news.symbol ? [news.symbol] : [],
-              tradeIds: news.tradeId ? [news.tradeId] : [],
-              title: news.title,
-              source: news.source,
+          symbol: news.symbol,
+          symbols: news.symbol ? [news.symbol] : [],
+          tradeIds: news.tradeId ? [news.tradeId] : [],
+          title: news.title,
+          source: news.source,
               publishedAt: news.publishedAt ? new Date(news.publishedAt).getTime() : Date.now(),
-              content: news.content || '',
+          content: news.content || '',
               storedAt: Date.now(),
               createdAt: Date.now()
             }

@@ -84,7 +84,7 @@ async function saveTradesToDynamo(trades) {
       const deleteOps = existing.Items.map(item => ({
         DeleteRequest: { Key: { id: item.id } }
       }));
-
+    
       // DynamoDB batch write (max 25 items per batch)
       const batches = [];
       for (let i = 0; i < deleteOps.length; i += 25) {
@@ -126,7 +126,7 @@ async function saveTradesToDynamo(trades) {
         }));
       }
     }
-
+    
     console.log(`💾 Saved ${trades.length} trades to DynamoDB`);
     return true;
   } catch (error) {
@@ -291,12 +291,12 @@ async function loadClosedTrades() {
           // Convert timestamps back to Date objects
           if (trade.entryTime && typeof trade.entryTime === 'number') {
             trade.entryTime = new Date(trade.entryTime);
-          }
+        }
           if (trade.closedAt && typeof trade.closedAt === 'number') {
             trade.closedAt = new Date(trade.closedAt);
-          }
+        }
           return trade;
-        });
+      });
       
       return trades;
     } catch (error) {
