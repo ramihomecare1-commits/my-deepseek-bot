@@ -286,17 +286,32 @@ async function sendTelegramMessage(message) {
   }
 
   try {
-    // Use HTML mode instead of Markdown for better compatibility
-    // Escape HTML special characters: < > &
-    const escapedMessage = message
+    // Convert Markdown to HTML (AI often returns Markdown formatting)
+    let formattedMessage = message
+      // Convert **bold** to <b>bold</b>
+      .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    
+    // Escape HTML special characters EXCEPT our <b></b> tags
+    // First, temporarily replace our <b> tags with placeholders
+    formattedMessage = formattedMessage
+      .replace(/<b>/g, '___BOLD_OPEN___')
+      .replace(/<\/b>/g, '___BOLD_CLOSE___');
+    
+    // Now escape all HTML chars
+    formattedMessage = formattedMessage
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
+    
+    // Restore our <b> tags
+    formattedMessage = formattedMessage
+      .replace(/___BOLD_OPEN___/g, '<b>')
+      .replace(/___BOLD_CLOSE___/g, '</b>');
 
     const telegramUrl = `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/sendMessage`;
     const response = await axios.post(telegramUrl, {
       chat_id: config.TELEGRAM_CHAT_ID,
-      text: escapedMessage,
+      text: formattedMessage,
       parse_mode: 'HTML',
     }, {
       timeout: 10000,
