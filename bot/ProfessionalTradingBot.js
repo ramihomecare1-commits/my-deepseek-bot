@@ -1652,45 +1652,16 @@ Source: ${source}`);
 
           console.log(`🔍 ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}%) - AI: ${analysis.aiEvaluated ? '✅' : '❌'}`);
 
+          // Only send rejection notifications for actionable signals (BUY / SELL)
+          const isActionNotifiable = analysis.action === 'BUY' || analysis.action === 'SELL';
+
           // Only add real opportunities with valid data
           if (analysis.confidence >= this.tradingRules.minConfidence && !analysis.usesMockData) {
             if (!this.applyScanFilters(analysis, options)) {
               console.log(`🚫 ${coin.symbol}: Filtered out by scan filters`);
-              
-              // Send Telegram notification about scan filter rejection
-              if (config.ENABLE_REJECTION_NOTIFICATIONS) {
-                try {
-                  const filterMessage =
-`⚠️ AI Opportunity Filtered
-
-Symbol: ${coin.symbol}
-Action: ${analysis.action}
-Confidence: ${(analysis.confidence * 100).toFixed(0)}%
-Entry: $${analysis.entryPrice?.toFixed(2) || 'N/A'}
-TP: $${analysis.takeProfit?.toFixed(2) || 'N/A'} (+${analysis.expectedGainPercent?.toFixed(1) || 'N/A'}%)
-SL: $${analysis.stopLoss?.toFixed(2) || 'N/A'}
-
-Reason: Filtered by scan filters
-
-Active Filters:
-- RSI Threshold: ${options.rsiThreshold || 'N/A'}
-- Min Triggers: ${options.minTriggers || 'N/A'}
-- Min Price Change: ${options.minPriceChange || 'N/A'}%
-- Volume Required: ${options.requireVolume ? 'Yes' : 'No'}
-
-AI Reasoning:
-${analysis.reason?.substring(0, 200) || 'No reasoning provided'}
-
-Action: Check if scan filters are too restrictive`;
-
-                  sendTelegramMessage(filterMessage).catch((err) =>
-                    console.error('⚠️ Failed to send filter notification:', err.message)
-                  );
-                } catch (notifError) {
-                  console.error('⚠️ Error creating filter notification:', notifError.message);
-                }
-              }
-              
+              // NOTE: We intentionally do NOT send Telegram notifications here anymore
+              // to avoid duplicate / noisy messages. Higher-signal rejections are
+              // handled by custom trading rules and backtest filters below.
               continue;
             }
             // Apply custom trading rules
@@ -1698,7 +1669,7 @@ Action: Check if scan filters are too restrictive`;
               console.log(`🚫 ${coin.symbol}: Does not match custom trading rules`);
               
               // Send Telegram notification with DETAILED rule diagnostics
-              if (config.ENABLE_REJECTION_NOTIFICATIONS) {
+              if (config.ENABLE_REJECTION_NOTIFICATIONS && isActionNotifiable) {
                 try {
                   // Build detailed rule check diagnostics
                   const indicators = analysis.indicators || {};
@@ -1816,7 +1787,7 @@ Fix: ${
                   console.log(`🚫 ${coin.symbol}: Filtered out - Profit Factor: ${backtestResult.profitFactor.toFixed(2)}, Win Rate: ${backtestResult.winRate.toFixed(1)}%`);
                   
                   // Send Telegram notification about backtest rejection
-                  if (config.ENABLE_REJECTION_NOTIFICATIONS) {
+                  if (config.ENABLE_REJECTION_NOTIFICATIONS && isActionNotifiable) {
                     try {
                       const backtestMessage =
 `📊 AI Opportunity Failed Backtest
