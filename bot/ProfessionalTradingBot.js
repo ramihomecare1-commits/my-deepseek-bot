@@ -82,6 +82,12 @@ class ProfessionalTradingBot {
     // Cache to avoid spamming duplicate rejection notifications
     // Structure: { 'SYMBOL:reasonType:YYYY-MM-DD': timestamp }
     this.rejectionNotificationCache = {};
+    // Cooldown for open-trade AI re-evaluation Telegram summary (ms)
+    this.openTradesReevalCooldownMs = 5 * 60 * 1000; // 5 minutes
+    this.lastOpenTradesReevalNotifiedAt = null;
+    // Cache to avoid spamming duplicate rejection notifications
+    // Structure: { 'SYMBOL:reasonType:YYYY-MM-DD': timestamp }
+    this.rejectionNotificationCache = {};
     this.selectedIntervalKey = '1h';
     this.scanIntervalMs = config.SCAN_INTERVAL_OPTIONS[this.selectedIntervalKey];
     this.scanProgress = {
@@ -3347,22 +3353,42 @@ Return JSON array format:
       telegramMessage += `   ${reason}\n\n`;
     }
     
-    // Send to Telegram
-    console.log('📤 Sending re-evaluation to Telegram...');
-    console.log(`📝 Message length: ${telegramMessage.length} characters`);
-    addLogEntry('📤 Sending re-evaluation results to Telegram...', 'info');
-    try {
-      const sent = await sendTelegramMessage(telegramMessage);
-      if (sent) {
-        console.log('✅ AI re-evaluation sent to Telegram successfully');
-        addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
-      } else {
-        console.log('⚠️ Failed to send re-evaluation to Telegram');
-        addLogEntry('⚠️ Failed to send re-evaluation to Telegram', 'warning');
+    // Send to Telegram with cooldown to avoid duplicate notifications
+    const now = Date.now();
+    const lastNotified = this.lastOpenTradesReevalNotifiedAt || 0;
+    const elapsed = now - lastNotified;
+    
+    if (elapsed < this.openTradesReevalCooldownMs) {
+      console.log(
+        `⏱️ Skipping AI re-evaluation Telegram notification (cooldown ${
+          this.openTradesReevalCooldownMs / 60000
+        }min, elapsed ${(elapsed / 1000).toFixed(1)}s)`
+      );
+      addLogEntry(
+        '⏱️ Skipped AI re-evaluation Telegram notification due to cooldown',
+        'info'
+      );
+    } else {
+      console.log('📤 Sending re-evaluation to Telegram...');
+      console.log(`📝 Message length: ${telegramMessage.length} characters`);
+      addLogEntry('📤 Sending re-evaluation results to Telegram...', 'info');
+      try {
+        const sent = await sendTelegramMessage(telegramMessage);
+        if (sent) {
+          console.log('✅ AI re-evaluation sent to Telegram successfully');
+          addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
+          this.lastOpenTradesReevalNotifiedAt = now;
+        } else {
+          console.log('⚠️ Failed to send re-evaluation to Telegram');
+          addLogEntry('⚠️ Failed to send re-evaluation to Telegram', 'warning');
+        }
+      } catch (telegramError) {
+        console.error('❌ Telegram error:', telegramError);
+        addLogEntry(
+          `⚠️ Failed to send re-evaluation to Telegram: ${telegramError.message}`,
+          'warning'
+        );
       }
-    } catch (telegramError) {
-      console.error('❌ Telegram error:', telegramError);
-      addLogEntry(`⚠️ Failed to send re-evaluation to Telegram: ${telegramError.message}`, 'warning');
     }
     
     return allRecommendations;
