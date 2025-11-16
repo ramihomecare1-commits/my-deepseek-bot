@@ -12,6 +12,67 @@
       min-height: 100vh;
       color: #1a202c;
     }
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 99;
+      backdrop-filter: blur(16px);
+      background: rgba(2, 6, 23, 0.85);
+      padding: 16px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    .top-nav h2 {
+      color: #e2e8f0;
+      font-size: 1.1em;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .top-nav .nav-links {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .top-nav .nav-links a {
+      color: #cbd5f5;
+      text-decoration: none;
+      font-size: 0.85em;
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+    }
+    .top-nav .nav-links a:hover {
+      border-color: rgba(99, 102, 241, 0.4);
+      color: #f8fafc;
+    }
+    .section-block {
+      margin-bottom: 32px;
+      scroll-margin-top: 80px;
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .section-title h3 {
+      font-size: 1.2em;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.08);
+      font-size: 0.75em;
+      color: #475569;
+      font-weight: 600;
+    }
     .container {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 380px;
@@ -148,6 +209,42 @@
       flex-wrap: wrap;
       gap: 8px;
       margin-bottom: 20px;
+    }
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 12px;
+    }
+    .action-card {
+      background: white;
+      border-radius: 16px;
+      padding: 16px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 2px 6px rgba(15,23,42,0.08);
+    }
+    .action-card h4 {
+      margin: 0;
+      font-size: 0.95em;
+      color: #475569;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .pill-list {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .pill-list span {
+      background: rgba(148, 163, 184, 0.2);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 0.75em;
+      color: #475569;
+      font-weight: 600;
     }
     button {
       padding: 6px 12px;
@@ -696,8 +793,19 @@
   </style>
 </head>
 <body>
+  <nav class="top-nav">
+    <h2>AI Trading Console</h2>
+    <div class="nav-links">
+      <a href="#overview">Overview</a>
+      <a href="#opportunities">Opportunities</a>
+      <a href="#monitoring">Monitoring</a>
+      <a href="#performance">Performance</a>
+      <a href="#activity">Activity</a>
+    </div>
+  </nav>
   <div class="container">
     <div class="main-content">
+      <section id="overview" class="section-block">
       <div class="header">
         <h1>🤖 AI Crypto Trading Scanner Pro</h1>
         <div class="subtitle">Multi-API Technical Analysis • AI Validation • Real-time Data</div>
@@ -730,13 +838,29 @@
             <option value="1w">Weekly</option>
           </select>
         </div>
-        <div class="button-group">
-          <button class="btn-success" onclick="startAutoScan()">🚀 Auto-Scan</button>
-          <button class="btn-danger" onclick="stopAutoScan()">🛑 Stop</button>
-          <button class="btn-primary" onclick="manualScan()">🔍 Scan</button>
-          <button class="btn-telegram" onclick="testTelegram(event)">📱 Telegram</button>
-          <button class="btn-secondary" onclick="toggleRules()">⚙️ Rules</button>
-          <button class="btn-secondary" onclick="toggleTradeMonitoring()" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; font-weight: 600;">🎯 Monitor</button>
+        <div class="action-grid">
+          <div class="action-card">
+            <h4>Primary Actions</h4>
+            <div class="button-group">
+              <button class="btn-success" onclick="handleStartAutoScan()">🚀 Auto-Scan</button>
+              <button class="btn-danger" onclick="handleStopAutoScan()">🛑 Stop</button>
+              <button class="btn-primary" onclick="handleManualScan()">🔍 Scan Now</button>
+            </div>
+            <div class="pill-list">
+              <span>AI + TA</span>
+              <span>Top 25 Coins</span>
+              <span>Cooldown Protected</span>
+            </div>
+          </div>
+          <div class="action-card">
+            <h4>Tools & Monitoring</h4>
+            <div class="button-group">
+              <button class="btn-telegram" onclick="handleTestTelegram(event)">📱 Telegram Test</button>
+              <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
+              <button class="btn-secondary" onclick="toggleTradeMonitoring()" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; font-weight: 600;">🎯 Monitoring Panel</button>
+              <button class="btn-primary" onclick="handleEvaluateTrades()">🤖 Re-evaluate Trades</button>
+            </div>
+          </div>
         </div>
         <div style="font-size: 9px; color: #64748b; margin-top: 6px; text-align: center;">UI v3.0 - Compact</div>
         
@@ -746,6 +870,7 @@
           <div id="nextScan">Next scan: Not scheduled</div>
         </div>
       </div>
+      </section>
 
       <!-- Trading Rules Panel -->
       <div id="rulesPanel" style="display:none; background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9)); padding: 28px; border-radius: 20px; margin-bottom: 28px; border: 1px solid rgba(148,163,184,0.2);">
@@ -876,7 +1001,7 @@
                 <p style="color: #64748b; font-size: 0.9em; margin: 0;">Your custom rules will be applied to all future scans</p>
               </div>
               <div style="display: flex; gap: 10px;">
-                <button onclick="saveTradingRules()" style="background: #22c55e; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">💾 Save Rules</button>
+                <button onclick="handleSaveTradingRules()" style="background: #22c55e; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">💾 Save Rules</button>
                 <button onclick="cancelEdit()" style="background: #64748b; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">Cancel</button>
               </div>
             </div>
@@ -885,6 +1010,7 @@
         </div>
       </div>
 
+      <section id="portfolio" class="section-block">
       <div>
         <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">💼 Portfolio</h3>
         <div id="portfolio-container" class="portfolio-container">
@@ -925,6 +1051,9 @@
         </div>
       </div>
 
+      </section>
+
+      <section id="performance" class="section-block">
       <div>
         <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">📊 Performance Analytics</h3>
         <div id="analytics-container" style="background: white; padding: 24px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
@@ -971,8 +1100,10 @@
           </div>
         </div>
       </div>
+      </section>
 
       <!-- Trade Monitoring Panel (Collapsible) -->
+      <section id="monitoring" class="section-block">
       <div id="tradeMonitoringPanel" style="display:none; background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9)); padding: 16px; border-radius: 12px; margin-bottom: 16px; border: 1px solid rgba(148,163,184,0.2);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
           <h3 style="color: #0f172a; font-size: 1.2em; font-weight: 700;">🎯 Trade Monitoring</h3>
@@ -991,7 +1122,7 @@
                 <span id="proximityValue" style="font-size: 1.3em; font-weight: 700; color: #6366f1; min-width: 60px;">1.0%</span>
               </div>
               
-              <button onclick="saveProximityThreshold()" style="background: #22c55e; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">💾 Save Settings</button>
+              <button onclick="handleSaveProximity()" style="background: #22c55e; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">💾 Save Settings</button>
             </div>
           </div>
 
@@ -1029,11 +1160,12 @@
           </div>
         </div>
       </div>
+      </section>
 
       <div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
           <h3 style="margin: 0; color: #0f172a; font-size: 1.5em; font-weight: 700;">💰 Active Trades</h3>
-          <button id="evaluateTradesBtn" onclick="evaluateTradesWithAI()" style="padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9em; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s;" onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.2)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)';">🤖 AI Re-evaluate Trades</button>
+          <button id="evaluateTradesBtn" onclick="handleEvaluateTrades()" style="padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9em; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s;" onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.2)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)';">🤖 AI Re-evaluate Trades</button>
         </div>
         <div id="active-trades-container" class="active-trades-container">
           <div class="no-active-trades">
@@ -1053,6 +1185,7 @@
         </div>
       </div>
 
+      <section id="opportunities" class="section-block">
       <div>
         <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">📈 Trading Opportunities</h3>
         <div id="results">
@@ -1062,9 +1195,10 @@
           </div>
         </div>
       </div>
+      </section>
     </div>
 
-    <div class="sidebar">
+    <div class="sidebar" id="activity">
       <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.95)); color: white; border-radius: 24px; padding: 26px; box-shadow: 0 20px 40px rgba(15,23,42,0.5); border: 1px solid rgba(59,130,246,0.2); height: calc(100vh - 48px); display: flex; flex-direction: column;">
         <!-- Free Tier Monitoring Section -->
         <div class="panel-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(59,130,246,0.2);">
@@ -1176,10 +1310,35 @@
     
     // API endpoints
     const API_BASE = '/api';
+    const actionConfirmations = {
+      start: 'Start automatic scanning with the current interval?',
+      stop: 'Stop the current auto-scan session?',
+      manual: 'Run a one-time scan now?',
+      telegram: 'Send a test message to your Telegram bot?',
+      evaluate: 'Trigger AI to re-evaluate all open trades?',
+      saveRules: 'Save your updated trading rules?',
+      saveProximity: 'Apply the new monitoring proximity?',
+      saveTriggers: 'Save these trigger settings?'
+    };
+    function handleUserAction(key, handler) {
+      const message = actionConfirmations[key] || 'Proceed with this action?';
+      if (typeof handler !== 'function') return;
+      if (window.confirm(message)) {
+        handler();
+      }
+    }
+    function handleStartAutoScan() { handleUserAction('start', startAutoScan); }
+    function handleStopAutoScan() { handleUserAction('stop', stopAutoScan); }
+    function handleManualScan() { handleUserAction('manual', manualScan); }
+    function handleTestTelegram(evt) { handleUserAction('telegram', () => testTelegram(evt)); }
+    function handleSaveTradingRules() { handleUserAction('saveRules', saveTradingRules); }
+    function handleSaveProximity() { handleUserAction('saveProximity', saveProximityThreshold); }
+    function handleSaveTriggerSettings() { handleUserAction('saveTriggers', saveTriggerSettings); }
+    function handleEvaluateTrades() { handleUserAction('evaluate', evaluateTradesWithAI); }
     
-    async function testTelegram() {
+    async function testTelegram(evt) {
       try {
-        const button = event.target;
+        const button = evt?.target || event?.target;
         button.disabled = true;
         button.textContent = '⏳ Testing...';
         
@@ -2698,7 +2857,7 @@
         </label>
       </div>
       
-      <button onclick="saveTriggerSettings()" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #6366f1, #22d3ee); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">💾 Save Settings</button>
+      <button onclick="handleSaveTriggerSettings()" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #6366f1, #22d3ee); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">💾 Save Settings</button>
     </div>
   </div>
 </body>
