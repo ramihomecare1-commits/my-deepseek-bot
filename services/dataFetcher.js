@@ -76,17 +76,17 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
     );
   }
   
-  // Binance (with scraper if needed)
-  if (coin.symbol && BINANCE_SYMBOL_MAP[coin.symbol]) {
-    pricePromises.push(
-      Promise.race([
-        fetchBinancePrice(coin.symbol)
-          .then(data => data && data.price ? { source: 'binance', data } : null)
-          .catch(() => null),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMEOUT))
-      ]).catch(() => null)
-    );
-  }
+  // Binance disabled for now to avoid ScraperAPI rate limits
+  // if (coin.symbol && BINANCE_SYMBOL_MAP[coin.symbol]) {
+  //   pricePromises.push(
+  //     Promise.race([
+  //       fetchBinancePrice(coin.symbol)
+  //         .then(data => data && data.price ? { source: 'binance', data } : null)
+  //         .catch(() => null),
+  //       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMEOUT))
+  //     ]).catch(() => null)
+  //   );
+  // }
   
   // Race to get the fastest successful response (cancels slower requests)
   if (pricePromises.length > 0) {
