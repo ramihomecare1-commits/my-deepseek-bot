@@ -8,8 +8,136 @@ const {
   PutCommand
 } = require('../config/awsConfig');
 const { sendTelegramMessage } = require('./notificationService');
+const { retrieveRelatedData } = require('./dataStorageService');
 
 const CONVO_TABLE = TABLES.AI_CONVERSATIONS;
+
+// Limited list of symbols we explicitly support for quick context.
+// This keeps logic simple and avoids surprises.
+const SUPPORTED_SYMBOLS = [
+  'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX',
+  'LINK', 'DOT', 'MATIC', 'LTC', 'UNI', 'ATOM', 'XLM', 'ETC',
+  'FIL', 'HBAR', 'APT', 'ARB', 'OP', 'SUI', 'TON', 'SHIB'
+];
+
+/**
+ * Try to extract relevant coin symbols from free‑form user text.
+ * Very simple heuristic: look for known tickers in UPPERCASE.
+ */
+function extractSymbolsFromText(text) {
+  if (!text) return [];
+  const upper = text.toUpperCase();
+  const found = new Set();
+
+  for (const symbol of SUPPORTED_SYMBOLS) {
+    if (upper.includes(symbol)) {
+      found.add(symbol);
+    }
+  }
+
+  return Array.from(found);
+}
+
+/**
+ * Fetch a very simple, real‑time price snapshot from Binance (no dependency on the rest of the bot).
+ * This is intentionally minimal to keep Telegram replies fast and focused.
+ */
+async function fetchSimpleBinancePrice(symbol) {
+  try {
+    const pair = `${symbol}USDT`;
+    const response = await axios.get('https://api.binance.com/api/v3/ticker/24hr', {
+      params: { symbol: pair },
+      timeout: 8000
+    });
+
+    const data = response.data;
+    if (!data || !data.lastPrice) {
+      throw new Error('Invalid Binance ticker response');
+    }
+
+    return {
+      price: parseFloat(data.lastPrice),
+      change24h: parseFloat(data.priceChangePercent || 0),
+      high24h: parseFloat(data.highPrice || 0),
+      low24h: parseFloat(data.lowPrice || 0)
+    };
+  } catch (error) {
+    console.error(`⚠️ fetchSimpleBinancePrice(${symbol}) failed:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Build a short, token‑efficient context summary for the AI
+ * using:
+ * - Latest real‑time price (Binance)
+ * - Recent stored AI evaluations & news from DynamoDB
+ */
+async function buildContextSummary(symbols) {
+  if (!symbols || symbols.length === 0) return '';
+
+  const lines = [];
+
+  for (const symbol of symbols) {
+    // 1) Real‑time price
+    const priceData = await fetchSimpleBinancePrice(symbol);
+
+    // 2) Historical evaluations + news (last 7 days, limited)
+    const related = await retrieveRelatedData({
+      symbol,
+      days: 7,
+      limit: 10
+    }).catch((err) => {
+      console.error(`⚠️ retrieveRelatedData error for ${symbol}:`, err.message);
+      return { evaluations: [], news: [] };
+    });
+
+    const latestEval = (related.evaluations || [])[0];
+    const latestNews = (related.news || []).slice(0, 3);
+
+    lines.push(`SYMBOL: ${symbol}`);
+
+    if (priceData) {
+      lines.push(
+        `- Real-time price: $${priceData.price.toFixed(2)} (24h: ${priceData.change24h.toFixed(
+          2
+        )}%, High: $${priceData.high24h.toFixed(2)}, Low: $${priceData.low24h.toFixed(2)})`
+      );
+    } else {
+      lines.push(`- Real-time price: unavailable (Binance request failed)`);
+    }
+
+    if (latestEval && latestEval.data) {
+      const d = latestEval.data;
+      const action = d.action || d.recommendation || 'N/A';
+      const confidence =
+        typeof d.confidence === 'number'
+          ? `${(d.confidence * 100).toFixed(0)}%`
+          : d.confidence || 'N/A';
+      lines.push(`- Last stored AI eval: ${action} (${confidence})`);
+      if (d.reason) {
+        lines.push(`  Reason: ${String(d.reason).substring(0, 160)}`);
+      }
+    } else {
+      lines.push(`- Last stored AI eval: none in the last 7 days`);
+    }
+
+    if (latestNews.length > 0) {
+      lines.push(`- Recent news (last ${latestNews.length}):`);
+      latestNews.forEach((n) => {
+        lines.push(
+          `  • (${n.source || 'news'}) ${String(n.title || '').substring(0, 140)}`
+        );
+      });
+    } else {
+      lines.push(`- Recent news: none stored in the last 7 days`);
+    }
+
+    lines.push(''); // blank line between symbols
+  }
+
+  return lines.join('\n');
+}
 
 /**
  * Load recent conversation history for a Telegram chat.
@@ -130,16 +258,30 @@ async function handleUserMessage(chatId, text) {
   try {
     const history = await loadConversationHistory(chatId);
 
+    // Try to infer which symbols the user is talking about (BTC, ETH, etc.)
+    const symbols = extractSymbolsFromText(text);
+    const contextSummary = await buildContextSummary(symbols);
+
     const systemPrompt = `
 You are the PREMIUM crypto trading assistant for a single power user.
+- You ALWAYS use the latest context provided (real‑time price + stored AI evaluations + news) when giving answers.
+- If context shows a big difference between stored evaluation price and current market price, call it out explicitly.
 - Discuss trades, entries, stop losses and risk in a practical way.
 - Remember user preferences, risk tolerance, timeframes and style from previous messages.
-- If user expresses a preference (\"I prefer spot only\", \"max 2% risk\", \"no meme coins\"), treat it as a long‑term preference.
+- If user expresses a preference ("I prefer spot only", "max 2% risk", "no meme coins"), treat it as a long‑term preference.
 - Keep answers concise but actionable, with clear levels when relevant.
 `.trim();
 
     const messages = [
       { role: 'system', content: systemPrompt },
+      ...(contextSummary
+        ? [
+            {
+              role: 'system',
+              content: `LATEST MARKET CONTEXT (from Binance + stored data):\n${contextSummary}`
+            }
+          ]
+        : []),
       ...history,
       { role: 'user', content: text }
     ];
