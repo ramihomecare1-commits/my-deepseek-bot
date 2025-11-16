@@ -224,7 +224,7 @@ function generateTechnicalAnalysis(technicalData) {
   };
 }
 
-// Batch AI analysis - sends all coins at once to reduce API calls
+// Batch AI analysis - sends coins in smaller batches to reduce API calls and avoid truncation
 async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
   if (!allCoinsData || allCoinsData.length === 0) {
     return {};
@@ -250,57 +250,70 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
   const maxRetries = 3;
   let lastError = null;
 
+  // Process in smaller batches to avoid hitting model token limits
+  // Default: 10 coins per AI call (can be overridden via options.batchSize)
+  const batchSize = options.batchSize || 10;
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const prompt = createBatchAnalysisPrompt(allCoinsData, globalMetrics, options);
+      const combinedResults = {};
 
-      console.log(`🤖 AI API attempt ${attempt}/${maxRetries}...`);
-      // Calculate tokens needed: ~250 tokens per coin for response (with risk management and backtest data)
-      // Increased to handle backtest results in responses
-      const estimatedTokens = Math.min(allCoinsData.length * 250, 10000);
-      console.log(`📊 Requesting ${estimatedTokens} max tokens for ${allCoinsData.length} coins`);
-      
-      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model: config.AI_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: estimatedTokens, // Dynamic based on coin count
-        temperature: 0.1,
-      }, {
-        headers: {
-          Authorization: `Bearer ${config.AI_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
-          'X-Title': 'Technical Analysis Bot',
-        },
-        timeout: 45000,
-      });
+      for (let i = 0; i < allCoinsData.length; i += batchSize) {
+        const batch = allCoinsData.slice(i, i + batchSize);
+        const batchIndex = Math.floor(i / batchSize) + 1;
 
-      console.log(`✅ OpenRouter batch status: ${response.status}`);
-      if (!response.data) throw new Error('AI API failed - no response data');
-      if (!response.data.choices || !response.data.choices[0]) {
-        throw new Error('AI API failed - no choices in response');
+        const prompt = createBatchAnalysisPrompt(batch, globalMetrics, options);
+
+        console.log(`🤖 AI API attempt ${attempt}/${maxRetries} - batch ${batchIndex} (${batch.length} coins)...`);
+        // Calculate tokens needed: ~250 tokens per coin for response (with risk management and backtest data)
+        const estimatedTokens = Math.min(batch.length * 250, 8000);
+        console.log(`📊 Requesting ${estimatedTokens} max tokens for ${batch.length} coins`);
+        
+        const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+          model: config.AI_MODEL,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: estimatedTokens, // Dynamic based on coin count
+          temperature: 0.1,
+        }, {
+          headers: {
+            Authorization: `Bearer ${config.AI_API_KEY}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
+            'X-Title': 'Technical Analysis Bot',
+          },
+          timeout: 45000,
+        });
+        
+        console.log(`✅ OpenRouter batch status: ${response.status} (batch ${batchIndex})`);
+        if (!response.data) throw new Error('AI API failed - no response data');
+        if (!response.data.choices || !response.data.choices[0]) {
+          throw new Error('AI API failed - no choices in response');
+        }
+        if (!response.data.choices[0].message || !response.data.choices[0].message.content) {
+          console.log('⚠️ AI response has no content (batch', batchIndex, ')');
+          console.log('📄 Full response structure:', JSON.stringify(response.data, null, 2).substring(0, 2000));
+          throw new Error('AI API failed - empty response content');
+        }
+        
+        const content = response.data.choices[0].message.content;
+        if (!content || content.trim().length === 0) {
+          console.log('⚠️ AI response content is empty (batch', batchIndex, ')');
+          console.log('📄 Full response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
+          throw new Error('AI API failed - response content is empty');
+        }
+        
+        const finishReason = response.data.choices[0].finish_reason;
+        if (finishReason === 'length') {
+          console.log('⚠️ AI response was truncated (hit token limit). Response may be incomplete for batch', batchIndex);
+        }
+        
+        const parsed = parseBatchAIResponse(content, batch);
+        console.log(`✅ Successfully parsed batch AI response for ${Object.keys(parsed).length} coins (batch ${batchIndex})`);
+
+        Object.assign(combinedResults, parsed);
       }
-      if (!response.data.choices[0].message || !response.data.choices[0].message.content) {
-        console.log('⚠️ AI response has no content');
-        console.log('📄 Full response structure:', JSON.stringify(response.data, null, 2).substring(0, 2000));
-        throw new Error('AI API failed - empty response content');
-      }
-      
-      // Check if content is actually empty
-      const content = response.data.choices[0].message.content;
-      if (!content || content.trim().length === 0) {
-        console.log('⚠️ AI response content is empty');
-        console.log('📄 Full response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
-        throw new Error('AI API failed - response content is empty');
-      }
-      
-      // Check if response was truncated
-      const finishReason = response.data.choices[0].finish_reason;
-      if (finishReason === 'length') {
-        console.log('⚠️ AI response was truncated (hit token limit). Response may be incomplete.');
-      }
-      
-      return parseBatchAIResponse(response.data.choices[0].message.content, allCoinsData);
+
+      return combinedResults;
       
     } catch (error) {
       lastError = error;
