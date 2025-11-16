@@ -1219,6 +1219,9 @@ class MonitoringService {
   createMonitoringPrompt(coinData) {
     const { symbol, name, currentPrice, priceChange24h, volume24h, minutePriceChange } = coinData;
 
+    // Debug: Log volume data for troubleshooting
+    console.log(`[Escalation Input Debug] ${symbol} coinData: { currentPrice: ${currentPrice}, volume24h: ${volume24h}, priceChange24h: ${priceChange24h} }`);
+
     return `QUICK VOLATILITY CHECK - ${symbol}
 
 Price: $${currentPrice}
@@ -1253,6 +1256,10 @@ Keep it brief and actionable.`;
     
     coinsData.forEach((coinData, index) => {
       const { symbol, name, currentPrice, priceChange24h, volume24h, minutePriceChange } = coinData;
+      
+      // Debug: Log volume data for troubleshooting
+      console.log(`[Batch Escalation Input Debug] ${symbol} coinData: { currentPrice: ${currentPrice}, volume24h: ${volume24h}, priceChange24h: ${priceChange24h} }`);
+      
       prompt += `[${index + 1}] ${symbol} - ${name}
 Price: $${currentPrice}
 24h Change: ${priceChange24h?.toFixed(2) || 'N/A'}%
