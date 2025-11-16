@@ -944,9 +944,14 @@ class ProfessionalTradingBot {
             id: bulkResult.symbol.toLowerCase(),
             currentPrice: bulkResult.price,
             priceChange24h: bulkResult.priceChange24h || 0,
-            volume24h: 0,
+            volume24h: bulkResult.volume24h || bulkResult.marketCap || 0, // Use volume from bulk scan
             rank: bulkResult.rank
           };
+          
+          // Debug: Log volume for troubleshooting
+          if (coinData.symbol === 'DOGE' || coinData.symbol === 'BCH') {
+            console.log(`[Bulk Scan Volume Debug] ${coinData.symbol}: volume24h=${coinData.volume24h}, marketCap=${bulkResult.marketCap}`);
+          }
           
           // Track price
           monitoringService.lastPrices.set(coinData.symbol, coinData.currentPrice);
