@@ -113,6 +113,12 @@ const USE_MARKET_REGIME_DETECTION = (process.env.USE_MARKET_REGIME_DETECTION || 
 const ENABLE_PERFORMANCE_TRACKING = (process.env.ENABLE_PERFORMANCE_TRACKING || 'true').toLowerCase() === 'true';
 const PERFORMANCE_REPORT_INTERVAL = Number(process.env.PERFORMANCE_REPORT_INTERVAL || 86400000); // 24 hours
 
+// Evaluation / News Deduplication Configuration
+const ENABLE_EVALUATION_DEDUPLICATION = (process.env.ENABLE_EVALUATION_DEDUPLICATION || 'true').toLowerCase() === 'true';
+const ENABLE_NEWS_DEDUPLICATION = (process.env.ENABLE_NEWS_DEDUPLICATION || 'true').toLowerCase() === 'true';
+const EVALUATION_DEDUPLICATION_THRESHOLD = Number(process.env.EVALUATION_DEDUPLICATION_THRESHOLD || 50); // % duplicate to skip
+const NEWS_DEDUPLICATION_THRESHOLD = Number(process.env.NEWS_DEDUPLICATION_THRESHOLD || 70); // % similarity to skip
+
 // Notifications behavior
 const ALLOW_MOCK_NOTIFICATIONS = (process.env.ALLOW_MOCK_NOTIFICATIONS || 'false').toLowerCase() === 'true';
 
@@ -209,6 +215,11 @@ module.exports = {
   // Performance Analytics Configuration
   ENABLE_PERFORMANCE_TRACKING,
   PERFORMANCE_REPORT_INTERVAL,
+  // Deduplication Configuration
+  ENABLE_EVALUATION_DEDUPLICATION,
+  ENABLE_NEWS_DEDUPLICATION,
+  EVALUATION_DEDUPLICATION_THRESHOLD,
+  NEWS_DEDUPLICATION_THRESHOLD,
   // TAAPI.IO Configuration
   TAAPI_API_KEY,
   TAAPI_ENABLED,

@@ -1,11 +1,23 @@
 const { docClient, TABLES, PutCommand, GetCommand, UpdateCommand, QueryCommand, ScanCommand, BatchWriteCommand } = require('../config/awsConfig');
+const config = require('../config/config');
 
 /**
  * Data Storage Service
  * Stores and retrieves AI evaluations and news articles linked to trades/coins
  * Enables AI to access historical context for better evaluations
  * Now using AWS DynamoDB instead of MongoDB
+ * 
+ * NEW: Uses Free-tier AI to deduplicate evaluations and news before storing
  */
+
+// Lazy load comparison service to avoid circular dependencies
+let comparisonService = null;
+function getComparisonService() {
+  if (!comparisonService) {
+    comparisonService = require('./evaluationComparisonService');
+  }
+  return comparisonService;
+}
 
 let useDynamoDB = false;
 let dynamoInitPromise = null;
@@ -115,6 +127,25 @@ async function storeAIEvaluation(evaluation) {
 
     const timestamp = evaluation.timestamp ? new Date(evaluation.timestamp).getTime() : Date.now();
     
+    // NEW: Deduplicate evaluation data using Free Tier AI (optional)
+    let dataToStore = evaluation.data;
+    if (config.ENABLE_EVALUATION_DEDUPLICATION && evaluation.symbol) {
+      try {
+        const { compareAndExtractNewInfo } = getComparisonService();
+        const comparison = await compareAndExtractNewInfo(evaluation.data, evaluation.symbol);
+        
+        if (!comparison.isNew) {
+          // Evaluation is duplicate, skip storage
+          return true; // Return success but don't actually store
+        }
+        
+        dataToStore = comparison.newData || evaluation.data;
+      } catch (dedupeError) {
+        console.error(`⚠️ Evaluation deduplication failed for ${evaluation.symbol}:`, dedupeError.message);
+        // Continue with original data on error
+      }
+    }
+    
     // Limit context data to prevent large items (DynamoDB item limit is 400KB)
     const MAX_NEWS_ARTICLES = 5;
     const MAX_CONTEXT_SIZE = 10000;
@@ -156,7 +187,7 @@ async function storeAIEvaluation(evaluation) {
       timestamp: timestamp,
       tradeId: evaluation.tradeId || null,
       type: evaluation.type,
-      data: convertDatesToTimestamps(evaluation.data),
+      data: convertDatesToTimestamps(dataToStore), // Use deduplicated data
       model: evaluation.model || 'unknown',
       context: convertDatesToTimestamps(limitedContext),
       createdAt: timestamp
@@ -298,6 +329,7 @@ async function storeNews(news) {
 
 /**
  * Store multiple news articles (batch)
+ * NEW: Deduplicates news using Free-tier AI before storing
  */
 async function storeNewsBatch(newsArray) {
   if (!Array.isArray(newsArray) || newsArray.length === 0) {
@@ -310,38 +342,72 @@ async function storeNewsBatch(newsArray) {
       if (!connected) return;
     }
 
-    // DynamoDB batch write (max 25 items per batch)
-    const batches = [];
-    for (let i = 0; i < newsArray.length; i += 25) {
-      batches.push(newsArray.slice(i, i + 25));
+    // Group by symbol for deduplication
+    const groupedBySymbol = {};
+    for (const news of newsArray) {
+      const symbol = news.symbol || 'GENERAL';
+      if (!groupedBySymbol[symbol]) {
+        groupedBySymbol[symbol] = [];
+      }
+      groupedBySymbol[symbol].push(news);
     }
 
-    for (const batch of batches) {
-      const putRequests = batch.map(news => ({
-        PutRequest: {
-          Item: {
-            url: news.url,
-            symbol: news.symbol,
-            symbols: news.symbol ? [news.symbol] : [],
-            tradeIds: news.tradeId ? [news.tradeId] : [],
-            title: news.title,
-            source: news.source,
-            publishedAt: news.publishedAt ? new Date(news.publishedAt).getTime() : Date.now(),
-            content: news.content || '',
-            storedAt: Date.now(),
-            createdAt: Date.now()
+    let totalStored = 0;
+    let totalSkipped = 0;
+
+    // Process each symbol
+    for (const [symbol, articles] of Object.entries(groupedBySymbol)) {
+      let finalArticles = articles;
+
+      // NEW: Deduplicate with Free Tier AI
+      if (config.ENABLE_NEWS_DEDUPLICATION) {
+        try {
+          const { compareAndExtractNewNews } = getComparisonService();
+          const comparison = await compareAndExtractNewNews(articles, symbol);
+          finalArticles = comparison.newArticles || [];
+          totalSkipped += comparison.duplicateCount || 0;
+        } catch (dedupeError) {
+          console.error(`⚠️ News deduplication failed for ${symbol}:`, dedupeError.message);
+          // Continue with original articles on error
+        }
+      }
+
+      // DynamoDB batch write (max 25 items per batch)
+      const batches = [];
+      for (let i = 0; i < finalArticles.length; i += 25) {
+        batches.push(finalArticles.slice(i, i + 25));
+      }
+
+      for (const batch of batches) {
+        const putRequests = batch.map(news => ({
+          PutRequest: {
+            Item: {
+              url: news.url,
+              symbol: news.symbol,
+              symbols: news.symbol ? [news.symbol] : [],
+              tradeIds: news.tradeId ? [news.tradeId] : [],
+              title: news.title,
+              source: news.source,
+              publishedAt: news.publishedAt ? new Date(news.publishedAt).getTime() : Date.now(),
+              content: news.content || '',
+              storedAt: Date.now(),
+              createdAt: Date.now()
+            }
           }
-        }
-      }));
+        }));
 
-      await docClient.send(new BatchWriteCommand({
-        RequestItems: {
-          [TABLES.NEWS_ARTICLES]: putRequests
+        if (putRequests.length > 0) {
+          await docClient.send(new BatchWriteCommand({
+            RequestItems: {
+              [TABLES.NEWS_ARTICLES]: putRequests
+            }
+          }));
+          totalStored += putRequests.length;
         }
-      }));
+      }
     }
 
-    console.log(`💾 Stored ${newsArray.length} news articles`);
+    console.log(`💾 Stored ${totalStored} news articles (skipped ${totalSkipped} duplicates)`);
   } catch (error) {
     console.error('❌ Error storing news batch:', error);
   }
