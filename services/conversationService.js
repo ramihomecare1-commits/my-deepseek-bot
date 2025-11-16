@@ -39,20 +39,20 @@ function extractSymbolsFromText(text) {
 }
 
 /**
- * Fetch a very simple, real‑time price snapshot from Binance (no dependency on the rest of the bot).
+ * Fetch a very simple, real‑time price snapshot from MEXC (no dependency on the rest of the bot).
  * This is intentionally minimal to keep Telegram replies fast and focused.
  */
-async function fetchSimpleBinancePrice(symbol) {
+async function fetchSimpleMexcPrice(symbol) {
   try {
     const pair = `${symbol}USDT`;
-    const response = await axios.get('https://api.binance.com/api/v3/ticker/24hr', {
+    const response = await axios.get('https://api.mexc.com/api/v3/ticker/24hr', {
       params: { symbol: pair },
       timeout: 8000
     });
 
     const data = response.data;
     if (!data || !data.lastPrice) {
-      throw new Error('Invalid Binance ticker response');
+      throw new Error('Invalid MEXC ticker response');
     }
 
     return {
@@ -62,7 +62,7 @@ async function fetchSimpleBinancePrice(symbol) {
       low24h: parseFloat(data.lowPrice || 0)
     };
   } catch (error) {
-    console.error(`⚠️ fetchSimpleBinancePrice(${symbol}) failed:`, error.message);
+    console.error(`⚠️ fetchSimpleMexcPrice(${symbol}) failed:`, error.message);
     return null;
   }
 }
@@ -70,7 +70,7 @@ async function fetchSimpleBinancePrice(symbol) {
 /**
  * Build a short, token‑efficient context summary for the AI
  * using:
- * - Latest real‑time price (Binance)
+ * - Latest real‑time price (MEXC)
  * - Recent stored AI evaluations & news from DynamoDB
  */
 async function buildContextSummary(symbols) {
@@ -80,7 +80,7 @@ async function buildContextSummary(symbols) {
 
   for (const symbol of symbols) {
     // 1) Real‑time price
-    const priceData = await fetchSimpleBinancePrice(symbol);
+    const priceData = await fetchSimpleMexcPrice(symbol);
 
     // 2) Historical evaluations + news (last 7 days, limited)
     const related = await retrieveRelatedData({
@@ -104,7 +104,7 @@ async function buildContextSummary(symbols) {
         )}%, High: $${priceData.high24h.toFixed(2)}, Low: $${priceData.low24h.toFixed(2)})`
       );
     } else {
-      lines.push(`- Real-time price: unavailable (Binance request failed)`);
+      lines.push(`- Real-time price: unavailable (MEXC request failed)`);
     }
 
     if (latestEval && latestEval.data) {

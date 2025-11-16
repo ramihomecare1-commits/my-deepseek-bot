@@ -1660,28 +1660,30 @@ Source: ${source}`);
               // Send Telegram notification about scan filter rejection
               if (config.ENABLE_REJECTION_NOTIFICATIONS) {
                 try {
-                  const filterMessage = `⚠️ <b>AI Opportunity Filtered</b>
+                  const filterMessage =
+`⚠️ AI Opportunity Filtered
 
-<b>${coin.symbol}</b> - ${analysis.action}
-💪 <b>AI Confidence:</b> ${(analysis.confidence * 100).toFixed(0)}%
-💰 <b>Entry:</b> $${analysis.entryPrice?.toFixed(2) || 'N/A'}
-🎯 <b>TP:</b> $${analysis.takeProfit?.toFixed(2) || 'N/A'} (+${analysis.expectedGainPercent?.toFixed(1) || 'N/A'}%)
-🛡️ <b>SL:</b> $${analysis.stopLoss?.toFixed(2) || 'N/A'}
+Symbol: ${coin.symbol}
+Action: ${analysis.action}
+Confidence: ${(analysis.confidence * 100).toFixed(0)}%
+Entry: $${analysis.entryPrice?.toFixed(2) || 'N/A'}
+TP: $${analysis.takeProfit?.toFixed(2) || 'N/A'} (+${analysis.expectedGainPercent?.toFixed(1) || 'N/A'}%)
+SL: $${analysis.stopLoss?.toFixed(2) || 'N/A'}
 
-<b>❌ Rejection Reason:</b> Filtered by scan filters
+Reason: Filtered by scan filters
 
-<b>Active Filters:</b>
-• RSI Threshold: ${options.rsiThreshold || 'N/A'}
-• Min Triggers: ${options.minTriggers || 'N/A'}
-• Min Price Change: ${options.minPriceChange || 'N/A'}%
-• Volume Required: ${options.requireVolume ? 'Yes' : 'No'}
+Active Filters:
+- RSI Threshold: ${options.rsiThreshold || 'N/A'}
+- Min Triggers: ${options.minTriggers || 'N/A'}
+- Min Price Change: ${options.minPriceChange || 'N/A'}%
+- Volume Required: ${options.requireVolume ? 'Yes' : 'No'}
 
-<b>🤖 AI Reasoning:</b>
+AI Reasoning:
 ${analysis.reason?.substring(0, 200) || 'No reasoning provided'}
 
-💡 <b>Action:</b> Check if scan filters are too restrictive`;
+Action: Check if scan filters are too restrictive`;
 
-                  sendTelegramMessage(filterMessage).catch(err => 
+                  sendTelegramMessage(filterMessage).catch((err) =>
                     console.error('⚠️ Failed to send filter notification:', err.message)
                   );
                 } catch (notifError) {
@@ -1703,8 +1705,12 @@ ${analysis.reason?.substring(0, 200) || 'No reasoning provided'}
                   const dailyRSI = Number(indicators.daily?.rsi) || 50;
                   const bollingerPos = indicators.daily?.bollingerPosition || 'MIDDLE';
                   const frames = indicators.frames || {};
-                  const bullishFrames = Object.values(frames).filter(f => f.trend === 'BULLISH').length;
-                  const patterns = (analysis.patterns || []).filter(p => p.signal === 'BULLISH');
+                  const bullishFrames = Object.values(frames).filter(
+                    (f) => f.trend === 'BULLISH'
+                  ).length;
+                  const patterns = (analysis.patterns || []).filter(
+                    (p) => p.signal === 'BULLISH'
+                  );
                   
                   const buyRules = this.tradingRules.patterns.buy;
                   let ruleChecks = [];
@@ -1712,41 +1718,65 @@ ${analysis.reason?.substring(0, 200) || 'No reasoning provided'}
                   if (analysis.action === 'BUY') {
                     if (buyRules.requireRSIOversold) {
                       const passed = dailyRSI < this.tradingRules.rsi.oversold;
-                      ruleChecks.push(`${passed ? '✅' : '❌'} RSI Oversold: ${dailyRSI.toFixed(2)} ${passed ? '<' : '≥'} ${this.tradingRules.rsi.oversold} (REQUIRED)`);
+                      ruleChecks.push(
+                        `${passed ? '✅' : '❌'} RSI Oversold: ${dailyRSI.toFixed(
+                          2
+                        )} ${passed ? '<' : '≥'} ${this.tradingRules.rsi.oversold} (REQUIRED)`
+                      );
                     }
                     if (buyRules.requireBollingerLower) {
                       const passed = bollingerPos === 'LOWER';
-                      ruleChecks.push(`${passed ? '✅' : '❌'} Bollinger Lower: ${bollingerPos} ${passed ? '=' : '≠'} LOWER (REQUIRED)`);
+                      ruleChecks.push(
+                        `${passed ? '✅' : '❌'} Bollinger Lower: ${bollingerPos} ${
+                          passed ? '=' : '≠'
+                        } LOWER (REQUIRED)`
+                      );
                     }
                     if (buyRules.requireBullishTrend) {
                       const passed = bullishFrames >= buyRules.minTimeframeAlignment;
-                      ruleChecks.push(`${passed ? '✅' : '❌'} Bullish Trend: ${bullishFrames}/${buyRules.minTimeframeAlignment} timeframes (REQUIRED)`);
+                      ruleChecks.push(
+                        `${passed ? '✅' : '❌'} Bullish Trend: ${bullishFrames}/${
+                          buyRules.minTimeframeAlignment
+                        } timeframes (REQUIRED)`
+                      );
                     }
                     if (buyRules.requirePattern) {
                       const passed = patterns.length > 0;
-                      ruleChecks.push(`${passed ? '✅' : '❌'} Pattern Required: ${patterns.length} found (REQUIRED)`);
+                      ruleChecks.push(
+                        `${passed ? '✅' : '❌'} Pattern Required: ${
+                          patterns.length
+                        } found (REQUIRED)`
+                      );
                     }
                   }
                   
-                  const rejectionMessage = `🚫 <b>AI Opportunity Rejected</b>
+                  const rejectionMessage =
+`🚫 AI Opportunity Rejected
 
-<b>${coin.symbol}</b> - ${analysis.action}
-💪 <b>AI Confidence:</b> ${(analysis.confidence * 100).toFixed(0)}%
-💰 <b>Entry:</b> $${analysis.entryPrice?.toFixed(2) || 'N/A'}
-🎯 <b>TP:</b> $${analysis.takeProfit?.toFixed(2) || 'N/A'} (+${analysis.expectedGainPercent?.toFixed(1) || 'N/A'}%)
-🛡️ <b>SL:</b> $${analysis.stopLoss?.toFixed(2) || 'N/A'}
+Symbol: ${coin.symbol}
+Action: ${analysis.action}
+Confidence: ${(analysis.confidence * 100).toFixed(0)}%
+Entry: $${analysis.entryPrice?.toFixed(2) || 'N/A'}
+TP: $${analysis.takeProfit?.toFixed(2) || 'N/A'} (+${analysis.expectedGainPercent?.toFixed(1) || 'N/A'}%)
+SL: $${analysis.stopLoss?.toFixed(2) || 'N/A'}
 
-<b>❌ Rejection Reason:</b> Does not match custom trading rules
+Rejection Reason: Does not match custom trading rules
 
-<b>📋 Rule Checks (needs ≥1 pass):</b>
+Rule Checks (needs ≥1 pass):
 ${ruleChecks.length > 0 ? ruleChecks.join('\n') : '• No specific rules enabled'}
 
-<b>🤖 AI Reasoning:</b>
+AI Reasoning:
 ${analysis.reason?.substring(0, 250) || 'No reasoning provided'}
 
-💡 <b>Fix:</b> ${dailyRSI > 30 && dailyRSI < 40 ? `RSI at ${dailyRSI.toFixed(1)} is "near" oversold but not &lt; 30. Consider lowering requireRSIOversold threshold or set it to false.` : 'Review your trading rules configuration'}`;
-
-                  sendTelegramMessage(rejectionMessage).catch(err => 
+Fix: ${
+  dailyRSI > 30 && dailyRSI < 40
+    ? `RSI at ${dailyRSI.toFixed(
+        1
+      )} is "near" oversold but not < 30. Consider lowering requireRSIOversold threshold or set it to false.`
+    : 'Review your trading rules configuration'
+}`;
+ 
+                  sendTelegramMessage(rejectionMessage).catch((err) =>
                     console.error('⚠️ Failed to send rejection notification:', err.message)
                   );
                 } catch (notifError) {
@@ -1788,30 +1818,32 @@ ${analysis.reason?.substring(0, 250) || 'No reasoning provided'}
                   // Send Telegram notification about backtest rejection
                   if (config.ENABLE_REJECTION_NOTIFICATIONS) {
                     try {
-                      const backtestMessage = `📊 <b>AI Opportunity Failed Backtest</b>
+                      const backtestMessage =
+`📊 AI Opportunity Failed Backtest
 
-<b>${coin.symbol}</b> - ${analysis.action}
-💪 <b>AI Confidence:</b> ${(analysis.confidence * 100).toFixed(0)}%
-💰 <b>Entry:</b> $${analysis.entryPrice?.toFixed(2) || 'N/A'}
-🎯 <b>TP:</b> $${analysis.takeProfit?.toFixed(2) || 'N/A'} (+${analysis.expectedGainPercent?.toFixed(1) || 'N/A'}%)
-🛡️ <b>SL:</b> $${analysis.stopLoss?.toFixed(2) || 'N/A'}
+Symbol: ${coin.symbol}
+Action: ${analysis.action}
+Confidence: ${(analysis.confidence * 100).toFixed(0)}%
+Entry: $${analysis.entryPrice?.toFixed(2) || 'N/A'}
+TP: $${analysis.takeProfit?.toFixed(2) || 'N/A'} (+${analysis.expectedGainPercent?.toFixed(1) || 'N/A'}%)
+SL: $${analysis.stopLoss?.toFixed(2) || 'N/A'}
 
-<b>❌ Rejection Reason:</b> Backtest shows poor historical performance
+Rejection Reason: Backtest shows poor historical performance
 
-<b>Backtest Results:</b>
-📉 Profit Factor: ${backtestResult.profitFactor.toFixed(2)} (Required: ${minProfitFactor})
-📊 Win Rate: ${backtestResult.winRate.toFixed(1)}% (Required: ${minWinRate}%)
-📈 Avg Return: ${backtestResult.avgReturn?.toFixed(2) || 'N/A'}%
-📉 Max Drawdown: ${backtestResult.maxDrawdown?.toFixed(2) || 'N/A'}%
-🔢 Historical Trades: ${backtestResult.totalTrades}
-📊 Data Points: ${backtestResult.dataPoints} days
+Backtest Results:
+- Profit Factor: ${backtestResult.profitFactor.toFixed(2)} (Required: ${minProfitFactor})
+- Win Rate: ${backtestResult.winRate.toFixed(1)}% (Required: ${minWinRate}%)
+- Avg Return: ${backtestResult.avgReturn?.toFixed(2) || 'N/A'}%
+- Max Drawdown: ${backtestResult.maxDrawdown?.toFixed(2) || 'N/A'}%
+- Historical Trades: ${backtestResult.totalTrades}
+- Data Points: ${backtestResult.dataPoints} days
 
-<b>🤖 AI Reasoning:</b>
+AI Reasoning:
 ${analysis.reason?.substring(0, 250) || 'No reasoning provided'}
 
-💡 <b>Action:</b> AI may be overly optimistic, or backtest period may not match current market conditions`;
-
-                      sendTelegramMessage(backtestMessage).catch(err => 
+Action: AI may be overly optimistic, or backtest period may not match current market conditions`;
+ 
+                      sendTelegramMessage(backtestMessage).catch((err) =>
                         console.error('⚠️ Failed to send backtest notification:', err.message)
                       );
                     } catch (notifError) {
