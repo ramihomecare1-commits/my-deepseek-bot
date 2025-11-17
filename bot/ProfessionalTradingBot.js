@@ -3565,6 +3565,18 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           console.warn(`⚠️ ${trade.symbol}: SL_HIT status but P&L is positive (${finalPnlPercent.toFixed(2)}%). This may indicate incorrect status or execution price.`);
         }
         
+        // Check if this trade is already in closedTrades (prevent duplicates)
+        const tradeId = trade.id || trade.tradeId;
+        const alreadyClosed = this.closedTrades.find(ct => 
+          (ct.id === tradeId || ct.tradeId === tradeId) && 
+          ct.symbol === trade.symbol
+        );
+        
+        if (alreadyClosed) {
+          console.log(`⏭️ ${trade.symbol} trade (id: ${tradeId}) already exists in closedTrades. Skipping duplicate.`);
+          continue; // Skip adding duplicate
+        }
+        
         const closedTrade = {
           ...trade,
           closedAt: trade.executedAt || new Date(),

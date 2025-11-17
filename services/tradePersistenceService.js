@@ -466,19 +466,57 @@ async function saveClosedTrades(trades) {
         if (!connected) return false;
       }
       
+      // Deduplicate trades before saving (prevent duplicates in array)
+      // Use a Map to track unique trades by (id + symbol) or (tradeId + symbol)
+      const uniqueTradesMap = new Map();
+      for (const trade of trades) {
+        const tradeId = trade.id || trade.tradeId;
+        const key = `${tradeId || 'no-id'}_${trade.symbol}`;
+        
+        // If we already have this trade, keep the one with the most recent closedAt
+        if (uniqueTradesMap.has(key)) {
+          const existing = uniqueTradesMap.get(key);
+          
+          // Convert to timestamps for comparison (handle both Date objects and numbers)
+          const existingClosedAt = existing.closedAt instanceof Date ? existing.closedAt.getTime() : 
+                                   existing.executedAt instanceof Date ? existing.executedAt.getTime() :
+                                   existing.closedAt || existing.executedAt || 0;
+          const newClosedAt = trade.closedAt instanceof Date ? trade.closedAt.getTime() :
+                              trade.executedAt instanceof Date ? trade.executedAt.getTime() :
+                              trade.closedAt || trade.executedAt || 0;
+          
+          // Keep the one with the most recent closedAt timestamp
+          if (newClosedAt > existingClosedAt) {
+            uniqueTradesMap.set(key, trade);
+            console.log(`🔄 Replacing duplicate closed trade for ${trade.symbol} (id: ${tradeId}) with newer version`);
+          } else {
+            console.log(`⏭️ Skipping duplicate closed trade for ${trade.symbol} (id: ${tradeId}) - keeping existing version`);
+          }
+        } else {
+          uniqueTradesMap.set(key, trade);
+        }
+      }
+      
+      const uniqueTrades = Array.from(uniqueTradesMap.values());
+      console.log(`📊 Deduplicated closed trades: ${trades.length} → ${uniqueTrades.length} unique trades`);
+      
       // Convert all Date objects to timestamps recursively for DynamoDB
-      const tradesToSave = trades.map(trade => {
+      const tradesToSave = uniqueTrades.map(trade => {
         const tradeCopy = { ...trade };
-        // Ensure id exists
+        // Ensure id exists (use existing id or tradeId, don't generate new one)
         if (!tradeCopy.id) {
-          tradeCopy.id = uuidv4();
+          tradeCopy.id = tradeCopy.tradeId || uuidv4();
+        }
+        // Ensure tradeId matches id for consistency
+        if (!tradeCopy.tradeId) {
+          tradeCopy.tradeId = tradeCopy.id;
         }
         // Convert all Date objects to timestamps (recursively handles nested objects/arrays)
         return convertDatesToTimestamps(tradeCopy);
       });
       
       // Upsert closed trades (update if exists, insert if not)
-      // Use id as unique identifier
+      // Use id as unique identifier - PutCommand will overwrite if same id exists
       for (const trade of tradesToSave) {
         await docClient.send(new PutCommand({
           TableName: TABLES.CLOSED_TRADES,
