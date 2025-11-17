@@ -214,7 +214,8 @@ class ProfessionalTradingBot {
         triangles: true,
         wedges: true,
         doubleTopBottom: true
-      }
+      },
+      paperTradingEnabled: true  // Enable paper trading by default
     };
     
     // Sync minConfidence
@@ -1789,6 +1790,20 @@ Reason: ${newReason?.substring(0, 200)}`);
           batchAIResults = await getBatchAIAnalysis(allCoinsData, this.globalMetrics, options);
           this.stats.aiCalls += 1; // Track AI API call
           
+          // Log what we got back from AI
+          const resultCount = Object.keys(batchAIResults).length;
+          console.log(`📊 AI returned results for ${resultCount}/${allCoinsData.length} coins`);
+          if (resultCount > 0) {
+            // Show sample of first 3 results
+            const sampleSymbols = Object.keys(batchAIResults).slice(0, 3);
+            sampleSymbols.forEach(symbol => {
+              const result = batchAIResults[symbol];
+              console.log(`   📋 ${symbol}: ${result.action} (${(result.confidence * 100).toFixed(0)}%) - AI: ${result.aiEvaluated ? '✅' : '❌'}`);
+            });
+          } else {
+            console.warn(`⚠️ WARNING: AI returned NO results! All coins will use fallback analysis (HOLD).`);
+          }
+          
           // Store AI evaluations in database
           for (const coin of allCoinsData) {
             if (batchAIResults[coin.symbol]) {
@@ -2112,6 +2127,22 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           opportunities.reduce((sum, o) => sum + o.confidence, 0) / opportunities.length;
       }
 
+      // Log paper trading status
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(`📊 OPPORTUNITIES SUMMARY`);
+      console.log(`${'='.repeat(60)}`);
+      console.log(`✅ Opportunities found: ${opportunities.length}`);
+      console.log(`📝 Paper Trading: ${this.tradingRules.paperTradingEnabled ? '✅ ENABLED' : '❌ DISABLED'}`);
+      console.log(`📱 Telegram: ${config.TELEGRAM_ENABLED ? '✅ ENABLED' : '❌ DISABLED'}`);
+      if (opportunities.length === 0) {
+        console.log(`⚠️ No opportunities found - possible reasons:`);
+        console.log(`   - All coins analyzed as HOLD (no BUY/SELL signals)`);
+        console.log(`   - Confidence below threshold (${(this.tradingRules.minConfidence * 100).toFixed(0)}%)`);
+        console.log(`   - Filtered out by trading rules or backtest`);
+        console.log(`   - AI analysis failed and fallback returned HOLD for all coins`);
+      }
+      console.log(`${'='.repeat(60)}\n`);
+
       if (config.TELEGRAM_ENABLED && opportunities.length > 0) {
         console.log(`📱 Sending Telegram notifications for ${opportunities.length} opportunities...`);
         for (const opp of opportunities) {
@@ -2130,7 +2161,15 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           );
           // Add the opportunity as an active trade if it's a BUY/SELL signal
           if (opp.action === 'BUY' || opp.action === 'SELL') {
-            await this.addActiveTrade(opp);
+            console.log(`💼 Executing paper trade for ${opp.symbol}: ${opp.action} at $${opp.entryPrice?.toFixed(2) || 'N/A'}`);
+            try {
+              await this.addActiveTrade(opp);
+              console.log(`✅ Paper trade executed successfully for ${opp.symbol}`);
+            } catch (tradeError) {
+              console.error(`❌ Failed to execute paper trade for ${opp.symbol}:`, tradeError.message);
+            }
+          } else {
+            console.log(`⏭️ Skipping trade execution for ${opp.symbol} - action is ${opp.action} (not BUY/SELL)`);
           }
           await sleep(1500);
         }
