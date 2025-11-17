@@ -375,6 +375,68 @@ class ProfessionalTradingBot {
           executedAt: new Date()
         });
 
+        // Calculate P&L percentage for the partial closure
+        const partialPnlPercent = trade.action === 'BUY' 
+          ? ((currentPrice - avgEntry) / avgEntry) * 100
+          : ((avgEntry - currentPrice) / avgEntry) * 100;
+
+        // Create a closed trade entry for the partial closure
+        const partialClosedTrade = {
+          ...trade,
+          id: `${trade.id || trade.tradeId || 'unknown'}_partial_${Date.now()}`,
+          tradeId: `${trade.id || trade.tradeId || 'unknown'}_partial_${Date.now()}`,
+          status: 'PARTIAL_TP',
+          closedAt: new Date(),
+          closePrice: currentPrice,
+          closeReason: `Partial Take Profit (${takePercent}% at ${pnlPercent.toFixed(2)}% profit)`,
+          finalPnl: realized,
+          finalPnlPercent: partialPnlPercent,
+          executionPrice: currentPrice,
+          quantity: qtyToClose, // Only the closed portion
+          originalQuantity: quantity, // Original quantity before partial close
+          partialPercent: takePercent,
+          triggerPercent: trigger,
+          remainingQuantity: trade.quantity, // Remaining quantity after partial close
+          parentTradeId: trade.id || trade.tradeId
+        };
+
+        // Add to closed trades
+        if (!this.closedTrades) {
+          this.closedTrades = [];
+        }
+        
+        // Check for duplicates (same partial TP trigger)
+        const duplicateCheck = this.closedTrades.find(ct => 
+          ct.parentTradeId === (trade.id || trade.tradeId) &&
+          ct.triggerPercent === trigger &&
+          ct.status === 'PARTIAL_TP'
+        );
+        
+        if (!duplicateCheck) {
+          this.closedTrades.push(partialClosedTrade);
+          
+          // Keep only last 100 closed trades in memory
+          if (this.closedTrades.length > 100) {
+            this.closedTrades = this.closedTrades.slice(-100);
+          }
+          
+          // Save closed trades to DynamoDB
+          await this.saveClosedTrades();
+          
+          // Update portfolio with partial closure
+          const { closeTrade } = require('../services/portfolioService');
+          await closeTrade(
+            trade.symbol,
+            realized,
+            partialPnlPercent,
+            avgEntry,
+            currentPrice,
+            qtyToClose
+          );
+          
+          console.log(`✅ Created partial closed trade entry for ${trade.symbol}: ${takePercent}% (${qtyToClose.toFixed(4)} ${trade.symbol}) at $${currentPrice.toFixed(2)}`);
+        }
+
         addLogEntry(
           `✂️ ${trade.symbol}: Partial TP (${takePercent}%) executed at ${pnlPercent.toFixed(
             2
