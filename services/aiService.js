@@ -273,7 +273,10 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
         console.log(`🤖 AI API attempt ${attempt}/${maxRetries} - batch ${batchIndex} (${batch.length} coins)...`);
         // Calculate tokens needed: R1 reasoning model needs more tokens (internal thinking + JSON output)
         // ~500 tokens per coin to account for reasoning overhead
-        const estimatedTokens = Math.min(batch.length * 500, 16000);
+        // For smaller batches (last batch), give more headroom since it's the final batch
+        const baseTokens = batch.length * 500;
+        const maxTokens = batch.length <= 5 ? 8000 : 16000; // More tokens for smaller final batches
+        const estimatedTokens = Math.min(baseTokens, maxTokens);
         console.log(`📊 Requesting ${estimatedTokens} max tokens for ${batch.length} coins (R1 reasoning model)`);
       
       const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
@@ -296,35 +299,81 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
       if (!response.data.choices || !response.data.choices[0]) {
         throw new Error('AI API failed - no choices in response');
       }
-      if (!response.data.choices[0].message || !response.data.choices[0].message.content) {
-          console.log('⚠️ AI response has no content (batch', batchIndex, ')');
-        console.log('📄 Full response structure:', JSON.stringify(response.data, null, 2).substring(0, 2000));
-        throw new Error('AI API failed - empty response content');
+      
+      const choice = response.data.choices[0];
+      const finishReason = choice.finish_reason;
+      
+      // Check for content, but also check reasoning field if content is empty (R1 model sometimes puts JSON in reasoning)
+      let content = choice.message?.content || '';
+      
+      // If content is empty but we have reasoning, try to extract JSON from reasoning
+      if ((!content || content.trim().length === 0) && choice.message?.reasoning) {
+        console.log('⚠️ AI response content is empty, checking reasoning field for JSON (batch', batchIndex, ')');
+        const reasoning = choice.message.reasoning || '';
+        // Try to extract JSON array from reasoning
+        const jsonMatch = reasoning.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          console.log('✅ Found JSON in reasoning field, extracting...');
+          content = jsonMatch[0];
+        } else {
+          console.log('⚠️ No JSON found in reasoning field either');
+          console.log('📄 Full response structure:', JSON.stringify(response.data, null, 2).substring(0, 2000));
+          // Don't throw - let parseBatchAIResponse handle it by generating fallback for this batch
+          content = ''; // Empty content will trigger fallback in parseBatchAIResponse
+        }
       }
       
-      const content = response.data.choices[0].message.content;
       if (!content || content.trim().length === 0) {
-          console.log('⚠️ AI response content is empty (batch', batchIndex, ')');
+        console.log('⚠️ AI response content is empty (batch', batchIndex, ')');
         console.log('📄 Full response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
-        throw new Error('AI API failed - response content is empty');
+        console.log('💡 Using fallback analysis for this batch...');
+        // Don't throw - let parseBatchAIResponse handle it by generating fallback
+        content = ''; // Empty content will trigger fallback in parseBatchAIResponse
       }
       
-      const finishReason = response.data.choices[0].finish_reason;
       if (finishReason === 'length') {
           console.log('⚠️ AI response was truncated (hit token limit). Response may be incomplete for batch', batchIndex);
+          console.log('💡 Attempting to parse partial JSON from truncated response...');
       }
       
       try {
         const parsed = parseBatchAIResponse(content, batch);
-        console.log(`✅ Successfully parsed batch AI response for ${Object.keys(parsed).length} coins (batch ${batchIndex})`);
+        const parsedCount = Object.keys(parsed).length;
+        console.log(`✅ Successfully parsed batch AI response for ${parsedCount} coins (batch ${batchIndex})`);
+
+        // If we got some results but not all, log a warning but continue
+        if (parsedCount < batch.length) {
+          const missing = batch.filter(c => !parsed[c.symbol]).map(c => c.symbol);
+          console.log(`⚠️ Only parsed ${parsedCount}/${batch.length} coins for batch ${batchIndex}. Missing: ${missing.join(', ')}`);
+          console.log(`   Using fallback analysis for missing coins...`);
+        }
 
         Object.assign(combinedResults, parsed);
       } catch (parseError) {
         console.error(`❌ Error parsing batch AI response (batch ${batchIndex}):`, parseError.message);
-        console.error(`   Error stack:`, parseError.stack);
         console.error(`   Response content (first 1000 chars):`, content.substring(0, 1000));
-        // Re-throw to be caught by outer catch block
-        throw parseError;
+        
+        // If it's a truncated response, try to extract what we can
+        if (finishReason === 'length') {
+          console.log(`   ⚠️ Response was truncated. Attempting to extract partial results...`);
+          try {
+            // Try to extract any complete JSON objects from the content
+            const partialParsed = parseBatchAIResponse(content, batch);
+            if (Object.keys(partialParsed).length > 0) {
+              console.log(`   ✅ Extracted ${Object.keys(partialParsed).length} partial results, using fallback for rest`);
+              Object.assign(combinedResults, partialParsed);
+              // Don't throw - continue with partial results
+            } else {
+              throw parseError; // Re-throw if we got nothing
+            }
+          } catch (retryError) {
+            // If partial parsing also failed, throw original error
+            throw parseError;
+          }
+        } else {
+          // For non-truncation errors, re-throw
+          throw parseError;
+        }
       }
       }
 
