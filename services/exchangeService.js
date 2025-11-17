@@ -118,7 +118,7 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
     const timestamp = Date.now();
     const recvWindow = 5000; // 5 second receive window
     
-    // Bybit Spot API parameters
+    // Bybit Spot API parameters (v5 format)
     const params = {
       category: 'spot',
       symbol: symbol,
@@ -129,13 +129,18 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
       recvWindow: recvWindow.toString()
     };
 
-    // Generate signature
+    // Generate signature (must be done before adding signature to params)
     const signature = generateBybitSignature(params, apiSecret);
-    params.signature = signature;
+    
+    // Add signature to params for the request
+    const requestParams = {
+      ...params,
+      signature: signature
+    };
 
     const response = await axios.post(
       `${baseUrl}/v5/order/create`,
-      params,
+      requestParams,
       {
         headers: {
           'X-BAPI-API-KEY': apiKey,
@@ -542,11 +547,17 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
       recvWindow: recvWindow.toString()
     };
 
+    // Generate signature
     const signature = generateBybitSignature(params, apiSecret);
-    params.signature = signature;
+    
+    // Add signature to params for GET request
+    const requestParams = {
+      ...params,
+      signature: signature
+    };
 
     const response = await axios.get(`${baseUrl}/v5/account/wallet-balance`, {
-      params: params,
+      params: requestParams,
       headers: {
         'X-BAPI-API-KEY': apiKey,
         'X-BAPI-TIMESTAMP': timestamp.toString(),
