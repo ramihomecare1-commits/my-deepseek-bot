@@ -1618,7 +1618,21 @@ Reason: ${newReason?.substring(0, 200)}`);
             const hasFrames = analysis.frames && typeof analysis.frames === 'object';
             const frameCount = hasFrames ? Object.keys(analysis.frames).length : 0;
             
+            // Verify frames have actual data (not just empty objects)
+            let hasValidFrameData = false;
             if (hasFrames && frameCount > 0) {
+              // Check if at least one timeframe has valid indicators (not all 'N/A')
+              const timeframes = Object.keys(analysis.frames);
+              for (const tf of timeframes) {
+                const frame = analysis.frames[tf];
+                if (frame && (frame.rsi !== 'N/A' || frame.price > 0)) {
+                  hasValidFrameData = true;
+                  break;
+                }
+              }
+            }
+            
+            if (hasFrames && frameCount > 0 && hasValidFrameData) {
               const priceValue = typeof analysis.price === 'string' 
                 ? parseFloat(analysis.price.replace('$', '').replace(/,/g, '')) 
                 : analysis.price || 0;
@@ -1635,9 +1649,27 @@ Reason: ${newReason?.substring(0, 200)}`);
               if (allCoinsData.length === 5) {
                 startNewsFetch(); // Start fetching news early
               }
+            } else {
+              // Log why coin was skipped
+              if (!hasFrames) {
+                console.warn(`⚠️ ${coin.symbol}: No frames object in analysis`);
+              } else if (frameCount === 0) {
+                console.warn(`⚠️ ${coin.symbol}: Frames object is empty`);
+              } else if (!hasValidFrameData) {
+                console.warn(`⚠️ ${coin.symbol}: Frames exist but contain no valid data (all N/A or price=0)`);
+              }
             }
           } else {
             this.stats.apiErrors += 1;
+            // Log detailed error information
+            if (result.status === 'rejected') {
+              console.error(`❌ Analysis failed for ${coin.symbol}:`, result.reason?.message || result.reason || 'Unknown error');
+              if (result.reason?.stack) {
+                console.error(`   Error stack:`, result.reason.stack.substring(0, 500));
+              }
+            } else if (!result.value) {
+              console.warn(`⚠️ Analysis returned null/undefined for ${coin.symbol}`);
+            }
           }
 
           this.scanProgress.processed += 1;
@@ -1652,6 +1684,22 @@ Reason: ${newReason?.substring(0, 200)}`);
           await sleep(100); // 100ms delay between batches (reduced from 200ms)
         }
       }
+
+      // Diagnostic logging after data collection
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(`📊 DATA COLLECTION SUMMARY`);
+      console.log(`${'='.repeat(60)}`);
+      console.log(`✅ Analyzed: ${analyzedCount}/${this.trackedCoins.length} coins`);
+      console.log(`📦 Coins with valid frames: ${allCoinsData.length}`);
+      console.log(`❌ API Errors: ${this.stats.apiErrors}`);
+      if (allCoinsData.length > 0) {
+        console.log(`📋 Coins ready for AI: ${allCoinsData.map(c => c.symbol).join(', ')}`);
+      } else {
+        console.warn(`⚠️ WARNING: No coins have valid frame data!`);
+        console.warn(`   This means technical analysis failed for all coins or returned no frame data.`);
+        console.warn(`   Check if data fetching is working correctly.`);
+      }
+      console.log(`${'='.repeat(60)}\n`);
 
       // Step 2a: Wait for news fetching (started early in parallel with coin analysis)
       if (allCoinsData.length > 0) {
@@ -1690,12 +1738,14 @@ Reason: ${newReason?.substring(0, 200)}`);
         
         const newsCount = allCoinsData.filter(c => c.news && c.news.articles && c.news.articles.length > 0).length;
         console.log(`✅ Fetched news for ${newsCount}/${allCoinsData.length} coins`);
+      } else {
+        console.log(`⚠️ Skipping news fetch - no coins with valid frame data (allCoinsData.length = ${allCoinsData.length})`);
       }
       
       // Step 2: Send all data to AI at once (batch analysis)
       console.log(`\n${'='.repeat(60)}`);
       console.log(`🤖 Step 2: AI BATCH ANALYSIS`);
-      console.log(`${'='.repeat(60)}`);
+      console.log(`📊 Proceeding to AI analysis step...`);
       console.log(`📊 Analyzed ${analyzedCount} coins total`);
       console.log(`📊 Collected ${allCoinsData.length} coins with valid frame data for AI`);
       if (allCoinsData.length > 0) {
