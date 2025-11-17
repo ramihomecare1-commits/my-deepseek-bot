@@ -639,19 +639,28 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
     const timestamp = Date.now();
     const recvWindow = 5000;
     
+    // Bybit v5 wallet-balance parameters
     const params = {
       accountType: 'SPOT',
       timestamp: timestamp.toString(),
       recvWindow: recvWindow.toString()
     };
 
+    // Generate signature BEFORE adding it to params
     const signature = generateBybitSignature(params, apiSecret);
-    params.signature = signature;
+    
+    // Add signature to request params
+    const requestParams = {
+      ...params,
+      signature: signature
+    };
 
     console.log(`🔵 [BYBIT API] Fetching open positions from ${baseUrl}/v5/account/wallet-balance`);
+    console.log(`🔵 [BYBIT API] Params: accountType=SPOT, timestamp=${timestamp}, recvWindow=${recvWindow}`);
+    console.log(`🔵 [BYBIT API] API Key: ${apiKey.substring(0, 8)}... (checking permissions)`);
     
     const response = await axios.get(`${baseUrl}/v5/account/wallet-balance`, {
-      params: params,
+      params: requestParams,
       headers: {
         'X-BAPI-API-KEY': apiKey,
         'X-BAPI-TIMESTAMP': timestamp.toString(),
@@ -701,8 +710,27 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
       return [];
     }
   } catch (error) {
-    const errorMsg = error.response?.data?.retMsg || error.message;
-    console.log(`❌ [BYBIT API] Error fetching positions: ${errorMsg}`);
+    const errorMsg = error.response?.data?.retMsg || error.response?.data?.retMsg || error.message;
+    const errorCode = error.response?.data?.retCode || error.response?.status || 0;
+    
+    console.log(`❌ [BYBIT API] Error fetching positions: ${errorMsg} (Code: ${errorCode})`);
+    
+    if (errorCode === 403) {
+      console.log(`   💡 403 Forbidden - Possible causes:`);
+      console.log(`   1. API key doesn't have 'Read' permissions`);
+      console.log(`   2. API key is from mainnet but using testnet (or vice versa)`);
+      console.log(`   3. IP address not whitelisted (if IP whitelist is enabled)`);
+      console.log(`   4. Invalid API key or secret`);
+      console.log(`   💡 Check: https://testnet.bybit.com → Profile → API Management`);
+    } else if (errorCode === 401) {
+      console.log(`   💡 401 Unauthorized - Invalid API key or signature`);
+      console.log(`   💡 Verify: API key and secret are correct`);
+    }
+    
+    if (error.response?.data) {
+      console.log(`   Response:`, JSON.stringify(error.response.data).substring(0, 300));
+    }
+    
     return [];
   }
 }
