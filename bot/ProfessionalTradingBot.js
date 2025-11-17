@@ -3230,12 +3230,45 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       const btcTrade = this.activeTrades.find(t => t.symbol === 'BTC');
       if (!btcTrade) {
         console.log(`⚠️ BTC trade not found in activeTrades. Checking closed trades...`);
+        console.log(`📋 Closed trades count: ${this.closedTrades.length}`);
+        console.log(`📋 Closed trades symbols: ${this.closedTrades.map(t => t.symbol).join(', ') || 'none'}`);
+        
         const btcClosed = this.closedTrades.find(t => t.symbol === 'BTC');
         if (btcClosed) {
-          console.log(`✅ BTC trade found in closedTrades: ${btcClosed.status} at $${btcClosed.closePrice?.toFixed(2) || 'N/A'}`);
+          console.log(`✅ BTC trade found in closedTrades: status=${btcClosed.status}, closePrice=$${btcClosed.closePrice?.toFixed(2) || 'N/A'}, id=${btcClosed.id || btcClosed.tradeId || 'N/A'}`);
         } else {
-          console.warn(`❌ BTC trade not found in activeTrades or closedTrades! This trade may have been lost.`);
+          console.warn(`❌ BTC trade not found in activeTrades or closedTrades!`);
+          console.warn(`   Active trades: ${this.activeTrades.length} trades`);
+          console.warn(`   Closed trades: ${this.closedTrades.length} trades`);
+          console.warn(`   Checking DynamoDB directly...`);
+          
+          // Check DynamoDB directly to see if trade exists there
+          try {
+            const { loadTrades, loadClosedTrades } = require('../services/tradePersistenceService');
+            const dbActiveTrades = await loadTrades();
+            const dbClosedTrades = await loadClosedTrades();
+            
+            const dbBtcActive = dbActiveTrades.find(t => t.symbol === 'BTC');
+            const dbBtcClosed = dbClosedTrades.find(t => t.symbol === 'BTC');
+            
+            if (dbBtcActive) {
+              console.warn(`   ⚠️ BTC found in DynamoDB activeTrades but not in memory!`);
+              console.warn(`      Trade details: id=${dbBtcActive.id || dbBtcActive.tradeId}, status=${dbBtcActive.status}, entryPrice=$${dbBtcActive.entryPrice}`);
+              console.warn(`   💡 This suggests the trade wasn't loaded into memory on startup.`);
+            } else if (dbBtcClosed) {
+              console.warn(`   ⚠️ BTC found in DynamoDB closedTrades but not in memory!`);
+              console.warn(`      Trade details: id=${dbBtcClosed.id || dbBtcClosed.tradeId}, status=${dbBtcClosed.status}, closePrice=$${dbBtcClosed.closePrice}`);
+              console.warn(`   💡 This suggests the closed trade wasn't loaded into memory on startup.`);
+            } else {
+              console.error(`   ❌ BTC trade not found in DynamoDB either! Trade has been completely lost.`);
+              console.error(`   💡 Possible causes: Trade was never saved, or DynamoDB save failed silently.`);
+            }
+          } catch (dbError) {
+            console.error(`   ❌ Error checking DynamoDB: ${dbError.message}`);
+          }
         }
+      } else {
+        console.log(`✅ BTC trade found in activeTrades: status=${btcTrade.status}, entryPrice=$${btcTrade.entryPrice?.toFixed(2) || 'N/A'}, id=${btcTrade.id || btcTrade.tradeId || 'N/A'}`);
       }
     } else {
       console.log(`📊 No active trades currently`);
