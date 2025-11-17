@@ -183,7 +183,7 @@ class ProfessionalTradingBot {
       multiTimeframeConsensus: {
         enabled: true,
         requiredMatches: 2,
-        timeframes: ['1h', '4h', '1d']
+        timeframes: ['4h', '1d', '1w']  // Long-term trading: 4h, daily, and weekly
       },
       patterns: {
         buy: {
@@ -421,7 +421,7 @@ class ProfessionalTradingBot {
       return { passed: true };
     }
 
-    const timeframes = consensusRules.timeframes || ['1h', '4h', '1d'];
+    const timeframes = consensusRules.timeframes || ['4h', '1d', '1w'];
     const requiredMatches = consensusRules.requiredMatches || timeframes.length;
     const frames =
       analysis.frames ||
