@@ -2827,9 +2827,39 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               if (dcaCooldownMs > 0 && trade.lastDcaAt && (now - trade.lastDcaAt) < dcaCooldownMs) {
                 addLogEntry(`🕒 ${trade.symbol}: DCA cooldown active (${Math.round((dcaCooldownMs - (now - trade.lastDcaAt)) / 60000)}m remaining)`, 'info');
               } else {
-              // Execute Add Position (DCA) order
-              const dcaResult = await executeAddPosition(trade);
-              if (dcaResult.success) {
+              // Execute Add Position (DCA) order with retry logic
+              let dcaResult = null;
+              let retryCount = 0;
+              const maxRetries = 2;
+              
+              while (retryCount <= maxRetries && (!dcaResult || !dcaResult.success)) {
+                if (retryCount > 0) {
+                  console.log(`🔄 Retrying DCA execution for ${trade.symbol} (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+                  await sleep(2000); // Wait 2 seconds before retry
+                }
+                
+                try {
+                  dcaResult = await executeAddPosition(trade);
+                  
+                  if (dcaResult.success) {
+                    break; // Success, exit retry loop
+                  } else if (dcaResult.skipped) {
+                    break; // Skipped (e.g., trading disabled), don't retry
+                  }
+                  
+                  retryCount++;
+                } catch (error) {
+                  console.error(`❌ DCA execution error for ${trade.symbol} (attempt ${retryCount + 1}):`, error.message);
+                  dcaResult = {
+                    success: false,
+                    error: error.message,
+                    skipped: false
+                  };
+                  retryCount++;
+                }
+              }
+              
+              if (dcaResult && dcaResult.success) {
                 trade.status = 'DCA_HIT';
                 trade.dcaCount = (trade.dcaCount || 0) + 1;
                 trade.dcaExecutedAt = new Date();
@@ -2863,16 +2893,39 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 notificationLevel = 'warning';
                 notificationNeeded = true;
                 trade.dcaNotified = true;
-                  trade.lastDcaAt = now;
+                trade.lastDcaAt = now;
                 addLogEntry(`💰 DCA #${trade.dcaCount} EXECUTED: ${trade.symbol} - Order ID: ${dcaResult.orderId}`, 'info');
                 addLogEntry(`📊 ${trade.symbol} metrics updated: Avg Entry $${trade.averageEntryPrice.toFixed(2)}, Size ${totalQuantity.toFixed(4)}, P&L ${pnlPercentFromAvg.toFixed(2)}%`, 'info');
-              } else if (!dcaResult.skipped) {
+                
+                // Explicitly save trade after successful DCA
+                try {
+                  await saveTrades(this.activeTrades);
+                  console.log(`💾 Saved ${trade.symbol} trade after DCA #${trade.dcaCount} execution`);
+                } catch (saveError) {
+                  console.error(`❌ Failed to save ${trade.symbol} trade after DCA:`, saveError.message);
+                }
+              } else if (dcaResult && !dcaResult.skipped) {
+                // DCA failed after retries - mark as hit but don't increment count
+                // This allows it to retry on next price update
                 trade.status = 'DCA_HIT';
-                trade.dcaNotified = true;
-                notificationMessage = `💰 DCA #${trade.dcaCount + 1} (Execution ${dcaResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)}. Consider averaging down.`;
+                // Don't set dcaNotified = true here - allow retry on next update
+                // Only set it if we've exhausted retries
+                if (retryCount > maxRetries) {
+                  trade.dcaNotified = true; // Prevent infinite retries
+                  trade.lastDcaAt = now; // Set cooldown
+                }
+                notificationMessage = `💰 DCA #${trade.dcaCount + 1} (Execution ${dcaResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)}. ${retryCount > maxRetries ? 'Max retries reached.' : 'Will retry on next update.'}`;
                 notificationLevel = 'warning';
                 notificationNeeded = true;
-                addLogEntry(`⚠️ DCA hit but execution failed: ${trade.symbol} - ${dcaResult.error}`, 'warning');
+                addLogEntry(`⚠️ DCA hit but execution failed for ${trade.symbol} after ${retryCount} attempts: ${dcaResult.error || 'Unknown error'}`, 'warning');
+                
+                // Still save the trade state even on failure
+                try {
+                  await saveTrades(this.activeTrades);
+                  console.log(`💾 Saved ${trade.symbol} trade state after DCA failure`);
+                } catch (saveError) {
+                  console.error(`❌ Failed to save ${trade.symbol} trade after DCA failure:`, saveError.message);
+                }
               }
               }
             }
@@ -2959,9 +3012,39 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               if (dcaCooldownMs > 0 && trade.lastDcaAt && (now - trade.lastDcaAt) < dcaCooldownMs) {
                 addLogEntry(`🕒 ${trade.symbol}: DCA cooldown active (${Math.round((dcaCooldownMs - (now - trade.lastDcaAt)) / 60000)}m remaining)`, 'info');
               } else {
-              // Execute Add Position (DCA) order (short more)
-              const dcaResult = await executeAddPosition(trade);
-              if (dcaResult.success) {
+              // Execute Add Position (DCA) order (short more) with retry logic
+              let dcaResult = null;
+              let retryCount = 0;
+              const maxRetries = 2;
+              
+              while (retryCount <= maxRetries && (!dcaResult || !dcaResult.success)) {
+                if (retryCount > 0) {
+                  console.log(`🔄 Retrying DCA execution for ${trade.symbol} (SHORT) (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+                  await sleep(2000); // Wait 2 seconds before retry
+                }
+                
+                try {
+                  dcaResult = await executeAddPosition(trade);
+                  
+                  if (dcaResult.success) {
+                    break; // Success, exit retry loop
+                  } else if (dcaResult.skipped) {
+                    break; // Skipped (e.g., trading disabled), don't retry
+                  }
+                  
+                  retryCount++;
+                } catch (error) {
+                  console.error(`❌ DCA execution error for ${trade.symbol} (SHORT) (attempt ${retryCount + 1}):`, error.message);
+                  dcaResult = {
+                    success: false,
+                    error: error.message,
+                    skipped: false
+                  };
+                  retryCount++;
+                }
+              }
+              
+              if (dcaResult && dcaResult.success) {
                 trade.status = 'DCA_HIT';
                 trade.dcaCount = (trade.dcaCount || 0) + 1;
                 trade.dcaExecutedAt = new Date();
@@ -2994,16 +3077,37 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 notificationLevel = 'warning';
                 notificationNeeded = true;
                 trade.dcaNotified = true;
-                  trade.lastDcaAt = now;
+                trade.lastDcaAt = now;
                 addLogEntry(`💰 DCA #${trade.dcaCount} EXECUTED (SHORT): ${trade.symbol} - Order ID: ${dcaResult.orderId}`, 'info');
                 addLogEntry(`📊 ${trade.symbol} metrics updated: Avg Entry $${trade.averageEntryPrice.toFixed(2)}, Size ${totalQuantity.toFixed(4)}, P&L ${pnlPercentFromAvg.toFixed(2)}%`, 'info');
-              } else if (!dcaResult.skipped) {
+                
+                // Explicitly save trade after successful DCA
+                try {
+                  await saveTrades(this.activeTrades);
+                  console.log(`💾 Saved ${trade.symbol} trade after DCA #${trade.dcaCount} execution (SHORT)`);
+                } catch (saveError) {
+                  console.error(`❌ Failed to save ${trade.symbol} trade after DCA:`, saveError.message);
+                }
+              } else if (dcaResult && !dcaResult.skipped) {
+                // DCA failed after retries - mark as hit but don't increment count
                 trade.status = 'DCA_HIT';
-                trade.dcaNotified = true;
-                notificationMessage = `💰 DCA #${trade.dcaCount + 1} (SHORT, Execution ${dcaResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)}. Consider averaging up.`;
+                // Don't set dcaNotified = true here - allow retry on next update
+                if (retryCount > maxRetries) {
+                  trade.dcaNotified = true; // Prevent infinite retries
+                  trade.lastDcaAt = now; // Set cooldown
+                }
+                notificationMessage = `💰 DCA #${trade.dcaCount + 1} (SHORT, Execution ${dcaResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)}. ${retryCount > maxRetries ? 'Max retries reached.' : 'Will retry on next update.'}`;
                 notificationLevel = 'warning';
                 notificationNeeded = true;
-                addLogEntry(`⚠️ DCA hit but execution failed (SHORT): ${trade.symbol} - ${dcaResult.error}`, 'warning');
+                addLogEntry(`⚠️ DCA hit but execution failed for ${trade.symbol} (SHORT) after ${retryCount} attempts: ${dcaResult.error || 'Unknown error'}`, 'warning');
+                
+                // Still save the trade state even on failure
+                try {
+                  await saveTrades(this.activeTrades);
+                  console.log(`💾 Saved ${trade.symbol} trade state after DCA failure (SHORT)`);
+                } catch (saveError) {
+                  console.error(`❌ Failed to save ${trade.symbol} trade after DCA failure:`, saveError.message);
+                }
               }
               }
             }
@@ -3109,6 +3213,33 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     
     // Save trades to disk after updates
     await saveTrades(this.activeTrades);
+    
+    // Log all active trades for tracking (helps identify missing trades)
+    if (this.activeTrades.length > 0) {
+      const tradeSummary = this.activeTrades.map(t => ({
+        symbol: t.symbol,
+        id: t.id || t.tradeId,
+        status: t.status,
+        action: t.action,
+        entryPrice: t.entryPrice,
+        dcaCount: t.dcaCount || 0
+      }));
+      console.log(`📊 Active trades summary (${this.activeTrades.length} total):`, tradeSummary);
+      
+      // Check for specific symbols that might be missing (e.g., BTC)
+      const btcTrade = this.activeTrades.find(t => t.symbol === 'BTC');
+      if (!btcTrade) {
+        console.log(`⚠️ BTC trade not found in activeTrades. Checking closed trades...`);
+        const btcClosed = this.closedTrades.find(t => t.symbol === 'BTC');
+        if (btcClosed) {
+          console.log(`✅ BTC trade found in closedTrades: ${btcClosed.status} at $${btcClosed.closePrice?.toFixed(2) || 'N/A'}`);
+        } else {
+          console.warn(`❌ BTC trade not found in activeTrades or closedTrades! This trade may have been lost.`);
+        }
+      }
+    } else {
+      console.log(`📊 No active trades currently`);
+    }
     
     // Recalculate portfolio metrics from updated trades
     await recalculateFromTrades(this.activeTrades);
