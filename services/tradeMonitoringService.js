@@ -328,18 +328,95 @@ Respond ONLY with valid JSON.`;
 
       const aiResponse = response.data.choices[0].message.content;
       
+      // Helper function to clean and parse JSON
+      const cleanAndParseJSON = (jsonString) => {
+        try {
+          // First, try direct parsing
+          return JSON.parse(jsonString);
+        } catch (e) {
+          // If that fails, try cleaning common issues
+          let cleaned = jsonString.trim();
+          
+          // Remove markdown code blocks if present
+          cleaned = cleaned.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+          
+          // Try to extract JSON object from text (find the first complete JSON object)
+          const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            cleaned = jsonMatch[0];
+          }
+          
+          // Fix common JSON issues step by step:
+          
+          // 1. Remove trailing commas before closing braces/brackets (safest fix)
+          cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
+          
+          // 2. Fix unquoted property names (only if they're clearly property names)
+          // Match: {property: or ,property: (but not already quoted)
+          cleaned = cleaned.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, (match, prefix, propName, suffix) => {
+            // Only fix if it's not already quoted
+            if (!match.includes('"')) {
+              return `${prefix}"${propName}"${suffix}`;
+            }
+            return match;
+          });
+          
+          // 3. Fix single quotes around property names (more careful)
+          // Match: 'property': (single quotes around property name)
+          cleaned = cleaned.replace(/'([a-zA-Z_][a-zA-Z0-9_]*)':/g, '"$1":');
+          
+          // 4. Fix single quotes around string values (be careful not to break escaped quotes)
+          // Match: : 'value' (but avoid matching inside already-quoted strings)
+          // This is tricky, so we'll do a simple replacement for common cases
+          cleaned = cleaned.replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"');
+          
+          try {
+            return JSON.parse(cleaned);
+          } catch (e2) {
+            // Log the problematic JSON for debugging
+            console.error('❌ Failed to parse JSON after cleaning.');
+            console.error('❌ Original error:', e.message);
+            console.error('❌ After cleaning error:', e2.message);
+            console.error('📄 Original JSON (first 1000 chars):', jsonString.substring(0, 1000));
+            console.error('📄 Cleaned JSON (first 1000 chars):', cleaned.substring(0, 1000));
+            console.error('📄 Error position:', e2.message.match(/position (\d+)/)?.[1] || 'unknown');
+            
+            // Try to show the problematic area around the error position
+            if (e2.message.match(/position (\d+)/)) {
+              const errorPos = parseInt(e2.message.match(/position (\d+)/)[1]);
+              const start = Math.max(0, errorPos - 50);
+              const end = Math.min(cleaned.length, errorPos + 50);
+              console.error('📄 Problem area:', cleaned.substring(start, end));
+              console.error('   '.padEnd(errorPos - start + 3, ' ') + '^');
+            }
+            
+            throw e2;
+          }
+        }
+      };
+      
       // Try to extract JSON from response (handle R1's thinking tags)
       let jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        const evaluation = JSON.parse(jsonMatch[0]);
-        console.log(`✅ AI Evaluation received: ${evaluation.action} (${evaluation.confidence}% confidence)`);
-        return evaluation;
+        try {
+          const evaluation = cleanAndParseJSON(jsonMatch[0]);
+          console.log(`✅ AI Evaluation received: ${evaluation.action} (${evaluation.confidence}% confidence)`);
+          return evaluation;
+        } catch (parseError) {
+          console.error('❌ Failed to parse AI response JSON:', parseError.message);
+          console.error('📄 AI Response snippet:', aiResponse.substring(0, 1000));
+          return null;
+        }
       }
 
-      console.log('⚠️ Could not parse AI response');
+      console.log('⚠️ Could not find JSON object in AI response');
+      console.log('📄 AI Response:', aiResponse.substring(0, 500));
       return null;
     } catch (error) {
       console.error('❌ Error calling Premium AI:', error.message);
+      if (error.response) {
+        console.error('📄 Response data:', JSON.stringify(error.response.data, null, 2).substring(0, 500));
+      }
       return null;
     }
   }

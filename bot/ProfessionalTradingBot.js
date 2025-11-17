@@ -4106,43 +4106,136 @@ Return JSON array format:
             // Adjust take profit, stop loss, and/or DCA price
             let adjusted = false;
             if (rec.newTakeProfit && typeof rec.newTakeProfit === 'number' && rec.newTakeProfit > 0) {
-              // Validate: If value is suspiciously high (likely a percentage mistake), convert it
-              // For most coins, TP should be within 2x-10x of entry price (reasonable range)
               const currentPrice = trade.currentPrice || trade.entryPrice;
-              const suspiciousThreshold = currentPrice * 20; // If TP is >20x current price, likely a percentage
-              
+              const avgEntry = trade.averageEntryPrice || trade.entryPrice;
               let newTP = rec.newTakeProfit;
-              if (newTP > suspiciousThreshold) {
-                // Likely a percentage - convert to dollar amount
-                console.warn(`⚠️ ${symbol}: AI provided suspiciously high TP value (${newTP}). Treating as percentage and converting...`);
-                newTP = currentPrice * (1 + rec.newTakeProfit / 100);
-                addLogEntry(`⚠️ ${symbol}: AI TP value ${rec.newTakeProfit} was too high - converted from percentage to $${newTP.toFixed(2)}`, 'warning');
-              }
               
-              const oldTP = trade.takeProfit;
-              trade.takeProfit = newTP;
-              adjusted = true;
-              addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
-              telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
+              // Validate TP value based on trade action
+              if (trade.action === 'BUY') {
+                // For BUY: TP should be > entry price (profit target above entry)
+                const minTP = avgEntry * 1.01; // At least 1% above entry
+                const maxTP = avgEntry * 20; // Max 20x entry (suspiciously high)
+                
+                if (newTP < minTP) {
+                  // Too low - likely a percentage or wrong value
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously low TP value ($${newTP.toFixed(2)}) for BUY trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
+                  addLogEntry(`⚠️ ${symbol}: AI TP value $${newTP.toFixed(2)} is too low for BUY trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
+                  // Don't apply the adjustment - keep existing TP
+                } else if (newTP > maxTP) {
+                  // Too high - likely a percentage mistake
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously high TP value (${newTP}). Treating as percentage and converting...`);
+                  newTP = avgEntry * (1 + rec.newTakeProfit / 100);
+                  addLogEntry(`⚠️ ${symbol}: AI TP value ${rec.newTakeProfit} was too high - converted from percentage to $${newTP.toFixed(2)}`, 'warning');
+                  
+                  const oldTP = trade.takeProfit;
+                  trade.takeProfit = newTP;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
+                } else {
+                  // Valid TP value
+                  const oldTP = trade.takeProfit;
+                  trade.takeProfit = newTP;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
+                }
+              } else if (trade.action === 'SELL') {
+                // For SELL (short): TP should be < entry price (profit when price goes down)
+                const maxTP = avgEntry * 0.99; // At most 1% below entry
+                const minTP = avgEntry * 0.05; // Min 5% of entry (suspiciously low)
+                
+                if (newTP > maxTP) {
+                  // Too high for short - likely wrong
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously high TP value ($${newTP.toFixed(2)}) for SELL trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
+                  addLogEntry(`⚠️ ${symbol}: AI TP value $${newTP.toFixed(2)} is too high for SELL trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
+                  // Don't apply the adjustment
+                } else if (newTP < minTP) {
+                  // Too low - likely a percentage mistake
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously low TP value (${newTP}). Treating as percentage and converting...`);
+                  newTP = avgEntry * (1 - rec.newTakeProfit / 100);
+                  addLogEntry(`⚠️ ${symbol}: AI TP value ${rec.newTakeProfit} was too low - converted from percentage to $${newTP.toFixed(2)}`, 'warning');
+                  
+                  const oldTP = trade.takeProfit;
+                  trade.takeProfit = newTP;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
+                } else {
+                  // Valid TP value
+                  const oldTP = trade.takeProfit;
+                  trade.takeProfit = newTP;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
+                }
+              }
             }
             if (rec.newStopLoss && typeof rec.newStopLoss === 'number' && rec.newStopLoss > 0) {
-              // Validate: If value is suspiciously high (likely a percentage mistake), convert it
               const currentPrice = trade.currentPrice || trade.entryPrice;
-              const suspiciousThreshold = currentPrice * 20; // If SL is >20x current price, likely a percentage
-              
+              const avgEntry = trade.averageEntryPrice || trade.entryPrice;
               let newSL = rec.newStopLoss;
-              if (newSL > suspiciousThreshold) {
-                // Likely a percentage - convert to dollar amount
-                console.warn(`⚠️ ${symbol}: AI provided suspiciously high SL value (${newSL}). Treating as percentage and converting...`);
-                newSL = currentPrice * (1 - rec.newStopLoss / 100);
-                addLogEntry(`⚠️ ${symbol}: AI SL value ${rec.newStopLoss} was too high - converted from percentage to $${newSL.toFixed(2)}`, 'warning');
-              }
               
-              const oldSL = trade.stopLoss;
-              trade.stopLoss = newSL;
-              adjusted = true;
-              addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
-              telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
+              // Validate SL value based on trade action
+              if (trade.action === 'BUY') {
+                // For BUY: SL should be < entry price (loss limit below entry)
+                const maxSL = avgEntry * 0.99; // At most 1% below entry
+                const minSL = avgEntry * 0.10; // Min 10% of entry (suspiciously low - would be 90% loss)
+                
+                if (newSL > maxSL) {
+                  // Too high for BUY - likely wrong
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously high SL value ($${newSL.toFixed(2)}) for BUY trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
+                  addLogEntry(`⚠️ ${symbol}: AI SL value $${newSL.toFixed(2)} is too high for BUY trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
+                  // Don't apply the adjustment - keep existing SL
+                } else if (newSL < minSL) {
+                  // Too low - likely a percentage mistake
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously low SL value (${newSL}). Treating as percentage and converting...`);
+                  newSL = avgEntry * (1 - rec.newStopLoss / 100);
+                  addLogEntry(`⚠️ ${symbol}: AI SL value ${rec.newStopLoss} was too low - converted from percentage to $${newSL.toFixed(2)}`, 'warning');
+                  
+                  const oldSL = trade.stopLoss;
+                  trade.stopLoss = newSL;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
+                } else {
+                  // Valid SL value
+                  const oldSL = trade.stopLoss;
+                  trade.stopLoss = newSL;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
+                }
+              } else if (trade.action === 'SELL') {
+                // For SELL (short): SL should be > entry price (loss limit above entry)
+                const minSL = avgEntry * 1.01; // At least 1% above entry
+                const maxSL = avgEntry * 20; // Max 20x entry (suspiciously high)
+                
+                if (newSL < minSL) {
+                  // Too low for short - likely wrong
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously low SL value ($${newSL.toFixed(2)}) for SELL trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
+                  addLogEntry(`⚠️ ${symbol}: AI SL value $${newSL.toFixed(2)} is too low for SELL trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
+                  // Don't apply the adjustment
+                } else if (newSL > maxSL) {
+                  // Too high - likely a percentage mistake
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously high SL value (${newSL}). Treating as percentage and converting...`);
+                  newSL = avgEntry * (1 + rec.newStopLoss / 100);
+                  addLogEntry(`⚠️ ${symbol}: AI SL value ${rec.newStopLoss} was too high - converted from percentage to $${newSL.toFixed(2)}`, 'warning');
+                  
+                  const oldSL = trade.stopLoss;
+                  trade.stopLoss = newSL;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
+                } else {
+                  // Valid SL value
+                  const oldSL = trade.stopLoss;
+                  trade.stopLoss = newSL;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
+                }
+              }
             }
             // Handle both newDcaPrice (new field) and newAddPosition (legacy field) for backward compatibility
             const newDcaValue = rec.newDcaPrice || rec.newAddPosition;
