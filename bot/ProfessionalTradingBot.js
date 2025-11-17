@@ -2978,14 +2978,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       );
       
       if (bybitPositions.length === 0) {
-        // No positions on Bybit - check if trades should be closed
-        this.activeTrades.forEach(trade => {
-          if (trade.quantity > 0) {
-            console.log(`⚠️ ${trade.symbol}: Trade in memory but no position on Bybit - may be closed`);
-            trade.bybitQuantity = 0;
-            trade.lastSyncedWithBybit = new Date();
-          }
-        });
+        // No positions on Bybit - but don't mark as closed if API call failed
+        // Only log warning, don't update quantities if we can't verify
+        console.log(`⚠️ No positions found on Bybit - trades may be closed or API call failed`);
+        console.log(`   Keeping existing trade data until successful sync`);
         return;
       }
       
