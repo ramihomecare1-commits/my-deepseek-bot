@@ -454,18 +454,25 @@ router.post('/trade-monitoring/proximity', (req, res) => {
 // Exchange trading status endpoint
 router.get('/exchange-status', (req, res) => {
   try {
-    const { isExchangeTradingEnabled, getVirtualTradingState } = require('../services/exchangeService');
+    const { isExchangeTradingEnabled, getPreferredExchange } = require('../services/exchangeService');
     const status = isExchangeTradingEnabled();
-    const virtualState = status.virtualTrading ? getVirtualTradingState() : null;
+    const exchange = getPreferredExchange();
+    
+    let message = '';
+    if (status.mode === 'BYBIT_DEMO') {
+      message = `✅ Bybit Demo Trading ENABLED - Orders execute on Bybit testnet (risk-free demo funds)`;
+    } else if (status.mode === 'BYBIT_MAINNET') {
+      message = `⚠️ Bybit Mainnet Trading ENABLED - Orders execute on Bybit with REAL MONEY`;
+    } else {
+      message = `❌ Trading DISABLED - Configure BYBIT_API_KEY and BYBIT_API_SECRET for demo trading`;
+    }
     
     res.json({
       ...status,
-      virtualState: virtualState,
-      message: status.mode === 'REAL'
-        ? 'Real trading is ENABLED - orders will be executed on Binance with real money'
-        : status.mode === 'VIRTUAL'
-        ? `Virtual trading is ENABLED - orders are simulated (no real money). Balance: $${virtualState?.balance.toFixed(2) || '0'}`
-        : 'Trading is DISABLED - set ENABLE_VIRTUAL_TRADING=true (default) or ENABLE_AUTO_TRADING=true with API keys'
+      exchange: exchange.exchange,
+      baseUrl: exchange.baseUrl,
+      testnet: exchange.testnet,
+      message: message
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

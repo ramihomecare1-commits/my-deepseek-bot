@@ -64,6 +64,27 @@ function isExchangeTradingEnabled() {
   
   const preferredExchange = getPreferredExchange();
   
+  // Log Bybit status on first call (startup)
+  if (!isExchangeTradingEnabled._logged) {
+    isExchangeTradingEnabled._logged = true;
+    console.log('\n' + '='.repeat(60));
+    console.log('🔵 BYBIT TRADING CONFIGURATION');
+    console.log('='.repeat(60));
+    if (tradingEnabled) {
+      console.log(`✅ Status: ENABLED`);
+      console.log(`✅ Mode: ${useTestnet ? 'BYBIT_DEMO (Testnet)' : 'BYBIT_MAINNET (Production)'}`);
+      console.log(`✅ API Endpoint: ${preferredExchange.baseUrl}`);
+      console.log(`✅ API Key: ${bybitApiKey.substring(0, 10)}...${bybitApiKey.substring(bybitApiKey.length - 4)}`);
+      console.log(`✅ All orders will execute via Bybit API`);
+    } else {
+      console.log(`❌ Status: DISABLED`);
+      console.log(`❌ Reason: BYBIT_API_KEY or BYBIT_API_SECRET not configured`);
+      console.log(`💡 To enable: Set BYBIT_API_KEY and BYBIT_API_SECRET in environment variables`);
+      console.log(`💡 Get keys from: https://testnet.bybit.com → Profile → API Management`);
+    }
+    console.log('='.repeat(60) + '\n');
+  }
+  
   return {
     enabled: tradingEnabled,
     mode: tradingEnabled ? (useTestnet ? 'BYBIT_DEMO' : 'BYBIT_MAINNET') : 'DISABLED',
@@ -138,6 +159,9 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
       signature: signature
     };
 
+    console.log(`🔵 [BYBIT API] Sending order to ${baseUrl}/v5/order/create`);
+    console.log(`🔵 [BYBIT API] Order: ${side} ${quantity} ${symbol} (Market)`);
+    
     const response = await axios.post(
       `${baseUrl}/v5/order/create`,
       requestParams,
@@ -155,6 +179,14 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
 
     if (response.data && response.data.retCode === 0 && response.data.result) {
       const order = response.data.result;
+      console.log(`✅ [BYBIT API] Order executed successfully!`);
+      console.log(`   Order ID: ${order.orderId}`);
+      console.log(`   Symbol: ${order.symbol}`);
+      console.log(`   Side: ${order.side}`);
+      console.log(`   Quantity: ${order.executedQty || order.qty}`);
+      console.log(`   Price: ${order.avgPrice || order.price}`);
+      console.log(`   Status: ${order.orderStatus}`);
+      
       return {
         success: true,
         orderId: order.orderId,
@@ -167,17 +199,26 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
         data: response.data
       };
     } else {
+      const errorMsg = response.data?.retMsg || 'Unknown error';
+      const errorCode = response.data?.retCode || 0;
+      console.log(`❌ [BYBIT API] Order failed: ${errorMsg} (Code: ${errorCode})`);
       return {
         success: false,
-        error: response.data?.retMsg || 'Unknown error',
-        code: response.data?.retCode || 0
+        error: errorMsg,
+        code: errorCode
       };
     }
   } catch (error) {
+    const errorMsg = error.response?.data?.retMsg || error.response?.data?.message || error.message;
+    const errorCode = error.response?.data?.retCode || error.response?.status || 0;
+    console.log(`❌ [BYBIT API] Order execution error: ${errorMsg} (Code: ${errorCode})`);
+    if (error.response?.data) {
+      console.log(`   Response:`, JSON.stringify(error.response.data).substring(0, 200));
+    }
     return {
       success: false,
-      error: error.response?.data?.retMsg || error.response?.data?.message || error.message,
-      code: error.response?.data?.retCode || error.response?.status || 0
+      error: errorMsg,
+      code: errorCode
     };
   }
 }
@@ -237,16 +278,23 @@ async function executeMarketOrder(symbol, side, quantity, apiKey, apiSecret) {
 }
 
 /**
- * Virtual trading functions removed - using Bybit Demo Trading instead
- * This function is kept for backward compatibility but will not be used
+ * ============================================================================
+ * VIRTUAL TRADING FUNCTIONS (HIDDEN - KEPT FOR FUTURE USE)
+ * ============================================================================
+ * These functions are commented out but preserved for potential future use.
+ * Currently, all trading goes through Bybit API.
+ * ============================================================================
  */
-async function executeVirtualMarketOrder(symbol, side, quantity, price) {
-  return {
-    success: false,
-    error: 'Virtual trading is disabled. Please configure Bybit API keys for demo trading.',
-    mode: 'DISABLED'
-  };
-}
+
+// HIDDEN: Virtual trading function (kept for future use)
+// async function executeVirtualMarketOrder(symbol, side, quantity, price) {
+//   // Virtual trading implementation - hidden but preserved
+//   return {
+//     success: false,
+//     error: 'Virtual trading is disabled. Please configure Bybit API keys for demo trading.',
+//     mode: 'DISABLED'
+//   };
+// }
 
 /**
  * Get account balance for a specific asset (Bybit or legacy Binance)
@@ -579,9 +627,27 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
 }
 
 /**
- * Get virtual trading balance and positions (deprecated - use Bybit)
- * @returns {Object} Empty state (virtual trading disabled)
+ * ============================================================================
+ * HIDDEN: Virtual trading state functions (kept for future use)
+ * ============================================================================
  */
+
+// HIDDEN: Get virtual trading state (kept for future use)
+// function getVirtualTradingState() {
+//   return {
+//     balance: 0,
+//     positions: {},
+//     totalValue: 0,
+//     message: 'Virtual trading disabled. Using Bybit Demo Trading.'
+//   };
+// }
+
+// HIDDEN: Reset virtual trading (kept for future use)
+// function resetVirtualTrading() {
+//   console.log('⚠️ Virtual trading is disabled. Use Bybit Demo Trading instead.');
+// }
+
+// Temporary stub functions for backward compatibility
 function getVirtualTradingState() {
   return {
     balance: 0,
@@ -591,11 +657,8 @@ function getVirtualTradingState() {
   };
 }
 
-/**
- * Reset virtual trading state (deprecated - use Bybit)
- */
 function resetVirtualTrading() {
-  console.log('⚠️ Virtual trading is disabled. Use Bybit Demo Trading instead.');
+  // No-op: Virtual trading is disabled
 }
 
 module.exports = {

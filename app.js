@@ -121,6 +121,10 @@ async function initializeBotAsync() {
   try {
     console.log('🔄 Initializing trading bot...');
     
+    // Check Bybit configuration status (triggers startup logging)
+    const { isExchangeTradingEnabled } = require('./services/exchangeService');
+    isExchangeTradingEnabled(); // This will log Bybit status on first call
+    
     tradingBot = new ProfessionalTradingBot();
     app.locals.tradingBot = tradingBot;
     
