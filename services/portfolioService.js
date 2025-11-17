@@ -358,18 +358,22 @@ module.exports = {
 };
 
 /**
- * Get DCA trigger re-evaluation timestamp
+ * Get unified trigger re-evaluation timestamp
+ * Used by DCA, TP, and SL triggers to share cooldown
  */
 function getDcaTriggerTimestamp() {
-  return portfolioState.lastDcaTriggerReevalAt || 0;
+  return portfolioState.lastTriggerReevalAt || portfolioState.lastDcaTriggerReevalAt || 0;
 }
 
 /**
- * Set DCA trigger re-evaluation timestamp
+ * Set unified trigger re-evaluation timestamp
+ * Used by DCA, TP, and SL triggers to share cooldown
  */
 async function setDcaTriggerTimestamp(timestamp) {
-  portfolioState.lastDcaTriggerReevalAt = timestamp;
+  portfolioState.lastTriggerReevalAt = timestamp;
+  portfolioState.lastDcaTriggerReevalAt = timestamp; // Keep for backward compatibility
   await savePortfolio(); // Persist immediately
+  console.log(`📅 [COOLDOWN] Set unified trigger timestamp: ${new Date(timestamp).toISOString()}`);
   return true;
 }
 

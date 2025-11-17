@@ -102,9 +102,9 @@ class ProfessionalTradingBot {
     this.openTradesReevalCooldownMs = 5 * 60 * 1000; // 5 minutes
     this.lastOpenTradesReevalAt = 0; // timestamp of last AI re-evaluation call
     this.lastOpenTradesReevalNotifiedAt = null; // timestamp of last Telegram summary
-    // Cooldown for DCA-triggered re-evaluations (1 hour)
-    this.dcaTriggerReevalCooldownMs = 60 * 60 * 1000; // 1 hour
-    this.lastDcaTriggerReevalAt = 0; // timestamp of last DCA-triggered re-evaluation
+    // Unified cooldown for ALL triggers (DCA execution, DCA proximity, TP proximity, SL proximity)
+    this.dcaTriggerReevalCooldownMs = 3 * 60 * 60 * 1000; // 3 hours (unified for all triggers)
+    this.lastDcaTriggerReevalAt = 0; // timestamp of last trigger-based re-evaluation
     this.dcaTriggerReevalInProgress = false; // flag to prevent multiple simultaneous re-evaluations
     this.botStartTime = Date.now(); // track when bot started (prevents re-eval during startup)
     this.dcaTriggerStartupDelayMs = 3 * 60 * 1000; // 3 minutes startup delay (prevents timeout during deployment)
@@ -240,12 +240,13 @@ class ProfessionalTradingBot {
       addLogEntry('Portfolio state loaded', 'success');
       console.log('✅ Portfolio state loaded');
       
-      // Load persisted DCA trigger timestamp
+      // Load persisted unified trigger timestamp
       this.lastDcaTriggerReevalAt = getDcaTriggerTimestamp();
       if (this.lastDcaTriggerReevalAt > 0) {
         const elapsed = Date.now() - this.lastDcaTriggerReevalAt;
-        const elapsedMinutes = Math.floor(elapsed / 60000);
-        console.log(`📅 Loaded DCA trigger timestamp: ${elapsedMinutes} minutes ago`);
+        const elapsedHours = Math.floor(elapsed / 3600000);
+        const elapsedMinutes = Math.floor((elapsed % 3600000) / 60000);
+        console.log(`📅 Loaded unified trigger timestamp: ${elapsedHours}h ${elapsedMinutes}m ago`);
       }
       
       // Load saved trades
@@ -3121,8 +3122,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                   const triggerTimestamp = Date.now();
                   this.lastDcaTriggerReevalAt = triggerTimestamp; // Set immediately, not inside async callback
                   await setDcaTriggerTimestamp(triggerTimestamp); // Persist to portfolio state
-                  console.log(`🔄 DCA executed for ${trade.symbol} - triggering re-evaluation of ALL open trades...`);
-                  addLogEntry(`🔄 DCA executed for ${trade.symbol} - triggering re-evaluation of all open trades`, 'info');
+                  console.log(`🔄 [DCA TRIGGER] DCA executed for ${trade.symbol} - triggering re-evaluation of ALL open trades (3-hour cooldown starts now)...`);
+                  addLogEntry(`🔄 DCA executed for ${trade.symbol} - triggering re-evaluation of all open trades (3-hour cooldown)`, 'info');
                   
                   // Trigger re-evaluation asynchronously (don't block DCA execution)
                   setImmediate(async () => {
@@ -3144,9 +3145,11 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                   console.log(`⏱️ Skipping DCA-triggered re-evaluation (startup delay ${remainingStartupDelay}min remaining)`);
                   addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (startup delay ${remainingStartupDelay}min remaining)`, 'info');
                 } else {
-                  const remainingCooldown = Math.ceil((this.dcaTriggerReevalCooldownMs - elapsedSinceLastDcaReeval) / 60000);
-                  console.log(`⏱️ Skipping DCA-triggered re-evaluation (cooldown ${remainingCooldown}min remaining)`);
-                  addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (cooldown ${remainingCooldown}min remaining)`, 'info');
+                  const remainingCooldownMs = this.dcaTriggerReevalCooldownMs - elapsedSinceLastDcaReeval;
+                  const remainingHours = Math.floor(remainingCooldownMs / 3600000);
+                  const remainingMinutes = Math.ceil((remainingCooldownMs % 3600000) / 60000);
+                  console.log(`⏱️ Skipping DCA-triggered re-evaluation (unified cooldown: ${remainingHours}h ${remainingMinutes}m remaining)`);
+                  addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (cooldown: ${remainingHours}h ${remainingMinutes}m remaining)`, 'info');
                 }
               } else if (dcaResult && !dcaResult.skipped) {
                 // DCA failed after retries - mark as hit but don't increment count
@@ -3382,8 +3385,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                   const triggerTimestamp = Date.now();
                   this.lastDcaTriggerReevalAt = triggerTimestamp; // Set immediately, not inside async callback
                   await setDcaTriggerTimestamp(triggerTimestamp); // Persist to portfolio state
-                  console.log(`🔄 DCA executed for ${trade.symbol} (SHORT) - triggering re-evaluation of ALL open trades...`);
-                  addLogEntry(`🔄 DCA executed for ${trade.symbol} (SHORT) - triggering re-evaluation of all open trades`, 'info');
+                  console.log(`🔄 [DCA TRIGGER] DCA executed for ${trade.symbol} (SHORT) - triggering re-evaluation of ALL open trades (3-hour cooldown starts now)...`);
+                  addLogEntry(`🔄 DCA executed for ${trade.symbol} (SHORT) - triggering re-evaluation of all open trades (3-hour cooldown)`, 'info');
                   
                   // Trigger re-evaluation asynchronously (don't block DCA execution)
                   setImmediate(async () => {
@@ -3405,9 +3408,11 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                   console.log(`⏱️ Skipping DCA-triggered re-evaluation (startup delay ${remainingStartupDelay}min remaining)`);
                   addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (startup delay ${remainingStartupDelay}min remaining)`, 'info');
                 } else {
-                  const remainingCooldown = Math.ceil((this.dcaTriggerReevalCooldownMs - elapsedSinceLastDcaReeval) / 60000);
-                  console.log(`⏱️ Skipping DCA-triggered re-evaluation (cooldown ${remainingCooldown}min remaining)`);
-                  addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (cooldown ${remainingCooldown}min remaining)`, 'info');
+                  const remainingCooldownMs = this.dcaTriggerReevalCooldownMs - elapsedSinceLastDcaReeval;
+                  const remainingHours = Math.floor(remainingCooldownMs / 3600000);
+                  const remainingMinutes = Math.ceil((remainingCooldownMs % 3600000) / 60000);
+                  console.log(`⏱️ Skipping DCA-triggered re-evaluation (unified cooldown: ${remainingHours}h ${remainingMinutes}m remaining)`);
+                  addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (cooldown: ${remainingHours}h ${remainingMinutes}m remaining)`, 'info');
                 }
               } else if (dcaResult && !dcaResult.skipped) {
                 // DCA failed after retries - mark as hit but don't increment count

@@ -11,10 +11,11 @@ class TradeMonitoringService {
   constructor() {
     this.isRunning = false;
     this.monitorTimer = null;
-    this.lastEvaluations = new Map(); // Track last evaluation time for each trade
+    this.lastEvaluations = new Map(); // Track last evaluation time for each trade (legacy, now uses unified cooldown)
     this.proximityThreshold = config.TRADE_PROXIMITY_THRESHOLD || 1.0; // Default 1%
     this.checkInterval = config.TRADE_CHECK_INTERVAL || 30000; // Default 30 seconds
-    this.evaluationCooldown = config.AI_EVALUATION_COOLDOWN || 300000; // Default 5 minutes
+    // Unified cooldown for ALL triggers (DCA, TP, SL) - 3 hours
+    this.evaluationCooldown = 3 * 60 * 60 * 1000; // 3 hours (matches ProfessionalTradingBot)
   }
 
   /**
@@ -32,7 +33,7 @@ class TradeMonitoringService {
     console.log('🔍 Trade monitoring service started');
     console.log(`   Proximity threshold: ${this.proximityThreshold}%`);
     console.log(`   Check interval: ${this.checkInterval / 1000}s`);
-    console.log(`   AI evaluation cooldown: ${this.evaluationCooldown / 1000}s`);
+    console.log(`   Unified AI evaluation cooldown: ${this.evaluationCooldown / 3600000}h (shared with DCA/TP/SL triggers)`);
 
     // Don't check immediately - wait for first interval to avoid startup issues
     // this.checkTrades(); // Removed to prevent blocking during startup
@@ -204,20 +205,24 @@ class TradeMonitoringService {
    * Trigger Premium AI evaluation for a trade
    */
   async triggerAIEvaluation(trade, triggeredLevel, priceData) {
-    // Check cooldown - don't spam AI evaluations
-    const tradeKey = `${trade.symbol}-${trade.entryTime}`;
-    const lastEval = this.lastEvaluations.get(tradeKey);
+    // Check UNIFIED cooldown (shared with DCA execution triggers)
+    const { getDcaTriggerTimestamp, setDcaTriggerTimestamp } = require('./portfolioService');
+    const lastUnifiedTrigger = getDcaTriggerTimestamp();
     const now = Date.now();
+    const elapsedSinceLastTrigger = now - lastUnifiedTrigger;
 
-    if (lastEval && (now - lastEval) < this.evaluationCooldown) {
-      // Still in cooldown
+    if (lastUnifiedTrigger > 0 && elapsedSinceLastTrigger < this.evaluationCooldown) {
+      // Still in unified cooldown
+      const remainingHours = Math.floor((this.evaluationCooldown - elapsedSinceLastTrigger) / 3600000);
+      const remainingMinutes = Math.ceil(((this.evaluationCooldown - elapsedSinceLastTrigger) % 3600000) / 60000);
+      console.log(`⏱️ [${triggeredLevel.type} TRIGGER] Skipping ${trade.symbol} - unified cooldown active (${remainingHours}h ${remainingMinutes}m remaining)`);
       return;
     }
 
-    // Update last evaluation time
-    this.lastEvaluations.set(tradeKey, now);
+    // Update unified trigger timestamp
+    await setDcaTriggerTimestamp(now);
 
-    console.log(`🚨 AI EVALUATION TRIGGERED for ${trade.symbol}`);
+    console.log(`🚨 [${triggeredLevel.type} TRIGGER] AI EVALUATION TRIGGERED for ${trade.symbol} (3-hour unified cooldown starts now)`);
     console.log(`   Level: ${triggeredLevel.type}`);
     console.log(`   Distance: ${triggeredLevel.distance.toFixed(2)}%`);
     console.log(`   Current Price: $${triggeredLevel.currentPrice.toFixed(6)}`);
