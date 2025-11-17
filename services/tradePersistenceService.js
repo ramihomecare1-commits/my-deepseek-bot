@@ -84,19 +84,52 @@ async function saveTradesToDynamo(trades) {
       if (!connected) return false;
     }
 
-    // Delete all existing trades first
+    // Load existing trades to compare (prevent deleting trades not in memory)
     const existing = await docClient.send(new ScanCommand({ TableName: TABLES.ACTIVE_TRADES }));
-    if (existing.Items && existing.Items.length > 0) {
-      const deleteOps = existing.Items.map(item => {
-        // Use id or tradeId (for compatibility)
+    const existingTrades = existing.Items || [];
+    const existingTradeIds = new Set(existingTrades.map(item => item.id || item.tradeId).filter(Boolean));
+    
+    // Get IDs of trades we want to save
+    const tradesToSaveIds = new Set(trades.map(t => t.id || t.tradeId).filter(Boolean));
+    
+    // Find trades to delete: exist in DB but not in trades array
+    // BUT: Only delete if they're explicitly closed (TP_HIT, SL_HIT) or if they're old/stale
+    const tradesToDelete = existingTrades.filter(item => {
+      const itemId = item.id || item.tradeId;
+      if (!itemId || tradesToSaveIds.has(itemId)) {
+        return false; // Keep if it's in the new list
+      }
+      
+      // Only delete if trade is closed (TP_HIT, SL_HIT) or if it's very old (30+ days)
+      const isClosed = item.status === 'TP_HIT' || item.status === 'SL_HIT' || item.status === 'CLOSED';
+      const entryTime = item.entryTime ? (typeof item.entryTime === 'number' ? item.entryTime : new Date(item.entryTime).getTime()) : 0;
+      const daysOld = entryTime > 0 ? (Date.now() - entryTime) / (1000 * 60 * 60 * 24) : 0;
+      const isOld = daysOld > 30; // Older than 30 days
+      
+      // For open trades not in memory, preserve them (don't delete)
+      if (!isClosed && !isOld) {
+        console.warn(`⚠️ Preserving ${item.symbol} trade in DynamoDB (not in memory but still open/active)`);
+        return false; // Don't delete open trades
+      }
+      
+      return true; // Delete closed or very old trades
+    });
+    
+    // Log if we're about to delete trades (potential data loss)
+    if (tradesToDelete.length > 0) {
+      const deletedSymbols = tradesToDelete.map(t => `${t.symbol} (${t.status})`).join(', ');
+      console.warn(`⚠️ Will delete ${tradesToDelete.length} trade(s) from DynamoDB: ${deletedSymbols}`);
+      console.warn(`   💡 These are closed or very old trades (>30 days).`);
+    }
+    
+    // Delete only trades that are not in the new list
+    if (tradesToDelete.length > 0) {
+      const deleteOps = tradesToDelete.map(item => {
         const itemId = item.id || item.tradeId;
-        if (!itemId) {
-          console.warn(`⚠️ Trade item missing id/tradeId:`, item);
-        }
         return {
-          DeleteRequest: { Key: { id: itemId || 'unknown' } }
+          DeleteRequest: { Key: { id: itemId } }
         };
-      }).filter(op => op.DeleteRequest.Key.id !== 'unknown'); // Filter out invalid keys
+      });
     
       // DynamoDB batch write (max 25 items per batch)
       const batches = [];
@@ -111,9 +144,13 @@ async function saveTradesToDynamo(trades) {
           }
         }));
       }
+      
+      if (tradesToDelete.length > 0) {
+        console.log(`🗑️ Deleted ${tradesToDelete.length} trade(s) from DynamoDB`);
+      }
     }
 
-    // Insert new trades
+    // Insert/Update trades (PutRequest will overwrite if exists, insert if new)
     if (trades.length > 0) {
       const putOps = trades.map(trade => {
         // Use tradeId if id doesn't exist (for compatibility)
@@ -144,12 +181,30 @@ async function saveTradesToDynamo(trades) {
         }));
       }
       
-      console.log(`💾 Saved ${trades.length} trades to DynamoDB`);
+      const newTrades = trades.filter(t => {
+        const tradeId = t.id || t.tradeId;
+        return tradeId && !existingTradeIds.has(tradeId);
+      });
+      const updatedTrades = trades.filter(t => {
+        const tradeId = t.id || t.tradeId;
+        return tradeId && existingTradeIds.has(tradeId);
+      });
+      
+      console.log(`💾 Saved ${trades.length} trades to DynamoDB (${newTrades.length} new, ${updatedTrades.length} updated)`);
       // Debug: Log trade IDs for verification
       const tradeIds = trades.map(t => ({ symbol: t.symbol, id: t.id || t.tradeId, status: t.status }));
       console.log(`📋 Trade IDs saved:`, tradeIds);
+      
+      // Special warning for BTC
+      const btcTrade = trades.find(t => t.symbol === 'BTC' || t.symbol === 'btc');
+      if (!btcTrade && existingTrades.find(t => (t.symbol === 'BTC' || t.symbol === 'btc'))) {
+        console.error(`❌ CRITICAL: BTC trade exists in DynamoDB but not in trades array! BTC will be deleted!`);
+      }
     } else {
       console.log(`⚠️ No trades to save (trades array is empty)`);
+      if (existingTrades.length > 0) {
+        console.warn(`⚠️ WARNING: DynamoDB has ${existingTrades.length} trades but trades array is empty. All trades will be deleted!`);
+      }
     }
     
     return true;

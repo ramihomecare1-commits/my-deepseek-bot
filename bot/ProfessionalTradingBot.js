@@ -3226,7 +3226,36 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       console.log(`✅ Moved ${closedTradesToMove.length} closed trade(s) to closedTrades and updated portfolio`);
     }
     
-    // Save trades to disk after updates
+    // Sync trades from DynamoDB BEFORE saving - reload any open trades that exist in DB but not in memory
+    // This prevents losing trades that were in DynamoDB but somehow not in memory
+    try {
+      const { loadTrades } = require('../services/tradePersistenceService');
+      const dbTrades = await loadTrades();
+      const memoryTradeIds = new Set(this.activeTrades.map(t => t.id || t.tradeId).filter(Boolean));
+      
+      const tradesToReload = dbTrades.filter(dbTrade => {
+        const dbTradeId = dbTrade.id || dbTrade.tradeId;
+        const isOpen = dbTrade.status === 'OPEN' || dbTrade.status === 'DCA_HIT';
+        return dbTradeId && !memoryTradeIds.has(dbTradeId) && isOpen;
+      });
+      
+      if (tradesToReload.length > 0) {
+        console.log(`🔄 Reloading ${tradesToReload.length} open trade(s) from DynamoDB that weren't in memory:`);
+        for (const trade of tradesToReload) {
+          // Convert entryTime back to Date if needed
+          if (trade.entryTime && typeof trade.entryTime === 'number') {
+            trade.entryTime = new Date(trade.entryTime);
+          }
+          this.activeTrades.push(trade);
+          console.log(`   ✅ Reloaded ${trade.symbol} (id=${trade.id || trade.tradeId}, status=${trade.status})`);
+        }
+        console.log(`   💡 These trades will now be preserved in the next save.`);
+      }
+    } catch (syncError) {
+      console.error(`⚠️ Error syncing trades from DynamoDB:`, syncError.message);
+    }
+    
+    // Save trades to disk after updates (now includes any reloaded trades)
     await saveTrades(this.activeTrades);
     
     // Log all active trades for tracking (helps identify missing trades)
