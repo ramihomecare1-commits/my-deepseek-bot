@@ -283,12 +283,20 @@ Provide a JSON response with your recommendations:
   "recommendations": {
     "newStopLoss": <number or null>,  // New SL % if adjusting
     "newTakeProfit": <number or null>, // New TP % if adjusting
-    "dcaAmount": <number or null>,     // DCA amount if adding position
-    "dcaPrice": <number or null>       // New DCA price if adjusting
+    "dcaAmount": <number or null>,     // DCA dollar amount (optional, for immediate execution)
+    "dcaPrice": <number or null>       // DCA price level (REQUIRED if action is "DCA") - price where to add position
   },
   "urgency": "LOW" | "MEDIUM" | "HIGH",
   "confidence": <0-100>
 }
+
+IMPORTANT RULES:
+- If action is "DCA": You MUST provide "dcaPrice" (the price level where to add position, e.g., $14.00)
+  * For BUY trades: dcaPrice should be BELOW current price (buy the dip)
+  * For SELL trades: dcaPrice should be ABOVE current price (short the rally)
+  * dcaPrice is a DOLLAR AMOUNT (price level), NOT a percentage
+- If action is "ADJUST_SL" or "ADJUST_TP": Provide newStopLoss or newTakeProfit as percentages
+- If action is "MODIFY": Can adjust multiple parameters at once
 
 Consider:
 1. Current market momentum
@@ -525,69 +533,114 @@ Respond ONLY with valid JSON.`;
 
   /**
    * Execute DCA (add to position)
+   * For paper trading: If only dcaPrice is provided, sets DCA level and existing logic will execute when price hits
    */
   async executeDCA(trade, recommendations) {
-    if (!recommendations.dcaAmount || recommendations.dcaAmount <= 0) {
-      console.log('⚠️ No DCA amount specified');
-      return false;
-    }
-
-    console.log(`💰 Executing DCA for ${trade.symbol}:`);
-    console.log(`   Amount: ${recommendations.dcaAmount}`);
-    console.log(`   Current Position: ${trade.amount || 0}`);
-
     // Find the trade in activeTrades array
     const tradeIndex = this.bot.activeTrades.findIndex(t => 
-      t.symbol === trade.symbol && t.entryTime === trade.entryTime
+      (t.id === trade.id || t.tradeId === trade.id) && t.symbol === trade.symbol
     );
 
     if (tradeIndex === -1) {
-      console.error('❌ Trade not found in active trades');
+      console.error(`❌ Trade ${trade.symbol} not found in active trades`);
       return false;
     }
 
-    // Get current price for DCA
-    const priceData = await this.fetchCurrentPrice(trade.symbol.replace('USDT', ''));
-    if (!priceData) {
-      console.error('❌ Could not fetch current price for DCA');
-      return false;
+    const activeTrade = this.bot.activeTrades[tradeIndex];
+
+    // If dcaPrice is provided, update the DCA level and let existing logic handle execution
+    if (recommendations.dcaPrice && recommendations.dcaPrice > 0) {
+      console.log(`💰 Setting DCA level for ${trade.symbol}: $${recommendations.dcaPrice.toFixed(2)}`);
+      activeTrade.addPosition = recommendations.dcaPrice;
+      activeTrade.dcaPrice = recommendations.dcaPrice;
+      
+      // Save trades
+      const { saveTrades } = require('./tradePersistenceService');
+      await saveTrades(this.bot.activeTrades);
+      
+      console.log(`✅ DCA level set to $${recommendations.dcaPrice.toFixed(2)}. Will execute automatically when price hits this level.`);
+      return true;
     }
 
-    const dcaPrice = priceData.price;
-    const dcaAmount = recommendations.dcaAmount;
+    // If dcaAmount is provided, execute DCA immediately (legacy support)
+    if (recommendations.dcaAmount && recommendations.dcaAmount > 0) {
+      console.log(`💰 Executing DCA for ${trade.symbol}:`);
+      console.log(`   Amount: ${recommendations.dcaAmount}`);
+      console.log(`   Current Position: ${activeTrade.quantity || 0}`);
 
-    // Calculate new average entry price
-    const currentAmount = trade.amount || 0;
-    const currentValue = currentAmount * trade.entryPrice;
-    const dcaValue = dcaAmount;
-    const newAmount = currentAmount + (dcaAmount / dcaPrice);
-    const newEntryPrice = (currentValue + dcaValue) / newAmount;
+      // Get current price for DCA
+      const priceData = await this.fetchCurrentPrice(trade.symbol.replace('USDT', ''));
+      if (!priceData) {
+        console.error('❌ Could not fetch current price for DCA');
+        return false;
+      }
 
-    // Update the trade
-    this.bot.activeTrades[tradeIndex].amount = newAmount;
-    this.bot.activeTrades[tradeIndex].entryPrice = newEntryPrice;
-    this.bot.activeTrades[tradeIndex].dcaExecutions = this.bot.activeTrades[tradeIndex].dcaExecutions || [];
-    this.bot.activeTrades[tradeIndex].dcaExecutions.push({
-      price: dcaPrice,
-      amount: dcaAmount,
-      timestamp: new Date(),
-      reasoning: 'AI recommended DCA'
-    });
+      const dcaPrice = priceData.price;
+      const dcaAmount = recommendations.dcaAmount;
 
-    // Update DCA price if provided
-    if (recommendations.dcaPrice) {
-      this.bot.activeTrades[tradeIndex].dcaPrice = recommendations.dcaPrice;
+      // Calculate new average entry price
+      const currentQuantity = activeTrade.quantity || 0;
+      const avgEntry = activeTrade.averageEntryPrice || activeTrade.entryPrice;
+      const currentValue = currentQuantity * avgEntry;
+      const dcaQuantity = dcaAmount / dcaPrice;
+      const newQuantity = currentQuantity + dcaQuantity;
+      const newEntryPrice = (currentValue + dcaAmount) / newQuantity;
+
+      // Update the trade
+      activeTrade.quantity = newQuantity;
+      activeTrade.averageEntryPrice = newEntryPrice;
+      activeTrade.dcaCount = (activeTrade.dcaCount || 0) + 1;
+      activeTrade.dcaExecutions = activeTrade.dcaExecutions || [];
+      activeTrade.dcaExecutions.push({
+        price: dcaPrice,
+        amount: dcaAmount,
+        quantity: dcaQuantity,
+        timestamp: new Date(),
+        reasoning: 'AI recommended DCA'
+      });
+
+      // Update DCA price if provided
+      if (recommendations.dcaPrice) {
+        activeTrade.addPosition = recommendations.dcaPrice;
+        activeTrade.dcaPrice = recommendations.dcaPrice;
+      }
+
+      // Save trades
+      const { saveTrades } = require('./tradePersistenceService');
+      await saveTrades(this.bot.activeTrades);
+
+      console.log(`✅ DCA executed successfully`);
+      console.log(`   New average entry: $${newEntryPrice.toFixed(2)}`);
+      console.log(`   New position size: ${newQuantity.toFixed(4)}`);
+
+      return true;
     }
 
-    // Save trades
-    const { saveTrades } = require('./tradePersistenceService');
-    await saveTrades(this.bot.activeTrades);
-
-    console.log(`✅ DCA executed successfully`);
-    console.log(`   New average entry: $${newEntryPrice.toFixed(6)}`);
-    console.log(`   New position size: ${newAmount.toFixed(8)}`);
-
-    return true;
+    // If neither dcaPrice nor dcaAmount is provided, try to calculate a reasonable DCA price
+    // For BUY: 10% below current price, For SELL: 10% above current price
+    const currentPrice = activeTrade.currentPrice || activeTrade.entryPrice;
+    if (currentPrice && currentPrice > 0) {
+      let calculatedDcaPrice;
+      if (activeTrade.action === 'BUY') {
+        calculatedDcaPrice = currentPrice * 0.90; // 10% below for BUY
+      } else {
+        calculatedDcaPrice = currentPrice * 1.10; // 10% above for SELL
+      }
+      
+      console.log(`⚠️ No DCA price specified. Using calculated DCA price: $${calculatedDcaPrice.toFixed(2)} (10% ${activeTrade.action === 'BUY' ? 'below' : 'above'} current price)`);
+      activeTrade.addPosition = calculatedDcaPrice;
+      activeTrade.dcaPrice = calculatedDcaPrice;
+      
+      // Save trades
+      const { saveTrades } = require('./tradePersistenceService');
+      await saveTrades(this.bot.activeTrades);
+      
+      console.log(`✅ DCA level set to $${calculatedDcaPrice.toFixed(2)}. Will execute automatically when price hits this level.`);
+      return true;
+    }
+    
+    console.log('⚠️ No DCA price or amount specified, and could not calculate DCA price. AI should provide dcaPrice (price level).');
+    return false;
   }
 
   /**
