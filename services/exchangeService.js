@@ -627,6 +627,133 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
 }
 
 /**
+ * Get open positions from Bybit Spot Trading
+ * Returns actual positions held on Bybit exchange
+ * @param {string} apiKey - Bybit API key
+ * @param {string} apiSecret - Bybit API secret
+ * @param {string} baseUrl - Bybit API base URL
+ * @returns {Promise<Array>} Array of open positions {coin, quantity, value}
+ */
+async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
+  try {
+    const timestamp = Date.now();
+    const recvWindow = 5000;
+    
+    const params = {
+      accountType: 'SPOT',
+      timestamp: timestamp.toString(),
+      recvWindow: recvWindow.toString()
+    };
+
+    const signature = generateBybitSignature(params, apiSecret);
+    params.signature = signature;
+
+    console.log(`🔵 [BYBIT API] Fetching open positions from ${baseUrl}/v5/account/wallet-balance`);
+    
+    const response = await axios.get(`${baseUrl}/v5/account/wallet-balance`, {
+      params: params,
+      headers: {
+        'X-BAPI-API-KEY': apiKey,
+        'X-BAPI-TIMESTAMP': timestamp.toString(),
+        'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+        'X-BAPI-SIGN': signature
+      },
+      timeout: 10000
+    });
+
+    if (response.data && response.data.retCode === 0 && response.data.result) {
+      const coins = response.data.result.list?.[0]?.coin || [];
+      const positions = [];
+      
+      // Filter for coins with non-zero balance (actual positions)
+      coins.forEach(coin => {
+        const free = parseFloat(coin.free || 0);
+        const locked = parseFloat(coin.locked || 0);
+        const total = free + locked;
+        
+        // Only include coins with actual holdings (exclude USDT and zero balances)
+        if (total > 0.00000001 && coin.coin !== 'USDT') {
+          positions.push({
+            coin: coin.coin,
+            symbol: coin.coin, // For compatibility
+            quantity: total,
+            free: free,
+            locked: locked,
+            availableToWithdraw: parseFloat(coin.availableToWithdraw || 0),
+            usdValue: parseFloat(coin.usdValue || 0) // If Bybit provides USD value
+          });
+        }
+      });
+      
+      if (positions.length > 0) {
+        console.log(`✅ [BYBIT API] Found ${positions.length} open positions on Bybit:`);
+        positions.forEach(pos => {
+          console.log(`   - ${pos.coin}: ${pos.quantity.toFixed(8)} (Free: ${pos.free.toFixed(8)}, Locked: ${pos.locked.toFixed(8)})`);
+        });
+      } else {
+        console.log(`✅ [BYBIT API] No open positions found on Bybit (all positions closed or zero balance)`);
+      }
+      
+      return positions;
+    } else {
+      const errorMsg = response.data?.retMsg || 'Unknown error';
+      console.log(`⚠️ [BYBIT API] Failed to get positions: ${errorMsg}`);
+      return [];
+    }
+  } catch (error) {
+    const errorMsg = error.response?.data?.retMsg || error.message;
+    console.log(`❌ [BYBIT API] Error fetching positions: ${errorMsg}`);
+    return [];
+  }
+}
+
+/**
+ * Get open orders from Bybit (pending orders)
+ * @param {string} apiKey - Bybit API key
+ * @param {string} apiSecret - Bybit API secret
+ * @param {string} baseUrl - Bybit API base URL
+ * @returns {Promise<Array>} Array of open orders
+ */
+async function getBybitOpenOrders(apiKey, apiSecret, baseUrl) {
+  try {
+    const timestamp = Date.now();
+    const recvWindow = 5000;
+    
+    const params = {
+      category: 'spot',
+      timestamp: timestamp.toString(),
+      recvWindow: recvWindow.toString()
+    };
+
+    const signature = generateBybitSignature(params, apiSecret);
+    params.signature = signature;
+
+    const response = await axios.get(`${baseUrl}/v5/order/realtime`, {
+      params: params,
+      headers: {
+        'X-BAPI-API-KEY': apiKey,
+        'X-BAPI-TIMESTAMP': timestamp.toString(),
+        'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+        'X-BAPI-SIGN': signature
+      },
+      timeout: 10000
+    });
+
+    if (response.data && response.data.retCode === 0 && response.data.result) {
+      const orders = response.data.result.list || [];
+      return orders.filter(order => 
+        order.orderStatus === 'New' || 
+        order.orderStatus === 'PartiallyFilled'
+      );
+    }
+    return [];
+  } catch (error) {
+    console.log(`⚠️ Failed to get Bybit open orders: ${error.message}`);
+    return [];
+  }
+}
+
+/**
  * ============================================================================
  * HIDDEN: Virtual trading state functions (kept for future use)
  * ============================================================================
@@ -668,6 +795,8 @@ module.exports = {
   executeAddPosition,
   getBalance,
   getBybitBalance,
+  getBybitOpenPositions,
+  getBybitOpenOrders,
   calculateQuantity,
   getVirtualTradingState,
   resetVirtualTrading,

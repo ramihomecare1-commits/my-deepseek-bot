@@ -249,24 +249,111 @@ class ProfessionalTradingBot {
         console.log(`📅 Loaded unified trigger timestamp: ${elapsedHours}h ${elapsedMinutes}m ago`);
       }
       
-      // Load saved trades
-      console.log('📂 Attempting to load saved trades...');
-      const savedTrades = await loadTrades();
-      console.log(`📂 loadTrades() returned: ${savedTrades ? savedTrades.length : 0} trades`);
+      // Load trades: Bybit is source of truth, DynamoDB is backup/sync
+      console.log('📂 Loading active trades...');
       
-      if (savedTrades && savedTrades.length > 0) {
-        this.activeTrades = savedTrades;
-        console.log(`✅ Restored ${savedTrades.length} active trades from storage`);
-        addLogEntry(`Restored ${savedTrades.length} active trades from storage`, 'success');
+      // Check if Bybit is enabled - if so, sync with Bybit positions first
+      const { isExchangeTradingEnabled, getPreferredExchange, getBybitOpenPositions } = require('../services/exchangeService');
+      const exchangeConfig = isExchangeTradingEnabled();
+      
+      let activeTradesFromBybit = [];
+      let bybitPositions = [];
+      
+      if (exchangeConfig.enabled) {
+        console.log('🔄 Syncing with Bybit positions (source of truth)...');
+        const exchange = getPreferredExchange();
         
-        // Log trade details
+        try {
+          // Get actual positions from Bybit
+          bybitPositions = await getBybitOpenPositions(
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.baseUrl
+          );
+          
+          if (bybitPositions.length > 0) {
+            console.log(`✅ Found ${bybitPositions.length} positions on Bybit - will sync with DynamoDB trades`);
+          }
+        } catch (error) {
+          console.error(`❌ Error fetching Bybit positions: ${error.message}`);
+          console.log('📂 Falling back to DynamoDB only');
+        }
+      }
+      
+      // Load trades from DynamoDB (backup/sync data)
+      const savedTrades = await loadTrades();
+      console.log(`📂 Loaded ${savedTrades ? savedTrades.length : 0} trades from DynamoDB`);
+      
+      // Sync Bybit positions with DynamoDB trades
+      if (exchangeConfig.enabled && bybitPositions.length > 0) {
+        console.log('🔄 Syncing Bybit positions with DynamoDB trades...');
+        
+        // Match Bybit positions with DynamoDB trades
+        const syncedTrades = [];
+        const bybitSymbols = new Set(bybitPositions.map(p => p.coin));
+        
+        // Update existing trades with Bybit quantities
         savedTrades.forEach(trade => {
-          console.log(`  - ${trade.symbol} (${trade.action}) - Entry: $${trade.entryPrice?.toFixed(2) || 'N/A'}, Status: ${trade.status}`);
+          const bybitPos = bybitPositions.find(p => p.coin === trade.symbol);
+          
+          if (bybitPos) {
+            // Trade exists in both - update quantity from Bybit (source of truth)
+            trade.quantity = bybitPos.quantity;
+            trade.bybitQuantity = bybitPos.quantity; // Store Bybit quantity
+            trade.bybitFree = bybitPos.free;
+            trade.bybitLocked = bybitPos.locked;
+            trade.lastSyncedWithBybit = new Date();
+            syncedTrades.push(trade);
+            console.log(`   ✅ ${trade.symbol}: Synced - Quantity: ${bybitPos.quantity.toFixed(8)} (DynamoDB had: ${(trade.quantity || 0).toFixed(8)})`);
+          } else {
+            // Trade in DynamoDB but not in Bybit - might be closed
+            if (trade.quantity > 0) {
+              console.log(`   ⚠️ ${trade.symbol}: In DynamoDB but not on Bybit - position may be closed`);
+              // Keep it but mark for verification
+              trade.bybitQuantity = 0;
+              trade.lastSyncedWithBybit = new Date();
+              syncedTrades.push(trade);
+            }
+          }
         });
         
-        // Note: Trades will be updated by startTradesUpdateTimer() which runs immediately
-        // No need to update here to avoid duplicate calls
-        console.log('✅ Trades restored - will be updated by timer');
+        // Check for positions on Bybit that aren't in DynamoDB (new positions)
+        bybitPositions.forEach(pos => {
+          const existingTrade = savedTrades.find(t => t.symbol === pos.coin);
+          if (!existingTrade) {
+            console.log(`   ⚠️ ${pos.coin}: Found on Bybit but not in DynamoDB - may need to create trade record`);
+            // Note: We don't auto-create trades here - they should be created when bot opens them
+            // But we log it for visibility
+          }
+        });
+        
+        this.activeTrades = syncedTrades;
+        console.log(`✅ Synced ${syncedTrades.length} trades with Bybit positions`);
+        
+        // Save synced trades back to DynamoDB
+        if (syncedTrades.length > 0) {
+          await saveTrades(syncedTrades);
+          console.log(`💾 Saved synced trades to DynamoDB`);
+        }
+      } else {
+        // Bybit not enabled or no positions - use DynamoDB only
+        if (savedTrades && savedTrades.length > 0) {
+          this.activeTrades = savedTrades;
+          console.log(`✅ Restored ${savedTrades.length} active trades from DynamoDB (Bybit not configured)`);
+          addLogEntry(`Restored ${savedTrades.length} active trades from storage`, 'success');
+          
+          // Log trade details
+          savedTrades.forEach(trade => {
+            console.log(`  - ${trade.symbol} (${trade.action}) - Entry: $${trade.entryPrice?.toFixed(2) || 'N/A'}, Status: ${trade.status}`);
+          });
+        }
+      }
+      
+      if (this.activeTrades && this.activeTrades.length > 0) {
+        console.log(`✅ Active trades loaded: ${this.activeTrades.length} trades`);
+        console.log('✅ Trades will be updated by timer');
+      } else {
+        console.log('📂 No active trades found');
       }
       
       // Load closed trades
@@ -2870,10 +2957,80 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
   }
 
   // New method: Update existing active trades
+  /**
+   * Sync active trades with Bybit positions (source of truth)
+   * Updates quantities from Bybit, keeps DynamoDB data for tracking
+   */
+  async syncWithBybitPositions() {
+    const { isExchangeTradingEnabled, getPreferredExchange, getBybitOpenPositions } = require('../services/exchangeService');
+    const exchangeConfig = isExchangeTradingEnabled();
+    
+    if (!exchangeConfig.enabled || this.activeTrades.length === 0) {
+      return; // No Bybit or no trades to sync
+    }
+    
+    try {
+      const exchange = getPreferredExchange();
+      const bybitPositions = await getBybitOpenPositions(
+        exchange.apiKey,
+        exchange.apiSecret,
+        exchange.baseUrl
+      );
+      
+      if (bybitPositions.length === 0) {
+        // No positions on Bybit - check if trades should be closed
+        this.activeTrades.forEach(trade => {
+          if (trade.quantity > 0) {
+            console.log(`⚠️ ${trade.symbol}: Trade in memory but no position on Bybit - may be closed`);
+            trade.bybitQuantity = 0;
+            trade.lastSyncedWithBybit = new Date();
+          }
+        });
+        return;
+      }
+      
+      // Update quantities from Bybit (source of truth)
+      let syncedCount = 0;
+      this.activeTrades.forEach(trade => {
+        const bybitPos = bybitPositions.find(p => p.coin === trade.symbol);
+        
+        if (bybitPos) {
+          const oldQuantity = trade.quantity || 0;
+          trade.quantity = bybitPos.quantity;
+          trade.bybitQuantity = bybitPos.quantity;
+          trade.bybitFree = bybitPos.free;
+          trade.bybitLocked = bybitPos.locked;
+          trade.lastSyncedWithBybit = new Date();
+          
+          if (Math.abs(oldQuantity - bybitPos.quantity) > 0.00000001) {
+            console.log(`🔄 ${trade.symbol}: Synced with Bybit - Quantity: ${oldQuantity.toFixed(8)} → ${bybitPos.quantity.toFixed(8)}`);
+            syncedCount++;
+          }
+        } else if (trade.quantity > 0) {
+          // Trade in memory but not on Bybit
+          trade.bybitQuantity = 0;
+          trade.lastSyncedWithBybit = new Date();
+        }
+      });
+      
+      if (syncedCount > 0) {
+        // Save synced trades
+        const { saveTrades } = require('../services/tradePersistenceService');
+        await saveTrades(this.activeTrades);
+        console.log(`💾 Synced ${syncedCount} trades with Bybit positions`);
+      }
+    } catch (error) {
+      console.error(`❌ Error syncing with Bybit positions: ${error.message}`);
+    }
+  }
+
   async updateActiveTrades() {
     if (this.activeTrades.length === 0) {
       return;
     }
+
+    // Sync with Bybit positions first (source of truth for quantities)
+    await this.syncWithBybitPositions();
 
     addLogEntry(`Updating ${this.activeTrades.length} active trades...`, 'info');
 
