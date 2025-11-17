@@ -93,33 +93,32 @@ async function saveTradesToDynamo(trades) {
     const tradesToSaveIds = new Set(trades.map(t => t.id || t.tradeId).filter(Boolean));
     
     // Find trades to delete: exist in DB but not in trades array
-    // BUT: Only delete if they're explicitly closed (TP_HIT, SL_HIT) or if they're old/stale
+    // BUT: Only delete if they're explicitly closed (TP_HIT, SL_HIT, CLOSED)
+    // NEVER delete open trades, even if they're very old (long-term positions are valid)
     const tradesToDelete = existingTrades.filter(item => {
       const itemId = item.id || item.tradeId;
       if (!itemId || tradesToSaveIds.has(itemId)) {
         return false; // Keep if it's in the new list
       }
       
-      // Only delete if trade is closed (TP_HIT, SL_HIT) or if it's very old (30+ days)
+      // Only delete if trade is explicitly closed (TP_HIT, SL_HIT, CLOSED)
+      // NEVER delete open trades, regardless of age
       const isClosed = item.status === 'TP_HIT' || item.status === 'SL_HIT' || item.status === 'CLOSED';
-      const entryTime = item.entryTime ? (typeof item.entryTime === 'number' ? item.entryTime : new Date(item.entryTime).getTime()) : 0;
-      const daysOld = entryTime > 0 ? (Date.now() - entryTime) / (1000 * 60 * 60 * 24) : 0;
-      const isOld = daysOld > 30; // Older than 30 days
       
-      // For open trades not in memory, preserve them (don't delete)
-      if (!isClosed && !isOld) {
+      // For open trades not in memory, ALWAYS preserve them (don't delete)
+      if (!isClosed) {
         console.warn(`⚠️ Preserving ${item.symbol} trade in DynamoDB (not in memory but still open/active)`);
-        return false; // Don't delete open trades
+        return false; // Don't delete open trades, regardless of age
       }
       
-      return true; // Delete closed or very old trades
+      return true; // Only delete closed trades
     });
     
-    // Log if we're about to delete trades (potential data loss)
+    // Log if we're about to delete trades (only closed trades)
     if (tradesToDelete.length > 0) {
       const deletedSymbols = tradesToDelete.map(t => `${t.symbol} (${t.status})`).join(', ');
-      console.warn(`⚠️ Will delete ${tradesToDelete.length} trade(s) from DynamoDB: ${deletedSymbols}`);
-      console.warn(`   💡 These are closed or very old trades (>30 days).`);
+      console.warn(`⚠️ Will delete ${tradesToDelete.length} closed trade(s) from DynamoDB: ${deletedSymbols}`);
+      console.warn(`   💡 These are closed trades (TP_HIT, SL_HIT, CLOSED) that should be in closedTrades table.`);
     }
     
     // Delete only trades that are not in the new list

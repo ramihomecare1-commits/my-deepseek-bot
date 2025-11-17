@@ -281,21 +281,25 @@ router.get('/bot-status', (req, res) => {
     const { tradingBot } = req.app.locals;
     const config = require('../config/config');
     
-    // Calculate next scan time
+    // Use the actual scheduled next scan time if available (prevents reset on page refresh)
     let nextScan = null;
-    if (tradingBot.isRunning && tradingBot.scanIntervalMs) {
-      // Get the last scan time from stats
-      const lastScanTime = tradingBot.stats.lastScanTime;
-      if (lastScanTime) {
-        // Next scan is last scan time + interval
-        nextScan = new Date(lastScanTime + tradingBot.scanIntervalMs);
-        // If next scan is in the past (scan is overdue), calculate from now
-        if (nextScan < new Date()) {
+    if (tradingBot.isRunning) {
+      if (tradingBot.nextScanTime) {
+        // Use the stored scheduled time (most accurate - doesn't reset on refresh)
+        nextScan = tradingBot.nextScanTime;
+      } else if (tradingBot.scanIntervalMs) {
+        // Fallback: calculate from last scan time (only if nextScanTime not set)
+        const lastScanTime = tradingBot.stats.lastScanTime;
+        if (lastScanTime) {
+          nextScan = new Date(lastScanTime + tradingBot.scanIntervalMs);
+          // If next scan is in the past, calculate from now
+          if (nextScan < new Date()) {
+            nextScan = new Date(Date.now() + tradingBot.scanIntervalMs);
+          }
+        } else {
+          // No scan has run yet, next scan is interval from now
           nextScan = new Date(Date.now() + tradingBot.scanIntervalMs);
         }
-      } else {
-        // No scan has run yet, next scan is interval from now
-        nextScan = new Date(Date.now() + tradingBot.scanIntervalMs);
       }
     }
     

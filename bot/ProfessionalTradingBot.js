@@ -102,8 +102,10 @@ class ProfessionalTradingBot {
     this.openTradesReevalCooldownMs = 5 * 60 * 1000; // 5 minutes
     this.lastOpenTradesReevalAt = 0; // timestamp of last AI re-evaluation call
     this.lastOpenTradesReevalNotifiedAt = null; // timestamp of last Telegram summary
+    this.lastBtcMissingWarning = 0; // timestamp of last BTC missing warning (throttles logging)
     this.selectedIntervalKey = '1h';
     this.scanIntervalMs = config.SCAN_INTERVAL_OPTIONS[this.selectedIntervalKey];
+    this.nextScanTime = null; // Track when next scan is scheduled (prevents reset on page refresh)
     this.scanProgress = {
       running: false,
       processed: 0,
@@ -577,6 +579,10 @@ class ProfessionalTradingBot {
   scheduleNextScan() {
     if (!this.isRunning) return;
     const delay = Math.max(this.scanIntervalMs - this.stats.lastScanDuration, 5000);
+    
+    // Store the actual scheduled time (prevents reset on page refresh)
+    this.nextScanTime = new Date(Date.now() + delay);
+    
     this.scanTimer = setTimeout(async () => {
       if (this.scanInProgress) {
         console.log('⏳ Previous scan still running, skipping scheduled scan');
@@ -615,6 +621,7 @@ class ProfessionalTradingBot {
       clearTimeout(this.scanTimer);
       this.scanTimer = null;
     }
+    this.nextScanTime = null; // Clear next scan time when stopped
     console.log('🛑 Auto-scan stopped');
     return { status: 'stopped', time: new Date() };
   }
@@ -3271,82 +3278,63 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       console.log(`📊 Active trades summary (${this.activeTrades.length} total):`, tradeSummary);
       
       // Check for specific symbols that might be missing (e.g., BTC)
+      // Only log when there's an actual issue, not on every check (reduces log noise)
       const btcTrade = this.activeTrades.find(t => t.symbol === 'BTC');
       if (!btcTrade) {
-        console.log(`⚠️ BTC trade not found in activeTrades. Checking closed trades...`);
-        console.log(`📋 Closed trades count: ${this.closedTrades.length}`);
-        console.log(`📋 Closed trades symbols: ${this.closedTrades.map(t => t.symbol).join(', ') || 'none'}`);
-        
-        const btcClosed = this.closedTrades.find(t => t.symbol === 'BTC');
-        if (btcClosed) {
-          console.log(`✅ BTC trade found in closedTrades: status=${btcClosed.status}, closePrice=$${btcClosed.closePrice?.toFixed(2) || 'N/A'}, id=${btcClosed.id || btcClosed.tradeId || 'N/A'}`);
-        } else {
-          console.warn(`❌ BTC trade not found in activeTrades or closedTrades!`);
-          console.warn(`   Active trades: ${this.activeTrades.length} trades`);
-          console.warn(`   Closed trades: ${this.closedTrades.length} trades`);
-          console.warn(`   Checking DynamoDB directly...`);
+        // Only check DynamoDB if BTC is missing - but don't log routine checks
+        try {
+          const { loadTrades, loadClosedTrades } = require('../services/tradePersistenceService');
+          const dbActiveTrades = await loadTrades();
+          const dbClosedTrades = await loadClosedTrades();
           
-          // Check DynamoDB directly to see if trade exists there
-          try {
-            const { loadTrades, loadClosedTrades } = require('../services/tradePersistenceService');
-            const dbActiveTrades = await loadTrades();
-            const dbClosedTrades = await loadClosedTrades();
+          // Check for BTC with case-insensitive matching
+          const dbBtcActive = dbActiveTrades.find(t => 
+            t.symbol === 'BTC' || t.symbol === 'btc' || (t.symbol && t.symbol.toUpperCase() === 'BTC')
+          );
+          const dbBtcClosed = dbClosedTrades.find(t => 
+            t.symbol === 'BTC' || t.symbol === 'btc' || (t.symbol && t.symbol.toUpperCase() === 'BTC')
+          );
+          
+          if (dbBtcActive) {
+            // ISSUE: BTC exists in DB but not in memory - this is a problem!
+            console.warn(`⚠️ BTC found in DynamoDB activeTrades but not in memory!`);
+            console.warn(`   Trade details: id=${dbBtcActive.id || dbBtcActive.tradeId}, status=${dbBtcActive.status}, entryPrice=$${dbBtcActive.entryPrice}`);
+            console.warn(`   🔧 Attempting to reload BTC trade into memory...`);
             
-            console.log(`   📊 DynamoDB activeTrades loaded: ${dbActiveTrades.length} trades`);
-            console.log(`   📊 DynamoDB closedTrades loaded: ${dbClosedTrades.length} trades`);
-            
-            // Check for BTC with case-insensitive matching
-            const dbBtcActive = dbActiveTrades.find(t => 
-              t.symbol === 'BTC' || t.symbol === 'btc' || (t.symbol && t.symbol.toUpperCase() === 'BTC')
+            // Try to reload the trade
+            const existingIndex = this.activeTrades.findIndex(t => 
+              (t.id === dbBtcActive.id || t.tradeId === dbBtcActive.id || t.tradeId === dbBtcActive.tradeId) &&
+              (t.symbol === 'BTC' || t.symbol === 'btc')
             );
-            const dbBtcClosed = dbClosedTrades.find(t => 
-              t.symbol === 'BTC' || t.symbol === 'btc' || (t.symbol && t.symbol.toUpperCase() === 'BTC')
-            );
             
-            if (dbBtcActive) {
-              console.warn(`   ⚠️ BTC found in DynamoDB activeTrades but not in memory!`);
-              console.warn(`      Trade details: id=${dbBtcActive.id || dbBtcActive.tradeId}, status=${dbBtcActive.status}, entryPrice=$${dbBtcActive.entryPrice}, symbol=${dbBtcActive.symbol}`);
-              console.warn(`   💡 This suggests the trade wasn't loaded into memory on startup.`);
-              console.warn(`   🔧 Attempting to reload BTC trade into memory...`);
-              
-              // Try to reload the trade
-              const existingIndex = this.activeTrades.findIndex(t => 
-                (t.id === dbBtcActive.id || t.tradeId === dbBtcActive.id || t.tradeId === dbBtcActive.tradeId) &&
-                (t.symbol === 'BTC' || t.symbol === 'btc')
-              );
-              
-              if (existingIndex === -1) {
-                // Convert entryTime back to Date if needed
-                if (dbBtcActive.entryTime && typeof dbBtcActive.entryTime === 'number') {
-                  dbBtcActive.entryTime = new Date(dbBtcActive.entryTime);
-                }
-                this.activeTrades.push(dbBtcActive);
-                console.log(`   ✅ Reloaded BTC trade into activeTrades`);
-              } else {
-                console.log(`   ℹ️ BTC trade already exists in memory at index ${existingIndex}`);
+            if (existingIndex === -1) {
+              // Convert entryTime back to Date if needed
+              if (dbBtcActive.entryTime && typeof dbBtcActive.entryTime === 'number') {
+                dbBtcActive.entryTime = new Date(dbBtcActive.entryTime);
               }
-            } else if (dbBtcClosed) {
-              console.warn(`   ⚠️ BTC found in DynamoDB closedTrades but not in memory!`);
-              console.warn(`      Trade details: id=${dbBtcClosed.id || dbBtcClosed.tradeId}, status=${dbBtcClosed.status}, closePrice=$${dbBtcClosed.closePrice}, symbol=${dbBtcClosed.symbol}`);
-              console.warn(`   💡 This suggests the closed trade wasn't loaded into memory on startup.`);
-            } else {
-              console.error(`   ❌ BTC trade not found in DynamoDB either!`);
-              console.error(`   📋 All symbols in DynamoDB activeTrades: ${dbActiveTrades.map(t => t.symbol).join(', ') || 'none'}`);
-              console.error(`   📋 All symbols in DynamoDB closedTrades: ${dbClosedTrades.map(t => t.symbol).join(', ') || 'none'}`);
-              console.error(`   💡 Possible causes:`);
-              console.error(`      1. Trade was never saved to DynamoDB`);
-              console.error(`      2. DynamoDB save failed silently (check for save errors in logs)`);
-              console.error(`      3. Trade was deleted from DynamoDB`);
-              console.error(`      4. Trade was saved with different symbol format (check case sensitivity)`);
+              this.activeTrades.push(dbBtcActive);
+              console.log(`   ✅ Reloaded BTC trade into activeTrades`);
             }
-          } catch (dbError) {
-            console.error(`   ❌ Error checking DynamoDB: ${dbError.message}`);
-            console.error(`   Stack: ${dbError.stack}`);
+          } else if (!dbBtcClosed) {
+            // BTC completely missing - only log once per hour to avoid spam
+            const now = Date.now();
+            const lastBtcWarning = this.lastBtcMissingWarning || 0;
+            const oneHour = 60 * 60 * 1000;
+            
+            if (now - lastBtcWarning > oneHour) {
+              this.lastBtcMissingWarning = now;
+              console.error(`❌ BTC trade not found in DynamoDB! (logged once per hour)`);
+              console.error(`   📋 All symbols in DynamoDB: ${dbActiveTrades.map(t => t.symbol).join(', ') || 'none'}`);
+              console.error(`   💡 Possible causes: Trade was never saved, save failed, or was deleted`);
+            }
           }
+          // If BTC is in closedTrades, that's fine - don't log (it's expected)
+        } catch (dbError) {
+          // Only log errors, not routine checks
+          console.error(`❌ Error checking DynamoDB for BTC: ${dbError.message}`);
         }
-      } else {
-        console.log(`✅ BTC trade found in activeTrades: status=${btcTrade.status}, entryPrice=$${btcTrade.entryPrice?.toFixed(2) || 'N/A'}, id=${btcTrade.id || btcTrade.tradeId || 'N/A'}`);
       }
+      // Don't log when BTC is found - that's normal, no need to spam logs
     } else {
       console.log(`📊 No active trades currently`);
     }
