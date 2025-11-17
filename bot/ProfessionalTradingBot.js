@@ -3106,16 +3106,15 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 if (!this.dcaTriggerReevalInProgress && 
                     timeSinceStartup >= this.dcaTriggerStartupDelayMs &&
                     elapsedSinceLastDcaReeval >= this.dcaTriggerReevalCooldownMs) {
-                  // Set flag immediately to prevent other DCAs from triggering
+                  // Set flag AND timestamp IMMEDIATELY to prevent other DCAs from triggering
                   this.dcaTriggerReevalInProgress = true;
+                  this.lastDcaTriggerReevalAt = Date.now(); // Set immediately, not inside async callback
                   console.log(`🔄 DCA executed for ${trade.symbol} - triggering re-evaluation of ALL open trades...`);
                   addLogEntry(`🔄 DCA executed for ${trade.symbol} - triggering re-evaluation of all open trades`, 'info');
                   
                   // Trigger re-evaluation asynchronously (don't block DCA execution)
                   setImmediate(async () => {
                     try {
-                      // Set timestamp when re-evaluation actually starts
-                      this.lastDcaTriggerReevalAt = Date.now();
                       await this.reevaluateOpenTradesWithAI();
                     } catch (reevalError) {
                       console.error(`❌ Error during DCA-triggered re-evaluation:`, reevalError.message);
@@ -3364,16 +3363,15 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 if (!this.dcaTriggerReevalInProgress && 
                     timeSinceStartup >= this.dcaTriggerStartupDelayMs &&
                     elapsedSinceLastDcaReeval >= this.dcaTriggerReevalCooldownMs) {
-                  // Set flag immediately to prevent other DCAs from triggering
+                  // Set flag AND timestamp IMMEDIATELY to prevent other DCAs from triggering
                   this.dcaTriggerReevalInProgress = true;
+                  this.lastDcaTriggerReevalAt = Date.now(); // Set immediately, not inside async callback
                   console.log(`🔄 DCA executed for ${trade.symbol} (SHORT) - triggering re-evaluation of ALL open trades...`);
                   addLogEntry(`🔄 DCA executed for ${trade.symbol} (SHORT) - triggering re-evaluation of all open trades`, 'info');
                   
                   // Trigger re-evaluation asynchronously (don't block DCA execution)
                   setImmediate(async () => {
                     try {
-                      // Set timestamp when re-evaluation actually starts
-                      this.lastDcaTriggerReevalAt = Date.now();
                       await this.reevaluateOpenTradesWithAI();
                     } catch (reevalError) {
                       console.error(`❌ Error during DCA-triggered re-evaluation:`, reevalError.message);
