@@ -3,12 +3,16 @@ const crypto = require('crypto');
 
 /**
  * Exchange Service
- * Handles order execution (virtual/paper trading or real Binance)
- * Supports virtual trading mode for testing without real money
+ * Handles order execution via Bybit Demo Trading API
+ * Uses Bybit testnet for risk-free demo trading
  */
 
-// Map coin symbols to Binance trading pairs
-const BINANCE_SYMBOL_MAP = {
+// Bybit API endpoints
+const BYBIT_TESTNET_URL = 'https://api-demo.bybit.com';
+const BYBIT_MAINNET_URL = 'https://api.bybit.com';
+
+// Map coin symbols to Bybit trading pairs (Spot trading uses same format)
+const BYBIT_SYMBOL_MAP = {
   'BTC': 'BTCUSDT', 'ETH': 'ETHUSDT', 'BNB': 'BNBUSDT', 'SOL': 'SOLUSDT',
   'XRP': 'XRPUSDT', 'DOGE': 'DOGEUSDT', 'ADA': 'ADAUSDT', 'AVAX': 'AVAXUSDT',
   'LINK': 'LINKUSDT', 'DOT': 'DOTUSDT', 'MATIC': 'MATICUSDT', 'LTC': 'LTCUSDT',
@@ -16,81 +20,81 @@ const BINANCE_SYMBOL_MAP = {
   'XMR': 'XMRUSDT', 'ALGO': 'ALGOUSDT', 'FIL': 'FILUSDT', 'ICP': 'ICPUSDT',
   'VET': 'VETUSDT', 'EOS': 'EOSUSDT', 'XTZ': 'XTZUSDT', 'AAVE': 'AAVEUSDT',
   'MKR': 'MKRUSDT', 'GRT': 'GRTUSDT', 'THETA': 'THETAUSDT', 'RUNE': 'RUNEUSDT',
-  'NEO': 'NEOUSDT', 'FTM': 'FTMUSDT'
+  'NEO': 'NEOUSDT', 'FTM': 'FTMUSDT', 'TRX': 'TRXUSDT', 'SUI': 'SUIUSDT',
+  'ARB': 'ARBUSDT', 'OP': 'OPUSDT', 'TON': 'TONUSDT', 'SHIB': 'SHIBUSDT',
+  'HBAR': 'HBARUSDT', 'APT': 'APTUSDT'
 };
 
-// Map coin symbols to MEXC trading pairs (same format as Binance)
-const MEXC_SYMBOL_MAP = {
-  'BTC': 'BTCUSDT', 'ETH': 'ETHUSDT', 'BNB': 'BNBUSDT', 'SOL': 'SOLUSDT',
-  'XRP': 'XRPUSDT', 'DOGE': 'DOGEUSDT', 'ADA': 'ADAUSDT', 'AVAX': 'AVAXUSDT',
-  'LINK': 'LINKUSDT', 'DOT': 'DOTUSDT', 'MATIC': 'MATICUSDT', 'LTC': 'LTCUSDT',
-  'UNI': 'UNIUSDT', 'ATOM': 'ATOMUSDT', 'XLM': 'XLMUSDT', 'ETC': 'ETCUSDT',
-  'XMR': 'XMRUSDT', 'ALGO': 'ALGOUSDT', 'FIL': 'FILUSDT', 'ICP': 'ICPUSDT',
-  'VET': 'VETUSDT', 'EOS': 'EOSUSDT', 'XTZ': 'XTZUSDT', 'AAVE': 'AAVEUSDT',
-  'MKR': 'MKRUSDT', 'GRT': 'GRTUSDT', 'THETA': 'THETAUSDT', 'RUNE': 'RUNEUSDT',
-  'NEO': 'NEOUSDT', 'FTM': 'FTMUSDT'
-};
+// Legacy maps (kept for backward compatibility but not used)
+const BINANCE_SYMBOL_MAP = BYBIT_SYMBOL_MAP;
+const MEXC_SYMBOL_MAP = BYBIT_SYMBOL_MAP;
 
 /**
  * Get preferred exchange for trading
- * Priority: MEXC (if API keys available) > Binance > Virtual
+ * Priority: Bybit Demo (if API keys available) > Bybit Mainnet > Disabled
  */
 function getPreferredExchange() {
-  const mexcApiKey = process.env.MEXC_API_KEY || '';
-  const mexcApiSecret = process.env.MEXC_API_SECRET || '';
-  const binanceApiKey = process.env.BINANCE_API_KEY || '';
-  const binanceApiSecret = process.env.BINANCE_API_SECRET || '';
+  const bybitApiKey = process.env.BYBIT_API_KEY || '';
+  const bybitApiSecret = process.env.BYBIT_API_SECRET || '';
+  const useTestnet = (process.env.BYBIT_TESTNET || 'true').toLowerCase() === 'true';
   
-  if (mexcApiKey && mexcApiSecret) {
-    return { exchange: 'MEXC', apiKey: mexcApiKey, apiSecret: mexcApiSecret };
-  } else if (binanceApiKey && binanceApiSecret) {
-    return { exchange: 'BINANCE', apiKey: binanceApiKey, apiSecret: binanceApiSecret };
+  if (bybitApiKey && bybitApiSecret) {
+    return { 
+      exchange: 'BYBIT', 
+      apiKey: bybitApiKey, 
+      apiSecret: bybitApiSecret,
+      testnet: useTestnet,
+      baseUrl: useTestnet ? BYBIT_TESTNET_URL : BYBIT_MAINNET_URL
+    };
   }
   
-  return { exchange: 'VIRTUAL', apiKey: null, apiSecret: null };
+  return { exchange: 'DISABLED', apiKey: null, apiSecret: null, testnet: false, baseUrl: null };
 }
 
-// Virtual trading state (in-memory, resets on restart)
-let virtualBalance = parseFloat(process.env.VIRTUAL_STARTING_BALANCE || '10000'); // Default $10,000 virtual balance
-let virtualPositions = {}; // Track long positions (positive = we own)
-let virtualShorts = {}; // Track short positions (positive = we owe/short)
-let virtualOrderCounter = 1000000; // Start order IDs from 1,000,000 to distinguish from real orders
-
 /**
- * Check if exchange trading is enabled (real or virtual)
+ * Check if exchange trading is enabled (Bybit Demo Trading)
  */
 function isExchangeTradingEnabled() {
-  const binanceApiKey = process.env.BINANCE_API_KEY || '';
-  const binanceApiSecret = process.env.BINANCE_API_SECRET || '';
-  const mexcApiKey = process.env.MEXC_API_KEY || '';
-  const mexcApiSecret = process.env.MEXC_API_SECRET || '';
-  const realTradingEnabled = process.env.ENABLE_AUTO_TRADING === 'true' || process.env.ENABLE_AUTO_TRADING === '1';
-  const virtualTradingEnabled = process.env.ENABLE_VIRTUAL_TRADING !== 'false'; // Default to true
+  const bybitApiKey = process.env.BYBIT_API_KEY || '';
+  const bybitApiSecret = process.env.BYBIT_API_SECRET || '';
+  const useTestnet = (process.env.BYBIT_TESTNET || 'true').toLowerCase() === 'true';
   
-  // Real trading requires API keys (MEXC or Binance)
-  const hasBinanceKeys = binanceApiKey.length > 0 && binanceApiSecret.length > 0;
-  const hasMEXCKeys = mexcApiKey.length > 0 && mexcApiSecret.length > 0;
-  const realTrading = realTradingEnabled && (hasBinanceKeys || hasMEXCKeys);
-  
-  // Virtual trading is default (no API keys needed)
-  const virtualTrading = virtualTradingEnabled;
+  const hasBybitKeys = bybitApiKey.length > 0 && bybitApiSecret.length > 0;
+  const tradingEnabled = hasBybitKeys;
   
   const preferredExchange = getPreferredExchange();
   
   return {
-    enabled: realTrading || virtualTrading,
-    mode: realTrading ? 'REAL' : 'VIRTUAL',
-    realTrading: realTrading,
-    virtualTrading: virtualTrading,
+    enabled: tradingEnabled,
+    mode: tradingEnabled ? (useTestnet ? 'BYBIT_DEMO' : 'BYBIT_MAINNET') : 'DISABLED',
+    realTrading: tradingEnabled,
+    virtualTrading: false, // Virtual trading disabled
     preferredExchange: preferredExchange.exchange,
-    hasBinanceKeys: hasBinanceKeys,
-    hasMEXCKeys: hasMEXCKeys,
-    virtualBalance: virtualTrading ? virtualBalance : null
+    hasBybitKeys: hasBybitKeys,
+    testnet: useTestnet,
+    baseUrl: preferredExchange.baseUrl
   };
 }
 
 /**
- * Generate Binance API signature
+ * Generate Bybit API signature
+ * Bybit uses HMAC SHA256 signature like Binance
+ */
+function generateBybitSignature(params, apiSecret) {
+  // Sort parameters and create query string
+  const sortedParams = Object.keys(params)
+    .sort()
+    .map(key => `${key}=${params[key]}`)
+    .join('&');
+  
+  return crypto
+    .createHmac('sha256', apiSecret)
+    .update(sortedParams)
+    .digest('hex');
+}
+
+/**
+ * Generate Binance API signature (legacy, kept for compatibility)
  */
 function generateSignature(queryString, apiSecret) {
   return crypto
@@ -100,13 +104,81 @@ function generateSignature(queryString, apiSecret) {
 }
 
 /**
- * Execute a market order on Binance
+ * Execute a market order on Bybit (Spot Trading)
  * @param {string} symbol - Trading pair symbol (e.g., 'BTCUSDT')
- * @param {string} side - 'BUY' or 'SELL'
+ * @param {string} side - 'Buy' or 'Sell' (Bybit uses capitalized)
  * @param {number} quantity - Amount to trade
- * @param {string} apiKey - Binance API key
- * @param {string} apiSecret - Binance API secret
+ * @param {string} apiKey - Bybit API key
+ * @param {string} apiSecret - Bybit API secret
+ * @param {string} baseUrl - Bybit API base URL (testnet or mainnet)
  * @returns {Promise<Object>} Order result
+ */
+async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret, baseUrl) {
+  try {
+    const timestamp = Date.now();
+    const recvWindow = 5000; // 5 second receive window
+    
+    // Bybit Spot API parameters
+    const params = {
+      category: 'spot',
+      symbol: symbol,
+      side: side, // 'Buy' or 'Sell'
+      orderType: 'Market',
+      qty: quantity.toString(),
+      timestamp: timestamp.toString(),
+      recvWindow: recvWindow.toString()
+    };
+
+    // Generate signature
+    const signature = generateBybitSignature(params, apiSecret);
+    params.signature = signature;
+
+    const response = await axios.post(
+      `${baseUrl}/v5/order/create`,
+      params,
+      {
+        headers: {
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp.toString(),
+          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+          'X-BAPI-SIGN': signature,
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000
+      }
+    );
+
+    if (response.data && response.data.retCode === 0 && response.data.result) {
+      const order = response.data.result;
+      return {
+        success: true,
+        orderId: order.orderId,
+        symbol: order.symbol,
+        side: order.side,
+        executedQty: parseFloat(order.executedQty || order.qty || 0),
+        price: parseFloat(order.avgPrice || order.price || 0),
+        status: order.orderStatus,
+        mode: 'BYBIT',
+        data: response.data
+      };
+    } else {
+      return {
+        success: false,
+        error: response.data?.retMsg || 'Unknown error',
+        code: response.data?.retCode || 0
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error.response?.data?.retMsg || error.response?.data?.message || error.message,
+      code: error.response?.data?.retCode || error.response?.status || 0
+    };
+  }
+}
+
+/**
+ * Execute a market order on Binance (legacy, kept for compatibility)
  */
 async function executeMarketOrder(symbol, side, quantity, apiKey, apiSecret) {
   try {
@@ -160,110 +232,32 @@ async function executeMarketOrder(symbol, side, quantity, apiKey, apiSecret) {
 }
 
 /**
- * Execute a virtual market order (paper trading - no real money)
- * @param {string} symbol - Trading pair symbol (e.g., 'BTCUSDT')
- * @param {string} side - 'BUY' or 'SELL'
- * @param {number} quantity - Amount to trade
- * @param {number} price - Current market price
- * @returns {Promise<Object>} Simulated order result
+ * Virtual trading functions removed - using Bybit Demo Trading instead
+ * This function is kept for backward compatibility but will not be used
  */
 async function executeVirtualMarketOrder(symbol, side, quantity, price) {
-  try {
-    // Simulate small slippage (0.1% for market orders)
-    const slippage = 0.001;
-    const executionPrice = side === 'BUY' 
-      ? price * (1 + slippage)  // Buy slightly higher
-      : price * (1 - slippage); // Sell slightly lower
-    
-    const orderId = virtualOrderCounter++;
-    const cost = quantity * executionPrice;
-    
-    // Update virtual balance and positions
-    const baseAsset = symbol.replace('USDT', '');
-    
-    if (side === 'BUY') {
-      // Buying: Could be opening long OR covering short
-      if (virtualShorts[baseAsset] && virtualShorts[baseAsset] > 0) {
-        // Covering a short position
-        const coverAmount = Math.min(quantity, virtualShorts[baseAsset]);
-        virtualShorts[baseAsset] -= coverAmount;
-        if (virtualShorts[baseAsset] <= 0) {
-          delete virtualShorts[baseAsset];
-        }
-        // Pay to cover (deduct USDT)
-        if (virtualBalance < cost) {
-          return {
-            success: false,
-            error: 'Insufficient virtual balance to cover short',
-            virtualBalance: virtualBalance,
-            required: cost
-          };
-        }
-        virtualBalance -= cost;
-      } else {
-        // Opening a long position
-        if (virtualBalance < cost) {
-          return {
-            success: false,
-            error: 'Insufficient virtual balance',
-            virtualBalance: virtualBalance,
-            required: cost
-          };
-        }
-        virtualBalance -= cost;
-        virtualPositions[baseAsset] = (virtualPositions[baseAsset] || 0) + quantity;
-      }
-    } else {
-      // Selling: Could be closing long OR opening short
-      if (virtualPositions[baseAsset] && virtualPositions[baseAsset] > 0) {
-        // Closing a long position
-        const sellAmount = Math.min(quantity, virtualPositions[baseAsset]);
-        virtualPositions[baseAsset] -= sellAmount;
-        if (virtualPositions[baseAsset] <= 0) {
-          delete virtualPositions[baseAsset];
-        }
-        // Get USDT from sale
-        virtualBalance += cost;
-      } else {
-        // Opening a short position (we don't own it, so we short it)
-        virtualShorts[baseAsset] = (virtualShorts[baseAsset] || 0) + quantity;
-        // Get USDT from short sale
-        virtualBalance += cost;
-      }
-    }
-    
-    // Simulate order execution delay
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    return {
-      success: true,
-      orderId: orderId,
-      symbol: symbol,
-      side: side,
-      executedQty: quantity,
-      price: executionPrice,
-      status: 'FILLED',
-      mode: 'VIRTUAL',
-      virtualBalance: virtualBalance,
-      virtualPositions: { ...virtualPositions }
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error: error.message,
-      mode: 'VIRTUAL'
-    };
-  }
+  return {
+    success: false,
+    error: 'Virtual trading is disabled. Please configure Bybit API keys for demo trading.',
+    mode: 'DISABLED'
+  };
 }
 
 /**
- * Get account balance for a specific asset
+ * Get account balance for a specific asset (Bybit or legacy Binance)
  * @param {string} asset - Asset symbol (e.g., 'USDT', 'BTC')
- * @param {string} apiKey - Binance API key
- * @param {string} apiSecret - Binance API secret
+ * @param {string} apiKey - API key
+ * @param {string} apiSecret - API secret
  * @returns {Promise<number>} Available balance
  */
 async function getBalance(asset, apiKey, apiSecret) {
+  const exchange = getPreferredExchange();
+  
+  if (exchange.exchange === 'BYBIT' && exchange.baseUrl) {
+    return await getBybitBalance(asset, apiKey, apiSecret, exchange.baseUrl);
+  }
+  
+  // Legacy Binance support (kept for backward compatibility)
   try {
     const timestamp = Date.now();
     const queryString = `timestamp=${timestamp}`;
@@ -337,7 +331,7 @@ function calculateQuantity(symbol, price, positionSizeUSD) {
 }
 
 /**
- * Execute Take Profit order
+ * Execute Take Profit order via Bybit
  * @param {Object} trade - Trade object
  * @returns {Promise<Object>} Execution result
  */
@@ -347,17 +341,17 @@ async function executeTakeProfit(trade) {
   if (!config.enabled) {
     return {
       success: false,
-      error: 'Trading not enabled. Set ENABLE_VIRTUAL_TRADING=true (default) or ENABLE_AUTO_TRADING=true with API keys',
+      error: 'Trading not enabled. Please configure BYBIT_API_KEY and BYBIT_API_SECRET for demo trading.',
       skipped: true
     };
   }
 
-  const binanceSymbol = BINANCE_SYMBOL_MAP[trade.symbol];
+  const bybitSymbol = BYBIT_SYMBOL_MAP[trade.symbol];
 
-  if (!binanceSymbol) {
+  if (!bybitSymbol) {
     return {
       success: false,
-      error: `Symbol ${trade.symbol} not available on Binance`
+      error: `Symbol ${trade.symbol} not available on Bybit`
     };
   }
 
@@ -370,9 +364,10 @@ async function executeTakeProfit(trade) {
     };
   }
 
-  // For BUY positions: SELL to take profit
-  // For SELL positions: BUY to cover (take profit)
-  const side = trade.action === 'BUY' ? 'SELL' : 'BUY';
+  // For BUY positions: Sell to take profit
+  // For SELL positions: Buy to cover (take profit)
+  // Bybit uses 'Buy' and 'Sell' (capitalized)
+  const side = trade.action === 'BUY' ? 'Sell' : 'Buy';
   
   // Calculate quantity based on position size
   const positionSizeUSD = parseFloat(process.env.DEFAULT_POSITION_SIZE_USD || '100');
@@ -385,20 +380,22 @@ async function executeTakeProfit(trade) {
     };
   }
 
-  console.log(`📈 Executing TAKE PROFIT (${config.mode}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
+  const exchange = getPreferredExchange();
+  const modeLabel = config.testnet ? 'BYBIT_DEMO' : 'BYBIT_MAINNET';
+  console.log(`📈 Executing TAKE PROFIT (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
   
-  // Use virtual trading if real trading is not enabled
-  if (config.mode === 'VIRTUAL') {
-    return await executeVirtualMarketOrder(binanceSymbol, side, quantity, trade.currentPrice);
-  } else {
-    const apiKey = process.env.BINANCE_API_KEY;
-    const apiSecret = process.env.BINANCE_API_SECRET;
-    return await executeMarketOrder(binanceSymbol, side, quantity, apiKey, apiSecret);
-  }
+  return await executeBybitMarketOrder(
+    bybitSymbol, 
+    side, 
+    quantity, 
+    exchange.apiKey, 
+    exchange.apiSecret,
+    exchange.baseUrl
+  );
 }
 
 /**
- * Execute Stop Loss order
+ * Execute Stop Loss order via Bybit
  * @param {Object} trade - Trade object
  * @returns {Promise<Object>} Execution result
  */
@@ -408,17 +405,17 @@ async function executeStopLoss(trade) {
   if (!config.enabled) {
     return {
       success: false,
-      error: 'Trading not enabled. Set ENABLE_VIRTUAL_TRADING=true (default) or ENABLE_AUTO_TRADING=true with API keys',
+      error: 'Trading not enabled. Please configure BYBIT_API_KEY and BYBIT_API_SECRET for demo trading.',
       skipped: true
     };
   }
 
-  const binanceSymbol = BINANCE_SYMBOL_MAP[trade.symbol];
+  const bybitSymbol = BYBIT_SYMBOL_MAP[trade.symbol];
 
-  if (!binanceSymbol) {
+  if (!bybitSymbol) {
     return {
       success: false,
-      error: `Symbol ${trade.symbol} not available on Binance`
+      error: `Symbol ${trade.symbol} not available on Bybit`
     };
   }
 
@@ -431,9 +428,10 @@ async function executeStopLoss(trade) {
     };
   }
 
-  // For BUY positions: SELL to stop loss
-  // For SELL positions: BUY to cover (stop loss)
-  const side = trade.action === 'BUY' ? 'SELL' : 'BUY';
+  // For BUY positions: Sell to stop loss
+  // For SELL positions: Buy to cover (stop loss)
+  // Bybit uses 'Buy' and 'Sell' (capitalized)
+  const side = trade.action === 'BUY' ? 'Sell' : 'Buy';
   
   // Calculate quantity
   const positionSizeUSD = parseFloat(process.env.DEFAULT_POSITION_SIZE_USD || '100');
@@ -446,20 +444,22 @@ async function executeStopLoss(trade) {
     };
   }
 
-  console.log(`🛑 Executing STOP LOSS (${config.mode}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
+  const exchange = getPreferredExchange();
+  const modeLabel = config.testnet ? 'BYBIT_DEMO' : 'BYBIT_MAINNET';
+  console.log(`🛑 Executing STOP LOSS (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
   
-  // Use virtual trading if real trading is not enabled
-  if (config.mode === 'VIRTUAL') {
-    return await executeVirtualMarketOrder(binanceSymbol, side, quantity, trade.currentPrice);
-  } else {
-    const apiKey = process.env.BINANCE_API_KEY;
-    const apiSecret = process.env.BINANCE_API_SECRET;
-    return await executeMarketOrder(binanceSymbol, side, quantity, apiKey, apiSecret);
-  }
+  return await executeBybitMarketOrder(
+    bybitSymbol, 
+    side, 
+    quantity, 
+    exchange.apiKey, 
+    exchange.apiSecret,
+    exchange.baseUrl
+  );
 }
 
 /**
- * Execute Add Position (DCA) order
+ * Execute Add Position (DCA) order via Bybit
  * @param {Object} trade - Trade object
  * @returns {Promise<Object>} Execution result
  */
@@ -469,17 +469,17 @@ async function executeAddPosition(trade) {
   if (!config.enabled) {
     return {
       success: false,
-      error: 'Trading not enabled. Set ENABLE_VIRTUAL_TRADING=true (default) or ENABLE_AUTO_TRADING=true with API keys',
+      error: 'Trading not enabled. Please configure BYBIT_API_KEY and BYBIT_API_SECRET for demo trading.',
       skipped: true
     };
   }
 
-  const binanceSymbol = BINANCE_SYMBOL_MAP[trade.symbol];
+  const bybitSymbol = BYBIT_SYMBOL_MAP[trade.symbol];
 
-  if (!binanceSymbol) {
+  if (!bybitSymbol) {
     return {
       success: false,
-      error: `Symbol ${trade.symbol} not available on Binance`
+      error: `Symbol ${trade.symbol} not available on Bybit`
     };
   }
 
@@ -492,9 +492,10 @@ async function executeAddPosition(trade) {
     };
   }
 
-  // For BUY positions: BUY more (average down)
-  // For SELL positions: SELL more (average up)
-  const side = trade.action; // Same direction as original trade
+  // For BUY positions: Buy more (average down)
+  // For SELL positions: Sell more (average up)
+  // Bybit uses 'Buy' and 'Sell' (capitalized)
+  const side = trade.action === 'BUY' ? 'Buy' : 'Sell';
   
   // Calculate quantity for DCA using portfolio service ($100 USD)
   const { getDCASize } = require('./portfolioService');
@@ -508,42 +509,82 @@ async function executeAddPosition(trade) {
     };
   }
 
-  console.log(`💰 Executing ADD POSITION (DCA) (${config.mode}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
+  const exchange = getPreferredExchange();
+  const modeLabel = config.testnet ? 'BYBIT_DEMO' : 'BYBIT_MAINNET';
+  console.log(`💰 Executing ADD POSITION (DCA) (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
   
-  // Use virtual trading if real trading is not enabled
-  if (config.mode === 'VIRTUAL') {
-    return await executeVirtualMarketOrder(binanceSymbol, side, quantity, trade.currentPrice);
-  } else {
-    const apiKey = process.env.BINANCE_API_KEY;
-    const apiSecret = process.env.BINANCE_API_SECRET;
-    return await executeMarketOrder(binanceSymbol, side, quantity, apiKey, apiSecret);
+  return await executeBybitMarketOrder(
+    bybitSymbol, 
+    side, 
+    quantity, 
+    exchange.apiKey, 
+    exchange.apiSecret,
+    exchange.baseUrl
+  );
+}
+
+/**
+ * Get Bybit account balance (for demo trading)
+ * @param {string} asset - Asset symbol (e.g., 'USDT', 'BTC')
+ * @param {string} apiKey - Bybit API key
+ * @param {string} apiSecret - Bybit API secret
+ * @param {string} baseUrl - Bybit API base URL
+ * @returns {Promise<number>} Available balance
+ */
+async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
+  try {
+    const timestamp = Date.now();
+    const recvWindow = 5000;
+    
+    const params = {
+      accountType: 'SPOT',
+      timestamp: timestamp.toString(),
+      recvWindow: recvWindow.toString()
+    };
+
+    const signature = generateBybitSignature(params, apiSecret);
+    params.signature = signature;
+
+    const response = await axios.get(`${baseUrl}/v5/account/wallet-balance`, {
+      params: params,
+      headers: {
+        'X-BAPI-API-KEY': apiKey,
+        'X-BAPI-TIMESTAMP': timestamp.toString(),
+        'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+        'X-BAPI-SIGN': signature
+      },
+      timeout: 10000
+    });
+
+    if (response.data && response.data.retCode === 0 && response.data.result) {
+      const spot = response.data.result.list?.[0]?.coin?.find(c => c.coin === asset);
+      return spot ? parseFloat(spot.availableToWithdraw || spot.free || 0) : 0;
+    }
+    return 0;
+  } catch (error) {
+    console.log(`⚠️ Failed to get Bybit balance for ${asset}: ${error.message}`);
+    return 0;
   }
 }
 
 /**
- * Get virtual trading balance and positions
- * @returns {Object} Virtual trading state
+ * Get virtual trading balance and positions (deprecated - use Bybit)
+ * @returns {Object} Empty state (virtual trading disabled)
  */
 function getVirtualTradingState() {
   return {
-    balance: virtualBalance,
-    positions: { ...virtualPositions },
-    totalValue: virtualBalance + Object.keys(virtualPositions).reduce((sum, asset) => {
-      // Note: This is a simplified calculation - in real implementation,
-      // you'd need current prices to calculate total portfolio value
-      return sum;
-    }, 0)
+    balance: 0,
+    positions: {},
+    totalValue: 0,
+    message: 'Virtual trading disabled. Using Bybit Demo Trading.'
   };
 }
 
 /**
- * Reset virtual trading state (for testing)
+ * Reset virtual trading state (deprecated - use Bybit)
  */
 function resetVirtualTrading() {
-  virtualBalance = parseFloat(process.env.VIRTUAL_STARTING_BALANCE || '10000');
-  virtualPositions = {};
-  virtualShorts = {};
-  virtualOrderCounter = 1000000;
+  console.log('⚠️ Virtual trading is disabled. Use Bybit Demo Trading instead.');
 }
 
 module.exports = {
@@ -552,11 +593,14 @@ module.exports = {
   executeStopLoss,
   executeAddPosition,
   getBalance,
+  getBybitBalance,
   calculateQuantity,
   getVirtualTradingState,
   resetVirtualTrading,
   getPreferredExchange,
-  BINANCE_SYMBOL_MAP,
-  MEXC_SYMBOL_MAP
+  executeBybitMarketOrder,
+  BYBIT_SYMBOL_MAP,
+  BINANCE_SYMBOL_MAP, // Legacy
+  MEXC_SYMBOL_MAP // Legacy
 };
 

@@ -462,8 +462,8 @@ Respond ONLY with valid JSON.`;
       details += `• DCA Price: $${recs.dcaPrice.toFixed(6)}\n`;
     }
 
-    // AUTO-EXECUTE for paper trading
-    const autoExecuteEnabled = config.AUTO_EXECUTE_AI_RECOMMENDATIONS !== false; // Default true for paper trading
+    // AUTO-EXECUTE for Bybit demo trading
+    const autoExecuteEnabled = config.AUTO_EXECUTE_AI_RECOMMENDATIONS !== false; // Default true for Bybit demo trading
     
     if (autoExecuteEnabled) {
       console.log(`🚀 AUTO-EXECUTING AI recommendation: ${aiEvaluation.action}`);
@@ -495,7 +495,7 @@ Respond ONLY with valid JSON.`;
   }
 
   /**
-   * Execute AI recommendation (for paper trading)
+   * Execute AI recommendation (for Bybit demo trading)
    */
   async executeAIRecommendation(trade, aiEvaluation, recommendations) {
     if (!this.bot || !trade) {
@@ -538,7 +538,7 @@ Respond ONLY with valid JSON.`;
 
   /**
    * Execute DCA (add to position)
-   * For paper trading: If only dcaPrice is provided, sets DCA level and existing logic will execute when price hits
+   * For Bybit demo trading: If only dcaPrice is provided, sets DCA level and existing logic will execute when price hits
    */
   async executeDCA(trade, recommendations) {
     // Find the trade in activeTrades array

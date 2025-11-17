@@ -221,7 +221,7 @@ class ProfessionalTradingBot {
         wedges: true,
         doubleTopBottom: true
       },
-      paperTradingEnabled: true  // Enable paper trading by default
+      bybitTradingEnabled: true  // Enable Bybit demo trading (requires BYBIT_API_KEY and BYBIT_API_SECRET)
     };
     
     // Sync minConfidence
@@ -1137,8 +1137,8 @@ class ProfessionalTradingBot {
                 console.log(`${priorityLabel} ✅ New trade executed successfully for ${symbol}`);
               }
             } catch (error) {
-              if (error.message === 'Paper trading is disabled') {
-                console.log(`${priorityLabel} ⚠️ Paper trading disabled - trade not executed for ${symbol}`);
+              if (error.message === 'Trading is disabled' || error.message.includes('Trading not enabled')) {
+                console.log(`${priorityLabel} ⚠️ Bybit trading disabled - trade not executed for ${symbol}`);
               } else {
                 console.log(`${priorityLabel} ⚠️ Failed to execute trade for ${symbol}: ${error.message}`);
               }
@@ -1239,8 +1239,8 @@ class ProfessionalTradingBot {
         if (result.r1Decision.decision === 'CONFIRMED') {
           console.log(`${priorityLabel} ✅ R1 CONFIRMED opportunity for ${coin.symbol}!`);
           
-          // Execute trade if paper trading is enabled
-          if (this.tradingRules.paperTradingEnabled) {
+          // Execute trade if Bybit trading is enabled
+          if (this.tradingRules.bybitTradingEnabled) {
             await this.executePaperTrade({
               symbol: coin.symbol,
               action: result.r1Decision.action,
@@ -1409,10 +1409,10 @@ Reason: ${newReason?.substring(0, 200)}`);
     try {
       const { symbol, action, price, reason, confidence, stopLoss, takeProfit, source } = tradeData;
 
-      // Check if paper trading is enabled
-      if (!this.tradingRules.paperTradingEnabled) {
-        console.log(`⚠️ Paper trading disabled - cannot execute trade for ${symbol}`);
-        throw new Error('Paper trading is disabled');
+      // Check if Bybit trading is enabled
+      if (!this.tradingRules.bybitTradingEnabled) {
+        console.log(`⚠️ Bybit trading disabled - cannot execute trade for ${symbol}`);
+        throw new Error('Bybit trading is disabled');
       }
 
       // Check for existing trade and handle it
@@ -2263,12 +2263,14 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           opportunities.reduce((sum, o) => sum + o.confidence, 0) / opportunities.length;
       }
 
-      // Log paper trading status
+      // Log Bybit trading status
+      const { isExchangeTradingEnabled } = require('../services/exchangeService');
+      const exchangeConfig = isExchangeTradingEnabled();
       console.log(`\n${'='.repeat(60)}`);
       console.log(`📊 OPPORTUNITIES SUMMARY`);
       console.log(`${'='.repeat(60)}`);
       console.log(`✅ Opportunities found: ${opportunities.length}`);
-      console.log(`📝 Paper Trading: ${this.tradingRules.paperTradingEnabled ? '✅ ENABLED' : '❌ DISABLED'}`);
+      console.log(`📝 Bybit Trading: ${exchangeConfig.enabled ? `✅ ENABLED (${exchangeConfig.mode})` : '❌ DISABLED - Configure BYBIT_API_KEY and BYBIT_API_SECRET'}`);
       console.log(`📱 Telegram: ${config.TELEGRAM_ENABLED ? '✅ ENABLED' : '❌ DISABLED'}`);
       if (opportunities.length === 0) {
         console.log(`⚠️ No opportunities found - possible reasons:`);
