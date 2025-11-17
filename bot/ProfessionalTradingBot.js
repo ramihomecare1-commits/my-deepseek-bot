@@ -2957,12 +2957,24 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           if (currentPrice >= trade.takeProfit && trade.status === 'OPEN') {
             // Execute Take Profit order
             const tpResult = await executeTakeProfit(trade);
+            const executionPrice = tpResult.price || trade.takeProfit || currentPrice;
+            
+            // Recalculate P&L based on actual execution price (TP price), not current price
+            const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+            const quantity = trade.quantity || 0;
+            const priceDiff = executionPrice - avgEntry;
+            const finalPnl = priceDiff * quantity;
+            const finalPnlPercent = parseFloat(((priceDiff / avgEntry) * 100).toFixed(2));
+            
             if (tpResult.success) {
               trade.status = 'TP_HIT';
               trade.executedAt = new Date();
-              trade.executionPrice = tpResult.price || currentPrice;
+              trade.executionPrice = executionPrice;
               trade.executionOrderId = tpResult.orderId;
-              notificationMessage = `✅ TAKE PROFIT EXECUTED: ${trade.symbol} sold ${tpResult.executedQty} at $${trade.executionPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
+              // Update P&L with actual execution price
+              trade.pnl = finalPnl;
+              trade.pnlPercent = finalPnlPercent;
+              notificationMessage = `✅ TAKE PROFIT EXECUTED: ${trade.symbol} sold ${tpResult.executedQty} at $${executionPrice.toFixed(2)} (Profit: ${finalPnlPercent >= 0 ? '+' : ''}${finalPnlPercent.toFixed(2)}%)`;
               notificationLevel = 'success';
               notificationNeeded = true;
               addLogEntry(`✅ TP EXECUTED: ${trade.symbol} - Order ID: ${tpResult.orderId}`, 'success');
@@ -2970,7 +2982,11 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             } else if (!tpResult.skipped) {
               // Only log if it's an actual error (not just disabled)
               trade.status = 'TP_HIT'; // Mark as hit even if execution failed
-              notificationMessage = `✅ TAKE PROFIT HIT (Execution ${tpResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
+              trade.executionPrice = executionPrice;
+              // Update P&L with actual execution price
+              trade.pnl = finalPnl;
+              trade.pnlPercent = finalPnlPercent;
+              notificationMessage = `✅ TAKE PROFIT HIT (Execution ${tpResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${executionPrice.toFixed(2)} (Profit: ${finalPnlPercent >= 0 ? '+' : ''}${finalPnlPercent.toFixed(2)}%)`;
               notificationLevel = 'success';
               notificationNeeded = true;
               addLogEntry(`⚠️ TP hit but execution failed: ${trade.symbol} - ${tpResult.error}`, 'warning');
@@ -3119,19 +3135,35 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           else if (currentPrice <= trade.stopLoss && trade.status === 'OPEN' && (trade.dcaCount || 0) >= maxDcaPerTrade) {
             // Execute Stop Loss order (only after all 5 DCAs used)
             const slResult = await executeStopLoss(trade);
+            const executionPrice = slResult.price || trade.stopLoss || currentPrice;
+            
+            // Recalculate P&L based on actual execution price (SL price), not current price
+            const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+            const quantity = trade.quantity || 0;
+            const priceDiff = executionPrice - avgEntry;
+            const finalPnl = priceDiff * quantity;
+            const finalPnlPercent = parseFloat(((priceDiff / avgEntry) * 100).toFixed(2));
+            
             if (slResult.success) {
               trade.status = 'SL_HIT';
               trade.executedAt = new Date();
-              trade.executionPrice = slResult.price || currentPrice;
+              trade.executionPrice = executionPrice;
               trade.executionOrderId = slResult.orderId;
-              notificationMessage = `❌ STOP LOSS EXECUTED: ${trade.symbol} sold ${slResult.executedQty} at $${trade.executionPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
+              // Update P&L with actual execution price
+              trade.pnl = finalPnl;
+              trade.pnlPercent = finalPnlPercent;
+              notificationMessage = `❌ STOP LOSS EXECUTED: ${trade.symbol} sold ${slResult.executedQty} at $${executionPrice.toFixed(2)} (Loss: ${finalPnlPercent >= 0 ? '+' : ''}${finalPnlPercent.toFixed(2)}%)`;
               notificationLevel = 'error';
               notificationNeeded = true;
               addLogEntry(`🛑 SL EXECUTED: ${trade.symbol} - Order ID: ${slResult.orderId}`, 'error');
               this.recordTradeOutcome(trade, 'STOP_LOSS');
             } else if (!slResult.skipped) {
               trade.status = 'SL_HIT';
-              notificationMessage = `❌ STOP LOSS HIT (Execution ${slResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
+              trade.executionPrice = executionPrice;
+              // Update P&L with actual execution price
+              trade.pnl = finalPnl;
+              trade.pnlPercent = finalPnlPercent;
+              notificationMessage = `❌ STOP LOSS HIT (Execution ${slResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${executionPrice.toFixed(2)} (Loss: ${finalPnlPercent >= 0 ? '+' : ''}${finalPnlPercent.toFixed(2)}%)`;
               notificationLevel = 'error';
               notificationNeeded = true;
               addLogEntry(`⚠️ SL hit but execution failed: ${trade.symbol} - ${slResult.error}`, 'error');
@@ -3143,19 +3175,36 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           if (currentPrice <= trade.takeProfit && trade.status === 'OPEN') {
             // Execute Take Profit order (cover short)
             const tpResult = await executeTakeProfit(trade);
+            const executionPrice = tpResult.price || trade.takeProfit || currentPrice;
+            
+            // Recalculate P&L based on actual execution price (TP price), not current price
+            // For SHORT: (avgEntryPrice - executionPrice) * quantity = USD gain/loss
+            const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+            const quantity = trade.quantity || 0;
+            const priceDiff = avgEntry - executionPrice; // For short, profit when price goes down
+            const finalPnl = priceDiff * quantity;
+            const finalPnlPercent = parseFloat(((priceDiff / avgEntry) * 100).toFixed(2));
+            
             if (tpResult.success) {
               trade.status = 'TP_HIT';
               trade.executedAt = new Date();
-              trade.executionPrice = tpResult.price || currentPrice;
+              trade.executionPrice = executionPrice;
               trade.executionOrderId = tpResult.orderId;
-              notificationMessage = `✅ TAKE PROFIT EXECUTED (SHORT): ${trade.symbol} covered ${tpResult.executedQty} at $${trade.executionPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
+              // Update P&L with actual execution price
+              trade.pnl = finalPnl;
+              trade.pnlPercent = finalPnlPercent;
+              notificationMessage = `✅ TAKE PROFIT EXECUTED (SHORT): ${trade.symbol} covered ${tpResult.executedQty} at $${executionPrice.toFixed(2)} (Profit: ${finalPnlPercent >= 0 ? '+' : ''}${finalPnlPercent.toFixed(2)}%)`;
               notificationLevel = 'success';
               notificationNeeded = true;
               addLogEntry(`✅ TP EXECUTED (SHORT): ${trade.symbol} - Order ID: ${tpResult.orderId}`, 'success');
               this.recordTradeOutcome(trade, 'TAKE_PROFIT');
             } else if (!tpResult.skipped) {
               trade.status = 'TP_HIT';
-              notificationMessage = `✅ TAKE PROFIT HIT (SHORT, Execution ${tpResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)} (Profit: ${trade.pnlPercent}%)`;
+              trade.executionPrice = executionPrice;
+              // Update P&L with actual execution price
+              trade.pnl = finalPnl;
+              trade.pnlPercent = finalPnlPercent;
+              notificationMessage = `✅ TAKE PROFIT HIT (SHORT, Execution ${tpResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${executionPrice.toFixed(2)} (Profit: ${finalPnlPercent >= 0 ? '+' : ''}${finalPnlPercent.toFixed(2)}%)`;
               notificationLevel = 'success';
               notificationNeeded = true;
               addLogEntry(`⚠️ TP hit but execution failed (SHORT): ${trade.symbol} - ${tpResult.error}`, 'warning');
@@ -3301,19 +3350,36 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           else if (currentPrice >= trade.stopLoss && trade.status === 'OPEN' && (trade.dcaCount || 0) >= maxDcaPerTrade) {
             // Execute Stop Loss order (only after all 5 DCAs used)
             const slResult = await executeStopLoss(trade);
+            const executionPrice = slResult.price || trade.stopLoss || currentPrice;
+            
+            // Recalculate P&L based on actual execution price (SL price), not current price
+            // For SHORT: (avgEntryPrice - executionPrice) * quantity = USD gain/loss
+            const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+            const quantity = trade.quantity || 0;
+            const priceDiff = avgEntry - executionPrice; // For short, loss when price goes up
+            const finalPnl = priceDiff * quantity;
+            const finalPnlPercent = parseFloat(((priceDiff / avgEntry) * 100).toFixed(2));
+            
             if (slResult.success) {
               trade.status = 'SL_HIT';
               trade.executedAt = new Date();
-              trade.executionPrice = slResult.price || currentPrice;
+              trade.executionPrice = executionPrice;
               trade.executionOrderId = slResult.orderId;
-              notificationMessage = `❌ STOP LOSS EXECUTED (SHORT): ${trade.symbol} covered ${slResult.executedQty} at $${trade.executionPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
+              // Update P&L with actual execution price
+              trade.pnl = finalPnl;
+              trade.pnlPercent = finalPnlPercent;
+              notificationMessage = `❌ STOP LOSS EXECUTED (SHORT): ${trade.symbol} covered ${slResult.executedQty} at $${executionPrice.toFixed(2)} (Loss: ${finalPnlPercent >= 0 ? '+' : ''}${finalPnlPercent.toFixed(2)}%)`;
               notificationLevel = 'error';
               notificationNeeded = true;
               addLogEntry(`🛑 SL EXECUTED (SHORT): ${trade.symbol} - Order ID: ${slResult.orderId}`, 'error');
               this.recordTradeOutcome(trade, 'STOP_LOSS');
             } else if (!slResult.skipped) {
               trade.status = 'SL_HIT';
-              notificationMessage = `❌ STOP LOSS HIT (SHORT, Execution ${slResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${currentPrice.toFixed(2)} (Loss: ${trade.pnlPercent}%)`;
+              trade.executionPrice = executionPrice;
+              // Update P&L with actual execution price
+              trade.pnl = finalPnl;
+              trade.pnlPercent = finalPnlPercent;
+              notificationMessage = `❌ STOP LOSS HIT (SHORT, Execution ${slResult.error ? 'failed' : 'skipped'}): ${trade.symbol} at $${executionPrice.toFixed(2)} (Loss: ${finalPnlPercent >= 0 ? '+' : ''}${finalPnlPercent.toFixed(2)}%)`;
               notificationLevel = 'error';
               notificationNeeded = true;
               addLogEntry(`⚠️ SL hit but execution failed (SHORT): ${trade.symbol} - ${slResult.error}`, 'error');
@@ -3346,24 +3412,90 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     const closedTradesToMove = this.activeTrades.filter(t => t.status === 'TP_HIT' || t.status === 'SL_HIT');
     if (closedTradesToMove.length > 0) {
       for (const trade of closedTradesToMove) {
+        // Ensure execution price is set (should be set when TP/SL is hit)
+        let executionPrice = trade.executionPrice;
+        
+        // If execution price is missing, try to infer from status
+        if (!executionPrice) {
+          if (trade.status === 'TP_HIT') {
+            executionPrice = trade.takeProfit || trade.currentPrice;
+          } else if (trade.status === 'SL_HIT') {
+            executionPrice = trade.stopLoss || trade.currentPrice;
+          } else {
+            executionPrice = trade.currentPrice;
+          }
+        }
+        
+        // Validate status matches execution price (sanity check)
+        if (trade.status === 'TP_HIT') {
+          // For BUY: execution price should be >= TP (within 5% tolerance for slippage)
+          // For SELL: execution price should be <= TP (within 5% tolerance for slippage)
+          const tolerance = 0.05; // 5% tolerance
+          const tpPrice = trade.takeProfit;
+          if (trade.action === 'BUY' && executionPrice < tpPrice * (1 - tolerance)) {
+            console.warn(`⚠️ ${trade.symbol}: TP_HIT status but execution price ($${executionPrice.toFixed(2)}) is much lower than TP ($${tpPrice.toFixed(2)}). Using TP price.`);
+            executionPrice = tpPrice; // Use TP price if execution price seems wrong
+          } else if (trade.action === 'SELL' && executionPrice > tpPrice * (1 + tolerance)) {
+            console.warn(`⚠️ ${trade.symbol}: TP_HIT status but execution price ($${executionPrice.toFixed(2)}) is much higher than TP ($${tpPrice.toFixed(2)}). Using TP price.`);
+            executionPrice = tpPrice; // Use TP price if execution price seems wrong
+          }
+        } else if (trade.status === 'SL_HIT') {
+          // For BUY: execution price should be <= SL (within 5% tolerance)
+          // For SELL: execution price should be >= SL (within 5% tolerance)
+          const tolerance = 0.05; // 5% tolerance
+          const slPrice = trade.stopLoss;
+          if (trade.action === 'BUY' && executionPrice > slPrice * (1 + tolerance)) {
+            console.warn(`⚠️ ${trade.symbol}: SL_HIT status but execution price ($${executionPrice.toFixed(2)}) is much higher than SL ($${slPrice.toFixed(2)}). Using SL price.`);
+            executionPrice = slPrice; // Use SL price if execution price seems wrong
+          } else if (trade.action === 'SELL' && executionPrice < slPrice * (1 - tolerance)) {
+            console.warn(`⚠️ ${trade.symbol}: SL_HIT status but execution price ($${executionPrice.toFixed(2)}) is much lower than SL ($${slPrice.toFixed(2)}). Using SL price.`);
+            executionPrice = slPrice; // Use SL price if execution price seems wrong
+          }
+        }
+        
+        // Recalculate P&L to ensure accuracy (use execution price, not current price)
+        const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+        const quantity = trade.quantity || 0;
+        let finalPnl = trade.pnl;
+        let finalPnlPercent = trade.pnlPercent;
+        
+        // Always recalculate P&L based on execution price to ensure accuracy
+        if (trade.action === 'BUY') {
+          const priceDiff = executionPrice - avgEntry;
+          finalPnl = priceDiff * quantity;
+          finalPnlPercent = parseFloat(((priceDiff / avgEntry) * 100).toFixed(2));
+        } else if (trade.action === 'SELL') {
+          const priceDiff = avgEntry - executionPrice; // For short, profit when price goes down
+          finalPnl = priceDiff * quantity;
+          finalPnlPercent = parseFloat(((priceDiff / avgEntry) * 100).toFixed(2));
+        }
+        
+        // Validate status matches P&L (sanity check)
+        if (trade.status === 'TP_HIT' && finalPnlPercent < 0) {
+          console.warn(`⚠️ ${trade.symbol}: TP_HIT status but P&L is negative (${finalPnlPercent.toFixed(2)}%). This may indicate incorrect status or execution price.`);
+        } else if (trade.status === 'SL_HIT' && finalPnlPercent > 0) {
+          console.warn(`⚠️ ${trade.symbol}: SL_HIT status but P&L is positive (${finalPnlPercent.toFixed(2)}%). This may indicate incorrect status or execution price.`);
+        }
+        
         const closedTrade = {
           ...trade,
           closedAt: trade.executedAt || new Date(),
-          closePrice: trade.executionPrice || trade.currentPrice,
+          closePrice: executionPrice,
           closeReason: trade.status === 'TP_HIT' ? 'Take Profit Hit' : 'Stop Loss Hit',
-          finalPnl: trade.pnl,
-          finalPnlPercent: trade.pnlPercent
+          finalPnl: finalPnl,
+          finalPnlPercent: finalPnlPercent,
+          executionPrice: executionPrice // Ensure this is set
         };
         this.closedTrades.push(closedTrade);
         
-        // Update portfolio with closed trade
+        // Update portfolio with closed trade (use recalculated values)
         await closeTrade(
           trade.symbol,
-          trade.pnl || 0,
-          trade.pnlPercent || 0,
-          trade.entryPrice,
-          closedTrade.closePrice,
-          trade.quantity || 0
+          finalPnl || 0,
+          finalPnlPercent || 0,
+          avgEntry,
+          executionPrice,
+          quantity || 0
         );
       }
       
@@ -3689,13 +3821,20 @@ ${batch.map((t, i) => {
   const pnlPercent = typeof t.pnlPercent === 'number' ? t.pnlPercent : 0;
   const pnlText = `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%`;
   
+  // Calculate TP/SL as percentages for context (but make it clear they're dollar amounts)
+  const tpPercent = ((t.takeProfit - t.entryPrice) / t.entryPrice) * 100;
+  const slPercent = ((t.entryPrice - t.stopLoss) / t.entryPrice) * 100;
+  
   return `
 Trade ${i + 1}: ${t.symbol} (${t.name})
 - Action: ${t.action}
 - Entry Price: $${t.entryPrice.toFixed(2)}
 - Current Price: $${t.currentPrice.toFixed(2)}
-- Take Profit: $${t.takeProfit.toFixed(2)}
-- Stop Loss: $${t.stopLoss.toFixed(2)}
+- Take Profit: $${t.takeProfit.toFixed(2)} (which equals ${tpPercent >= 0 ? '+' : ''}${tpPercent.toFixed(2)}% gain from entry price of $${t.entryPrice.toFixed(2)})
+  ⚠️ CRITICAL: The Take Profit value "$${t.takeProfit.toFixed(2)}" is a DOLLAR AMOUNT (price level), NOT a percentage. 
+  Example: If TP is $1000.00, that means sell when price reaches $1000.00, NOT 1000% gain.
+- Stop Loss: $${t.stopLoss.toFixed(2)} (which equals ${slPercent >= 0 ? '+' : ''}${slPercent.toFixed(2)}% loss from entry price of $${t.entryPrice.toFixed(2)})
+  ⚠️ CRITICAL: The Stop Loss value "$${t.stopLoss.toFixed(2)}" is a DOLLAR AMOUNT (price level), NOT a percentage.
 - Current P&L: ${pnlText}
 - Status: ${t.status}${newsText}${historicalText}
 `;
@@ -3706,6 +3845,8 @@ For each trade, provide:
 2. Confidence: 0.0 to 1.0
 3. Reason: Brief explanation
 4. If ADJUST: provide newTakeProfit and/or newStopLoss and/or newDcaPrice (DCA level) (optional - only if adjustment needed)
+   IMPORTANT: newTakeProfit and newStopLoss must be DOLLAR AMOUNTS (e.g., $1000.00), NOT percentages
+   Example: If you want to adjust TP to $1000, use newTakeProfit: 1000.00 (not 1000%)
 5. If CLOSE: consider DCA/addPosition first - if DCA is still available (dcaCount < 5), suggest DCA instead of closing
 
 IMPORTANT RULES:
@@ -3914,18 +4055,43 @@ Return JSON array format:
             // Adjust take profit, stop loss, and/or DCA price
             let adjusted = false;
             if (rec.newTakeProfit && typeof rec.newTakeProfit === 'number' && rec.newTakeProfit > 0) {
+              // Validate: If value is suspiciously high (likely a percentage mistake), convert it
+              // For most coins, TP should be within 2x-10x of entry price (reasonable range)
+              const currentPrice = trade.currentPrice || trade.entryPrice;
+              const suspiciousThreshold = currentPrice * 20; // If TP is >20x current price, likely a percentage
+              
+              let newTP = rec.newTakeProfit;
+              if (newTP > suspiciousThreshold) {
+                // Likely a percentage - convert to dollar amount
+                console.warn(`⚠️ ${symbol}: AI provided suspiciously high TP value (${newTP}). Treating as percentage and converting...`);
+                newTP = currentPrice * (1 + rec.newTakeProfit / 100);
+                addLogEntry(`⚠️ ${symbol}: AI TP value ${rec.newTakeProfit} was too high - converted from percentage to $${newTP.toFixed(2)}`, 'warning');
+              }
+              
               const oldTP = trade.takeProfit;
-              trade.takeProfit = rec.newTakeProfit;
+              trade.takeProfit = newTP;
               adjusted = true;
-              addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${rec.newTakeProfit.toFixed(2)}`, 'info');
-              telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${rec.newTakeProfit.toFixed(2)}\n`;
+              addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
+              telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
             }
             if (rec.newStopLoss && typeof rec.newStopLoss === 'number' && rec.newStopLoss > 0) {
+              // Validate: If value is suspiciously high (likely a percentage mistake), convert it
+              const currentPrice = trade.currentPrice || trade.entryPrice;
+              const suspiciousThreshold = currentPrice * 20; // If SL is >20x current price, likely a percentage
+              
+              let newSL = rec.newStopLoss;
+              if (newSL > suspiciousThreshold) {
+                // Likely a percentage - convert to dollar amount
+                console.warn(`⚠️ ${symbol}: AI provided suspiciously high SL value (${newSL}). Treating as percentage and converting...`);
+                newSL = currentPrice * (1 - rec.newStopLoss / 100);
+                addLogEntry(`⚠️ ${symbol}: AI SL value ${rec.newStopLoss} was too high - converted from percentage to $${newSL.toFixed(2)}`, 'warning');
+              }
+              
               const oldSL = trade.stopLoss;
-              trade.stopLoss = rec.newStopLoss;
+              trade.stopLoss = newSL;
               adjusted = true;
-              addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${rec.newStopLoss.toFixed(2)}`, 'info');
-              telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${rec.newStopLoss.toFixed(2)}\n`;
+              addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
+              telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
             }
             // Handle both newDcaPrice (new field) and newAddPosition (legacy field) for backward compatibility
             const newDcaValue = rec.newDcaPrice || rec.newAddPosition;
