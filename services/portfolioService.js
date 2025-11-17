@@ -350,8 +350,26 @@ module.exports = {
   resetPortfolio,
   getPositionSize,
   getDCASize,
+  getDcaTriggerTimestamp,
+  setDcaTriggerTimestamp,
   DEFAULT_CAPITAL,
   DEFAULT_POSITION_SIZE,
   DEFAULT_DCA_SIZE
 };
+
+/**
+ * Get DCA trigger re-evaluation timestamp
+ */
+function getDcaTriggerTimestamp() {
+  return portfolioState.lastDcaTriggerReevalAt || 0;
+}
+
+/**
+ * Set DCA trigger re-evaluation timestamp
+ */
+async function setDcaTriggerTimestamp(timestamp) {
+  portfolioState.lastDcaTriggerReevalAt = timestamp;
+  await savePortfolio(); // Persist immediately
+  return true;
+}
 

@@ -34,7 +34,7 @@ const {
 } = require('../services/exchangeService');
 const { quickBacktest } = require('../services/backtestService');
 const { loadTrades, saveTrades, loadClosedTrades, saveClosedTrades } = require('../services/tradePersistenceService');
-const { loadPortfolio, recalculateFromTrades, recalculateFromClosedTrades, getPortfolioStats, closeTrade } = require('../services/portfolioService');
+const { loadPortfolio, recalculateFromTrades, recalculateFromClosedTrades, getPortfolioStats, closeTrade, getDcaTriggerTimestamp, setDcaTriggerTimestamp } = require('../services/portfolioService');
 
 // Helper function to add log entries
 // Note: We can't require routes/api here as it causes circular dependency
@@ -239,6 +239,14 @@ class ProfessionalTradingBot {
       await loadPortfolio();
       addLogEntry('Portfolio state loaded', 'success');
       console.log('✅ Portfolio state loaded');
+      
+      // Load persisted DCA trigger timestamp
+      this.lastDcaTriggerReevalAt = getDcaTriggerTimestamp();
+      if (this.lastDcaTriggerReevalAt > 0) {
+        const elapsed = Date.now() - this.lastDcaTriggerReevalAt;
+        const elapsedMinutes = Math.floor(elapsed / 60000);
+        console.log(`📅 Loaded DCA trigger timestamp: ${elapsedMinutes} minutes ago`);
+      }
       
       // Load saved trades
       console.log('📂 Attempting to load saved trades...');
@@ -3098,7 +3106,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 }
                 
                 // Trigger re-evaluation of ALL open trades after DCA execution (with 1-hour cooldown)
-                const lastDcaReeval = this.lastDcaTriggerReevalAt || 0;
+                // Always check persisted value to ensure cooldown persists across restarts
+                const persistedTimestamp = getDcaTriggerTimestamp();
+                const lastDcaReeval = Math.max(this.lastDcaTriggerReevalAt || 0, persistedTimestamp || 0);
                 const elapsedSinceLastDcaReeval = now - lastDcaReeval;
                 const timeSinceStartup = now - this.botStartTime;
                 
@@ -3108,7 +3118,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     elapsedSinceLastDcaReeval >= this.dcaTriggerReevalCooldownMs) {
                   // Set flag AND timestamp IMMEDIATELY to prevent other DCAs from triggering
                   this.dcaTriggerReevalInProgress = true;
-                  this.lastDcaTriggerReevalAt = Date.now(); // Set immediately, not inside async callback
+                  const triggerTimestamp = Date.now();
+                  this.lastDcaTriggerReevalAt = triggerTimestamp; // Set immediately, not inside async callback
+                  await setDcaTriggerTimestamp(triggerTimestamp); // Persist to portfolio state
                   console.log(`🔄 DCA executed for ${trade.symbol} - triggering re-evaluation of ALL open trades...`);
                   addLogEntry(`🔄 DCA executed for ${trade.symbol} - triggering re-evaluation of all open trades`, 'info');
                   
@@ -3355,7 +3367,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 }
                 
                 // Trigger re-evaluation of ALL open trades after DCA execution (with 1-hour cooldown)
-                const lastDcaReeval = this.lastDcaTriggerReevalAt || 0;
+                // Always check persisted value to ensure cooldown persists across restarts
+                const persistedTimestamp = getDcaTriggerTimestamp();
+                const lastDcaReeval = Math.max(this.lastDcaTriggerReevalAt || 0, persistedTimestamp || 0);
                 const elapsedSinceLastDcaReeval = now - lastDcaReeval;
                 const timeSinceStartup = now - this.botStartTime;
                 
@@ -3365,7 +3379,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     elapsedSinceLastDcaReeval >= this.dcaTriggerReevalCooldownMs) {
                   // Set flag AND timestamp IMMEDIATELY to prevent other DCAs from triggering
                   this.dcaTriggerReevalInProgress = true;
-                  this.lastDcaTriggerReevalAt = Date.now(); // Set immediately, not inside async callback
+                  const triggerTimestamp = Date.now();
+                  this.lastDcaTriggerReevalAt = triggerTimestamp; // Set immediately, not inside async callback
+                  await setDcaTriggerTimestamp(triggerTimestamp); // Persist to portfolio state
                   console.log(`🔄 DCA executed for ${trade.symbol} (SHORT) - triggering re-evaluation of ALL open trades...`);
                   addLogEntry(`🔄 DCA executed for ${trade.symbol} (SHORT) - triggering re-evaluation of all open trades`, 'info');
                   
