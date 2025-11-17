@@ -314,10 +314,18 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
           console.log('⚠️ AI response was truncated (hit token limit). Response may be incomplete for batch', batchIndex);
       }
       
+      try {
         const parsed = parseBatchAIResponse(content, batch);
         console.log(`✅ Successfully parsed batch AI response for ${Object.keys(parsed).length} coins (batch ${batchIndex})`);
 
         Object.assign(combinedResults, parsed);
+      } catch (parseError) {
+        console.error(`❌ Error parsing batch AI response (batch ${batchIndex}):`, parseError.message);
+        console.error(`   Error stack:`, parseError.stack);
+        console.error(`   Response content (first 1000 chars):`, content.substring(0, 1000));
+        // Re-throw to be caught by outer catch block
+        throw parseError;
+      }
       }
 
       return combinedResults;
@@ -391,19 +399,32 @@ function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
     const historical = coin.historicalData || { evaluations: [], news: [] };
     
     if (historical.evaluations && historical.evaluations.length > 0) {
-      const recentEvals = historical.evaluations.slice(0, 3).map(evaluation => {
-        const date = new Date(evaluation.timestamp).toLocaleDateString();
-        return `  - [${date}] ${evaluation.data.action || 'HOLD'} (${(evaluation.data.confidence * 100).toFixed(0)}%) - ${evaluation.data.reason || 'No reason'}`;
-      }).join('\n');
-      historicalText += `\n   Historical Evaluations:\n${recentEvals}`;
+      const recentEvals = historical.evaluations
+        .filter(evaluation => evaluation && evaluation.data) // Filter out invalid evaluations
+        .slice(0, 3)
+        .map(evaluation => {
+          const date = new Date(evaluation.timestamp).toLocaleDateString();
+          const data = evaluation.data || {};
+          return `  - [${date}] ${data.action || 'HOLD'} (${((data.confidence || 0) * 100).toFixed(0)}%) - ${data.reason || 'No reason'}`;
+        })
+        .join('\n');
+      if (recentEvals) {
+        historicalText += `\n   Historical Evaluations:\n${recentEvals}`;
+      }
     }
     
     if (historical.news && historical.news.length > 0) {
-      const historicalNews = historical.news.slice(0, 2).map(n => {
-        const date = new Date(n.publishedAt).toLocaleDateString();
-        return `  - [${date}] ${n.title} (${n.source})`;
-      }).join('\n');
-      historicalText += `\n   Historical News:\n${historicalNews}`;
+      const historicalNews = historical.news
+        .filter(n => n && n.title && n.publishedAt) // Filter out invalid news items
+        .slice(0, 2)
+        .map(n => {
+          const date = new Date(n.publishedAt).toLocaleDateString();
+          return `  - [${date}] ${n.title} (${n.source || 'Unknown'})`;
+        })
+        .join('\n');
+      if (historicalNews) {
+        historicalText += `\n   Historical News:\n${historicalNews}`;
+      }
     }
     
     if (!historicalText) {
