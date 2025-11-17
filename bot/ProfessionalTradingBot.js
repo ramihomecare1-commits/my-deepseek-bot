@@ -418,7 +418,7 @@ class ProfessionalTradingBot {
   passesMultiTimeframeConsensus(analysis) {
     const consensusRules = this.tradingRules.multiTimeframeConsensus;
     if (!consensusRules || !consensusRules.enabled) {
-      return true;
+      return { passed: true };
     }
 
     const timeframes = consensusRules.timeframes || ['1h', '4h', '1d'];
@@ -429,20 +429,32 @@ class ProfessionalTradingBot {
       {};
 
     let matches = 0;
+    const timeframeDetails = [];
     timeframes.forEach((tf) => {
       const frame = frames[tf];
       if (!frame || !frame.trend) {
+        timeframeDetails.push({ timeframe: tf, trend: 'N/A', matched: false });
         return;
       }
       const trend = (frame.trend || '').toUpperCase();
+      let matched = false;
       if (analysis.action === 'BUY' && trend === 'BULLISH') {
         matches += 1;
+        matched = true;
       } else if (analysis.action === 'SELL' && trend === 'BEARISH') {
         matches += 1;
+        matched = true;
       }
+      timeframeDetails.push({ timeframe: tf, trend, matched });
     });
 
-    return matches >= requiredMatches;
+    const passed = matches >= requiredMatches;
+    return {
+      passed,
+      matches,
+      required: requiredMatches,
+      timeframes: timeframeDetails
+    };
   }
 
   setAutoScanInterval(key) {
@@ -1901,8 +1913,55 @@ Reason: ${newReason?.substring(0, 200)}`);
 
           // Only add real opportunities with valid data
           if (analysis.confidence >= this.tradingRules.minConfidence && !analysis.usesMockData) {
-            if (!this.passesMultiTimeframeConsensus(analysis)) {
-              console.log(`🚫 ${coin.symbol}: Fails multi-timeframe consensus check`);
+            const consensusResult = this.passesMultiTimeframeConsensus(analysis);
+            if (!consensusResult.passed) {
+              console.log(`🚫 ${coin.symbol}: Fails multi-timeframe consensus check (${consensusResult.matches}/${consensusResult.required} timeframes match)`);
+              
+              // Send Telegram notification for multi-timeframe consensus rejection
+              if (config.ENABLE_REJECTION_NOTIFICATIONS && isActionNotifiable && this.shouldNotifyRejection(coin.symbol, 'consensus')) {
+                try {
+                  const { sendTelegramMessage } = require('../services/notificationService');
+                  
+                  // Build timeframe details
+                  const timeframeChecks = consensusResult.timeframes.map(tf => {
+                    const status = tf.matched ? '✅' : '❌';
+                    const trendDisplay = tf.trend === 'N/A' ? 'No data' : tf.trend;
+                    return `${status} ${tf.timeframe}: ${trendDisplay}`;
+                  }).join('\n');
+                  
+                  const expectedTrend = analysis.action === 'BUY' ? 'BULLISH' : 'BEARISH';
+                  
+                  const rejectionMessage =
+`🚫 AI Opportunity Rejected - Multi-Timeframe Consensus
+
+Symbol: ${coin.symbol}
+Action: ${analysis.action}
+Confidence: ${(analysis.confidence * 100).toFixed(0)}%
+Entry: $${analysis.entryPrice?.toFixed(2) || 'N/A'}
+TP: $${analysis.takeProfit?.toFixed(2) || 'N/A'} (+${analysis.expectedGainPercent?.toFixed(1) || 'N/A'}%)
+SL: $${analysis.stopLoss?.toFixed(2) || 'N/A'}
+
+Rejection Reason: Multi-timeframe consensus check failed
+
+Required: ${consensusResult.required} out of ${consensusResult.timeframes.length} timeframes must be ${expectedTrend}
+Actual: ${consensusResult.matches} out of ${consensusResult.timeframes.length} timeframes match
+
+Timeframe Analysis:
+${timeframeChecks}
+
+AI Reasoning:
+${analysis.reason?.substring(0, 200) || 'No reasoning provided'}...
+
+Action: Consider adjusting multi-timeframe consensus settings or review timeframe trends`;
+
+                  sendTelegramMessage(rejectionMessage).catch((err) =>
+                    console.error('⚠️ Failed to send consensus rejection notification:', err.message)
+                  );
+                } catch (notifError) {
+                  console.error('⚠️ Error creating consensus rejection notification:', notifError.message);
+                }
+              }
+              
               continue;
             }
             if (!this.applyScanFilters(analysis, options)) {
