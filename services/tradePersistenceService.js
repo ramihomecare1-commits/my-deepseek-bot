@@ -14,6 +14,36 @@ const { v4: uuidv4 } = require('uuid');
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const TRADES_FILE = path.join(DATA_DIR, 'active-trades.json');
 
+/**
+ * Recursively convert all Date objects to Unix timestamps (numbers)
+ * This is required for DynamoDB storage
+ */
+function convertDatesToTimestamps(obj) {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  
+  if (obj instanceof Date) {
+    return obj.getTime();
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => convertDatesToTimestamps(item));
+  }
+  
+  if (typeof obj === 'object') {
+    const converted = {};
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        converted[key] = convertDatesToTimestamps(obj[key]);
+      }
+    }
+    return converted;
+  }
+  
+  return obj;
+}
+
 // DynamoDB connection (lazy initialization)
 let useDynamoDB = false;
 
@@ -154,14 +184,17 @@ async function saveTradesToDynamo(trades) {
       const putOps = trades.map(trade => {
         // Use tradeId if id doesn't exist (for compatibility)
         const tradeId = trade.id || trade.tradeId || uuidv4();
+        
+        // Convert all Date objects to timestamps recursively
+        const tradeCopy = convertDatesToTimestamps({
+          ...trade,
+          id: tradeId,
+          tradeId: tradeId // Ensure both fields exist for compatibility
+        });
+        
         return {
           PutRequest: {
-            Item: {
-              id: tradeId,
-              ...trade,
-              tradeId: tradeId, // Ensure both fields exist for compatibility
-              entryTime: trade.entryTime instanceof Date ? trade.entryTime.getTime() : trade.entryTime
-            }
+            Item: tradeCopy
           }
         };
       });
@@ -433,20 +466,15 @@ async function saveClosedTrades(trades) {
         if (!connected) return false;
       }
       
-      // Convert dates to timestamps for DynamoDB
+      // Convert all Date objects to timestamps recursively for DynamoDB
       const tradesToSave = trades.map(trade => {
         const tradeCopy = { ...trade };
-        if (tradeCopy.entryTime instanceof Date) {
-          tradeCopy.entryTime = tradeCopy.entryTime.getTime();
-        }
-        if (tradeCopy.closedAt instanceof Date) {
-          tradeCopy.closedAt = tradeCopy.closedAt.getTime();
-        }
         // Ensure id exists
         if (!tradeCopy.id) {
           tradeCopy.id = uuidv4();
         }
-        return tradeCopy;
+        // Convert all Date objects to timestamps (recursively handles nested objects/arrays)
+        return convertDatesToTimestamps(tradeCopy);
       });
       
       // Upsert closed trades (update if exists, insert if not)
