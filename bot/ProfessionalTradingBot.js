@@ -106,6 +106,8 @@ class ProfessionalTradingBot {
     this.dcaTriggerReevalCooldownMs = 60 * 60 * 1000; // 1 hour
     this.lastDcaTriggerReevalAt = 0; // timestamp of last DCA-triggered re-evaluation
     this.dcaTriggerReevalInProgress = false; // flag to prevent multiple simultaneous re-evaluations
+    this.botStartTime = Date.now(); // track when bot started (prevents re-eval during startup)
+    this.dcaTriggerStartupDelayMs = 3 * 60 * 1000; // 3 minutes startup delay (prevents timeout during deployment)
     this.lastBtcMissingWarning = 0; // timestamp of last BTC missing warning (throttles logging)
     this.selectedIntervalKey = '1h';
     this.scanIntervalMs = config.SCAN_INTERVAL_OPTIONS[this.selectedIntervalKey];
@@ -785,20 +787,20 @@ class ProfessionalTradingBot {
     console.log('🚀 Initial bulk scan will start in 10 seconds...');
     setTimeout(() => {
       console.log('🚀 Running initial bulk scan...');
-      (async () => {
-        if (this.isMonitoring) {
-          console.log('⏭️ Skipping initial scan - already in progress');
-          return;
-        }
-        this.isMonitoring = true;
-        try {
-          await this.runMonitoringCycle();
-        } catch (error) {
-          console.log(`⚠️ Monitoring error: ${error.message}`);
-        } finally {
-          this.isMonitoring = false;
-        }
-      })();
+    (async () => {
+      if (this.isMonitoring) {
+        console.log('⏭️ Skipping initial scan - already in progress');
+        return;
+      }
+      this.isMonitoring = true;
+      try {
+        await this.runMonitoringCycle();
+      } catch (error) {
+        console.log(`⚠️ Monitoring error: ${error.message}`);
+      } finally {
+        this.isMonitoring = false;
+      }
+    })();
     }, 10000); // Delay 10 seconds to allow server to be fully ready
 
     // Schedule future runs (9 AM and 9 PM)
@@ -2226,7 +2228,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           if (opp.action === 'BUY' || opp.action === 'SELL') {
             console.log(`💼 Executing paper trade for ${opp.symbol}: ${opp.action} at $${opp.entryPrice?.toFixed(2) || 'N/A'}`);
             try {
-              await this.addActiveTrade(opp);
+            await this.addActiveTrade(opp);
               console.log(`✅ Paper trade executed successfully for ${opp.symbol}`);
             } catch (tradeError) {
               console.error(`❌ Failed to execute paper trade for ${opp.symbol}:`, tradeError.message);
@@ -2356,9 +2358,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
       // Fetch price first, then historical data in parallel (pass price to avoid duplicate fetch)
       if (this.currentlyAnalyzing) {
-        this.currentlyAnalyzing.stage = 'Fetching price and historical data...';
-        this.currentlyAnalyzing.progress = 30;
-        this.updateLiveAnalysis();
+      this.currentlyAnalyzing.stage = 'Fetching price and historical data...';
+      this.currentlyAnalyzing.progress = 30;
+      this.updateLiveAnalysis();
       }
 
       // Fetch price first
@@ -2377,9 +2379,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       
       if (this.tradingRules.patternDetection && this.tradingRules.patternDetection.enabled) {
         if (this.currentlyAnalyzing) {
-          this.currentlyAnalyzing.stage = 'Detecting trading patterns...';
-          this.currentlyAnalyzing.progress = 50;
-          this.updateLiveAnalysis();
+        this.currentlyAnalyzing.stage = 'Detecting trading patterns...';
+        this.currentlyAnalyzing.progress = 50;
+        this.updateLiveAnalysis();
         }
 
         // Detect all patterns once, then filter based on enabled types
@@ -2779,7 +2781,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     
     // Save trades to disk
     try {
-      await saveTrades(this.activeTrades);
+    await saveTrades(this.activeTrades);
       if (newTrade.symbol === 'BTC' || newTrade.symbol === 'btc') {
         console.log(`🔵 BTC TRADE SAVED: id=${newTrade.id || newTrade.tradeId}, total activeTrades=${this.activeTrades.length}`);
       }
@@ -3031,7 +3033,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 try {
                   dcaResult = await executeAddPosition(trade);
                   
-                  if (dcaResult.success) {
+              if (dcaResult.success) {
                     break; // Success, exit retry loop
                   } else if (dcaResult.skipped) {
                     break; // Skipped (e.g., trading disabled), don't retry
@@ -3098,9 +3100,12 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 // Trigger re-evaluation of ALL open trades after DCA execution (with 1-hour cooldown)
                 const lastDcaReeval = this.lastDcaTriggerReevalAt || 0;
                 const elapsedSinceLastDcaReeval = now - lastDcaReeval;
+                const timeSinceStartup = now - this.botStartTime;
                 
-                // Check both cooldown AND if re-evaluation is already in progress
-                if (!this.dcaTriggerReevalInProgress && elapsedSinceLastDcaReeval >= this.dcaTriggerReevalCooldownMs) {
+                // Check startup delay, cooldown, AND if re-evaluation is already in progress
+                if (!this.dcaTriggerReevalInProgress && 
+                    timeSinceStartup >= this.dcaTriggerStartupDelayMs &&
+                    elapsedSinceLastDcaReeval >= this.dcaTriggerReevalCooldownMs) {
                   // Set flag immediately to prevent other DCAs from triggering
                   this.dcaTriggerReevalInProgress = true;
                   console.log(`🔄 DCA executed for ${trade.symbol} - triggering re-evaluation of ALL open trades...`);
@@ -3123,6 +3128,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 } else if (this.dcaTriggerReevalInProgress) {
                   console.log(`⏱️ Skipping DCA-triggered re-evaluation (already in progress)`);
                   addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (already in progress)`, 'info');
+                } else if (timeSinceStartup < this.dcaTriggerStartupDelayMs) {
+                  const remainingStartupDelay = Math.ceil((this.dcaTriggerStartupDelayMs - timeSinceStartup) / 60000);
+                  console.log(`⏱️ Skipping DCA-triggered re-evaluation (startup delay ${remainingStartupDelay}min remaining)`);
+                  addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (startup delay ${remainingStartupDelay}min remaining)`, 'info');
                 } else {
                   const remainingCooldown = Math.ceil((this.dcaTriggerReevalCooldownMs - elapsedSinceLastDcaReeval) / 60000);
                   console.log(`⏱️ Skipping DCA-triggered re-evaluation (cooldown ${remainingCooldown}min remaining)`);
@@ -3283,7 +3292,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 try {
                   dcaResult = await executeAddPosition(trade);
                   
-                  if (dcaResult.success) {
+              if (dcaResult.success) {
                     break; // Success, exit retry loop
                   } else if (dcaResult.skipped) {
                     break; // Skipped (e.g., trading disabled), don't retry
@@ -3349,9 +3358,12 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 // Trigger re-evaluation of ALL open trades after DCA execution (with 1-hour cooldown)
                 const lastDcaReeval = this.lastDcaTriggerReevalAt || 0;
                 const elapsedSinceLastDcaReeval = now - lastDcaReeval;
+                const timeSinceStartup = now - this.botStartTime;
                 
-                // Check both cooldown AND if re-evaluation is already in progress
-                if (!this.dcaTriggerReevalInProgress && elapsedSinceLastDcaReeval >= this.dcaTriggerReevalCooldownMs) {
+                // Check startup delay, cooldown, AND if re-evaluation is already in progress
+                if (!this.dcaTriggerReevalInProgress && 
+                    timeSinceStartup >= this.dcaTriggerStartupDelayMs &&
+                    elapsedSinceLastDcaReeval >= this.dcaTriggerReevalCooldownMs) {
                   // Set flag immediately to prevent other DCAs from triggering
                   this.dcaTriggerReevalInProgress = true;
                   console.log(`🔄 DCA executed for ${trade.symbol} (SHORT) - triggering re-evaluation of ALL open trades...`);
@@ -3374,6 +3386,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 } else if (this.dcaTriggerReevalInProgress) {
                   console.log(`⏱️ Skipping DCA-triggered re-evaluation (already in progress)`);
                   addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (already in progress)`, 'info');
+                } else if (timeSinceStartup < this.dcaTriggerStartupDelayMs) {
+                  const remainingStartupDelay = Math.ceil((this.dcaTriggerStartupDelayMs - timeSinceStartup) / 60000);
+                  console.log(`⏱️ Skipping DCA-triggered re-evaluation (startup delay ${remainingStartupDelay}min remaining)`);
+                  addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (startup delay ${remainingStartupDelay}min remaining)`, 'info');
                 } else {
                   const remainingCooldown = Math.ceil((this.dcaTriggerReevalCooldownMs - elapsedSinceLastDcaReeval) / 60000);
                   console.log(`⏱️ Skipping DCA-triggered re-evaluation (cooldown ${remainingCooldown}min remaining)`);
@@ -3842,7 +3858,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         console.log(`📦 Processing trade batch ${batchIdx + 1}/${tradeBatches.length} (${batch.length} trades)...`);
         
         try {
-        const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${batch.length} open trades and provide your recommendation for each.
+          const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${batch.length} open trades and provide your recommendation for each.
 IMPORTANT: Consider technical analysis, recent news, AND historical context when making recommendations.
 - Review previous evaluations to see if patterns are consistent or changing
 - Historical news can provide context for current price movements
@@ -4148,9 +4164,9 @@ Return JSON array format:
                   newTP = avgEntry * (1 + rec.newTakeProfit / 100);
                   addLogEntry(`⚠️ ${symbol}: AI TP value ${rec.newTakeProfit} was too high - converted from percentage to $${newTP.toFixed(2)}`, 'warning');
                   
-                  const oldTP = trade.takeProfit;
+              const oldTP = trade.takeProfit;
                   trade.takeProfit = newTP;
-                  adjusted = true;
+              adjusted = true;
                   addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
                   telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
                 } else {
@@ -4214,9 +4230,9 @@ Return JSON array format:
                   newSL = avgEntry * (1 - rec.newStopLoss / 100);
                   addLogEntry(`⚠️ ${symbol}: AI SL value ${rec.newStopLoss} was too low - converted from percentage to $${newSL.toFixed(2)}`, 'warning');
                   
-                  const oldSL = trade.stopLoss;
+              const oldSL = trade.stopLoss;
                   trade.stopLoss = newSL;
-                  adjusted = true;
+              adjusted = true;
                   addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
                   telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
                 } else {
@@ -4318,21 +4334,21 @@ Return JSON array format:
         'info'
       );
     } else {
-      console.log('📤 Sending re-evaluation to Telegram...');
-      console.log(`📝 Message length: ${telegramMessage.length} characters`);
-      addLogEntry('📤 Sending re-evaluation results to Telegram...', 'info');
-      try {
-        const sent = await sendTelegramMessage(telegramMessage);
-        if (sent) {
-          console.log('✅ AI re-evaluation sent to Telegram successfully');
-          addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
+    console.log('📤 Sending re-evaluation to Telegram...');
+    console.log(`📝 Message length: ${telegramMessage.length} characters`);
+    addLogEntry('📤 Sending re-evaluation results to Telegram...', 'info');
+    try {
+      const sent = await sendTelegramMessage(telegramMessage);
+      if (sent) {
+        console.log('✅ AI re-evaluation sent to Telegram successfully');
+        addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
           this.lastOpenTradesReevalNotifiedAt = now;
-        } else {
-          console.log('⚠️ Failed to send re-evaluation to Telegram');
-          addLogEntry('⚠️ Failed to send re-evaluation to Telegram', 'warning');
-        }
-      } catch (telegramError) {
-        console.error('❌ Telegram error:', telegramError);
+      } else {
+        console.log('⚠️ Failed to send re-evaluation to Telegram');
+        addLogEntry('⚠️ Failed to send re-evaluation to Telegram', 'warning');
+      }
+    } catch (telegramError) {
+      console.error('❌ Telegram error:', telegramError);
         addLogEntry(
           `⚠️ Failed to send re-evaluation to Telegram: ${telegramError.message}`,
           'warning'
