@@ -99,7 +99,7 @@ Price drops to $48,100 (within 1% of DCA):
 
 ## ⚙️ Configuration
 
-### **Enable Auto-Execution** (Default for paper trading)
+### **Enable Auto-Execution** (Default for Bybit demo trading)
 ```bash
 AUTO_EXECUTE_AI_RECOMMENDATIONS=true
 ```
@@ -251,8 +251,8 @@ Active trades show:
 
 ## ⚠️ Important Notes
 
-### **This is PAPER TRADING**
-- No real money is used
+### **This is BYBIT DEMO TRADING**
+- Uses Bybit testnet (demo funds)
 - Perfect for testing AI performance
 - Safe environment to learn
 
