@@ -614,17 +614,47 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
       
       const results = {};
       
-      parsed.forEach((item) => {
-        if (item.symbol) {
-          results[item.symbol] = {
-            action: item.action || 'HOLD',
-            confidence: Math.min(Math.max(item.confidence || 0.5, 0.1), 0.95),
-            reason: item.reason || 'AI analysis completed',
-            insights: item.insights || ['Analysis provided'],
-            signal: `${item.action} | AI Batch Analysis`,
-            aiEvaluated: true,
-          };
+      // Validate that parsed is an array
+      if (!Array.isArray(parsed)) {
+        console.error(`❌ Parsed result is not an array:`, typeof parsed, parsed);
+        throw new Error('AI response is not a valid JSON array');
+      }
+      
+      console.log(`📊 Parsed array contains ${parsed.length} items`);
+      
+      // Filter out any null/undefined items
+      const validItems = parsed.filter((item, index) => {
+        if (!item || typeof item !== 'object') {
+          console.warn(`⚠️ Filtering out invalid item at index ${index}:`, item);
+          return false;
         }
+        return true;
+      });
+      
+      console.log(`✅ Filtered to ${validItems.length} valid items (removed ${parsed.length - validItems.length} invalid)`);
+      
+      // Log first few items for debugging
+      if (validItems.length > 0) {
+        console.log(`📋 First item sample:`, JSON.stringify(validItems[0], null, 2).substring(0, 500));
+      }
+      
+      validItems.forEach((item, index) => {
+        // Validate item has symbol property (item is already validated as object by filter)
+        if (!item.symbol || typeof item.symbol !== 'string') {
+          console.warn(`⚠️ Skipping item at index ${index} - missing or invalid symbol:`, item);
+          return;
+        }
+        
+        // Safely access item properties with defaults
+        const action = item.action || 'HOLD';
+        results[item.symbol] = {
+          action: action,
+          confidence: Math.min(Math.max(item.confidence || 0.5, 0.1), 0.95),
+          reason: item.reason || 'AI analysis completed',
+          insights: Array.isArray(item.insights) ? item.insights : ['Analysis provided'],
+          signal: `${action} | AI Batch Analysis`,
+          aiEvaluated: true,
+        };
       });
       
       console.log(`✅ Successfully parsed ${Object.keys(results).length} AI evaluations`);
