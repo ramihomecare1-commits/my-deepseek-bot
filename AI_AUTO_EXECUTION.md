@@ -1,8 +1,8 @@
-# 🤖 AI Auto-Execution for Paper Trading
+# 🤖 AI Auto-Execution for Bybit Trading
 
 ## What Is This?
 
-Your bot now has **AI auto-execution** enabled! The AI doesn't just recommend actions - it **executes them automatically** so you can track real performance.
+Your bot now has **AI auto-execution** enabled! The AI doesn't just recommend actions - it **executes them automatically** via Bybit API so you can track real performance.
 
 ---
 
@@ -143,8 +143,8 @@ AI Added Value: +$450 (8.2% portfolio improvement)
 - Minimum 5 minutes between evaluations per trade
 - Prevents over-trading
 
-### **2. Paper Trading Only**
-- This is **virtual money**
+### **2. Bybit Demo Trading Only**
+- This is **testnet trading** via Bybit API
 - Safe environment to test AI performance
 - No real funds at risk
 
@@ -310,12 +310,12 @@ Keep a log:
 
 ## 🎉 Summary
 
-✅ AI now auto-executes recommendations for paper trading  
+✅ AI now auto-executes recommendations for Bybit demo trading  
 ✅ Track real AI performance on your dashboard  
 ✅ All actions logged with reasoning  
 ✅ Telegram notifications for every execution  
 ✅ Can disable anytime  
-✅ Safe paper trading environment  
+✅ Safe Bybit demo trading environment  
 ✅ Learn which strategies work best  
 
 **Goal**: Measure AI's real-world trading performance so you can confidently use it (or not) when ready for real money.

@@ -145,7 +145,7 @@ The system will automatically:
 2. Use Gemini Flash for FREE monitoring every minute
 3. Escalate to DeepSeek R1 only when needed (≥70% confidence)
 4. Send Telegram alerts for escalations and decisions
-5. Execute paper trades if confirmed
+5. Execute trades via Bybit API if confirmed
 
 ## 📊 Typical Usage Pattern
 

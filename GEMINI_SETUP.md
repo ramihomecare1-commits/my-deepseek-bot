@@ -154,7 +154,7 @@ The monitoring will automatically:
 2. Check top 20 coins for volatility
 3. Escalate to premium model when needed (≥70% confidence)
 4. Send Telegram alerts
-5. Execute paper trades if confirmed
+5. Execute trades via Bybit API if confirmed
 
 ## ⚠️ Rate Limits
 

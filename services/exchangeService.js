@@ -89,7 +89,6 @@ function isExchangeTradingEnabled() {
     enabled: tradingEnabled,
     mode: tradingEnabled ? (useTestnet ? 'BYBIT_DEMO' : 'BYBIT_MAINNET') : 'DISABLED',
     realTrading: tradingEnabled,
-    virtualTrading: false, // Virtual trading disabled
     preferredExchange: preferredExchange.exchange,
     hasBybitKeys: hasBybitKeys,
     testnet: useTestnet,
@@ -277,24 +276,6 @@ async function executeMarketOrder(symbol, side, quantity, apiKey, apiSecret) {
   }
 }
 
-/**
- * ============================================================================
- * VIRTUAL TRADING FUNCTIONS (HIDDEN - KEPT FOR FUTURE USE)
- * ============================================================================
- * These functions are commented out but preserved for potential future use.
- * Currently, all trading goes through Bybit API.
- * ============================================================================
- */
-
-// HIDDEN: Virtual trading function (kept for future use)
-// async function executeVirtualMarketOrder(symbol, side, quantity, price) {
-//   // Virtual trading implementation - hidden but preserved
-//   return {
-//     success: false,
-//     error: 'Virtual trading is disabled. Please configure Bybit API keys for demo trading.',
-//     mode: 'DISABLED'
-//   };
-// }
 
 /**
  * Get account balance for a specific asset (Bybit or legacy Binance)
@@ -781,40 +762,6 @@ async function getBybitOpenOrders(apiKey, apiSecret, baseUrl) {
   }
 }
 
-/**
- * ============================================================================
- * HIDDEN: Virtual trading state functions (kept for future use)
- * ============================================================================
- */
-
-// HIDDEN: Get virtual trading state (kept for future use)
-// function getVirtualTradingState() {
-//   return {
-//     balance: 0,
-//     positions: {},
-//     totalValue: 0,
-//     message: 'Virtual trading disabled. Using Bybit Demo Trading.'
-//   };
-// }
-
-// HIDDEN: Reset virtual trading (kept for future use)
-// function resetVirtualTrading() {
-//   console.log('⚠️ Virtual trading is disabled. Use Bybit Demo Trading instead.');
-// }
-
-// Temporary stub functions for backward compatibility
-function getVirtualTradingState() {
-  return {
-    balance: 0,
-    positions: {},
-    totalValue: 0,
-    message: 'Virtual trading disabled. Using Bybit Demo Trading.'
-  };
-}
-
-function resetVirtualTrading() {
-  // No-op: Virtual trading is disabled
-}
 
 module.exports = {
   isExchangeTradingEnabled,
@@ -826,8 +773,6 @@ module.exports = {
   getBybitOpenPositions,
   getBybitOpenOrders,
   calculateQuantity,
-  getVirtualTradingState,
-  resetVirtualTrading,
   getPreferredExchange,
   executeBybitMarketOrder,
   BYBIT_SYMBOL_MAP,

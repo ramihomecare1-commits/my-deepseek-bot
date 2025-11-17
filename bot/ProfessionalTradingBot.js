@@ -1207,21 +1207,36 @@ class ProfessionalTradingBot {
             
             // Execute trade (will check for existing trades and handle accordingly)
             try {
-              const tradeResult = await this.executePaperTrade({
-                symbol: symbol,
-                action: r1Decision.action,
-                price: coinData.currentPrice,
-                reason: r1Decision.reason,
-                confidence: r1Decision.confidence,
-                stopLoss: r1Decision.stopLoss,
-                takeProfit: r1Decision.takeProfit,
-                source: 'monitoring'
-              });
+              // Check for existing trade and handle it
+              const handled = await this.handleExistingTrade(
+                symbol, 
+                r1Decision.action, 
+                coinData.currentPrice, 
+                r1Decision.stopLoss, 
+                r1Decision.takeProfit, 
+                r1Decision.confidence, 
+                r1Decision.reason
+              );
               
-              if (tradeResult && tradeResult.handled) {
-                console.log(`${priorityLabel} ✅ Trade handled for ${symbol} (existing position managed)`);
-              } else {
+              if (!handled) {
+                // No existing trade - create new trade
+                await this.addActiveTrade({
+                  symbol,
+                  name: symbol,
+                  id: symbol.toLowerCase(),
+                  action: r1Decision.action,
+                  price: coinData.currentPrice,
+                  entryPrice: coinData.currentPrice,
+                  takeProfit: coinData.currentPrice * (1 + (r1Decision.takeProfit || 0) / 100),
+                  stopLoss: coinData.currentPrice * (1 - (r1Decision.stopLoss || 0) / 100),
+                  expectedGainPercent: typeof r1Decision.takeProfit === 'number' ? r1Decision.takeProfit : 5,
+                  reason: r1Decision.reason,
+                  insights: [],
+                  dataSource: 'monitoring'
+                });
                 console.log(`${priorityLabel} ✅ New trade executed successfully for ${symbol}`);
+              } else {
+                console.log(`${priorityLabel} ✅ Trade handled for ${symbol} (existing position managed)`);
               }
             } catch (error) {
               if (error.message === 'Trading is disabled' || error.message.includes('Trading not enabled')) {
@@ -1328,16 +1343,34 @@ class ProfessionalTradingBot {
           
           // Execute trade if Bybit trading is enabled
           if (this.tradingRules.bybitTradingEnabled) {
-            await this.executePaperTrade({
-              symbol: coin.symbol,
-              action: result.r1Decision.action,
-              price: coinData.currentPrice,
-              reason: result.r1Decision.reason,
-              confidence: result.r1Decision.confidence,
-              stopLoss: result.r1Decision.stopLoss,
-              takeProfit: result.r1Decision.takeProfit,
-              source: 'monitoring'
-            });
+            // Check for existing trade and handle it
+            const handled = await this.handleExistingTrade(
+              coin.symbol,
+              result.r1Decision.action,
+              coinData.currentPrice,
+              result.r1Decision.stopLoss,
+              result.r1Decision.takeProfit,
+              result.r1Decision.confidence,
+              result.r1Decision.reason
+            );
+            
+            if (!handled) {
+              // No existing trade - create new trade
+              await this.addActiveTrade({
+                symbol: coin.symbol,
+                name: coin.symbol,
+                id: coin.symbol.toLowerCase(),
+                action: result.r1Decision.action,
+                price: coinData.currentPrice,
+                entryPrice: coinData.currentPrice,
+                takeProfit: coinData.currentPrice * (1 + (result.r1Decision.takeProfit || 0) / 100),
+                stopLoss: coinData.currentPrice * (1 - (result.r1Decision.stopLoss || 0) / 100),
+                expectedGainPercent: typeof result.r1Decision.takeProfit === 'number' ? result.r1Decision.takeProfit : 5,
+                reason: result.r1Decision.reason,
+                insights: [],
+                dataSource: 'monitoring'
+              });
+            }
           }
         } else if (result.r1Decision.decision === 'SKIPPED') {
           console.log(`⏭️ ${coin.symbol} - Recently rejected, skipped escalation (saves cost)`);
@@ -1492,49 +1525,6 @@ Reason: ${newReason?.substring(0, 200)}`);
     }
   }
 
-  async executePaperTrade(tradeData) {
-    try {
-      const { symbol, action, price, reason, confidence, stopLoss, takeProfit, source } = tradeData;
-
-      // Check if Bybit trading is enabled
-      if (!this.tradingRules.bybitTradingEnabled) {
-        console.log(`⚠️ Bybit trading disabled - cannot execute trade for ${symbol}`);
-        throw new Error('Bybit trading is disabled');
-      }
-
-      // Check for existing trade and handle it
-      const handled = await this.handleExistingTrade(symbol, action, price, stopLoss, takeProfit, confidence, reason);
-      if (handled) {
-        console.log(`✅ Existing trade handled for ${symbol} - no new trade created`);
-        return { handled: true, message: 'Existing trade managed' };
-      }
-
-      // No existing trade or position was closed - create new trade using the unified trade model
-      // Delegate to addActiveTrade so trades show correctly in the dashboard and DCA logic
-      await this.addActiveTrade({
-        symbol,
-        name: symbol,
-        id: symbol.toLowerCase(),
-        action,
-        // Raw signal price and derived levels
-        price,
-        entryPrice: price,
-        takeProfit: price * (1 + (takeProfit || 0) / 100),
-        stopLoss: price * (1 - (stopLoss || 0) / 100),
-        expectedGainPercent: typeof takeProfit === 'number' ? takeProfit : 5,
-        reason,
-        insights: [],
-        dataSource: source || 'monitoring'
-      });
-
-      console.log(`📝 Paper trade executed via addActiveTrade: ${action} ${symbol} @ $${price}`);
-      return { handled: false };
-
-    } catch (error) {
-      console.log('⚠️ Error executing paper trade:', error.message);
-      throw error;
-    }
-  }
 
   getPortfolioValue() {
     // Simple mock for now - should integrate with actual portfolio
@@ -2386,12 +2376,12 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           );
           // Add the opportunity as an active trade if it's a BUY/SELL signal
           if (opp.action === 'BUY' || opp.action === 'SELL') {
-            console.log(`💼 Executing paper trade for ${opp.symbol}: ${opp.action} at $${opp.entryPrice?.toFixed(2) || 'N/A'}`);
+            console.log(`💼 Executing trade for ${opp.symbol}: ${opp.action} at $${opp.entryPrice?.toFixed(2) || 'N/A'}`);
             try {
             await this.addActiveTrade(opp);
-              console.log(`✅ Paper trade executed successfully for ${opp.symbol}`);
+              console.log(`✅ Trade executed successfully for ${opp.symbol}`);
             } catch (tradeError) {
-              console.error(`❌ Failed to execute paper trade for ${opp.symbol}:`, tradeError.message);
+              console.error(`❌ Failed to execute trade for ${opp.symbol}:`, tradeError.message);
             }
           } else {
             console.log(`⏭️ Skipping trade execution for ${opp.symbol} - action is ${opp.action} (not BUY/SELL)`);
