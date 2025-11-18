@@ -195,8 +195,8 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
       targetUrl = 'http://api.scraperapi.com';
       const fullUrl = `${baseUrl}/v5/order/create`;
       
-      // ScraperAPI supports custom headers via headers parameter (comma-separated or JSON)
-      // Format: header1:value1,header2:value2 OR JSON string
+      // ScraperAPI supports custom headers via headers parameter
+      // Format: JSON string of headers object
       const customHeaders = {
         'X-BAPI-API-KEY': apiKey,
         'X-BAPI-TIMESTAMP': timestamp.toString(),
@@ -205,24 +205,21 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
         'Content-Type': 'application/json'
       };
       
-      // Convert headers to ScraperAPI format (comma-separated key:value pairs)
-      const headersString = Object.entries(customHeaders)
-        .map(([key, value]) => `${key}:${value}`)
-        .join(',');
-      
+      // ScraperAPI expects headers as JSON string and body as JSON string
       requestConfig.params = {
         api_key: scraperApiKey,
         url: fullUrl,
         method: 'POST',
-        headers: headersString,
-        body: JSON.stringify(requestParams) // POST body as JSON string
+        headers: JSON.stringify(customHeaders),
+        body: JSON.stringify(requestParams)
       };
       
-      // Clear data and headers - ScraperAPI handles everything via params
+      // For ScraperAPI, we send everything via params, not as axios data/headers
       requestConfig.data = undefined;
       requestConfig.headers = {}; // Headers are in ScraperAPI params
       console.log(`🔵 [BYBIT API] Using ScraperAPI proxy to bypass geo-blocking`);
-      console.log(`   📤 Forwarding headers: X-BAPI-API-KEY, X-BAPI-SIGN, etc.`);
+      console.log(`   📤 Forwarding headers: X-BAPI-API-KEY=${apiKey.substring(0, 8)}..., X-BAPI-SIGN, etc.`);
+      console.log(`   📤 POST body: ${JSON.stringify(requestParams).substring(0, 100)}...`);
     } else {
       requestConfig.data = requestParams; // POST body for direct request
     }
