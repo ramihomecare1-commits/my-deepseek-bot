@@ -588,6 +588,27 @@ async function executeOkxRequestWithFallback(options) {
       if (response.data && response.data.code !== undefined && response.data.code !== '0') {
         const errorMsg = response.data.msg || response.data.message || 'Unknown error';
         const errorCode = response.data.code;
+        const sCode = response.data?.data?.[0]?.sCode;
+        const sMsg = response.data?.data?.[0]?.sMsg;
+        
+        // Handle specific error 51010 (account mode error) with detailed guidance
+        if (errorCode === '1' && sCode === '51010') {
+          console.log(`\n❌ [OKX API] Account mode error detected (Code: ${sCode})`);
+          console.log(`   Error: ${sMsg || errorMsg}`);
+          console.log(`   💡 This error means your OKX account is not in the correct mode for this operation.`);
+          console.log(`   💡 Solutions:`);
+          console.log(`      1. Verify you're using a DEMO/SIMULATED trading account API key`);
+          console.log(`      2. Check your OKX account settings: https://www.okx.com → Demo Trading`);
+          console.log(`      3. Ensure your API key has 'Trade' permissions enabled`);
+          console.log(`      4. Make sure you're using the demo account API key, not a live account key`);
+          console.log(`      5. The 'x-simulated-trading: 1' header is automatically added, but your account must be in demo mode`);
+          console.log(`   💡 To create a demo account:`);
+          console.log(`      - Go to https://www.okx.com`);
+          console.log(`      - Sign up or log in`);
+          console.log(`      - Navigate to Demo Trading section`);
+          console.log(`      - Create a demo account and generate API keys from there\n`);
+        }
+        
         throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
       }
       
@@ -626,6 +647,27 @@ async function executeOkxRequestWithFallback(options) {
       if (error.response && error.response.data && error.response.data.code !== undefined && error.response.data.code !== '0') {
         const errorMsg = error.response.data.msg || error.response.data.message || 'Unknown error';
         const errorCode = error.response.data.code;
+        const sCode = error.response.data?.data?.[0]?.sCode;
+        const sMsg = error.response.data?.data?.[0]?.sMsg;
+        
+        // Handle specific error 51010 (account mode error) with detailed guidance
+        if (errorCode === '1' && sCode === '51010') {
+          console.log(`\n❌ [OKX API] Account mode error detected (Code: ${sCode})`);
+          console.log(`   Error: ${sMsg || errorMsg}`);
+          console.log(`   💡 This error means your OKX account is not in the correct mode for this operation.`);
+          console.log(`   💡 Solutions:`);
+          console.log(`      1. Verify you're using a DEMO/SIMULATED trading account API key`);
+          console.log(`      2. Check your OKX account settings: https://www.okx.com → Demo Trading`);
+          console.log(`      3. Ensure your API key has 'Trade' permissions enabled`);
+          console.log(`      4. Make sure you're using the demo account API key, not a live account key`);
+          console.log(`      5. The 'x-simulated-trading: 1' header is automatically added, but your account must be in demo mode`);
+          console.log(`   💡 To create a demo account:`);
+          console.log(`      - Go to https://www.okx.com`);
+          console.log(`      - Sign up or log in`);
+          console.log(`      - Navigate to Demo Trading section`);
+          console.log(`      - Create a demo account and generate API keys from there\n`);
+        }
+        
         throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
       }
       const isTimeout = error.code === 'ECONNABORTED' || 
