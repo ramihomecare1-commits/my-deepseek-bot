@@ -2092,9 +2092,13 @@ Reason: ${newReason?.substring(0, 200)}`);
 
           // Only add real opportunities with valid data
           if (analysis.confidence >= this.tradingRules.minConfidence && !analysis.usesMockData) {
+            // Log current trading rules for debugging
+            console.log(`🔍 [${coin.symbol}] Trading rules check - minTimeframeAlignment: BUY=${this.tradingRules.patterns.buy.minTimeframeAlignment}, SELL=${this.tradingRules.patterns.sell.minTimeframeAlignment}`);
+            
             const consensusResult = this.passesMultiTimeframeConsensus(analysis);
             if (!consensusResult.passed) {
               console.log(`🚫 ${coin.symbol}: Fails multi-timeframe consensus check (${consensusResult.matches}/${consensusResult.required} timeframes match)`);
+              console.log(`   Current setting: minTimeframeAlignment=${this.tradingRules.patterns[analysis.action.toLowerCase()]?.minTimeframeAlignment || 'N/A'}`);
               
               // Send Telegram notification for multi-timeframe consensus rejection
               if (config.ENABLE_REJECTION_NOTIFICATIONS && isActionNotifiable && this.shouldNotifyRejection(coin.symbol, 'consensus')) {
