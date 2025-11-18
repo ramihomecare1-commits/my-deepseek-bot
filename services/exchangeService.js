@@ -4,16 +4,33 @@ const config = require('../config/config');
 
 /**
  * Exchange Service
- * Handles order execution via Bybit Demo Trading API
- * Uses Bybit testnet for risk-free demo trading
+ * Handles order execution via OKX Demo Trading API (primary) or Bybit Demo Trading API
+ * Uses OKX demo account for risk-free demo trading
  * Uses ScraperAPI proxy to bypass geo-blocking if configured
  */
 
-// Bybit API endpoints
+// OKX API endpoints (demo trading uses same endpoint with demo account API keys)
+const OKX_BASE_URL = 'https://www.okx.com';
+
+// Bybit API endpoints (kept for backward compatibility)
 const BYBIT_TESTNET_URL = 'https://api-demo.bybit.com';
 const BYBIT_MAINNET_URL = 'https://api.bybit.com';
 
-// Map coin symbols to Bybit trading pairs (Spot trading uses same format)
+// Map coin symbols to OKX trading pairs (Spot trading format: BTC-USDT)
+const OKX_SYMBOL_MAP = {
+  'BTC': 'BTC-USDT', 'ETH': 'ETH-USDT', 'BNB': 'BNB-USDT', 'SOL': 'SOL-USDT',
+  'XRP': 'XRP-USDT', 'DOGE': 'DOGE-USDT', 'ADA': 'ADA-USDT', 'AVAX': 'AVAX-USDT',
+  'LINK': 'LINK-USDT', 'DOT': 'DOT-USDT', 'MATIC': 'MATIC-USDT', 'LTC': 'LTC-USDT',
+  'UNI': 'UNI-USDT', 'ATOM': 'ATOM-USDT', 'XLM': 'XLM-USDT', 'ETC': 'ETC-USDT',
+  'XMR': 'XMR-USDT', 'ALGO': 'ALGO-USDT', 'FIL': 'FIL-USDT', 'ICP': 'ICP-USDT',
+  'VET': 'VET-USDT', 'EOS': 'EOS-USDT', 'XTZ': 'XTZ-USDT', 'AAVE': 'AAVE-USDT',
+  'MKR': 'MKR-USDT', 'GRT': 'GRT-USDT', 'THETA': 'THETA-USDT', 'RUNE': 'RUNE-USDT',
+  'NEO': 'NEO-USDT', 'FTM': 'FTM-USDT', 'TRX': 'TRX-USDT', 'SUI': 'SUI-USDT',
+  'ARB': 'ARB-USDT', 'OP': 'OP-USDT', 'TON': 'TON-USDT', 'SHIB': 'SHIB-USDT',
+  'HBAR': 'HBAR-USDT', 'APT': 'APT-USDT'
+};
+
+// Map coin symbols to Bybit trading pairs (Spot trading uses same format) - kept for backward compatibility
 const BYBIT_SYMBOL_MAP = {
   'BTC': 'BTCUSDT', 'ETH': 'ETHUSDT', 'BNB': 'BNBUSDT', 'SOL': 'SOLUSDT',
   'XRP': 'XRPUSDT', 'DOGE': 'DOGEUSDT', 'ADA': 'ADAUSDT', 'AVAX': 'AVAXUSDT',
@@ -33,69 +50,85 @@ const MEXC_SYMBOL_MAP = BYBIT_SYMBOL_MAP;
 
 /**
  * Get preferred exchange for trading
- * Priority: Bybit Demo (if API keys available) > Bybit Mainnet > Disabled
+ * Only OKX is supported now (Bybit removed)
  */
 function getPreferredExchange() {
-  const bybitApiKey = process.env.BYBIT_API_KEY || '';
-  const bybitApiSecret = process.env.BYBIT_API_SECRET || '';
-  const useTestnet = (process.env.BYBIT_TESTNET || 'true').toLowerCase() === 'true';
+  const okxApiKey = process.env.OKX_API_KEY || '';
+  const okxApiSecret = process.env.OKX_API_SECRET || '';
+  const okxPassphrase = process.env.OKX_PASSPHRASE || '';
   
-  if (bybitApiKey && bybitApiSecret) {
+  // OKX requires API key, secret, and passphrase
+  if (okxApiKey && okxApiSecret && okxPassphrase) {
     return { 
-      exchange: 'BYBIT', 
-      apiKey: bybitApiKey, 
-      apiSecret: bybitApiSecret,
-      testnet: useTestnet,
-      baseUrl: useTestnet ? BYBIT_TESTNET_URL : BYBIT_MAINNET_URL
+      exchange: 'OKX', 
+      apiKey: okxApiKey, 
+      apiSecret: okxApiSecret,
+      passphrase: okxPassphrase,
+      testnet: true, // OKX demo uses demo account API keys
+      baseUrl: OKX_BASE_URL
     };
   }
   
-  return { exchange: 'DISABLED', apiKey: null, apiSecret: null, testnet: false, baseUrl: null };
+  return { exchange: 'DISABLED', apiKey: null, apiSecret: null, passphrase: null, testnet: false, baseUrl: null };
 }
 
 /**
- * Check if exchange trading is enabled (Bybit Demo Trading)
+ * Check if exchange trading is enabled (OKX Demo Trading only)
  */
 function isExchangeTradingEnabled() {
-  const bybitApiKey = process.env.BYBIT_API_KEY || '';
-  const bybitApiSecret = process.env.BYBIT_API_SECRET || '';
-  const useTestnet = (process.env.BYBIT_TESTNET || 'true').toLowerCase() === 'true';
-  
-  const hasBybitKeys = bybitApiKey.length > 0 && bybitApiSecret.length > 0;
-  const tradingEnabled = hasBybitKeys;
+  const okxApiKey = process.env.OKX_API_KEY || '';
+  const okxApiSecret = process.env.OKX_API_SECRET || '';
+  const okxPassphrase = process.env.OKX_PASSPHRASE || '';
+  const hasOkxKeys = okxApiKey.length > 0 && okxApiSecret.length > 0 && okxPassphrase.length > 0;
   
   const preferredExchange = getPreferredExchange();
   
-  // Log Bybit status on first call (startup)
+  // Log exchange status on first call (startup)
   if (!isExchangeTradingEnabled._logged) {
     isExchangeTradingEnabled._logged = true;
     console.log('\n' + '='.repeat(60));
-    console.log('🔵 BYBIT TRADING CONFIGURATION');
-    console.log('='.repeat(60));
-    if (tradingEnabled) {
+    if (hasOkxKeys) {
+      console.log('🟢 OKX DEMO TRADING CONFIGURATION');
+      console.log('='.repeat(60));
       console.log(`✅ Status: ENABLED`);
-      console.log(`✅ Mode: ${useTestnet ? 'BYBIT_DEMO (Testnet)' : 'BYBIT_MAINNET (Production)'}`);
+      console.log(`✅ Mode: OKX_DEMO (Demo Account)`);
       console.log(`✅ API Endpoint: ${preferredExchange.baseUrl}`);
-      console.log(`✅ API Key: ${bybitApiKey.substring(0, 10)}...${bybitApiKey.substring(bybitApiKey.length - 4)}`);
-      console.log(`✅ All orders will execute via Bybit API`);
+      console.log(`✅ API Key: ${okxApiKey.substring(0, 10)}...${okxApiKey.substring(okxApiKey.length - 4)}`);
+      console.log(`✅ All orders will execute via OKX Demo API`);
+      console.log(`💡 Get demo account: https://www.okx.com → Demo Trading → Create Demo Account`);
     } else {
+      console.log('❌ EXCHANGE TRADING CONFIGURATION');
+      console.log('='.repeat(60));
       console.log(`❌ Status: DISABLED`);
-      console.log(`❌ Reason: BYBIT_API_KEY or BYBIT_API_SECRET not configured`);
-      console.log(`💡 To enable: Set BYBIT_API_KEY and BYBIT_API_SECRET in environment variables`);
-      console.log(`💡 Get keys from: https://testnet.bybit.com → Profile → API Management`);
+      console.log(`❌ Reason: OKX API keys not configured`);
+      console.log(`💡 To enable OKX Demo: Set OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE`);
+      console.log(`💡 OKX Demo: https://www.okx.com → Demo Trading → Create Demo Account`);
     }
     console.log('='.repeat(60) + '\n');
   }
   
   return {
-    enabled: tradingEnabled,
-    mode: tradingEnabled ? (useTestnet ? 'BYBIT_DEMO' : 'BYBIT_MAINNET') : 'DISABLED',
-    realTrading: tradingEnabled,
+    enabled: hasOkxKeys,
+    mode: hasOkxKeys ? 'OKX_DEMO' : 'DISABLED',
+    realTrading: hasOkxKeys,
     preferredExchange: preferredExchange.exchange,
-    hasBybitKeys: hasBybitKeys,
-    testnet: useTestnet,
+    hasOkxKeys: hasOkxKeys,
+    testnet: true,
     baseUrl: preferredExchange.baseUrl
   };
+}
+
+/**
+ * Generate OKX API signature
+ * OKX uses: Base64(HMAC-SHA256(secret, timestamp + method + requestPath + body))
+ */
+function generateOkxSignature(timestamp, method, requestPath, body, apiSecret) {
+  const message = timestamp + method.toUpperCase() + requestPath + (body || '');
+  const signature = crypto
+    .createHmac('sha256', apiSecret)
+    .update(message)
+    .digest('base64');
+  return signature;
 }
 
 /**
@@ -126,6 +159,605 @@ function generateSignature(queryString, apiSecret) {
 }
 
 /**
+ * Helper function to execute Bybit API request with automatic proxy fallback
+ * Tries: ScrapeOps → ScraperAPI → Direct (in sequence on timeout/error)
+ * @param {Object} options - Request configuration
+ * @param {string} options.apiKey - Bybit API key
+ * @param {string} options.apiSecret - Bybit API secret
+ * @param {string} options.baseUrl - Bybit API base URL
+ * @param {string} options.endpoint - API endpoint (e.g., '/v5/order/create')
+ * @param {string} options.method - HTTP method ('GET' or 'POST')
+ * @param {Object} options.requestParams - Request parameters (before signature)
+ * @param {Object} options.body - Request body (for POST, after signature)
+ * @returns {Promise<Object>} Axios response
+ */
+async function executeBybitRequestWithFallback(options) {
+  const { apiKey, apiSecret, baseUrl, endpoint, method = 'GET', requestParams, body } = options;
+  
+  const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
+  const scraperApiKey = config.SCRAPER_API_KEY || '';
+  const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
+  
+  // Determine proxy order based on priority
+  const proxies = [];
+  if (scrapeOpsKey && (proxyPriority === 'scrapeops' || !scraperApiKey)) {
+    proxies.push({ name: 'ScrapeOps', key: scrapeOpsKey, url: 'https://proxy.scrapeops.io/v1/' });
+  }
+  if (scraperApiKey) {
+    proxies.push({ name: 'ScraperAPI', key: scraperApiKey, url: 'http://api.scraperapi.com' });
+  }
+  // Always add direct as last resort (even though it's geo-blocked, worth trying)
+  proxies.push({ name: 'Direct', key: null, url: baseUrl });
+  
+  // Use timestamp and recvWindow from requestParams if available, otherwise generate new ones
+  const timestamp = requestParams?.timestamp ? parseInt(requestParams.timestamp) : Date.now();
+  const recvWindow = requestParams?.recvWindow ? parseInt(requestParams.recvWindow) : 5000;
+  const signature = generateBybitSignature(requestParams || {}, apiSecret);
+  
+  // Try each proxy in sequence
+  for (let i = 0; i < proxies.length; i++) {
+    const proxy = proxies[i];
+    const isLastAttempt = i === proxies.length - 1;
+    
+    try {
+      let targetUrl, requestConfig;
+      
+      if (proxy.name === 'ScrapeOps') {
+        // ScrapeOps Proxy API format: https://proxy.scrapeops.io/v1/?api_key=xxx&url=xxx
+        const fullUrl = method === 'GET' 
+          ? `${baseUrl}${endpoint}?${new URLSearchParams({ ...requestParams, signature }).toString()}`
+          : `${baseUrl}${endpoint}`;
+        
+        const customHeaders = {
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp.toString(),
+          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+          'X-BAPI-SIGN': signature
+        };
+        
+        if (method === 'POST') {
+          customHeaders['Content-Type'] = 'application/json';
+        }
+        
+        targetUrl = proxy.url;
+        
+        // ScrapeOps Proxy API format:
+        // GET: https://proxy.scrapeops.io/v1/?api_key=xxx&url=ENCODED_URL
+        // POST: Same, but body goes in request body
+        // Headers: Pass as 'headers' query param (JSON string) OR in request headers
+        const requestBody = method === 'POST' ? (body || { ...requestParams, signature }) : undefined;
+        
+        // Build query params for ScrapeOps
+        const scrapeOpsParams = {
+          api_key: proxy.key,
+          url: fullUrl,
+          keep_headers: 'true' // CRITICAL: Tell ScrapeOps to forward custom headers
+        };
+        
+        // Pass headers as query param (ScrapeOps format)
+        // ScrapeOps will forward these headers to the target URL
+        scrapeOpsParams.headers = JSON.stringify(customHeaders);
+        
+        requestConfig = {
+          params: scrapeOpsParams,
+          headers: {}, // ScrapeOps doesn't need custom headers in request headers
+          timeout: 20000, // 20s timeout (if it doesn't work in 20s, try next proxy)
+          validateStatus: (status) => status < 600 // Allow 5xx to be handled
+        };
+        
+        // For POST requests, body goes in request body
+        if (method === 'POST' && requestBody) {
+          requestConfig.data = JSON.stringify(requestBody);
+          requestConfig.headers['Content-Type'] = 'application/json';
+        }
+        
+        console.log(`🔄 [BYBIT API] Attempt ${i + 1}/${proxies.length}: Trying ScrapeOps proxy...`);
+        console.log(`   📤 ScrapeOps URL: ${targetUrl}`);
+        console.log(`   📤 Target URL: ${fullUrl}`);
+        console.log(`   📤 Method: ${method}`);
+        console.log(`   📤 API Key: ${proxy.key ? proxy.key.substring(0, 8) + '...' : 'MISSING'}`);
+        console.log(`   📤 Keep Headers: true (CRITICAL for Bybit auth)`);
+        console.log(`   📤 Headers: ${JSON.stringify(customHeaders).substring(0, 150)}...`);
+        if (requestBody) {
+          console.log(`   📤 Body: ${JSON.stringify(requestBody).substring(0, 150)}...`);
+        }
+        console.log(`   📤 Full ScrapeOps params: ${JSON.stringify(scrapeOpsParams).substring(0, 200)}...`);
+      } else if (proxy.name === 'ScraperAPI') {
+        // ScraperAPI format
+        const fullUrl = method === 'GET'
+          ? `${baseUrl}${endpoint}?${new URLSearchParams({ ...requestParams, signature }).toString()}`
+          : `${baseUrl}${endpoint}`;
+        
+        const customHeaders = {
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp.toString(),
+          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+          'X-BAPI-SIGN': signature
+        };
+        
+        if (method === 'POST') {
+          customHeaders['Content-Type'] = 'application/json';
+        }
+        
+        targetUrl = proxy.url;
+        requestConfig = {
+          params: {
+            api_key: proxy.key,
+            url: fullUrl,
+            method: method,
+            headers: JSON.stringify(customHeaders),
+            body: method === 'POST' ? JSON.stringify(body || { ...requestParams, signature }) : undefined
+          },
+          data: method === 'POST' ? JSON.stringify(body || { ...requestParams, signature }) : undefined,
+          headers: {},
+          timeout: 20000, // 20s timeout (same as ScrapeOps)
+          validateStatus: (status) => status < 500
+        };
+        
+        console.log(`🔄 [BYBIT API] Attempt ${i + 1}/${proxies.length}: Trying ScraperAPI proxy (fallback)...`);
+        console.log(`   📤 ScraperAPI URL: ${targetUrl}`);
+        console.log(`   📤 Target URL: ${fullUrl}`);
+        console.log(`   📤 Method: ${method}`);
+        console.log(`   📤 API Key: ${proxy.key ? proxy.key.substring(0, 8) + '...' : 'MISSING'}`);
+      } else {
+        // Direct connection (last resort)
+        targetUrl = `${baseUrl}${endpoint}`;
+        requestConfig = {
+          params: method === 'GET' ? { ...requestParams, signature } : undefined,
+          data: method === 'POST' ? (body || { ...requestParams, signature }) : undefined,
+          headers: {
+            'X-BAPI-API-KEY': apiKey,
+            'X-BAPI-TIMESTAMP': timestamp.toString(),
+            'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+            'X-BAPI-SIGN': signature,
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9'
+          },
+          timeout: 10000, // 10s for direct
+          validateStatus: (status) => status < 500
+        };
+        
+        if (method === 'POST') {
+          requestConfig.headers['Content-Type'] = 'application/json';
+        }
+        
+        console.log(`🔄 [BYBIT API] Attempt ${i + 1}/${proxies.length}: Trying direct connection (last resort)...`);
+      }
+      
+      // Execute request with timing
+      let response;
+      const startTime = Date.now();
+      requestConfig.metadata = { startTime };
+      
+      try {
+        if (method === 'GET') {
+          response = await axios.get(targetUrl, requestConfig);
+        } else {
+          // For POST requests
+          response = await axios.post(targetUrl, requestConfig.data || requestConfig.params, requestConfig);
+        }
+        
+        const duration = Date.now() - startTime;
+        console.log(`   ⏱️ Request completed in ${duration}ms`);
+        
+        // Log response details for debugging
+        console.log(`   📥 Response status: ${response.status}`);
+        console.log(`   📥 Response data: ${JSON.stringify(response.data).substring(0, 200)}...`);
+        
+        // Check if response is valid (not HTML/Cloudflare block)
+        if (response.data && typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+          throw new Error('GEO_BLOCKED');
+        }
+        
+        // Success! Return response
+        console.log(`✅ [BYBIT API] Success via ${proxy.name} proxy`);
+        return response;
+      } catch (requestError) {
+        // Log request error details
+        console.log(`   ❌ Request error: ${requestError.message}`);
+        if (requestError.response) {
+          console.log(`   ❌ Response status: ${requestError.response.status}`);
+          console.log(`   ❌ Response data: ${JSON.stringify(requestError.response.data).substring(0, 200)}...`);
+        }
+        throw requestError;
+      }
+      
+    } catch (error) {
+      // Enhanced timeout detection
+      const isTimeout = error.code === 'ECONNABORTED' || 
+                       error.message?.toLowerCase().includes('timeout') ||
+                       error.message?.toLowerCase().includes('exceeded') ||
+                       (error.config && Date.now() - error.config.metadata?.startTime > (error.config.timeout || 0));
+      
+      const isGeoBlocked = error.message === 'GEO_BLOCKED' || 
+        (error.response?.data && typeof error.response.data === 'string' && error.response.data.includes('<!DOCTYPE'));
+      
+      // Log the error details
+      console.log(`   ⚠️ ${proxy.name} error: ${error.message || 'Unknown error'}`);
+      console.log(`   ⚠️ Error code: ${error.code || 'N/A'}`);
+      if (error.response) {
+        console.log(`   ⚠️ Response status: ${error.response.status}`);
+      }
+      
+      if (isLastAttempt) {
+        // Last attempt failed, throw the error
+        console.log(`\n❌ [BYBIT API] All ${proxies.length} attempts failed. Last error from ${proxy.name}:`);
+        if (isTimeout) {
+          console.log(`   ⏱️ Timeout after ${error.config?.timeout || 'unknown'}ms`);
+          console.log(`   💡 ScrapeOps free tier may be too slow or rate-limited`);
+          console.log(`   💡 Consider: 1) Upgrading ScrapeOps plan, 2) Using ScraperAPI, 3) Deploying to a different region`);
+        } else if (isGeoBlocked) {
+          console.log(`   🚫 Geo-blocked (CloudFront/CDN blocking)`);
+        } else {
+          console.log(`   ❌ ${error.message}`);
+        }
+        throw error;
+      } else {
+        // Try next proxy
+        const nextProxy = proxies[i + 1];
+        console.log(`\n⚠️ [BYBIT API] ${proxy.name} failed: ${isTimeout ? '⏱️ Timeout' : isGeoBlocked ? '🚫 Geo-blocked' : '❌ ' + error.message}`);
+        console.log(`   ↪️ Automatically falling back to ${nextProxy?.name || 'next'} proxy...`);
+        console.log(`   ⏳ Waiting 1 second before retry...`);
+        // Wait 1 second before trying next proxy
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+}
+
+/**
+ * Helper function to execute OKX API request with automatic fallback
+ * Tries: Direct → ScrapeOps → ScraperAPI (in sequence on timeout/error)
+ * @param {Object} options - Request configuration
+ * @returns {Promise<Object>} Axios response
+ */
+async function executeOkxRequestWithFallback(options) {
+  const { apiKey, apiSecret, passphrase, baseUrl, requestPath, method = 'GET', body } = options;
+  
+  const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
+  const scraperApiKey = config.SCRAPER_API_KEY || '';
+  
+  // Determine proxy order: Direct first, then ScrapeOps, then ScraperAPI
+  const proxies = [
+    { name: 'Direct', key: null, url: baseUrl }
+  ];
+  
+  if (scrapeOpsKey) {
+    proxies.push({ name: 'ScrapeOps', key: scrapeOpsKey, url: 'https://proxy.scrapeops.io/v1/' });
+  }
+  if (scraperApiKey) {
+    proxies.push({ name: 'ScraperAPI', key: scraperApiKey, url: 'http://api.scraperapi.com' });
+  }
+  
+  // Try each proxy in sequence
+  for (let i = 0; i < proxies.length; i++) {
+    const proxy = proxies[i];
+    const isLastAttempt = i === proxies.length - 1;
+    
+    try {
+      const timestamp = new Date().toISOString();
+      const bodyString = body ? JSON.stringify(body) : '';
+      const signature = generateOkxSignature(timestamp, method, requestPath, bodyString, apiSecret);
+      
+      let targetUrl, requestConfig;
+      
+      if (proxy.name === 'Direct') {
+        // Direct connection (first attempt)
+        targetUrl = `${baseUrl}${requestPath}`;
+        requestConfig = {
+          method: method,
+          headers: {
+            'OK-ACCESS-KEY': apiKey,
+            'OK-ACCESS-SIGN': signature,
+            'OK-ACCESS-TIMESTAMP': timestamp,
+            'OK-ACCESS-PASSPHRASE': passphrase,
+            'Content-Type': 'application/json'
+          },
+          data: body ? JSON.stringify(body) : undefined,
+          timeout: 10000, // 10s for direct
+          validateStatus: (status) => status < 500
+        };
+        
+        console.log(`🔄 [OKX API] Attempt ${i + 1}/${proxies.length}: Trying direct connection...`);
+      } else if (proxy.name === 'ScrapeOps') {
+        // ScrapeOps proxy
+        const fullUrl = `${baseUrl}${requestPath}`;
+        const scrapeOpsParams = {
+          api_key: proxy.key,
+          url: fullUrl,
+          keep_headers: 'true'
+        };
+        
+        const customHeaders = {
+          'OK-ACCESS-KEY': apiKey,
+          'OK-ACCESS-SIGN': signature,
+          'OK-ACCESS-TIMESTAMP': timestamp,
+          'OK-ACCESS-PASSPHRASE': passphrase,
+          'Content-Type': 'application/json'
+        };
+        
+        scrapeOpsParams.headers = JSON.stringify(customHeaders);
+        
+        targetUrl = proxy.url;
+        requestConfig = {
+          params: scrapeOpsParams,
+          headers: {},
+          data: body ? JSON.stringify(body) : undefined,
+          timeout: 20000,
+          validateStatus: (status) => status < 500
+        };
+        
+        console.log(`🔄 [OKX API] Attempt ${i + 1}/${proxies.length}: Trying ScrapeOps proxy (fallback)...`);
+      } else {
+        // ScraperAPI proxy
+        const fullUrl = `${baseUrl}${requestPath}`;
+        targetUrl = proxy.url;
+        requestConfig = {
+          params: {
+            api_key: proxy.key,
+            url: fullUrl,
+            method: method,
+            headers: JSON.stringify({
+              'OK-ACCESS-KEY': apiKey,
+              'OK-ACCESS-SIGN': signature,
+              'OK-ACCESS-TIMESTAMP': timestamp,
+              'OK-ACCESS-PASSPHRASE': passphrase,
+              'Content-Type': 'application/json'
+            }),
+            body: body ? JSON.stringify(body) : undefined
+          },
+          data: body ? JSON.stringify(body) : undefined,
+          headers: {},
+          timeout: 20000,
+          validateStatus: (status) => status < 500
+        };
+        
+        console.log(`🔄 [OKX API] Attempt ${i + 1}/${proxies.length}: Trying ScraperAPI proxy (fallback)...`);
+      }
+      
+      // Execute request
+      const startTime = Date.now();
+      let response;
+      
+      if (method === 'GET') {
+        response = await axios.get(targetUrl, requestConfig);
+      } else {
+        response = await axios.post(targetUrl, requestConfig.data || requestConfig.params, requestConfig);
+      }
+      
+      const duration = Date.now() - startTime;
+      console.log(`   ⏱️ Request completed in ${duration}ms`);
+      console.log(`   📥 Response status: ${response.status}`);
+      
+      // Check if response is valid (not HTML/Cloudflare block)
+      if (response.data && typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+        throw new Error('GEO_BLOCKED');
+      }
+      
+      // Success! Return response
+      console.log(`✅ [OKX API] Success via ${proxy.name}`);
+      return response;
+      
+    } catch (error) {
+      const isTimeout = error.code === 'ECONNABORTED' || 
+                       error.message?.toLowerCase().includes('timeout') ||
+                       error.message?.toLowerCase().includes('exceeded');
+      
+      const isGeoBlocked = error.message === 'GEO_BLOCKED' || 
+        (error.response?.data && typeof error.response.data === 'string' && error.response.data.includes('<!DOCTYPE'));
+      
+      console.log(`   ⚠️ ${proxy.name} error: ${error.message || 'Unknown error'}`);
+      console.log(`   ⚠️ Error code: ${error.code || 'N/A'}`);
+      
+      if (isLastAttempt) {
+        console.log(`\n❌ [OKX API] All ${proxies.length} attempts failed. Last error from ${proxy.name}:`);
+        if (isTimeout) {
+          console.log(`   ⏱️ Timeout after ${error.config?.timeout || 'unknown'}ms`);
+        } else if (isGeoBlocked) {
+          console.log(`   🚫 Geo-blocked (CloudFront/CDN blocking)`);
+        } else {
+          console.log(`   ❌ ${error.message}`);
+        }
+        throw error;
+      } else {
+        const nextProxy = proxies[i + 1];
+        console.log(`\n⚠️ [OKX API] ${proxy.name} failed: ${isTimeout ? '⏱️ Timeout' : isGeoBlocked ? '🚫 Geo-blocked' : '❌ ' + error.message}`);
+        console.log(`   ↪️ Automatically falling back to ${nextProxy?.name || 'next'} proxy...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+}
+
+/**
+ * Execute a market order on OKX (Spot Trading)
+ * @param {string} symbol - Trading pair symbol (e.g., 'BTC-USDT')
+ * @param {string} side - 'buy' or 'sell' (OKX uses lowercase)
+ * @param {number} quantity - Amount to trade
+ * @param {string} apiKey - OKX API key
+ * @param {string} apiSecret - OKX API secret
+ * @param {string} passphrase - OKX passphrase
+ * @param {string} baseUrl - OKX API base URL
+ * @returns {Promise<Object>} Order result
+ */
+async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, passphrase, baseUrl) {
+  try {
+    const requestPath = '/api/v5/trade/order';
+    
+    const body = {
+      instId: symbol,
+      tdMode: 'cash', // Spot trading
+      side: side.toLowerCase(), // 'buy' or 'sell'
+      ordType: 'market', // Market order
+      sz: quantity.toString() // Size (quantity)
+    };
+    
+    console.log(`🔵 [OKX API] Sending order: ${side} ${quantity} ${symbol} (Market)`);
+    console.log(`🔵 [OKX API] API Key: ${apiKey.substring(0, 8)}... (verifying permissions)`);
+    
+    const response = await executeOkxRequestWithFallback({
+      apiKey,
+      apiSecret,
+      passphrase,
+      baseUrl,
+      requestPath,
+      method: 'POST',
+      body
+    });
+    
+    console.log(`🔵 [OKX API] Response data:`, JSON.stringify(response.data).substring(0, 500));
+    
+    if (response.data && response.data.code === '0' && response.data.data && response.data.data.length > 0) {
+      const order = response.data.data[0];
+      console.log(`✅ [OKX API] Order executed successfully!`);
+      console.log(`   Order ID: ${order.ordId}`);
+      console.log(`   Symbol: ${order.instId}`);
+      console.log(`   Side: ${order.side}`);
+      console.log(`   Quantity: ${order.accFillSz || quantity}`);
+      console.log(`   Status: ${order.state}`);
+      
+      return {
+        success: true,
+        orderId: order.ordId,
+        symbol: order.instId,
+        side: order.side,
+        executedQty: parseFloat(order.accFillSz || quantity || 0),
+        price: parseFloat(order.avgPx || order.px || 0),
+        status: order.state,
+        mode: 'OKX',
+        data: response.data
+      };
+    } else {
+      const errorMsg = response.data?.msg || response.data?.message || 'Unknown error';
+      const errorCode = response.data?.code || response.status || 0;
+      
+      console.log(`❌ [OKX API] Order failed: ${errorMsg} (Code: ${errorCode})`);
+      console.log(`   Full response:`, JSON.stringify(response.data).substring(0, 500));
+      
+      return {
+        success: false,
+        error: errorMsg,
+        code: errorCode,
+        rawResponse: response.data
+      };
+    }
+  } catch (error) {
+    const errorMsg = error.response?.data?.msg || error.response?.data?.message || error.message;
+    const errorCode = error.response?.data?.code || error.response?.status || 0;
+    
+    console.log(`❌ [OKX API] Order execution error: ${errorMsg} (Code: ${errorCode})`);
+    
+    return {
+      success: false,
+      error: errorMsg,
+      code: errorCode,
+      rawResponse: error.response?.data
+    };
+  }
+}
+
+/**
+ * Get OKX account balance
+ * @param {string} asset - Asset symbol (e.g., 'USDT', 'BTC')
+ * @param {string} apiKey - OKX API key
+ * @param {string} apiSecret - OKX API secret
+ * @param {string} passphrase - OKX passphrase
+ * @param {string} baseUrl - OKX API base URL
+ * @returns {Promise<number>} Available balance
+ */
+async function getOkxBalance(asset, apiKey, apiSecret, passphrase, baseUrl) {
+  try {
+    const requestPath = '/api/v5/account/balance';
+    
+    const response = await executeOkxRequestWithFallback({
+      apiKey,
+      apiSecret,
+      passphrase,
+      baseUrl,
+      requestPath,
+      method: 'GET'
+    });
+    
+    if (response.data && response.data.code === '0' && response.data.data && response.data.data.length > 0) {
+      const balances = response.data.data[0].details || [];
+      const assetBalance = balances.find(b => b.ccy === asset);
+      return assetBalance ? parseFloat(assetBalance.availBal || assetBalance.bal || 0) : 0;
+    }
+    return 0;
+  } catch (error) {
+    console.log(`⚠️ Failed to get OKX balance for ${asset}: ${error.message}`);
+    return 0;
+  }
+}
+
+/**
+ * Get open positions from OKX Spot Trading
+ * @param {string} apiKey - OKX API key
+ * @param {string} apiSecret - OKX API secret
+ * @param {string} passphrase - OKX passphrase
+ * @param {string} baseUrl - OKX API base URL
+ * @returns {Promise<Array>} Array of open positions {coin, quantity, value}
+ */
+async function getOkxOpenPositions(apiKey, apiSecret, passphrase, baseUrl) {
+  try {
+    const requestPath = '/api/v5/account/balance';
+    
+    const response = await executeOkxRequestWithFallback({
+      apiKey,
+      apiSecret,
+      passphrase,
+      baseUrl,
+      requestPath,
+      method: 'GET'
+    });
+    
+    if (response.data && response.data.code === '0' && response.data.data && response.data.data.length > 0) {
+      const balances = response.data.data[0].details || [];
+      const positions = [];
+      
+      // Filter for coins with non-zero balance (exclude USDT)
+      balances.forEach(balance => {
+        const total = parseFloat(balance.bal || 0);
+        const free = parseFloat(balance.availBal || 0);
+        const frozen = parseFloat(balance.frozenBal || 0);
+        
+        if (total > 0.00000001 && balance.ccy !== 'USDT') {
+          positions.push({
+            coin: balance.ccy,
+            symbol: balance.ccy,
+            quantity: total,
+            free: free,
+            locked: frozen,
+            availableToWithdraw: free,
+            usdValue: parseFloat(balance.eqUsd || 0)
+          });
+        }
+      });
+      
+      if (positions.length > 0) {
+        console.log(`✅ [OKX API] Found ${positions.length} open positions on OKX:`);
+        positions.forEach(pos => {
+          console.log(`   - ${pos.coin}: ${pos.quantity.toFixed(8)} (Free: ${pos.free.toFixed(8)}, Locked: ${pos.locked.toFixed(8)})`);
+        });
+      } else {
+        console.log(`✅ [OKX API] No open positions found on OKX (all positions closed or zero balance)`);
+      }
+      
+      return positions;
+    } else {
+      const errorMsg = response.data?.msg || 'Unknown error';
+      console.log(`⚠️ [OKX API] Failed to get positions: ${errorMsg}`);
+      return [];
+    }
+  } catch (error) {
+    const errorMsg = error.response?.data?.msg || error.message;
+    console.log(`❌ [OKX API] Error fetching positions: ${errorMsg}`);
+    return [];
+  }
+}
+
+/**
  * Execute a market order on Bybit (Spot Trading)
  * @param {string} symbol - Trading pair symbol (e.g., 'BTCUSDT')
  * @param {string} side - 'Buy' or 'Sell' (Bybit uses capitalized)
@@ -151,118 +783,19 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
       recvWindow: recvWindow.toString()
     };
 
-    // Generate signature (must be done before adding signature to params)
-    const signature = generateBybitSignature(params, apiSecret);
-    
-    // Add signature to params for the request
-    const requestParams = {
-      ...params,
-      signature: signature
-    };
-
-    // Use proxy if configured (ScrapeOps preferred, ScraperAPI as fallback)
-    const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
-    const scraperApiKey = config.SCRAPER_API_KEY || '';
-    const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
-    
-    const useScrapeOps = scrapeOpsKey && scrapeOpsKey.length > 0 && (proxyPriority === 'scrapeops' || !scraperApiKey);
-    const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
-    const useProxy = useScrapeOps || useScraperAPI;
-    
-    // Debug logging for proxy selection
-    console.log(`🔍 [PROXY DEBUG] ScrapeOps Key: ${scrapeOpsKey ? 'SET (' + scrapeOpsKey.substring(0, 8) + '...)' : 'NOT SET'}`);
-    console.log(`🔍 [PROXY DEBUG] ScraperAPI Key: ${scraperApiKey ? 'SET (' + scraperApiKey.substring(0, 8) + '...)' : 'NOT SET'}`);
-    console.log(`🔍 [PROXY DEBUG] Priority Setting: ${proxyPriority}`);
-    console.log(`🔍 [PROXY DEBUG] Selected Proxy: ${useScrapeOps ? 'ScrapeOps ✅' : useScraperAPI ? 'ScraperAPI ✅' : 'Direct Connection ⚠️'}`);
-    
-    // Debug logging for proxy status
-    if (!useProxy) {
-      console.log(`⚠️ [BYBIT API] No proxy configured - requests may be geo-blocked`);
-      console.log(`   💡 To bypass geo-blocking, set SCRAPEOPS_API_KEY or SCRAPER_API_KEY`);
-      console.log(`   💡 ScrapeOps: https://scrapeops.io/ (1,000 free credits)`);
-      console.log(`   💡 ScraperAPI: https://www.scraperapi.com/ (1,000 requests/month free)`);
-    }
-    
-    let targetUrl = `${baseUrl}/v5/order/create`;
-    let requestConfig = {
-      headers: {
-        'X-BAPI-API-KEY': apiKey,
-        'X-BAPI-TIMESTAMP': timestamp.toString(),
-        'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-        'X-BAPI-SIGN': signature,
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9'
-      },
-      timeout: useProxy ? 45000 : 10000, // Longer timeout for proxy (45s), shorter for direct (10s)
-      validateStatus: function (status) {
-        return status < 500; // Don't throw for 4xx errors, we'll handle them
-      }
-    };
-    
-    if (useScrapeOps) {
-      // Route through ScrapeOps to bypass geo-blocking
-      targetUrl = 'https://proxy.scrapeops.io/v1/';
-      const fullUrl = `${baseUrl}/v5/order/create`;
-      
-      // ScrapeOps format: uses 'url' parameter and supports custom headers
-      const customHeaders = {
-        'X-BAPI-API-KEY': apiKey,
-        'X-BAPI-TIMESTAMP': timestamp.toString(),
-        'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-        'X-BAPI-SIGN': signature,
-        'Content-Type': 'application/json'
-      };
-      
-      requestConfig.params = {
-        api_key: scrapeOpsKey,
-        url: fullUrl,
-        method: 'POST',
-        headers: JSON.stringify(customHeaders)
-      };
-      
-      // POST body as JSON
-      requestConfig.data = JSON.stringify(requestParams);
-      requestConfig.headers = {}; // Headers are in ScrapeOps params
-      
-      console.log(`🔵 [BYBIT API] Using ScrapeOps proxy to bypass geo-blocking`);
-      console.log(`   📤 Headers: X-BAPI-API-KEY=${apiKey.substring(0, 8)}..., X-BAPI-SIGN, etc.`);
-    } else if (useScraperAPI) {
-      // Route through ScraperAPI to bypass geo-blocking (fallback)
-      targetUrl = 'http://api.scraperapi.com';
-      const fullUrl = `${baseUrl}/v5/order/create`;
-      
-      const customHeaders = {
-        'X-BAPI-API-KEY': apiKey,
-        'X-BAPI-TIMESTAMP': timestamp.toString(),
-        'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-        'X-BAPI-SIGN': signature,
-        'Content-Type': 'application/json'
-      };
-      
-      requestConfig.params = {
-        api_key: scraperApiKey,
-        url: fullUrl,
-        method: 'POST',
-        headers: JSON.stringify(customHeaders),
-        body: JSON.stringify(requestParams)
-      };
-      
-      requestConfig.data = JSON.stringify(requestParams);
-      requestConfig.headers = {};
-      
-      console.log(`🔵 [BYBIT API] Using ScraperAPI proxy to bypass geo-blocking (fallback)`);
-    } else {
-      requestConfig.data = requestParams; // POST body for direct request
-    }
-    
-    const proxyLabel = useScrapeOps ? 'ScrapeOps → ' : useScraperAPI ? 'ScraperAPI → ' : '';
-    console.log(`🔵 [BYBIT API] Sending order to ${proxyLabel}${baseUrl}/v5/order/create`);
-    console.log(`🔵 [BYBIT API] Order: ${side} ${quantity} ${symbol} (Market)`);
+    // Use automatic fallback helper (ScrapeOps → ScraperAPI → Direct)
+    console.log(`🔵 [BYBIT API] Sending order: ${side} ${quantity} ${symbol} (Market)`);
     console.log(`🔵 [BYBIT API] API Key: ${apiKey.substring(0, 8)}... (verifying permissions)`);
     
-    const response = await axios.post(targetUrl, requestConfig.data || requestParams, requestConfig);
+    const response = await executeBybitRequestWithFallback({
+      apiKey,
+      apiSecret,
+      baseUrl,
+      endpoint: '/v5/order/create',
+      method: 'POST',
+      requestParams: params,
+      body: { ...params, signature: generateBybitSignature(params, apiSecret) }
+    });
 
     // Log full response for debugging
     console.log(`🔵 [BYBIT API] Response status: ${response.status}`);
@@ -451,33 +984,13 @@ async function executeMarketOrder(symbol, side, quantity, apiKey, apiSecret) {
 async function getBalance(asset, apiKey, apiSecret) {
   const exchange = getPreferredExchange();
   
-  if (exchange.exchange === 'BYBIT' && exchange.baseUrl) {
-    return await getBybitBalance(asset, apiKey, apiSecret, exchange.baseUrl);
+  if (exchange.exchange === 'OKX' && exchange.baseUrl) {
+    return await getOkxBalance(asset, apiKey, apiSecret, exchange.passphrase, exchange.baseUrl);
   }
   
-  // Legacy Binance support (kept for backward compatibility)
-  try {
-    const timestamp = Date.now();
-    const queryString = `timestamp=${timestamp}`;
-    const signature = generateSignature(queryString, apiSecret);
-
-    const response = await axios.get('https://api.binance.com/api/v3/account', {
-      params: {
-        timestamp: timestamp,
-        signature: signature
-      },
-      headers: {
-        'X-MBX-APIKEY': apiKey
-      },
-      timeout: 10000
-    });
-
-    const balance = response.data.balances.find(b => b.asset === asset);
-    return balance ? parseFloat(balance.free) : 0;
-  } catch (error) {
-    console.log(`⚠️ Failed to get balance for ${asset}: ${error.message}`);
-    return 0;
-  }
+  // No exchange configured
+  console.log(`⚠️ Failed to get balance for ${asset}: No exchange configured`);
+  return 0;
 }
 
 /**
@@ -539,20 +1052,13 @@ async function executeTakeProfit(trade) {
   if (!config.enabled) {
     return {
       success: false,
-      error: 'Trading not enabled. Please configure BYBIT_API_KEY and BYBIT_API_SECRET for demo trading.',
+      error: 'Trading not enabled. Please configure OKX_API_KEY, OKX_API_SECRET, OKX_PASSPHRASE (or BYBIT_API_KEY and BYBIT_API_SECRET) for demo trading.',
       skipped: true
     };
   }
 
-  const bybitSymbol = BYBIT_SYMBOL_MAP[trade.symbol];
-
-  if (!bybitSymbol) {
-    return {
-      success: false,
-      error: `Symbol ${trade.symbol} not available on Bybit`
-    };
-  }
-
+  const exchange = getPreferredExchange();
+  
   // Validate price before execution (prevent wrong coin data)
   if (!validatePrice(trade.symbol, trade.currentPrice)) {
     return {
@@ -564,8 +1070,7 @@ async function executeTakeProfit(trade) {
 
   // For BUY positions: Sell to take profit
   // For SELL positions: Buy to cover (take profit)
-  // Bybit uses 'Buy' and 'Sell' (capitalized)
-  const side = trade.action === 'BUY' ? 'Sell' : 'Buy';
+  const side = trade.action === 'BUY' ? 'sell' : 'buy';
   
   // Calculate quantity based on position size
   const positionSizeUSD = parseFloat(process.env.DEFAULT_POSITION_SIZE_USD || '100');
@@ -578,16 +1083,24 @@ async function executeTakeProfit(trade) {
     };
   }
 
-  const exchange = getPreferredExchange();
-  const modeLabel = config.testnet ? 'BYBIT_DEMO' : 'BYBIT_MAINNET';
+  const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+  if (!okxSymbol) {
+    return {
+      success: false,
+      error: `Symbol ${trade.symbol} not available on OKX`
+    };
+  }
+  
+  const modeLabel = 'OKX_DEMO';
   console.log(`📈 Executing TAKE PROFIT (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
   
-  return await executeBybitMarketOrder(
-    bybitSymbol, 
-    side, 
-    quantity, 
-    exchange.apiKey, 
+  return await executeOkxMarketOrder(
+    okxSymbol,
+    side,
+    quantity,
+    exchange.apiKey,
     exchange.apiSecret,
+    exchange.passphrase,
     exchange.baseUrl
   );
 }
@@ -603,20 +1116,13 @@ async function executeStopLoss(trade) {
   if (!config.enabled) {
     return {
       success: false,
-      error: 'Trading not enabled. Please configure BYBIT_API_KEY and BYBIT_API_SECRET for demo trading.',
+      error: 'Trading not enabled. Please configure OKX_API_KEY, OKX_API_SECRET, OKX_PASSPHRASE (or BYBIT_API_KEY and BYBIT_API_SECRET) for demo trading.',
       skipped: true
     };
   }
 
-  const bybitSymbol = BYBIT_SYMBOL_MAP[trade.symbol];
-
-  if (!bybitSymbol) {
-    return {
-      success: false,
-      error: `Symbol ${trade.symbol} not available on Bybit`
-    };
-  }
-
+  const exchange = getPreferredExchange();
+  
   // Validate price before execution (prevent wrong coin data)
   if (!validatePrice(trade.symbol, trade.currentPrice)) {
     return {
@@ -628,8 +1134,7 @@ async function executeStopLoss(trade) {
 
   // For BUY positions: Sell to stop loss
   // For SELL positions: Buy to cover (stop loss)
-  // Bybit uses 'Buy' and 'Sell' (capitalized)
-  const side = trade.action === 'BUY' ? 'Sell' : 'Buy';
+  const side = trade.action === 'BUY' ? 'sell' : 'buy';
   
   // Calculate quantity
   const positionSizeUSD = parseFloat(process.env.DEFAULT_POSITION_SIZE_USD || '100');
@@ -642,22 +1147,30 @@ async function executeStopLoss(trade) {
     };
   }
 
-  const exchange = getPreferredExchange();
-  const modeLabel = config.testnet ? 'BYBIT_DEMO' : 'BYBIT_MAINNET';
+  const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+  if (!okxSymbol) {
+    return {
+      success: false,
+      error: `Symbol ${trade.symbol} not available on OKX`
+    };
+  }
+  
+  const modeLabel = 'OKX_DEMO';
   console.log(`🛑 Executing STOP LOSS (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
   
-  return await executeBybitMarketOrder(
-    bybitSymbol, 
-    side, 
-    quantity, 
-    exchange.apiKey, 
+  return await executeOkxMarketOrder(
+    okxSymbol,
+    side,
+    quantity,
+    exchange.apiKey,
     exchange.apiSecret,
+    exchange.passphrase,
     exchange.baseUrl
   );
 }
 
 /**
- * Execute Add Position (DCA) order via Bybit
+ * Execute Add Position (DCA) order via OKX
  * @param {Object} trade - Trade object
  * @returns {Promise<Object>} Execution result
  */
@@ -667,20 +1180,13 @@ async function executeAddPosition(trade) {
   if (!config.enabled) {
     return {
       success: false,
-      error: 'Trading not enabled. Please configure BYBIT_API_KEY and BYBIT_API_SECRET for demo trading.',
+      error: 'Trading not enabled. Please configure OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE for demo trading.',
       skipped: true
     };
   }
 
-  const bybitSymbol = BYBIT_SYMBOL_MAP[trade.symbol];
-
-  if (!bybitSymbol) {
-    return {
-      success: false,
-      error: `Symbol ${trade.symbol} not available on Bybit`
-    };
-  }
-
+  const exchange = getPreferredExchange();
+  
   // Validate price before execution (prevent wrong coin data)
   if (!validatePrice(trade.symbol, trade.currentPrice)) {
     return {
@@ -692,8 +1198,7 @@ async function executeAddPosition(trade) {
 
   // For BUY positions: Buy more (average down)
   // For SELL positions: Sell more (average up)
-  // Bybit uses 'Buy' and 'Sell' (capitalized)
-  const side = trade.action === 'BUY' ? 'Buy' : 'Sell';
+  const side = trade.action === 'BUY' ? 'buy' : 'sell';
   
   // Calculate quantity for DCA using portfolio service ($100 USD)
   const { getDCASize } = require('./portfolioService');
@@ -707,16 +1212,24 @@ async function executeAddPosition(trade) {
     };
   }
 
-  const exchange = getPreferredExchange();
-  const modeLabel = config.testnet ? 'BYBIT_DEMO' : 'BYBIT_MAINNET';
+  const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+  if (!okxSymbol) {
+    return {
+      success: false,
+      error: `Symbol ${trade.symbol} not available on OKX`
+    };
+  }
+  
+  const modeLabel = 'OKX_DEMO';
   console.log(`💰 Executing ADD POSITION (DCA) (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
   
-  return await executeBybitMarketOrder(
-    bybitSymbol, 
-    side, 
-    quantity, 
-    exchange.apiKey, 
+  return await executeOkxMarketOrder(
+    okxSymbol,
+    side,
+    quantity,
+    exchange.apiKey,
     exchange.apiSecret,
+    exchange.passphrase,
     exchange.baseUrl
   );
 }
@@ -740,71 +1253,15 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
       recvWindow: recvWindow.toString()
     };
 
-    // Generate signature
-    const signature = generateBybitSignature(params, apiSecret);
-    
-    // Add signature to params for GET request
-    const requestParams = {
-      ...params,
-      signature: signature
-    };
-
-    // Use proxy if configured (ScrapeOps preferred, ScraperAPI as fallback)
-    const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
-    const scraperApiKey = config.SCRAPER_API_KEY || '';
-    const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
-    
-    const useScrapeOps = scrapeOpsKey && scrapeOpsKey.length > 0 && (proxyPriority === 'scrapeops' || !scraperApiKey);
-    const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
-    const useProxy = useScrapeOps || useScraperAPI;
-    
-    let targetUrl = `${baseUrl}/v5/account/wallet-balance`;
-    let requestConfig = {
-      params: useScrapeOps ? {
-        api_key: scrapeOpsKey,
-        url: `${baseUrl}/v5/account/wallet-balance?${new URLSearchParams(requestParams).toString()}`,
-        method: 'GET',
-        headers: JSON.stringify({
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': timestamp.toString(),
-          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-          'X-BAPI-SIGN': signature
-        })
-      } : useScraperAPI ? {
-        api_key: scraperApiKey,
-        url: `${baseUrl}/v5/account/wallet-balance?${new URLSearchParams(requestParams).toString()}`,
-        method: 'GET',
-        headers: JSON.stringify({
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': timestamp.toString(),
-          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-          'X-BAPI-SIGN': signature
-        })
-      } : requestParams,
-      headers: {
-        'X-BAPI-API-KEY': apiKey,
-        'X-BAPI-TIMESTAMP': timestamp.toString(),
-        'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-        'X-BAPI-SIGN': signature,
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9'
-      },
-      timeout: useProxy ? 45000 : 10000, // Longer timeout for proxy (45s), shorter for direct (10s)
-      validateStatus: function (status) {
-        return status < 500; // Don't throw for 4xx errors, we'll handle them
-      }
-    };
-    
-    if (useScrapeOps) {
-      targetUrl = 'https://proxy.scrapeops.io/v1/';
-      console.log(`🔵 [BYBIT API] Using ScrapeOps proxy to bypass geo-blocking`);
-    } else if (useScraperAPI) {
-      targetUrl = 'http://api.scraperapi.com';
-      console.log(`🔵 [BYBIT API] Using ScraperAPI proxy to bypass geo-blocking (fallback)`);
-    }
-    
-    const response = await axios.get(targetUrl, requestConfig);
+    // Use automatic fallback helper (ScrapeOps → ScraperAPI → Direct)
+    const response = await executeBybitRequestWithFallback({
+      apiKey,
+      apiSecret,
+      baseUrl,
+      endpoint: '/v5/account/wallet-balance',
+      method: 'GET',
+      requestParams: params
+    });
 
     if (response.data && response.data.retCode === 0 && response.data.result) {
       const spot = response.data.result.list?.[0]?.coin?.find(c => c.coin === asset);
@@ -812,31 +1269,8 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
     }
     return 0;
   } catch (error) {
-    // Check for timeout errors
-    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-      // Detect which proxy was being used
-      const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
-      const scraperApiKey = config.SCRAPER_API_KEY || '';
-      const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
-      const useScrapeOps = scrapeOpsKey && scrapeOpsKey.length > 0 && (proxyPriority === 'scrapeops' || !scraperApiKey);
-      const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
-      const proxyName = useScrapeOps ? 'ScrapeOps' : useScraperAPI ? 'ScraperAPI' : 'direct connection';
-      
-      console.log(`❌ [BYBIT API] Balance request timeout - ${proxyName} may be slow or unresponsive`);
-      console.log(`   💡 Timeout occurred after ${error.config?.timeout || 'unknown'}ms`);
-      if (useScrapeOps) {
-        console.log(`   💡 ScrapeOps free tier may have rate limits or high latency`);
-        console.log(`   💡 Try again in a few moments or check ScrapeOps dashboard`);
-      } else if (useScraperAPI) {
-        console.log(`   💡 ScraperAPI free tier may have rate limits or high latency`);
-        console.log(`   💡 Try again in a few moments or check ScraperAPI status`);
-      } else {
-        console.log(`   💡 Direct connection may be geo-blocked`);
-        console.log(`   💡 Consider using ScrapeOps or ScraperAPI proxy`);
-      }
-    } else {
-      console.log(`⚠️ Failed to get Bybit balance for ${asset}: ${error.message}`);
-    }
+    // Error already logged by fallback helper
+    console.log(`⚠️ Failed to get Bybit balance for ${asset}: ${error.message}`);
     return 0;
   }
 }
@@ -861,79 +1295,19 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
       recvWindow: recvWindow.toString()
     };
 
-    // Generate signature BEFORE adding it to params
-    const signature = generateBybitSignature(params, apiSecret);
-    
-    // Add signature to request params
-    const requestParams = {
-      ...params,
-      signature: signature
-    };
-
-    // Use proxy if configured (ScrapeOps preferred, ScraperAPI as fallback)
-    const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
-    const scraperApiKey = config.SCRAPER_API_KEY || '';
-    const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
-    
-    const useScrapeOps = scrapeOpsKey && scrapeOpsKey.length > 0 && (proxyPriority === 'scrapeops' || !scraperApiKey);
-    const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
-    const useProxy = useScrapeOps || useScraperAPI;
-    
-    // Debug logging for positions function
-    console.log(`🔍 [PROXY DEBUG] Positions - ScrapeOps: ${scrapeOpsKey ? 'SET' : 'NOT SET'}, ScraperAPI: ${scraperApiKey ? 'SET' : 'NOT SET'}, Priority: ${proxyPriority}, Using: ${useScrapeOps ? 'ScrapeOps ✅' : useScraperAPI ? 'ScraperAPI ✅' : 'Direct ⚠️'}`);
-    
-    let targetUrl = `${baseUrl}/v5/account/wallet-balance`;
-    let requestConfig = {
-      params: useScrapeOps ? {
-        api_key: scrapeOpsKey,
-        url: `${baseUrl}/v5/account/wallet-balance?${new URLSearchParams(requestParams).toString()}`,
-        method: 'GET',
-        headers: JSON.stringify({
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': timestamp.toString(),
-          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-          'X-BAPI-SIGN': signature
-        })
-      } : useScraperAPI ? {
-        api_key: scraperApiKey,
-        url: `${baseUrl}/v5/account/wallet-balance?${new URLSearchParams(requestParams).toString()}`,
-        method: 'GET',
-        headers: JSON.stringify({
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': timestamp.toString(),
-          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-          'X-BAPI-SIGN': signature
-        })
-      } : requestParams,
-      headers: {
-        'X-BAPI-API-KEY': apiKey,
-        'X-BAPI-TIMESTAMP': timestamp.toString(),
-        'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-        'X-BAPI-SIGN': signature,
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9'
-      },
-      timeout: useProxy ? 45000 : 10000, // Longer timeout for proxy (45s), shorter for direct (10s)
-      validateStatus: function (status) {
-        return status < 500; // Don't throw for 4xx errors, we'll handle them
-      }
-    };
-    
-    if (useScrapeOps) {
-      targetUrl = 'https://proxy.scrapeops.io/v1/';
-      console.log(`🔵 [BYBIT API] Using ScrapeOps proxy to bypass geo-blocking`);
-    } else if (useScraperAPI) {
-      targetUrl = 'http://api.scraperapi.com';
-      console.log(`🔵 [BYBIT API] Using ScraperAPI proxy to bypass geo-blocking (fallback)`);
-    }
-    
-    const proxyLabel = useScrapeOps ? 'ScrapeOps → ' : useScraperAPI ? 'ScraperAPI → ' : '';
-    console.log(`🔵 [BYBIT API] Fetching open positions from ${proxyLabel}${baseUrl}/v5/account/wallet-balance`);
+    // Use automatic fallback helper (ScrapeOps → ScraperAPI → Direct)
+    console.log(`🔵 [BYBIT API] Fetching open positions from ${baseUrl}/v5/account/wallet-balance`);
     console.log(`🔵 [BYBIT API] Params: accountType=SPOT, timestamp=${timestamp}, recvWindow=${recvWindow}`);
     console.log(`🔵 [BYBIT API] API Key: ${apiKey.substring(0, 8)}... (checking permissions)`);
     
-    const response = await axios.get(targetUrl, requestConfig);
+    const response = await executeBybitRequestWithFallback({
+      apiKey,
+      apiSecret,
+      baseUrl,
+      endpoint: '/v5/account/wallet-balance',
+      method: 'GET',
+      requestParams: params
+    });
 
     if (response.data && response.data.retCode === 0 && response.data.result) {
       const coins = response.data.result.list?.[0]?.coin || [];
@@ -975,111 +1349,9 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
       return [];
     }
   } catch (error) {
-    // Check for timeout errors first
-    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-      // Detect which proxy was being used
-      const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
-      const scraperApiKey = config.SCRAPER_API_KEY || '';
-      const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
-      const useScrapeOps = scrapeOpsKey && scrapeOpsKey.length > 0 && (proxyPriority === 'scrapeops' || !scraperApiKey);
-      const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
-      const proxyName = useScrapeOps ? 'ScrapeOps' : useScraperAPI ? 'ScraperAPI' : 'direct connection';
-      
-      console.log(`❌ [BYBIT API] Request timeout - ${proxyName} may be slow or unresponsive`);
-      console.log(`   💡 Timeout occurred after ${error.config?.timeout || 'unknown'}ms`);
-      console.log(`   💡 Possible causes:`);
-      if (useScrapeOps) {
-        console.log(`      1. ScrapeOps is experiencing high latency`);
-        console.log(`      2. ScrapeOps free tier may have rate limits`);
-        console.log(`      3. Network connectivity issues`);
-        console.log(`   💡 Solutions:`);
-        console.log(`      1. Try again in a few moments`);
-        console.log(`      2. Check ScrapeOps dashboard for service status`);
-        console.log(`      3. Consider upgrading ScrapeOps plan`);
-        console.log(`      4. Use ScraperAPI as fallback (set PROXY_PRIORITY=scraperapi)`);
-      } else if (useScraperAPI) {
-        console.log(`      1. ScraperAPI is experiencing high latency`);
-        console.log(`      2. ScraperAPI free tier may have rate limits`);
-        console.log(`      3. Network connectivity issues`);
-        console.log(`   💡 Solutions:`);
-        console.log(`      1. Try again in a few moments`);
-        console.log(`      2. Consider upgrading ScraperAPI plan`);
-        console.log(`      3. Use ScrapeOps instead (set SCRAPEOPS_API_KEY)`);
-        console.log(`      4. Use a VPN or deploy to a different region`);
-      } else {
-        console.log(`      1. Direct connection may be geo-blocked`);
-        console.log(`      2. Network connectivity issues`);
-        console.log(`   💡 Solutions:`);
-        console.log(`      1. Set SCRAPEOPS_API_KEY to use proxy`);
-        console.log(`      2. Use a VPN or deploy to a different region`);
-        console.log(`      3. Check network connectivity`);
-      }
-      return [];
-    }
-    
-    const errorMsg = error.response?.data?.retMsg || error.response?.data?.retMsg || error.message;
-    const errorCode = error.response?.data?.retCode || error.response?.status || 0;
-    
-    // Check if response is HTML (Cloudflare/CDN blocking)
-    const responseData = error.response?.data;
-    const isHtmlResponse = responseData && 
-      (typeof responseData === 'string' && responseData.includes('<!DOCTYPE') ||
-       error.response?.headers?.['content-type']?.includes('text/html'));
-    
-    if (isHtmlResponse) {
-      const isGeoBlocked = responseData && typeof responseData === 'string' && 
-        (responseData.includes('CloudFront') || responseData.includes('block access from your country'));
-      
-      if (isGeoBlocked) {
-        console.log(`❌ [BYBIT API] Error fetching positions: GEO-BLOCKING DETECTED (Code: ${errorCode})`);
-        console.log(`   💡 CloudFront is blocking your server's country/region`);
-        console.log(`   💡 This is NOT an API key issue - it's a network geo-blocking issue`);
-        console.log(`   💡 Solutions:`);
-        console.log(`      1. Deploy to a server in a different country/region (US, EU, Singapore)`);
-        console.log(`      2. Use a VPN or proxy service to route requests`);
-        console.log(`      3. Contact Bybit support about geo-restrictions`);
-        console.log(`      4. Check if your hosting provider offers different regions`);
-        console.log(`   💡 Your server IP is being blocked by CloudFront, not Bybit API`);
-      } else {
-        console.log(`❌ [BYBIT API] Error fetching positions: Request blocked by CDN/Cloudflare (Code: ${errorCode})`);
-        console.log(`   💡 This indicates the request is being blocked BEFORE reaching Bybit API`);
-        console.log(`   💡 The HTML response suggests Cloudflare is blocking your server's IP`);
-        console.log(`   💡 Possible causes:`);
-        console.log(`   1. Geo-blocking: Your server IP may be in a blocked region`);
-        console.log(`   2. IP reputation: Your server IP may be flagged by Cloudflare`);
-        console.log(`   3. Rate limiting: Too many requests from this IP`);
-        console.log(`   4. Network/firewall: Corporate firewall or proxy blocking requests`);
-        console.log(`   💡 Solutions:`);
-        console.log(`   - Added User-Agent headers to bypass Cloudflare bot detection`);
-        console.log(`   - Check if your server can access ${baseUrl} from command line`);
-        console.log(`   - Your server IP may be flagged by Cloudflare's automatic protection`);
-        console.log(`   - Try using a different server location or contact Bybit support`);
-        console.log(`   - Verify API endpoint: ${baseUrl}/v5/account/wallet-balance`);
-        console.log(`   - Note: IP restriction is disabled, so this is a Cloudflare network-level block`);
-      }
-    } else {
-      console.log(`❌ [BYBIT API] Error fetching positions: ${errorMsg} (Code: ${errorCode})`);
-      
-      if (errorCode === 403 || error.response?.status === 403) {
-        console.log(`   💡 403 Forbidden - Possible causes:`);
-        console.log(`   1. API key doesn't have 'Read' permissions`);
-        console.log(`   2. API key is from mainnet but using testnet (or vice versa)`);
-        console.log(`   3. IP address not whitelisted (if IP whitelist is enabled)`);
-        console.log(`   4. Invalid API key or secret`);
-        console.log(`   💡 Check: https://testnet.bybit.com → Profile → API Management`);
-        console.log(`   💡 Ensure API key has 'Read' permission and matches testnet/mainnet setting`);
-      } else if (errorCode === 401 || error.response?.status === 401) {
-        console.log(`   💡 401 Unauthorized - Invalid API key or signature`);
-        console.log(`   💡 Verify: API key and secret are correct`);
-      }
-      
-      if (responseData) {
-        const responseStr = typeof responseData === 'string' 
-          ? responseData 
-          : JSON.stringify(responseData);
-        console.log(`   Response: ${responseStr.substring(0, 300)}`);
-      }
-    }
+    // Error already logged by fallback helper
+    const errorMsg = error.response?.data?.retMsg || error.message;
+    console.log(`❌ [BYBIT API] Error fetching positions: ${errorMsg}`);
     
     // Return empty array on error - caller should handle gracefully
     // Don't mark trades as closed if we can't verify positions
@@ -1105,60 +1377,15 @@ async function getBybitOpenOrders(apiKey, apiSecret, baseUrl) {
       recvWindow: recvWindow.toString()
     };
 
-    const signature = generateBybitSignature(params, apiSecret);
-    params.signature = signature;
-
-    // Use proxy if configured (ScrapeOps preferred, ScraperAPI as fallback)
-    const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
-    const scraperApiKey = config.SCRAPER_API_KEY || '';
-    const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
-    
-    const useScrapeOps = scrapeOpsKey && scrapeOpsKey.length > 0 && (proxyPriority === 'scrapeops' || !scraperApiKey);
-    const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
-    const useProxy = useScrapeOps || useScraperAPI;
-    
-    let targetUrl = `${baseUrl}/v5/order/realtime`;
-    let requestConfig = {
-      params: useScrapeOps ? {
-        api_key: scrapeOpsKey,
-        url: `${baseUrl}/v5/order/realtime?${new URLSearchParams(params).toString()}`,
-        method: 'GET',
-        headers: JSON.stringify({
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': timestamp.toString(),
-          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-          'X-BAPI-SIGN': signature
-        })
-      } : useScraperAPI ? {
-        api_key: scraperApiKey,
-        url: `${baseUrl}/v5/order/realtime?${new URLSearchParams(params).toString()}`,
-        method: 'GET',
-        headers: JSON.stringify({
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': timestamp.toString(),
-          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-          'X-BAPI-SIGN': signature
-        })
-      } : params,
-      headers: {
-        'X-BAPI-API-KEY': apiKey,
-        'X-BAPI-TIMESTAMP': timestamp.toString(),
-        'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-        'X-BAPI-SIGN': signature,
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9'
-      },
-      timeout: useProxy ? 45000 : 10000 // Longer timeout for proxy (45s), shorter for direct (10s)
-    };
-    
-    if (useScrapeOps) {
-      targetUrl = 'https://proxy.scrapeops.io/v1/';
-    } else if (useScraperAPI) {
-      targetUrl = 'http://api.scraperapi.com';
-    }
-    
-    const response = await axios.get(targetUrl, requestConfig);
+    // Use automatic fallback helper (ScrapeOps → ScraperAPI → Direct)
+    const response = await executeBybitRequestWithFallback({
+      apiKey,
+      apiSecret,
+      baseUrl,
+      endpoint: '/v5/order/realtime',
+      method: 'GET',
+      requestParams: params
+    });
 
     if (response.data && response.data.retCode === 0 && response.data.result) {
       const orders = response.data.result.list || [];
@@ -1181,13 +1408,13 @@ module.exports = {
   executeStopLoss,
   executeAddPosition,
   getBalance,
-  getBybitBalance,
-  getBybitOpenPositions,
-  getBybitOpenOrders,
+  getOkxBalance,
+  getOkxOpenPositions,
   calculateQuantity,
   getPreferredExchange,
-  executeBybitMarketOrder,
-  BYBIT_SYMBOL_MAP,
+  executeOkxMarketOrder,
+  OKX_SYMBOL_MAP,
+  BYBIT_SYMBOL_MAP, // Legacy (kept for backward compatibility)
   BINANCE_SYMBOL_MAP, // Legacy
   MEXC_SYMBOL_MAP // Legacy
 };

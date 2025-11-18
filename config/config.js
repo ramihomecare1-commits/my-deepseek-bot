@@ -97,10 +97,16 @@ const TRADE_CHECK_INTERVAL = Number(process.env.TRADE_CHECK_INTERVAL || 30000); 
 const AI_EVALUATION_COOLDOWN = Number(process.env.AI_EVALUATION_COOLDOWN || 300000); // 5 minutes - min time between AI evaluations for same trade
 const AUTO_EXECUTE_AI_RECOMMENDATIONS = (process.env.AUTO_EXECUTE_AI_RECOMMENDATIONS || 'true').toLowerCase() === 'true'; // Auto-execute AI recommendations for Bybit demo trading
 
-// Bybit Demo Trading Configuration
+// OKX Demo Trading Configuration (Primary)
+const OKX_API_KEY = process.env.OKX_API_KEY || '';
+const OKX_API_SECRET = process.env.OKX_API_SECRET || '';
+const OKX_PASSPHRASE = process.env.OKX_PASSPHRASE || '';
+const OKX_ENABLED = Boolean(OKX_API_KEY && OKX_API_SECRET && OKX_PASSPHRASE);
+
+// Bybit Demo Trading Configuration (Legacy - kept for backward compatibility, not used)
 const BYBIT_API_KEY = process.env.BYBIT_API_KEY || '';
 const BYBIT_API_SECRET = process.env.BYBIT_API_SECRET || '';
-const BYBIT_TESTNET = (process.env.BYBIT_TESTNET || 'true').toLowerCase() === 'true'; // Default to testnet (demo trading)
+const BYBIT_TESTNET = (process.env.BYBIT_TESTNET || 'true').toLowerCase() === 'true';
 const BYBIT_ENABLED = Boolean(BYBIT_API_KEY && BYBIT_API_SECRET);
 
 // Risk Management Configuration
@@ -245,7 +251,12 @@ module.exports = {
   TAAPI_API_KEY,
   TAAPI_ENABLED,
   COINGECKO_API_KEY,
-  // Bybit Demo Trading Configuration
+  // OKX Demo Trading Configuration
+  OKX_API_KEY,
+  OKX_API_SECRET,
+  OKX_PASSPHRASE,
+  OKX_ENABLED,
+  // Bybit Demo Trading Configuration (Legacy)
   BYBIT_API_KEY,
   BYBIT_API_SECRET,
   BYBIT_TESTNET,

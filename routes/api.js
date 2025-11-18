@@ -479,17 +479,17 @@ router.get('/exchange-status', (req, res) => {
   }
 });
 
-// Test Bybit Connection endpoint
+// Test OKX Connection endpoint
 router.get('/test-bybit-connection', async (req, res) => {
   try {
-    const { isExchangeTradingEnabled, getPreferredExchange, getBybitBalance, getBybitOpenPositions } = require('../services/exchangeService');
+    const { isExchangeTradingEnabled, getPreferredExchange, getOkxBalance, getOkxOpenPositions } = require('../services/exchangeService');
     const status = isExchangeTradingEnabled();
     
     if (!status.enabled) {
       return res.json({
         success: false,
-        error: 'Bybit is not configured',
-        message: 'Please set BYBIT_API_KEY and BYBIT_API_SECRET in your environment variables'
+        error: 'OKX is not configured',
+        message: 'Please set OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE in your environment variables'
       });
     }
     
@@ -508,7 +508,7 @@ router.get('/test-bybit-connection', async (req, res) => {
     
     // Test 1: Balance retrieval
     try {
-      const balance = await getBybitBalance('USDT', exchange.apiKey, exchange.apiSecret, exchange.baseUrl);
+      const balance = await getOkxBalance('USDT', exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
       results.tests.balance = {
         success: true,
         usdtBalance: balance,
@@ -524,7 +524,7 @@ router.get('/test-bybit-connection', async (req, res) => {
     
     // Test 2: Positions retrieval
     try {
-      const positions = await getBybitOpenPositions(exchange.apiKey, exchange.apiSecret, exchange.baseUrl);
+      const positions = await getOkxOpenPositions(exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
       results.tests.positions = {
         success: true,
         count: positions.length,

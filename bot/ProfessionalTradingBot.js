@@ -221,7 +221,7 @@ class ProfessionalTradingBot {
         wedges: true,
         doubleTopBottom: true
       },
-      bybitTradingEnabled: true  // Enable Bybit demo trading (requires BYBIT_API_KEY and BYBIT_API_SECRET)
+      okxTradingEnabled: true  // Enable OKX demo trading (requires OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE)
     };
     
     // Sync minConfidence
@@ -249,79 +249,80 @@ class ProfessionalTradingBot {
         console.log(`📅 Loaded unified trigger timestamp: ${elapsedHours}h ${elapsedMinutes}m ago`);
       }
       
-      // Load trades: BYBIT IS PRIMARY SOURCE, DynamoDB is metadata only
-      console.log('📂 Loading active trades from Bybit (primary source)...');
+      // Load trades: OKX IS PRIMARY SOURCE, DynamoDB is metadata only
+      console.log('📂 Loading active trades from OKX (primary source)...');
       
-      const { isExchangeTradingEnabled, getPreferredExchange, getBybitOpenPositions } = require('../services/exchangeService');
+      const { isExchangeTradingEnabled, getPreferredExchange, getOkxOpenPositions } = require('../services/exchangeService');
       const exchangeConfig = isExchangeTradingEnabled();
       
       if (exchangeConfig.enabled) {
-        console.log('🔄 Fetching positions from Bybit (source of truth)...');
+        console.log('🔄 Fetching positions from OKX (source of truth)...');
         const exchange = getPreferredExchange();
         
         try {
-          // Get actual positions from Bybit (PRIMARY SOURCE)
-          const bybitPositions = await getBybitOpenPositions(
+          // Get actual positions from OKX (PRIMARY SOURCE)
+          const okxPositions = await getOkxOpenPositions(
             exchange.apiKey,
             exchange.apiSecret,
+            exchange.passphrase,
             exchange.baseUrl
           );
           
-          if (bybitPositions.length > 0) {
-            console.log(`✅ Found ${bybitPositions.length} positions on Bybit`);
+          if (okxPositions.length > 0) {
+            console.log(`✅ Found ${okxPositions.length} positions on OKX`);
             
             // Load metadata from DynamoDB (entry price, DCA count, TP/SL levels)
-            const savedTrades = await loadTrades();
+      const savedTrades = await loadTrades();
             console.log(`📂 Loaded ${savedTrades ? savedTrades.length : 0} trade metadata records from DynamoDB`);
             
-            // Match Bybit positions with DynamoDB metadata
+            // Match OKX positions with DynamoDB metadata
             const syncedTrades = [];
             
-            bybitPositions.forEach(bybitPos => {
+            okxPositions.forEach(okxPos => {
               // Find matching trade metadata in DynamoDB
-              const tradeMetadata = savedTrades?.find(t => t.symbol === bybitPos.coin);
+              const tradeMetadata = savedTrades?.find(t => t.symbol === okxPos.coin);
               
               if (tradeMetadata) {
-                // Merge: Bybit quantities + DynamoDB metadata
-                tradeMetadata.quantity = bybitPos.quantity; // Bybit is source of truth
-                tradeMetadata.bybitQuantity = bybitPos.quantity;
-                tradeMetadata.bybitFree = bybitPos.free;
-                tradeMetadata.bybitLocked = bybitPos.locked;
-                tradeMetadata.lastSyncedWithBybit = new Date();
+                // Merge: OKX quantities + DynamoDB metadata
+                tradeMetadata.quantity = okxPos.quantity; // OKX is source of truth
+                tradeMetadata.okxQuantity = okxPos.quantity;
+                tradeMetadata.okxFree = okxPos.free;
+                tradeMetadata.okxLocked = okxPos.locked;
+                tradeMetadata.lastSyncedWithOkx = new Date();
                 syncedTrades.push(tradeMetadata);
-                console.log(`   ✅ ${bybitPos.coin}: Synced - Quantity: ${bybitPos.quantity.toFixed(8)} (from Bybit), Entry: $${tradeMetadata.entryPrice?.toFixed(2) || 'N/A'} (from DynamoDB)`);
+                console.log(`   ✅ ${okxPos.coin}: Synced - Quantity: ${okxPos.quantity.toFixed(8)} (from OKX), Entry: $${tradeMetadata.entryPrice?.toFixed(2) || 'N/A'} (from DynamoDB)`);
               } else {
-                // Position on Bybit but no metadata - create minimal trade record
-                console.log(`   ⚠️ ${bybitPos.coin}: Found on Bybit but no metadata in DynamoDB - creating minimal record`);
+                // Position on OKX but no metadata - create minimal trade record
+                console.log(`   ⚠️ ${okxPos.coin}: Found on OKX but no metadata in DynamoDB - creating minimal record`);
                 syncedTrades.push({
-                  id: `${bybitPos.coin}-${Date.now()}`,
-                  symbol: bybitPos.coin,
+                  id: `${okxPos.coin}-${Date.now()}`,
+                  symbol: okxPos.coin,
                   action: 'BUY', // Default assumption
                   entryPrice: 0, // Unknown - will be updated on next price fetch
-                  quantity: bybitPos.quantity,
-                  bybitQuantity: bybitPos.quantity,
-                  bybitFree: bybitPos.free,
-                  bybitLocked: bybitPos.locked,
+                  quantity: okxPos.quantity,
+                  okxQuantity: okxPos.quantity,
+                  okxFree: okxPos.free,
+                  okxLocked: okxPos.locked,
                   status: 'OPEN',
                   entryTime: new Date(),
-                  lastSyncedWithBybit: new Date(),
-                  note: 'Position found on Bybit without metadata'
+                  lastSyncedWithOkx: new Date(),
+                  note: 'Position found on OKX without metadata'
                 });
               }
             });
             
-            // Check for trades in DynamoDB that aren't on Bybit (closed positions)
+            // Check for trades in DynamoDB that aren't on OKX (closed positions)
             if (savedTrades) {
               savedTrades.forEach(trade => {
-                const onBybit = bybitPositions.find(p => p.coin === trade.symbol);
-                if (!onBybit && trade.quantity > 0) {
-                  console.log(`   ⚠️ ${trade.symbol}: In DynamoDB but not on Bybit - position likely closed`);
+                const onOkx = okxPositions.find(p => p.coin === trade.symbol);
+                if (!onOkx && trade.quantity > 0) {
+                  console.log(`   ⚠️ ${trade.symbol}: In DynamoDB but not on OKX - position likely closed`);
                 }
               });
             }
             
             this.activeTrades = syncedTrades;
-            console.log(`✅ Loaded ${syncedTrades.length} active trades from Bybit (with DynamoDB metadata)`);
+            console.log(`✅ Loaded ${syncedTrades.length} active trades from OKX (with DynamoDB metadata)`);
             
             // Save synced trades back to DynamoDB (metadata sync)
             if (syncedTrades.length > 0) {
@@ -329,39 +330,39 @@ class ProfessionalTradingBot {
               console.log(`💾 Synced trade metadata to DynamoDB`);
             }
           } else {
-            console.log(`✅ No open positions on Bybit`);
+            console.log(`✅ No open positions on OKX`);
             this.activeTrades = [];
             
-            // Clear any stale trades from DynamoDB if Bybit has no positions
+            // Clear any stale trades from DynamoDB if OKX has no positions
             const savedTrades = await loadTrades();
             if (savedTrades && savedTrades.length > 0) {
-              console.log(`⚠️ Found ${savedTrades.length} trades in DynamoDB but none on Bybit - positions may be closed`);
+              console.log(`⚠️ Found ${savedTrades.length} trades in DynamoDB but none on OKX - positions may be closed`);
               // Don't auto-delete - let user verify
             }
           }
         } catch (error) {
-          console.error(`❌ Error fetching Bybit positions: ${error.message}`);
-          console.log('📂 Falling back to DynamoDB metadata only (Bybit unavailable)');
+          console.error(`❌ Error fetching OKX positions: ${error.message}`);
+          console.log('📂 Falling back to DynamoDB metadata only (OKX unavailable)');
           
-          // Fallback: Load from DynamoDB if Bybit unavailable
+          // Fallback: Load from DynamoDB if OKX unavailable
           const savedTrades = await loadTrades();
           if (savedTrades && savedTrades.length > 0) {
             this.activeTrades = savedTrades;
-            console.log(`⚠️ Loaded ${savedTrades.length} trades from DynamoDB (Bybit unavailable - verify positions manually)`);
+            console.log(`⚠️ Loaded ${savedTrades.length} trades from DynamoDB (OKX unavailable - verify positions manually)`);
           } else {
             this.activeTrades = [];
           }
         }
       } else {
-        // Bybit not enabled - can't load real positions
-        console.log('⚠️ Bybit not configured - cannot load real positions');
-        console.log('   Configure BYBIT_API_KEY and BYBIT_API_SECRET to use Bybit as source of truth');
+        // OKX not enabled - can't load real positions
+        console.log('⚠️ OKX not configured - cannot load real positions');
+        console.log('   Configure OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE to use OKX as source of truth');
         this.activeTrades = [];
       }
       
       if (this.activeTrades && this.activeTrades.length > 0) {
         console.log(`✅ Active trades loaded: ${this.activeTrades.length} trades`);
-        console.log('✅ Trades will be synced with Bybit on next update');
+        console.log('✅ Trades will be synced with OKX on next update');
       } else {
         console.log('📂 No active trades found');
       }
@@ -1249,13 +1250,13 @@ class ProfessionalTradingBot {
                   symbol,
                   name: symbol,
                   id: symbol.toLowerCase(),
-                  action: r1Decision.action,
-                  price: coinData.currentPrice,
+                action: r1Decision.action,
+                price: coinData.currentPrice,
                   entryPrice: coinData.currentPrice,
                   takeProfit: coinData.currentPrice * (1 + (r1Decision.takeProfit || 0) / 100),
                   stopLoss: coinData.currentPrice * (1 - (r1Decision.stopLoss || 0) / 100),
                   expectedGainPercent: typeof r1Decision.takeProfit === 'number' ? r1Decision.takeProfit : 5,
-                  reason: r1Decision.reason,
+                reason: r1Decision.reason,
                   insights: [],
                   dataSource: 'monitoring'
                 });
@@ -1265,7 +1266,7 @@ class ProfessionalTradingBot {
               }
             } catch (error) {
               if (error.message === 'Trading is disabled' || error.message.includes('Trading not enabled')) {
-                console.log(`${priorityLabel} ⚠️ Bybit trading disabled - trade not executed for ${symbol}`);
+                console.log(`${priorityLabel} ⚠️ OKX trading disabled - trade not executed for ${symbol}`);
               } else {
                 console.log(`${priorityLabel} ⚠️ Failed to execute trade for ${symbol}: ${error.message}`);
               }
@@ -1366,8 +1367,8 @@ class ProfessionalTradingBot {
         if (result.r1Decision.decision === 'CONFIRMED') {
           console.log(`${priorityLabel} ✅ R1 CONFIRMED opportunity for ${coin.symbol}!`);
           
-          // Execute trade if Bybit trading is enabled
-          if (this.tradingRules.bybitTradingEnabled) {
+          // Execute trade if OKX trading is enabled
+          if (this.tradingRules.okxTradingEnabled) {
             // Check for existing trade and handle it
             const handled = await this.handleExistingTrade(
               coin.symbol,
@@ -1382,16 +1383,16 @@ class ProfessionalTradingBot {
             if (!handled) {
               // No existing trade - create new trade
               await this.addActiveTrade({
-                symbol: coin.symbol,
+              symbol: coin.symbol,
                 name: coin.symbol,
                 id: coin.symbol.toLowerCase(),
-                action: result.r1Decision.action,
-                price: coinData.currentPrice,
+              action: result.r1Decision.action,
+              price: coinData.currentPrice,
                 entryPrice: coinData.currentPrice,
                 takeProfit: coinData.currentPrice * (1 + (result.r1Decision.takeProfit || 0) / 100),
                 stopLoss: coinData.currentPrice * (1 - (result.r1Decision.stopLoss || 0) / 100),
                 expectedGainPercent: typeof result.r1Decision.takeProfit === 'number' ? result.r1Decision.takeProfit : 5,
-                reason: result.r1Decision.reason,
+              reason: result.r1Decision.reason,
                 insights: [],
                 dataSource: 'monitoring'
               });
@@ -2369,14 +2370,14 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           opportunities.reduce((sum, o) => sum + o.confidence, 0) / opportunities.length;
       }
 
-      // Log Bybit trading status
+      // Log OKX trading status
       const { isExchangeTradingEnabled } = require('../services/exchangeService');
       const exchangeConfig = isExchangeTradingEnabled();
       console.log(`\n${'='.repeat(60)}`);
       console.log(`📊 OPPORTUNITIES SUMMARY`);
       console.log(`${'='.repeat(60)}`);
       console.log(`✅ Opportunities found: ${opportunities.length}`);
-      console.log(`📝 Bybit Trading: ${exchangeConfig.enabled ? `✅ ENABLED (${exchangeConfig.mode})` : '❌ DISABLED - Configure BYBIT_API_KEY and BYBIT_API_SECRET'}`);
+      console.log(`📝 OKX Trading: ${exchangeConfig.enabled ? `✅ ENABLED (${exchangeConfig.mode})` : '❌ DISABLED - Configure OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE'}`);
       console.log(`📱 Telegram: ${config.TELEGRAM_ENABLED ? '✅ ENABLED' : '❌ DISABLED'}`);
       if (opportunities.length === 0) {
         console.log(`⚠️ No opportunities found - possible reasons:`);
@@ -2948,128 +2949,130 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       }
     };
 
-    // EXECUTE ORDER ON BYBIT FIRST (source of truth)
-    const { isExchangeTradingEnabled, getPreferredExchange, executeBybitMarketOrder, BYBIT_SYMBOL_MAP } = require('../services/exchangeService');
+    // EXECUTE ORDER ON OKX FIRST (source of truth)
+    const { isExchangeTradingEnabled, getPreferredExchange, executeOkxMarketOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
     const exchangeConfig = isExchangeTradingEnabled();
     
     if (exchangeConfig.enabled) {
-      const bybitSymbol = BYBIT_SYMBOL_MAP[newTrade.symbol];
-      if (bybitSymbol) {
+      const okxSymbol = OKX_SYMBOL_MAP[newTrade.symbol];
+      if (okxSymbol) {
         const exchange = getPreferredExchange();
-        const side = newTrade.action === 'BUY' ? 'Buy' : 'Sell'; // Bybit uses 'Buy'/'Sell'
-        const modeLabel = exchangeConfig.testnet ? 'BYBIT_DEMO' : 'BYBIT_MAINNET';
+        const side = newTrade.action === 'BUY' ? 'buy' : 'sell'; // OKX uses lowercase
+        const modeLabel = 'OKX_DEMO';
         
-        console.log(`💰 Executing ${newTrade.action} order on Bybit (${modeLabel}): ${side} ${initialQuantity} ${newTrade.symbol} at $${entryPrice.toFixed(2)}`);
+        console.log(`💰 Executing ${newTrade.action} order on OKX (${modeLabel}): ${side} ${initialQuantity} ${newTrade.symbol} at $${entryPrice.toFixed(2)}`);
         
         try {
-          const orderResult = await executeBybitMarketOrder(
-            bybitSymbol,
+          const orderResult = await executeOkxMarketOrder(
+            okxSymbol,
             side,
             initialQuantity,
             exchange.apiKey,
             exchange.apiSecret,
+            exchange.passphrase,
             exchange.baseUrl
           );
           
           if (orderResult.success) {
-            console.log(`✅ Bybit order executed successfully! Order ID: ${orderResult.orderId || 'N/A'}`);
-            newTrade.bybitOrderId = orderResult.orderId;
-            newTrade.bybitExecutedPrice = orderResult.price || entryPrice;
-            newTrade.bybitExecutedQuantity = orderResult.executedQty || initialQuantity;
-            newTrade.bybitExecutedAt = new Date();
+            console.log(`✅ OKX order executed successfully! Order ID: ${orderResult.orderId || 'N/A'}`);
+            newTrade.okxOrderId = orderResult.orderId;
+            newTrade.okxExecutedPrice = orderResult.price || entryPrice;
+            newTrade.okxExecutedQuantity = orderResult.executedQty || initialQuantity;
+            newTrade.okxExecutedAt = new Date();
             // Update quantity from actual execution
             newTrade.quantity = orderResult.executedQty || initialQuantity;
           } else {
-            console.error(`❌ Bybit order failed: ${orderResult.error}`);
-            throw new Error(`Bybit order execution failed: ${orderResult.error}`);
+            console.error(`❌ OKX order failed: ${orderResult.error}`);
+            throw new Error(`OKX order execution failed: ${orderResult.error}`);
           }
         } catch (orderError) {
-          console.error(`❌ Failed to execute Bybit order for ${newTrade.symbol}:`, orderError.message);
-          throw new Error(`Cannot create trade - Bybit order execution failed: ${orderError.message}`);
+          console.error(`❌ Failed to execute OKX order for ${newTrade.symbol}:`, orderError.message);
+          throw new Error(`Cannot create trade - OKX order execution failed: ${orderError.message}`);
         }
       } else {
-        throw new Error(`Symbol ${newTrade.symbol} not available on Bybit`);
+        throw new Error(`Symbol ${newTrade.symbol} not available on OKX`);
       }
     } else {
-      throw new Error('Bybit trading not enabled. Configure BYBIT_API_KEY and BYBIT_API_SECRET.');
+      throw new Error('OKX trading not enabled. Configure OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE.');
     }
     
-    // Only add to active trades AFTER successful Bybit execution
+    // Only add to active trades AFTER successful OKX execution
     this.activeTrades.push(newTrade);
     
     // Special logging for BTC trades to track them
     if (newTrade.symbol === 'BTC' || newTrade.symbol === 'btc') {
-      console.log(`🔵 BTC TRADE CREATED & EXECUTED ON BYBIT: id=${newTrade.id || newTrade.tradeId}, entryPrice=$${newTrade.entryPrice}, quantity=${newTrade.quantity}`);
+      console.log(`🔵 BTC TRADE CREATED & EXECUTED ON OKX: id=${newTrade.id || newTrade.tradeId}, entryPrice=$${newTrade.entryPrice}, quantity=${newTrade.quantity}`);
     }
     
     // Record trade in portfolio
     await recordTrade(newTrade);
     
-    // Save trades to DynamoDB (metadata only - Bybit is source of truth)
+    // Save trades to DynamoDB (metadata only - OKX is source of truth)
     try {
-      await saveTrades(this.activeTrades);
+    await saveTrades(this.activeTrades);
       if (newTrade.symbol === 'BTC' || newTrade.symbol === 'btc') {
         console.log(`🔵 BTC TRADE SAVED TO DYNAMODB: id=${newTrade.id || newTrade.tradeId}, total activeTrades=${this.activeTrades.length}`);
       }
     } catch (saveError) {
-      console.error(`⚠️ Failed to save trade metadata to DynamoDB (trade still active on Bybit):`, saveError.message);
-      // Don't throw - trade is already on Bybit, DynamoDB is just metadata
+      console.error(`⚠️ Failed to save trade metadata to DynamoDB (trade still active on OKX):`, saveError.message);
+      // Don't throw - trade is already on OKX, DynamoDB is just metadata
     }
     
-    addLogEntry(`NEW TRADE EXECUTED ON BYBIT: ${newTrade.action} ${newTrade.symbol} at $${newTrade.entryPrice.toFixed(2)} (TP: $${newTrade.takeProfit.toFixed(2)}, SL: $${newTrade.stopLoss.toFixed(2)})`, 'success');
+    addLogEntry(`NEW TRADE EXECUTED ON OKX: ${newTrade.action} ${newTrade.symbol} at $${newTrade.entryPrice.toFixed(2)} (TP: $${newTrade.takeProfit.toFixed(2)}, SL: $${newTrade.stopLoss.toFixed(2)})`, 'success');
     // TODO: Send Telegram notification for new trade opened
   }
 
   // New method: Update existing active trades
   /**
-   * Sync active trades with Bybit positions (source of truth)
-   * Updates quantities from Bybit, keeps DynamoDB data for tracking
+   * Sync active trades with OKX positions (source of truth)
+   * Updates quantities from OKX, keeps DynamoDB data for tracking
    */
   async syncWithBybitPositions() {
-    const { isExchangeTradingEnabled, getPreferredExchange, getBybitOpenPositions } = require('../services/exchangeService');
+    const { isExchangeTradingEnabled, getPreferredExchange, getOkxOpenPositions } = require('../services/exchangeService');
     const exchangeConfig = isExchangeTradingEnabled();
     
     if (!exchangeConfig.enabled || this.activeTrades.length === 0) {
-      return; // No Bybit or no trades to sync
+      return; // No OKX or no trades to sync
     }
     
     try {
       const exchange = getPreferredExchange();
-      const bybitPositions = await getBybitOpenPositions(
+      const okxPositions = await getOkxOpenPositions(
         exchange.apiKey,
         exchange.apiSecret,
+        exchange.passphrase,
         exchange.baseUrl
       );
       
-      if (bybitPositions.length === 0) {
-        // No positions on Bybit - but don't mark as closed if API call failed
+      if (okxPositions.length === 0) {
+        // No positions on OKX - but don't mark as closed if API call failed
         // Only log warning, don't update quantities if we can't verify
-        console.log(`⚠️ No positions found on Bybit - trades may be closed or API call failed`);
+        console.log(`⚠️ No positions found on OKX - trades may be closed or API call failed`);
         console.log(`   Keeping existing trade data until successful sync`);
         return;
       }
       
-      // Update quantities from Bybit (source of truth)
+      // Update quantities from OKX (source of truth)
       let syncedCount = 0;
       this.activeTrades.forEach(trade => {
-        const bybitPos = bybitPositions.find(p => p.coin === trade.symbol);
+        const okxPos = okxPositions.find(p => p.coin === trade.symbol);
         
-        if (bybitPos) {
+        if (okxPos) {
           const oldQuantity = trade.quantity || 0;
-          trade.quantity = bybitPos.quantity;
-          trade.bybitQuantity = bybitPos.quantity;
-          trade.bybitFree = bybitPos.free;
-          trade.bybitLocked = bybitPos.locked;
-          trade.lastSyncedWithBybit = new Date();
+          trade.quantity = okxPos.quantity;
+          trade.okxQuantity = okxPos.quantity;
+          trade.okxFree = okxPos.free;
+          trade.okxLocked = okxPos.locked;
+          trade.lastSyncedWithOkx = new Date();
           
-          if (Math.abs(oldQuantity - bybitPos.quantity) > 0.00000001) {
-            console.log(`🔄 ${trade.symbol}: Synced with Bybit - Quantity: ${oldQuantity.toFixed(8)} → ${bybitPos.quantity.toFixed(8)}`);
+          if (Math.abs(oldQuantity - okxPos.quantity) > 0.00000001) {
+            console.log(`🔄 ${trade.symbol}: Synced with OKX - Quantity: ${oldQuantity.toFixed(8)} → ${okxPos.quantity.toFixed(8)}`);
             syncedCount++;
           }
         } else if (trade.quantity > 0) {
-          // Trade in memory but not on Bybit
-          trade.bybitQuantity = 0;
-          trade.lastSyncedWithBybit = new Date();
+          // Trade in memory but not on OKX
+          trade.okxQuantity = 0;
+          trade.lastSyncedWithOkx = new Date();
         }
       });
       
@@ -3077,10 +3080,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         // Save synced trades
         const { saveTrades } = require('../services/tradePersistenceService');
         await saveTrades(this.activeTrades);
-        console.log(`💾 Synced ${syncedCount} trades with Bybit positions`);
+        console.log(`💾 Synced ${syncedCount} trades with OKX positions`);
       }
     } catch (error) {
-      console.error(`❌ Error syncing with Bybit positions: ${error.message}`);
+      console.error(`❌ Error syncing with OKX positions: ${error.message}`);
     }
   }
 
@@ -3089,7 +3092,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       return;
     }
 
-    // Sync with Bybit positions first (source of truth for quantities)
+    // Sync with OKX positions first (source of truth for quantities)
     await this.syncWithBybitPositions();
 
     addLogEntry(`Updating ${this.activeTrades.length} active trades...`, 'info');

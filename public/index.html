@@ -856,7 +856,7 @@
           <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
               <button class="btn-secondary" onclick="openTriggerSettings()" style="background: linear-gradient(135deg, #22c55e, #10b981); color: white; font-weight: 600;">🎯 Trigger Settings</button>
               <button class="btn-secondary" onclick="toggleTradeMonitoring()" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; font-weight: 600;">📊 Monitoring Panel</button>
-              <button class="btn-secondary" onclick="testBybitConnection()" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; font-weight: 600;">🔗 Test Bybit Connection</button>
+              <button class="btn-secondary" onclick="testBybitConnection()" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; font-weight: 600;">🔗 Test OKX Connection</button>
               <button class="btn-primary" onclick="handleEvaluateTrades()">🤖 Re-evaluate Trades</button>
         </div>
             <div class="pill-list">
@@ -1325,7 +1325,7 @@
     
     async function testBybitConnection() {
       const button = event?.target;
-      const originalText = button ? button.textContent : '🔗 Test Bybit Connection';
+      const originalText = button ? button.textContent : '🔗 Test OKX Connection';
       
       try {
         if (button) {
@@ -1341,7 +1341,7 @@
         
         if (result.success && result.overallSuccess) {
           isSuccess = true;
-          message = '✅ Bybit Connection Test Results:\n\n';
+          message = '✅ OKX Connection Test Results:\n\n';
           message += `📋 Configuration:\n`;
           message += `   Mode: ${result.config.mode}\n`;
           message += `   Exchange: ${result.config.exchange}\n`;
