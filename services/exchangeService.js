@@ -183,6 +183,10 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
       }
     );
 
+    // Log full response for debugging
+    console.log(`🔵 [BYBIT API] Response status: ${response.status}`);
+    console.log(`🔵 [BYBIT API] Response data:`, JSON.stringify(response.data).substring(0, 500));
+    
     if (response.data && response.data.retCode === 0 && response.data.result) {
       const order = response.data.result;
       console.log(`✅ [BYBIT API] Order executed successfully!`);
@@ -205,16 +209,48 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
         data: response.data
       };
     } else {
-      const errorMsg = response.data?.retMsg || 'Unknown error';
-      const errorCode = response.data?.retCode || 0;
+      // Enhanced error handling
+      const errorMsg = response.data?.retMsg || response.data?.message || 'Unknown error';
+      const errorCode = response.data?.retCode || response.status || 0;
+      
       console.log(`❌ [BYBIT API] Order failed: ${errorMsg} (Code: ${errorCode})`);
+      console.log(`   Full response:`, JSON.stringify(response.data).substring(0, 500));
+      
+      // Check for common error patterns
+      if (response.data && typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+        console.log(`   ⚠️ HTML response detected - Cloudflare blocking`);
+      }
+      
+      if (errorCode === 0 && !response.data) {
+        console.log(`   ⚠️ Empty response - possible network issue or timeout`);
+      }
+      
       return {
         success: false,
         error: errorMsg,
-        code: errorCode
+        code: errorCode,
+        rawResponse: response.data
       };
     }
   } catch (error) {
+    // Enhanced error logging
+    console.log(`❌ [BYBIT API] Order execution exception caught`);
+    console.log(`   Error type: ${error.name || 'Unknown'}`);
+    console.log(`   Error message: ${error.message}`);
+    
+    if (error.response) {
+      console.log(`   Response status: ${error.response.status}`);
+      console.log(`   Response headers:`, JSON.stringify(error.response.headers).substring(0, 300));
+      console.log(`   Response data:`, JSON.stringify(error.response.data).substring(0, 500));
+    } else if (error.request) {
+      console.log(`   No response received - request made but no answer`);
+      console.log(`   Request config:`, JSON.stringify({
+        url: error.config?.url,
+        method: error.config?.method,
+        timeout: error.config?.timeout
+      }));
+    }
+    
     const errorMsg = error.response?.data?.retMsg || error.response?.data?.message || error.message;
     const errorCode = error.response?.data?.retCode || error.response?.status || 0;
     
