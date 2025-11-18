@@ -595,18 +595,18 @@ async function executeOkxRequestWithFallback(options) {
         if (errorCode === '1' && sCode === '51010') {
           console.log(`\n❌ [OKX API] Account mode error detected (Code: ${sCode})`);
           console.log(`   Error: ${sMsg || errorMsg}`);
-          console.log(`   💡 This error means your OKX account is not in the correct mode for this operation.`);
-          console.log(`   💡 Solutions:`);
-          console.log(`      1. Verify you're using a DEMO/SIMULATED trading account API key`);
-          console.log(`      2. Check your OKX account settings: https://www.okx.com → Demo Trading`);
-          console.log(`      3. Ensure your API key has 'Trade' permissions enabled`);
-          console.log(`      4. Make sure you're using the demo account API key, not a live account key`);
-          console.log(`      5. The 'x-simulated-trading: 1' header is automatically added, but your account must be in demo mode`);
-          console.log(`   💡 To create a demo account:`);
-          console.log(`      - Go to https://www.okx.com`);
-          console.log(`      - Sign up or log in`);
-          console.log(`      - Navigate to Demo Trading section`);
-          console.log(`      - Create a demo account and generate API keys from there\n`);
+          console.log(`   💡 This error means your OKX account is not in the correct trading mode for derivatives.`);
+          console.log(`   💡 SOLUTION: Switch your account to "Spot and Futures" mode:`);
+          console.log(`      1. Go to https://www.okx.com and log in to your DEMO account`);
+          console.log(`      2. Navigate to: Trade → Futures → Settings`);
+          console.log(`      3. Find "Trading Mode" option`);
+          console.log(`      4. Select "Spot and Futures mode" (NOT just "Spot mode")`);
+          console.log(`      5. Click "Switch" to confirm`);
+          console.log(`      6. This MUST be done through the website/app interface first (cannot be done via API)`);
+          console.log(`   💡 Additional checks:`);
+          console.log(`      - Ensure your API key has 'Futures Trading' permissions enabled`);
+          console.log(`      - Verify you're using API keys from your DEMO account (not live account)`);
+          console.log(`      - The 'x-simulated-trading: 1' header is automatically added\n`);
         }
         
         throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
@@ -654,18 +654,18 @@ async function executeOkxRequestWithFallback(options) {
         if (errorCode === '1' && sCode === '51010') {
           console.log(`\n❌ [OKX API] Account mode error detected (Code: ${sCode})`);
           console.log(`   Error: ${sMsg || errorMsg}`);
-          console.log(`   💡 This error means your OKX account is not in the correct mode for this operation.`);
-          console.log(`   💡 Solutions:`);
-          console.log(`      1. Verify you're using a DEMO/SIMULATED trading account API key`);
-          console.log(`      2. Check your OKX account settings: https://www.okx.com → Demo Trading`);
-          console.log(`      3. Ensure your API key has 'Trade' permissions enabled`);
-          console.log(`      4. Make sure you're using the demo account API key, not a live account key`);
-          console.log(`      5. The 'x-simulated-trading: 1' header is automatically added, but your account must be in demo mode`);
-          console.log(`   💡 To create a demo account:`);
-          console.log(`      - Go to https://www.okx.com`);
-          console.log(`      - Sign up or log in`);
-          console.log(`      - Navigate to Demo Trading section`);
-          console.log(`      - Create a demo account and generate API keys from there\n`);
+          console.log(`   💡 This error means your OKX account is not in the correct trading mode for derivatives.`);
+          console.log(`   💡 SOLUTION: Switch your account to "Spot and Futures" mode:`);
+          console.log(`      1. Go to https://www.okx.com and log in to your DEMO account`);
+          console.log(`      2. Navigate to: Trade → Futures → Settings`);
+          console.log(`      3. Find "Trading Mode" option`);
+          console.log(`      4. Select "Spot and Futures mode" (NOT just "Spot mode")`);
+          console.log(`      5. Click "Switch" to confirm`);
+          console.log(`      6. This MUST be done through the website/app interface first (cannot be done via API)`);
+          console.log(`   💡 Additional checks:`);
+          console.log(`      - Ensure your API key has 'Futures Trading' permissions enabled`);
+          console.log(`      - Verify you're using API keys from your DEMO account (not live account)`);
+          console.log(`      - The 'x-simulated-trading: 1' header is automatically added\n`);
         }
         
         throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
@@ -778,13 +778,18 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       if (errorCode === '1' && sCode === '51010') {
         console.log(`❌ [OKX API] Order failed: Account mode error (Code: ${sCode})`);
         console.log(`   Error: ${sMsg || errorMsg}`);
-        console.log(`   💡 This error means your OKX account is not in the correct mode for this operation.`);
-        console.log(`   💡 Solutions:`);
-        console.log(`      1. Verify you're using a DEMO/SIMULATED trading account API key`);
-        console.log(`      2. Check your OKX account settings: https://www.okx.com → Demo Trading`);
-        console.log(`      3. Ensure your API key has 'Trade' permissions enabled`);
-        console.log(`      4. Make sure you're using the demo account API key, not a live account key`);
-        console.log(`      5. The 'x-simulated-trading: 1' header is automatically added, but your account must be in demo mode`);
+        console.log(`   💡 This error means your OKX account is not in the correct trading mode for derivatives.`);
+        console.log(`   💡 SOLUTION: Switch your account to "Spot and Futures" mode:`);
+        console.log(`      1. Go to https://www.okx.com and log in to your DEMO account`);
+        console.log(`      2. Navigate to: Trade → Futures → Settings`);
+        console.log(`      3. Find "Trading Mode" option`);
+        console.log(`      4. Select "Spot and Futures mode" (NOT just "Spot mode")`);
+        console.log(`      5. Click "Switch" to confirm`);
+        console.log(`      6. This MUST be done through the website/app interface first (cannot be done via API)`);
+        console.log(`   💡 Additional checks:`);
+        console.log(`      - Ensure your API key has 'Futures Trading' permissions enabled`);
+        console.log(`      - Verify you're using API keys from your DEMO account (not live account)`);
+        console.log(`      - The 'x-simulated-trading: 1' header is automatically added`);
       } else {
         console.log(`❌ [OKX API] Order failed: ${errorMsg} (Code: ${errorCode})`);
         if (sCode && sMsg) {
