@@ -808,10 +808,26 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
   } catch (error) {
     // Check for timeout errors
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-      console.log(`❌ [BYBIT API] Balance request timeout - ScraperAPI may be slow`);
+      // Detect which proxy was being used
+      const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
+      const scraperApiKey = config.SCRAPER_API_KEY || '';
+      const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
+      const useScrapeOps = scrapeOpsKey && scrapeOpsKey.length > 0 && (proxyPriority === 'scrapeops' || !scraperApiKey);
+      const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
+      const proxyName = useScrapeOps ? 'ScrapeOps' : useScraperAPI ? 'ScraperAPI' : 'direct connection';
+      
+      console.log(`❌ [BYBIT API] Balance request timeout - ${proxyName} may be slow or unresponsive`);
       console.log(`   💡 Timeout occurred after ${error.config?.timeout || 'unknown'}ms`);
-      console.log(`   💡 ScraperAPI free tier may have rate limits or high latency`);
-      console.log(`   💡 Try again in a few moments or check ScraperAPI status`);
+      if (useScrapeOps) {
+        console.log(`   💡 ScrapeOps free tier may have rate limits or high latency`);
+        console.log(`   💡 Try again in a few moments or check ScrapeOps dashboard`);
+      } else if (useScraperAPI) {
+        console.log(`   💡 ScraperAPI free tier may have rate limits or high latency`);
+        console.log(`   💡 Try again in a few moments or check ScraperAPI status`);
+      } else {
+        console.log(`   💡 Direct connection may be geo-blocked`);
+        console.log(`   💡 Consider using ScrapeOps or ScraperAPI proxy`);
+      }
     } else {
       console.log(`⚠️ Failed to get Bybit balance for ${asset}: ${error.message}`);
     }
@@ -952,17 +968,43 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
   } catch (error) {
     // Check for timeout errors first
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-      console.log(`❌ [BYBIT API] Request timeout - ScraperAPI may be slow or unresponsive`);
+      // Detect which proxy was being used
+      const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
+      const scraperApiKey = config.SCRAPER_API_KEY || '';
+      const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
+      const useScrapeOps = scrapeOpsKey && scrapeOpsKey.length > 0 && (proxyPriority === 'scrapeops' || !scraperApiKey);
+      const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
+      const proxyName = useScrapeOps ? 'ScrapeOps' : useScraperAPI ? 'ScraperAPI' : 'direct connection';
+      
+      console.log(`❌ [BYBIT API] Request timeout - ${proxyName} may be slow or unresponsive`);
       console.log(`   💡 Timeout occurred after ${error.config?.timeout || 'unknown'}ms`);
       console.log(`   💡 Possible causes:`);
-      console.log(`      1. ScraperAPI is experiencing high latency`);
-      console.log(`      2. ScraperAPI free tier may have rate limits`);
-      console.log(`      3. Network connectivity issues`);
-      console.log(`   💡 Solutions:`);
-      console.log(`      1. Try again in a few moments`);
-      console.log(`      2. Consider upgrading ScraperAPI plan`);
-      console.log(`      3. Use a VPN or deploy to a different region`);
-      console.log(`      4. Check ScraperAPI dashboard for service status`);
+      if (useScrapeOps) {
+        console.log(`      1. ScrapeOps is experiencing high latency`);
+        console.log(`      2. ScrapeOps free tier may have rate limits`);
+        console.log(`      3. Network connectivity issues`);
+        console.log(`   💡 Solutions:`);
+        console.log(`      1. Try again in a few moments`);
+        console.log(`      2. Check ScrapeOps dashboard for service status`);
+        console.log(`      3. Consider upgrading ScrapeOps plan`);
+        console.log(`      4. Use ScraperAPI as fallback (set PROXY_PRIORITY=scraperapi)`);
+      } else if (useScraperAPI) {
+        console.log(`      1. ScraperAPI is experiencing high latency`);
+        console.log(`      2. ScraperAPI free tier may have rate limits`);
+        console.log(`      3. Network connectivity issues`);
+        console.log(`   💡 Solutions:`);
+        console.log(`      1. Try again in a few moments`);
+        console.log(`      2. Consider upgrading ScraperAPI plan`);
+        console.log(`      3. Use ScrapeOps instead (set SCRAPEOPS_API_KEY)`);
+        console.log(`      4. Use a VPN or deploy to a different region`);
+      } else {
+        console.log(`      1. Direct connection may be geo-blocked`);
+        console.log(`      2. Network connectivity issues`);
+        console.log(`   💡 Solutions:`);
+        console.log(`      1. Set SCRAPEOPS_API_KEY to use proxy`);
+        console.log(`      2. Use a VPN or deploy to a different region`);
+        console.log(`      3. Check network connectivity`);
+      }
       return [];
     }
     
