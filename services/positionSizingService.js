@@ -65,7 +65,7 @@ function calculatePositionSize(params) {
   } = params;
 
   const portfolio = getPortfolio();
-  const accountBalance = portfolio.currentBalance || portfolio.initialCapital || 10000;
+  const accountBalance = portfolio.currentBalance || portfolio.initialCapital || 5000;
   
   // Calculate risk amount (2% of account balance by default)
   const riskAmount = accountBalance * riskPerTrade;

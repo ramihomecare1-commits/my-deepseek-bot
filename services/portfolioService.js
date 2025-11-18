@@ -11,9 +11,9 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 const PORTFOLIO_FILE = path.join(DATA_DIR, 'portfolio.json');
 
 // Default portfolio settings
-const DEFAULT_CAPITAL = 10000; // Starting capital: $10,000
-const DEFAULT_POSITION_SIZE = 100; // Each position: $100 USD
-const DEFAULT_DCA_SIZE = 100; // DCA position: $100 USD
+const DEFAULT_CAPITAL = 5000; // Starting capital: $5,000
+const DEFAULT_POSITION_SIZE = 100; // Each position: $100 USD (fallback, actual sizing uses % of portfolio)
+const DEFAULT_DCA_SIZE = 100; // DCA position: $100 USD (fallback, actual sizing uses % of portfolio)
 
 // Portfolio state (in-memory)
 let portfolioState = {
@@ -327,10 +327,32 @@ function getPositionSize() {
 }
 
 /**
- * Get DCA position size (USD)
+ * Get DCA position size (USD) based on DCA count and portfolio value
+ * DCA plan per position (max 10% of portfolio after all DCAs):
+ * - Initial position: 1.5% of portfolio
+ * - DCA 1: +1% of portfolio (total: 2.5%)
+ * - DCA 2: +2% of portfolio (total: 4.5%)
+ * - DCA 3: +4% of portfolio (total: 8.5%)
+ * - DCA 4: +1.5% of portfolio (total: 10% max)
+ * @param {number} dcaCount - Current DCA count (0 = first DCA, 1 = second DCA, etc.)
+ * @returns {number} DCA size in USD
  */
-function getDCASize() {
-  return DEFAULT_DCA_SIZE;
+function getDCASize(dcaCount = 0) {
+  const portfolio = getPortfolio();
+  const portfolioValue = portfolio.currentBalance || portfolio.initialCapital || DEFAULT_CAPITAL;
+  
+  // DCA percentages based on count
+  const dcaPercentages = [0.01, 0.02, 0.04, 0.015]; // 1%, 2%, 4%, 1.5%
+  
+  // Get the percentage for this DCA (dcaCount 0 = first DCA = 1%, etc.)
+  const dcaIndex = Math.min(dcaCount, dcaPercentages.length - 1);
+  const dcaPercentage = dcaPercentages[dcaIndex];
+  
+  // Calculate DCA size as percentage of portfolio
+  const dcaSizeUSD = portfolioValue * dcaPercentage;
+  
+  // Ensure minimum size
+  return Math.max(dcaSizeUSD, 25); // Minimum $25 per DCA
 }
 
 // Note: loadPortfolio() is called explicitly in ProfessionalTradingBot.initialize()
