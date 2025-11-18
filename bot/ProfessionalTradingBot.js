@@ -253,12 +253,88 @@ class ProfessionalTradingBot {
       // Load trades: OKX IS THE ONLY SOURCE OF TRUTH (no DynamoDB)
       console.log('📂 Loading active trades from OKX (only source)...');
       
-      const { isExchangeTradingEnabled, getPreferredExchange, getOkxOpenPositions } = require('../services/exchangeService');
+      const { isExchangeTradingEnabled, getPreferredExchange, getOkxOpenPositions, getOkxSettleCurrency, setOkxSettleCurrency } = require('../services/exchangeService');
       const exchangeConfig = isExchangeTradingEnabled();
       
       if (exchangeConfig.enabled) {
         console.log('🔄 Fetching positions from OKX (source of truth)...');
         const exchange = getPreferredExchange();
+        
+        // Verify and set settlement currency (for USD-margined contracts)
+        try {
+          const settleCurrencyInfo = await getOkxSettleCurrency(
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+          );
+          
+          if (settleCurrencyInfo.success) {
+            const currentSettleCcy = settleCurrencyInfo.currentSettleCcy;
+            const availableList = settleCurrencyInfo.availableSettleCcyList || [];
+            
+            console.log(`💰 OKX Settlement Currency: ${currentSettleCcy || 'Not set'}`);
+            if (availableList.length > 0) {
+              console.log(`   Available options: ${availableList.join(', ')}`);
+            }
+            
+            // Preferred settlement currency: USD or USDC (for USD-margined contracts)
+            // Note: This setting only applies to USD-margined contracts (FUTURES/SWAP)
+            // For USDT-margined contracts like BTC-USDT-SWAP, this may not be applicable
+            const preferredSettleCcy = 'USD'; // Can also use 'USDC' or 'USDG' if preferred
+            
+            // Check if we need to set it
+            if (currentSettleCcy && currentSettleCcy !== preferredSettleCcy) {
+              if (availableList.includes(preferredSettleCcy)) {
+                console.log(`⚠️ Settlement currency is ${currentSettleCcy}, but ${preferredSettleCcy} is preferred for USDT pairs`);
+                console.log(`   Attempting to set settlement currency to ${preferredSettleCcy}...`);
+                
+                const setResult = await setOkxSettleCurrency(
+                  preferredSettleCcy,
+                  exchange.apiKey,
+                  exchange.apiSecret,
+                  exchange.passphrase,
+                  exchange.baseUrl
+                );
+                
+                if (setResult.success) {
+                  console.log(`✅ Settlement currency set to ${preferredSettleCcy}`);
+                } else {
+                  console.log(`⚠️ Could not set settlement currency: ${setResult.error}`);
+                  console.log(`   Current setting (${currentSettleCcy}) will be used`);
+                }
+              } else {
+                console.log(`⚠️ Preferred settlement currency ${preferredSettleCcy} not available`);
+                console.log(`   Using current setting: ${currentSettleCcy}`);
+              }
+            } else if (!currentSettleCcy && availableList.includes(preferredSettleCcy)) {
+              // Not set, but available - set it
+              console.log(`💰 Settlement currency not set, setting to ${preferredSettleCcy}...`);
+              
+              const setResult = await setOkxSettleCurrency(
+                preferredSettleCcy,
+                exchange.apiKey,
+                exchange.apiSecret,
+                exchange.passphrase,
+                exchange.baseUrl
+              );
+              
+              if (setResult.success) {
+                console.log(`✅ Settlement currency set to ${preferredSettleCcy}`);
+              } else {
+                console.log(`⚠️ Could not set settlement currency: ${setResult.error}`);
+              }
+            } else if (currentSettleCcy === preferredSettleCcy) {
+              console.log(`✅ Settlement currency is correctly set to ${preferredSettleCcy}`);
+            }
+          } else {
+            console.log(`⚠️ Could not retrieve settlement currency info: ${settleCurrencyInfo.error}`);
+            console.log(`   This is normal for non-USD-margined accounts or spot-only accounts`);
+          }
+        } catch (error) {
+          console.log(`⚠️ Error checking settlement currency: ${error.message}`);
+          console.log(`   Continuing with position loading...`);
+        }
         
         try {
           // Get actual positions from OKX (ONLY SOURCE)
@@ -1315,7 +1391,9 @@ class ProfessionalTradingBot {
         const activeTradesCount = this.activeTrades ? this.activeTrades.length : 0;
         const batchEscalationResults = await monitoringService.batchEscalateToR1(escalations, activeTradesCount);
         
-        // Process batch escalation results
+        // Process batch escalation results and collect confirmed trades
+        const confirmedTrades = [];
+        
         for (const result of batchEscalationResults) {
           const { symbol, coinData, v3Analysis, r1Decision } = result;
           const priorityLabel = escalations.find(e => e.coinData.symbol === symbol)?.isPriority ? '🔴 [OPEN TRADE]' : '🔍';
@@ -1332,7 +1410,7 @@ class ProfessionalTradingBot {
             console.log(`   Stop Loss: ${r1Decision.stopLoss}%, Take Profit: ${r1Decision.takeProfit}%`);
             console.log(`   Reason: ${r1Decision.reason?.substring(0, 150) || 'No reason provided'}...`);
             
-            // Execute trade (will check for existing trades and handle accordingly)
+            // Collect confirmed trades for batch execution
             try {
               // Check for existing trade and handle it
               const handled = await this.handleExistingTrade(
@@ -1346,8 +1424,8 @@ class ProfessionalTradingBot {
               );
               
               if (!handled) {
-                // No existing trade - create new trade
-                await this.addActiveTrade({
+                // No existing trade - prepare for batch execution
+                confirmedTrades.push({
                   symbol,
                   name: symbol,
                   id: symbol.toLowerCase(),
@@ -1359,9 +1437,9 @@ class ProfessionalTradingBot {
                   expectedGainPercent: typeof r1Decision.takeProfit === 'number' ? r1Decision.takeProfit : 5,
                 reason: r1Decision.reason,
                   insights: [],
-                  dataSource: 'monitoring'
+                  dataSource: 'monitoring',
+                  priorityLabel
                 });
-                console.log(`${priorityLabel} ✅ New trade executed successfully for ${symbol}`);
               } else {
                 console.log(`${priorityLabel} ✅ Trade handled for ${symbol} (existing position managed)`);
               }
@@ -1369,7 +1447,7 @@ class ProfessionalTradingBot {
               if (error.message === 'Trading is disabled' || error.message.includes('Trading not enabled')) {
                 console.log(`${priorityLabel} ⚠️ OKX trading disabled - trade not executed for ${symbol}`);
               } else {
-                console.log(`${priorityLabel} ⚠️ Failed to execute trade for ${symbol}: ${error.message}`);
+                console.log(`${priorityLabel} ⚠️ Failed to prepare trade for ${symbol}: ${error.message}`);
               }
             }
           } else if (r1Decision.decision === 'SKIPPED') {
@@ -1378,6 +1456,54 @@ class ProfessionalTradingBot {
             console.log(`${priorityLabel} ❌ Premium AI error for ${symbol}: ${r1Decision.reason}`);
           } else {
             console.log(`${priorityLabel} ❌ R1 rejected ${symbol}: ${r1Decision.reason?.substring(0, 100) || 'No reason provided'}`);
+          }
+        }
+        
+        // Execute confirmed trades in batch if multiple, otherwise individually
+        if (confirmedTrades.length > 0) {
+          // Check max positions limit
+          const currentPositions = this.activeTrades ? this.activeTrades.length : 0;
+          const maxPositions = 5;
+          const availableSlots = maxPositions - currentPositions;
+          
+          if (availableSlots <= 0) {
+            console.log(`⚠️ Maximum positions (${maxPositions}) reached. Skipping ${confirmedTrades.length} confirmed trade(s).`);
+          } else {
+            // Limit to available slots
+            const tradesToExecute = confirmedTrades.slice(0, availableSlots);
+            
+            if (tradesToExecute.length > 1) {
+              // Use batch orders for multiple trades
+              console.log(`\n📦 Executing ${tradesToExecute.length} trades in batch order...`);
+              try {
+                await this.addActiveTradesBatch(tradesToExecute);
+                console.log(`✅ Batch order executed successfully for ${tradesToExecute.length} trades`);
+              } catch (batchError) {
+                console.error(`❌ Batch order failed, falling back to individual orders: ${batchError.message}`);
+                // Fallback to individual orders
+                for (const trade of tradesToExecute) {
+                  try {
+                    await this.addActiveTrade(trade);
+                    console.log(`${trade.priorityLabel} ✅ New trade executed successfully for ${trade.symbol}`);
+                  } catch (error) {
+                    console.log(`${trade.priorityLabel} ⚠️ Failed to execute trade for ${trade.symbol}: ${error.message}`);
+                  }
+                }
+              }
+            } else {
+              // Single trade - use individual order
+              const trade = tradesToExecute[0];
+              try {
+                await this.addActiveTrade(trade);
+                console.log(`${trade.priorityLabel} ✅ New trade executed successfully for ${trade.symbol}`);
+              } catch (error) {
+                console.log(`${trade.priorityLabel} ⚠️ Failed to execute trade for ${trade.symbol}: ${error.message}`);
+              }
+            }
+            
+            if (confirmedTrades.length > availableSlots) {
+              console.log(`⚠️ Skipped ${confirmedTrades.length - availableSlots} trade(s) due to position limit`);
+            }
           }
         }
         
@@ -1623,6 +1749,9 @@ Reason: ${newReason?.substring(0, 200)}`);
         // Strong opposite signal and not in big loss - close early
         console.log(`   🔄 Closing position early due to strong opposite signal`);
         
+        // Cancel TP/SL algo orders before closing
+        await this.cancelTradeAlgoOrders(existingTrade);
+        
         const { closeTrade } = require('../services/portfolioService');
         await closeTrade(existingTrade.id, currentPrice, 'EARLY_CLOSE', 
           `Closed due to opposite ${newAction} signal (confidence: ${(newConfidence * 100).toFixed(0)}%)`);
@@ -1654,8 +1783,9 @@ Reason: ${newReason?.substring(0, 200)}`);
 
 
   getPortfolioValue() {
-    // Simple mock for now - should integrate with actual portfolio
-    return 10000; // $10k default
+    const { getPortfolio } = require('../services/portfolioService');
+    const portfolio = getPortfolio();
+    return portfolio.currentBalance || portfolio.initialCapital || 5000;
   }
 
   // Start portfolio rebalancing automation
@@ -2992,7 +3122,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     const { recordTrade, getPositionSize } = require('../services/portfolioService');
     const { calculatePositionSizeWithRR } = require('../services/positionSizingService');
     
-    let positionSizeUSD = 100; // Default fallback
+    let positionSizeUSD = 0;
     let initialQuantity = 0;
     
     // Get portfolio value for position sizing
@@ -3077,7 +3207,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     };
 
     // EXECUTE ORDER ON OKX FIRST (source of truth)
-    const { isExchangeTradingEnabled, getPreferredExchange, executeOkxMarketOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+    const { isExchangeTradingEnabled, getPreferredExchange, executeOkxMarketOrder, executeOkxBatchOrders, placeOkxAlgoOrder, validateOkxLeverage, OKX_SYMBOL_MAP } = require('../services/exchangeService');
     const exchangeConfig = isExchangeTradingEnabled();
     
     if (exchangeConfig.enabled) {
@@ -3085,7 +3215,32 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       if (okxSymbol) {
         const exchange = getPreferredExchange();
         const side = newTrade.action === 'BUY' ? 'buy' : 'sell'; // OKX uses lowercase
+        const posSide = side === 'buy' ? 'long' : 'short';
         const modeLabel = 'OKX_DEMO';
+        let leverage = parseFloat(process.env.OKX_LEVERAGE || '1');
+        
+        // Validate leverage against OKX limits
+        try {
+          const leverageValidation = await validateOkxLeverage(
+            okxSymbol,
+            leverage,
+            'cross',
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+          );
+          
+          if (!leverageValidation.valid && leverageValidation.maxLeverage) {
+            console.warn(`⚠️ ${leverageValidation.message}, using ${leverageValidation.maxLeverage}x`);
+            leverage = leverageValidation.maxLeverage;
+          } else if (leverageValidation.valid) {
+            console.log(`✅ ${leverageValidation.message}`);
+          }
+        } catch (error) {
+          console.warn(`⚠️ Failed to validate leverage, using requested ${leverage}x: ${error.message}`);
+          // Continue with requested leverage if validation fails
+        }
         
         console.log(`💰 Executing ${newTrade.action} order on OKX (${modeLabel}): ${side} ${initialQuantity} ${newTrade.symbol} at $${entryPrice.toFixed(2)}`);
         
@@ -3097,7 +3252,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             exchange.apiKey,
             exchange.apiSecret,
             exchange.passphrase,
-            exchange.baseUrl
+            exchange.baseUrl,
+            leverage
           );
           
           if (orderResult.success) {
@@ -3108,6 +3264,78 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             newTrade.okxExecutedAt = new Date();
             // Update quantity from actual execution
             newTrade.quantity = orderResult.executedQty || initialQuantity;
+            
+            // Automatically place TP/SL algo orders on OKX (don't freeze margin, execute automatically)
+            try {
+              // For BUY (long) positions:
+              //   TP = sell at takeProfit (higher price = profit)
+              //   SL = sell at stopLoss (lower price = loss)
+              // For SELL (short) positions:
+              //   TP = buy at stopLoss (lower price = profit when price goes down)
+              //   SL = buy at takeProfit (higher price = loss when price goes up)
+              // Note: For shorts, takeProfit is actually a lower price, stopLoss is a higher price
+              let tpTriggerPrice, slTriggerPrice, tpOrderSide;
+              
+              if (newTrade.action === 'BUY') {
+                // Long position
+                tpTriggerPrice = takeProfit; // Higher price = profit
+                slTriggerPrice = stopLoss; // Lower price = loss
+                tpOrderSide = 'sell'; // Sell to close long position
+              } else {
+                // Short position (SELL)
+                // For shorts: profit when price goes DOWN, loss when price goes UP
+                // takeProfit is a lower price (profit target), stopLoss is a higher price (loss limit)
+                tpTriggerPrice = takeProfit; // Lower price = profit for short
+                slTriggerPrice = stopLoss; // Higher price = loss for short
+                tpOrderSide = 'buy'; // Buy to close short position
+              }
+              
+              // Use closeFraction = "1" to close full position automatically
+              const algoOrderParams = {
+                instId: okxSymbol,
+                tdMode: 'cross',
+                side: tpOrderSide, // Opposite side to close position
+                posSide: posSide,
+                ordType: 'conditional',
+                closeFraction: '1', // Close full position when triggered
+                tpTriggerPx: tpTriggerPrice.toFixed(2),
+                tpOrdPx: '-1', // Market order for TP
+                slTriggerPx: slTriggerPrice.toFixed(2),
+                slOrdPx: '-1', // Market order for SL
+                tpTriggerPxType: 'last', // Use last price as trigger
+                slTriggerPxType: 'last',
+                reduceOnly: true, // Only reduce position
+                cxlOnClosePos: true, // Cancel TP/SL when position is closed
+                algoClOrdId: `tp-sl-${newTrade.symbol}-${Date.now()}`
+              };
+              
+              console.log(`📊 Placing TP/SL algo orders on OKX for ${newTrade.symbol}...`);
+              console.log(`   TP: $${tpTriggerPrice.toFixed(2)} (${tpOrderSide}), SL: $${slTriggerPrice.toFixed(2)}`);
+              
+              const algoResult = await placeOkxAlgoOrder(
+                algoOrderParams,
+                exchange.apiKey,
+                exchange.apiSecret,
+                exchange.passphrase,
+                exchange.baseUrl
+              );
+              
+              if (algoResult.success) {
+                console.log(`✅ TP/SL algo orders placed successfully! Algo ID: ${algoResult.algoId || algoResult.algoClOrdId}`);
+                newTrade.okxAlgoId = algoResult.algoId;
+                newTrade.okxAlgoClOrdId = algoResult.algoClOrdId;
+                newTrade.tpSlAutoPlaced = true;
+                addLogEntry(`TP/SL algo orders placed on OKX for ${newTrade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
+              } else {
+                console.log(`⚠️ Failed to place TP/SL algo orders: ${algoResult.error}`);
+                console.log(`   Trade will be monitored manually for TP/SL execution`);
+                newTrade.tpSlAutoPlaced = false;
+              }
+            } catch (algoError) {
+              console.log(`⚠️ Error placing TP/SL algo orders: ${algoError.message}`);
+              console.log(`   Trade will be monitored manually for TP/SL execution`);
+              newTrade.tpSlAutoPlaced = false;
+            }
           } else {
             console.error(`❌ OKX order failed: ${orderResult.error}`);
             throw new Error(`OKX order execution failed: ${orderResult.error}`);
@@ -3140,12 +3368,250 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     // TODO: Send Telegram notification for new trade opened
   }
 
+  /**
+   * Add multiple active trades using batch orders (more efficient)
+   * @param {Array<Object>} opportunities - Array of trade opportunities
+   */
+  async addActiveTradesBatch(opportunities) {
+    if (!Array.isArray(opportunities) || opportunities.length === 0) {
+      throw new Error('Opportunities must be a non-empty array');
+    }
+    
+    if (opportunities.length > 20) {
+      throw new Error('Maximum 20 trades per batch request');
+    }
+    
+    const { isExchangeTradingEnabled, getPreferredExchange, executeOkxBatchOrders, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+    const exchangeConfig = isExchangeTradingEnabled();
+    
+    if (!exchangeConfig.enabled) {
+      throw new Error('OKX trading not enabled. Configure OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE.');
+    }
+    
+    const exchange = getPreferredExchange();
+    const leverage = parseFloat(process.env.OKX_LEVERAGE || '1');
+    const { getPortfolio } = require('../services/portfolioService');
+    const { calculatePositionSizeWithRR } = require('../services/positionSizingService');
+    const { calculateQuantity } = require('../services/exchangeService');
+    const { recordTrade } = require('../services/portfolioService');
+    
+    const portfolio = getPortfolio();
+    const portfolioValue = portfolio.currentBalance || portfolio.initialCapital || 5000;
+    
+    // Prepare batch orders and trade objects
+    const batchOrders = [];
+    const tradeObjects = [];
+    
+    for (const opportunity of opportunities) {
+      if (opportunity.action === 'HOLD') {
+        continue; // Skip HOLD signals
+      }
+      
+      // Check for existing trade
+      const existingTrade = this.activeTrades.find(t => 
+        t.symbol === opportunity.symbol && 
+        t.action === opportunity.action && 
+        (t.status === 'OPEN' || t.status === 'DCA_HIT')
+      );
+      
+      if (existingTrade) {
+        console.log(`⚠️ Trade already exists for ${opportunity.symbol}, skipping from batch`);
+        continue;
+      }
+      
+      const okxSymbol = OKX_SYMBOL_MAP[opportunity.symbol];
+      if (!okxSymbol) {
+        console.log(`⚠️ Symbol ${opportunity.symbol} not available on OKX, skipping from batch`);
+        continue;
+      }
+      
+      // Parse prices
+      const parsePrice = (price) => {
+        if (typeof price === 'number') return price;
+        if (typeof price === 'string') {
+          return parseFloat(price.replace(/[^0-9.]/g, '')) || 0;
+        }
+        return 0;
+      };
+      
+      const currentPrice = parsePrice(opportunity.price);
+      const entryPrice = parsePrice(opportunity.entryPrice) || currentPrice;
+      const takeProfit = parsePrice(opportunity.takeProfit) || currentPrice * 1.05;
+      const stopLoss = parsePrice(opportunity.stopLoss) || currentPrice * 0.95;
+      
+      // Calculate position size (1.5% of portfolio for initial position)
+      const initialPositionTarget = portfolioValue * 0.015;
+      let positionSizeUSD = initialPositionTarget;
+      let initialQuantity = 0;
+      
+      if (this.tradingRules.positionSizing?.enabled) {
+        const positionSizeResult = calculatePositionSizeWithRR({
+          entryPrice: entryPrice,
+          stopLoss: stopLoss,
+          takeProfit: takeProfit,
+          riskPerTrade: this.tradingRules.positionSizing.riskPerTrade || 0.02,
+          maxPositionSize: this.tradingRules.positionSizing.maxPositionSize || 0.10,
+          minPositionSize: Math.min(initialPositionTarget, this.tradingRules.positionSizing.minPositionSize || 50),
+          useVolatility: this.tradingRules.positionSizing.useVolatility || true,
+          currentPrice: currentPrice
+        });
+        
+        positionSizeUSD = Math.min(positionSizeResult.positionSizeUSD, initialPositionTarget);
+        positionSizeUSD = Math.max(positionSizeUSD, positionSizeResult.positionSizeUSD * 0.5);
+        initialQuantity = positionSizeUSD / entryPrice;
+      } else {
+        positionSizeUSD = initialPositionTarget;
+        initialQuantity = calculateQuantity(opportunity.symbol, entryPrice, positionSizeUSD);
+      }
+      
+      // Round quantity for OKX (minimum 1 contract)
+      const roundedQuantity = Math.max(1, Math.round(initialQuantity));
+      
+      // Prepare trade object
+      const tradeId = `${opportunity.symbol}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const side = opportunity.action === 'BUY' ? 'buy' : 'sell';
+      const posSide = side === 'buy' ? 'long' : 'short';
+      
+      const newTrade = {
+        id: tradeId,
+        tradeId: tradeId,
+        symbol: opportunity.symbol,
+        name: opportunity.name || opportunity.symbol,
+        action: opportunity.action,
+        entryPrice: entryPrice,
+        takeProfit: takeProfit,
+        stopLoss: stopLoss,
+        addPosition: entryPrice,
+        expectedGainPercent: opportunity.expectedGainPercent || 5,
+        entryTime: new Date(),
+        status: 'OPEN',
+        currentPrice: currentPrice,
+        quantity: roundedQuantity,
+        pnl: 0,
+        pnlPercent: 0,
+        dcaCount: 0,
+        averageEntryPrice: entryPrice,
+        insights: opportunity.insights || [],
+        reason: opportunity.reason || '',
+        dataSource: opportunity.dataSource || 'monitoring',
+        coinData: {
+          symbol: opportunity.symbol,
+          name: opportunity.name || opportunity.symbol,
+          id: opportunity.id || opportunity.symbol.toLowerCase()
+        },
+        trailingStopLoss: {
+          enabled: this.tradingRules.trailingStopLoss?.enabled || false,
+          activated: false,
+          peakPrice: entryPrice,
+          currentStopLoss: stopLoss,
+          activationPercent: this.tradingRules.trailingStopLoss?.activationPercent || 2.0,
+          trailingPercent: this.tradingRules.trailingStopLoss?.trailingPercent || 1.0
+        }
+      };
+      
+      // Prepare batch order
+      batchOrders.push({
+        instId: okxSymbol,
+        tdMode: 'cross',
+        side: side,
+        posSide: posSide,
+        ordType: 'market',
+        sz: roundedQuantity.toString(),
+        lever: leverage.toString()
+      });
+      
+      tradeObjects.push(newTrade);
+    }
+    
+    if (batchOrders.length === 0) {
+      console.log('⚠️ No valid trades to execute in batch');
+      return;
+    }
+    
+    // Execute batch order
+    console.log(`📦 Executing batch order for ${batchOrders.length} trades on OKX...`);
+    const batchResult = await executeOkxBatchOrders(
+      batchOrders,
+      exchange.apiKey,
+      exchange.apiSecret,
+      exchange.passphrase,
+      exchange.baseUrl
+    );
+    
+    if (batchResult.success && batchResult.orders) {
+      // Match order results with trade objects
+      for (let i = 0; i < tradeObjects.length && i < batchResult.orders.length; i++) {
+        const trade = tradeObjects[i];
+        const orderResult = batchResult.orders[i];
+        
+        if (orderResult.sCode === '0') {
+          // Order successful
+          trade.okxOrderId = orderResult.ordId;
+          trade.okxExecutedPrice = trade.entryPrice; // Will be updated from OKX position sync
+          trade.okxExecutedQuantity = parseFloat(trade.quantity);
+          trade.okxExecutedAt = new Date();
+          
+          this.activeTrades.push(trade);
+          await recordTrade(trade);
+          
+          addLogEntry(`NEW TRADE EXECUTED (BATCH): ${trade.action} ${trade.symbol} at $${trade.entryPrice.toFixed(2)}`, 'success');
+          console.log(`✅ Batch trade executed: ${trade.symbol} - Order ID: ${orderResult.ordId}`);
+        } else {
+          console.error(`❌ Batch order failed for ${trade.symbol}: ${orderResult.sMsg || 'Unknown error'}`);
+        }
+      }
+    } else {
+      throw new Error(`Batch order failed: ${batchResult.error || 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Cancel TP/SL algo orders for a trade
+   * @param {Object} trade - Trade object with okxAlgoId or okxAlgoClOrdId
+   */
+  async cancelTradeAlgoOrders(trade) {
+    if (!trade.okxAlgoId && !trade.okxAlgoClOrdId) {
+      return; // No algo orders to cancel
+    }
+    
+    try {
+      const { cancelOkxAlgoOrders, getPreferredExchange } = require('../services/exchangeService');
+      const exchange = getPreferredExchange();
+      
+      if (!exchange || exchange.exchange !== 'OKX') {
+        return; // OKX not configured
+      }
+      
+      const cancelParams = [];
+      if (trade.okxAlgoId) {
+        cancelParams.push({ algoId: trade.okxAlgoId });
+      }
+      if (trade.okxAlgoClOrdId) {
+        cancelParams.push({ algoClOrdId: trade.okxAlgoClOrdId });
+      }
+      
+      if (cancelParams.length > 0) {
+        await cancelOkxAlgoOrders(
+          cancelParams,
+          exchange.apiKey,
+          exchange.apiSecret,
+          exchange.passphrase,
+          exchange.baseUrl
+        );
+        console.log(`✅ Cancelled TP/SL algo orders for ${trade.symbol}`);
+      }
+    } catch (error) {
+      console.error(`⚠️ Failed to cancel algo orders for ${trade.symbol}: ${error.message}`);
+      // Don't throw - algo cancellation failure shouldn't block trade closure
+    }
+  }
+
   // New method: Update existing active trades
   /**
    * Sync active trades with OKX positions (source of truth)
    * Updates quantities from OKX, keeps DynamoDB data for tracking
    */
-  async syncWithBybitPositions() {
+  async syncWithOkxPositions() {
     const { isExchangeTradingEnabled, getPreferredExchange, getOkxOpenPositions } = require('../services/exchangeService');
     const exchangeConfig = isExchangeTradingEnabled();
     
@@ -3209,7 +3675,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     }
 
     // Sync with OKX positions first (source of truth for quantities)
-    await this.syncWithBybitPositions();
+    await this.syncWithOkxPositions();
 
     addLogEntry(`Updating ${this.activeTrades.length} active trades...`, 'info');
 
@@ -3227,8 +3693,26 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     for (let i = 0; i < activeTradesToUpdate.length; i += BATCH_SIZE) {
       const batch = activeTradesToUpdate.slice(i, i + BATCH_SIZE);
       
-      // Fetch prices for all trades in batch in parallel
+      // Fetch prices for all trades in batch in parallel using OKX market data
+      const { getOkxTicker, OKX_SYMBOL_MAP, getPreferredExchange } = require('../services/exchangeService');
+      const exchange = getPreferredExchange();
+      const okxBaseUrl = exchange?.baseUrl || 'https://www.okx.com';
+      
       const pricePromises = batch.map(trade => {
+        // Map trade symbol to OKX symbol format (e.g., 'BTC' -> 'BTC-USDT-SWAP')
+        const okxSymbol = OKX_SYMBOL_MAP[trade.symbol] || `${trade.symbol}-USDT-SWAP`;
+        
+        return getOkxTicker(okxSymbol, okxBaseUrl)
+          .then(tickerResult => {
+            if (tickerResult.success && tickerResult.last > 0) {
+              return { 
+                trade, 
+                priceResult: { data: { price: tickerResult.last } }, 
+                success: true,
+                source: 'OKX'
+              };
+            } else {
+              // Fallback to external API if OKX fails
         const coinData = trade.coinData || { 
           symbol: trade.symbol, 
           name: trade.name,
@@ -3237,10 +3721,29 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           coinpaprika_id: trade.coinpaprika_id
         };
         return fetchEnhancedPriceData(coinData, this.priceCache, this.stats, config)
-          .then(priceResult => ({ trade, priceResult, success: true }))
+                .then(priceResult => ({ trade, priceResult, success: true, source: 'external' }))
           .catch(error => {
-            console.error(`⚠️ Price fetch failed for ${trade.symbol}:`, error.message);
+                  console.error(`⚠️ Price fetch failed for ${trade.symbol} (OKX and external):`, error.message);
             return { trade, priceResult: null, success: false, error };
+                });
+            }
+          })
+          .catch(error => {
+            console.error(`⚠️ OKX ticker fetch failed for ${trade.symbol}, trying external API:`, error.message);
+            // Fallback to external API
+            const coinData = trade.coinData || { 
+              symbol: trade.symbol, 
+              name: trade.name,
+              id: trade.coinId,
+              coinmarketcap_id: trade.coinmarketcap_id,
+              coinpaprika_id: trade.coinpaprika_id
+            };
+            return fetchEnhancedPriceData(coinData, this.priceCache, this.stats, config)
+              .then(priceResult => ({ trade, priceResult, success: true, source: 'external' }))
+              .catch(fallbackError => {
+                console.error(`⚠️ Price fetch failed for ${trade.symbol} (both OKX and external):`, fallbackError.message);
+                return { trade, priceResult: null, success: false, error: fallbackError };
+              });
           });
       });
       
@@ -3253,7 +3756,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           continue;
         }
         
-        const { trade, priceResult, success } = result.value;
+        const { trade, priceResult, success, source } = result.value;
         
         if (!success || !priceResult) {
           continue;
@@ -3270,6 +3773,18 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           } else if (typeof priceValue === 'string') {
             currentPrice = parseFloat(priceValue.replace(/[^0-9.]/g, '')) || 0;
           }
+        }
+        
+        // Log price source for debugging
+        if (source === 'OKX' && currentPrice > 0) {
+          // Only log occasionally to avoid spam (every 10th update or first update)
+          if (!trade.lastPriceSource || trade.lastPriceSource !== 'OKX' || Math.random() < 0.1) {
+            console.log(`📊 ${trade.symbol}: Using OKX price $${currentPrice.toFixed(2)}`);
+          }
+          trade.lastPriceSource = 'OKX';
+        } else if (source === 'external' && currentPrice > 0) {
+          console.log(`⚠️ ${trade.symbol}: OKX price unavailable, using external API $${currentPrice.toFixed(2)}`);
+          trade.lastPriceSource = 'external';
         }
         
         // Coin-specific price validation (prevent wrong coin data)
@@ -3313,8 +3828,11 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         trade.currentPrice = currentPrice;
 
         // Calculate P&L based on position size (USD)
-        // Position size is $100, so quantity = $100 / entryPrice
-        const positionSizeUSD = 100; // $100 per position
+        // Use portfolio-based position sizing
+        const { getPortfolio } = require('../services/portfolioService');
+        const portfolio = getPortfolio();
+        const portfolioValue = portfolio.currentBalance || portfolio.initialCapital || 5000;
+        const positionSizeUSD = portfolioValue * 0.015; // 1.5% of portfolio
         const quantity = trade.quantity || (positionSizeUSD / trade.entryPrice);
         // Use average entry price if DCAs have been executed, otherwise use original entry
         const avgEntry = trade.averageEntryPrice || trade.entryPrice;
@@ -3370,6 +3888,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         if (trade.action === 'BUY') {
           // Check Take Profit for BUY (highest priority)
           if (currentPrice >= trade.takeProfit && trade.status === 'OPEN') {
+            // Cancel TP/SL algo orders (they should have executed, but cancel to be safe)
+            await this.cancelTradeAlgoOrders(trade);
+            
             // Execute Take Profit order
             const tpResult = await executeTakeProfit(trade);
             const executionPrice = tpResult.price || trade.takeProfit || currentPrice;
@@ -3594,6 +4115,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           }
           // Check Stop Loss for BUY (LAST - only after all 5 DCAs used)
           else if (currentPrice <= trade.stopLoss && trade.status === 'OPEN' && (trade.dcaCount || 0) >= maxDcaPerTrade) {
+            // Cancel TP/SL algo orders (they should have executed, but cancel to be safe)
+            await this.cancelTradeAlgoOrders(trade);
+            
             // Execute Stop Loss order (only after all 5 DCAs used)
             const slResult = await executeStopLoss(trade);
             const executionPrice = slResult.price || trade.stopLoss || currentPrice;
@@ -3634,6 +4158,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         } else if (trade.action === 'SELL') { // Short position logic
           // Check Take Profit for SELL (highest priority)
           if (currentPrice <= trade.takeProfit && trade.status === 'OPEN') {
+            // Cancel TP/SL algo orders (they should have executed, but cancel to be safe)
+            await this.cancelTradeAlgoOrders(trade);
+            
             // Execute Take Profit order (cover short)
             const tpResult = await executeTakeProfit(trade);
             const executionPrice = tpResult.price || trade.takeProfit || currentPrice;
@@ -3855,6 +4382,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           }
           // Check Stop Loss for SELL (LAST - only after all 5 DCAs used)
           else if (currentPrice >= trade.stopLoss && trade.status === 'OPEN' && (trade.dcaCount || 0) >= maxDcaPerTrade) {
+            // Cancel TP/SL algo orders (they should have executed, but cancel to be safe)
+            await this.cancelTradeAlgoOrders(trade);
+            
             // Execute Stop Loss order (only after all 5 DCAs used)
             const slResult = await executeStopLoss(trade);
             const executionPrice = slResult.price || trade.stopLoss || currentPrice;
@@ -4778,6 +5308,41 @@ Return JSON array format:
         this.closedTrades = this.closedTrades.slice(-100);
       }
       
+      // Cancel TP/SL algo orders if they exist
+      await this.cancelTradeAlgoOrders(trade);
+      
+      // Verify position closure with OKX (sync position state)
+      try {
+        const { isExchangeTradingEnabled, getPreferredExchange, getOkxOpenPositions } = require('../services/exchangeService');
+        const exchangeConfig = isExchangeTradingEnabled();
+        
+        if (exchangeConfig.enabled) {
+          const exchange = getPreferredExchange();
+          if (exchange && exchange.exchange === 'OKX') {
+            const okxSymbol = require('../services/exchangeService').OKX_SYMBOL_MAP[trade.symbol];
+            if (okxSymbol) {
+              const positions = await getOkxOpenPositions(
+                exchange.apiKey,
+                exchange.apiSecret,
+                exchange.passphrase,
+                exchange.baseUrl
+              );
+              
+              // Check if position still exists for this symbol
+              const openPosition = positions.find(p => p.instId === okxSymbol && parseFloat(p.pos || '0') !== 0);
+              if (openPosition) {
+                console.warn(`⚠️ ${trade.symbol}: Position still open on OKX after close. Position size: ${openPosition.pos}`);
+              } else {
+                console.log(`✅ ${trade.symbol}: Position verified closed on OKX`);
+              }
+            }
+          }
+        }
+      } catch (syncError) {
+        console.warn(`⚠️ Failed to sync position closure for ${trade.symbol}: ${syncError.message}`);
+        // Don't fail the close operation if sync fails
+      }
+      
       // Update portfolio with closed trade
       await closeTrade(
         trade.symbol,
@@ -4826,7 +5391,7 @@ Return JSON array format:
   async loadClosedTrades() {
     // Removed: DynamoDB persistence - OKX is the only source of truth
     // Closed trades are kept in memory only (last 100)
-    this.closedTrades = [];
+      this.closedTrades = [];
     console.log('📂 Closed trades: OKX is the only source of truth (no DynamoDB persistence)');
   }
 
