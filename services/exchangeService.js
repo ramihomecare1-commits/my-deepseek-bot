@@ -722,24 +722,53 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
     const errorMsg = error.response?.data?.retMsg || error.response?.data?.retMsg || error.message;
     const errorCode = error.response?.data?.retCode || error.response?.status || 0;
     
-    console.log(`❌ [BYBIT API] Error fetching positions: ${errorMsg} (Code: ${errorCode})`);
+    // Check if response is HTML (Cloudflare/CDN blocking)
+    const responseData = error.response?.data;
+    const isHtmlResponse = responseData && 
+      (typeof responseData === 'string' && responseData.includes('<!DOCTYPE') ||
+       error.response?.headers?.['content-type']?.includes('text/html'));
     
-    if (errorCode === 403) {
-      console.log(`   💡 403 Forbidden - Possible causes:`);
-      console.log(`   1. API key doesn't have 'Read' permissions`);
-      console.log(`   2. API key is from mainnet but using testnet (or vice versa)`);
-      console.log(`   3. IP address not whitelisted (if IP whitelist is enabled)`);
-      console.log(`   4. Invalid API key or secret`);
-      console.log(`   💡 Check: https://testnet.bybit.com → Profile → API Management`);
-    } else if (errorCode === 401) {
-      console.log(`   💡 401 Unauthorized - Invalid API key or signature`);
-      console.log(`   💡 Verify: API key and secret are correct`);
+    if (isHtmlResponse) {
+      console.log(`❌ [BYBIT API] Error fetching positions: Request blocked by CDN/Cloudflare (Code: ${errorCode})`);
+      console.log(`   💡 This indicates the request is being blocked BEFORE reaching Bybit API`);
+      console.log(`   💡 The HTML response suggests Cloudflare is blocking your server's IP`);
+      console.log(`   💡 Possible causes:`);
+      console.log(`   1. Geo-blocking: Your server IP may be in a blocked region`);
+      console.log(`   2. IP reputation: Your server IP may be flagged by Cloudflare`);
+      console.log(`   3. Rate limiting: Too many requests from this IP`);
+      console.log(`   4. Network/firewall: Corporate firewall or proxy blocking requests`);
+      console.log(`   💡 Solutions:`);
+      console.log(`   - Check if your server can access ${baseUrl} from command line`);
+      console.log(`   - Try using a VPN or different server location`);
+      console.log(`   - Contact Bybit support if issue persists`);
+      console.log(`   - Verify API endpoint: ${baseUrl}/v5/account/wallet-balance`);
+      console.log(`   - Check if IP whitelist is enabled in Bybit API settings`);
+    } else {
+      console.log(`❌ [BYBIT API] Error fetching positions: ${errorMsg} (Code: ${errorCode})`);
+      
+      if (errorCode === 403 || error.response?.status === 403) {
+        console.log(`   💡 403 Forbidden - Possible causes:`);
+        console.log(`   1. API key doesn't have 'Read' permissions`);
+        console.log(`   2. API key is from mainnet but using testnet (or vice versa)`);
+        console.log(`   3. IP address not whitelisted (if IP whitelist is enabled)`);
+        console.log(`   4. Invalid API key or secret`);
+        console.log(`   💡 Check: https://testnet.bybit.com → Profile → API Management`);
+        console.log(`   💡 Ensure API key has 'Read' permission and matches testnet/mainnet setting`);
+      } else if (errorCode === 401 || error.response?.status === 401) {
+        console.log(`   💡 401 Unauthorized - Invalid API key or signature`);
+        console.log(`   💡 Verify: API key and secret are correct`);
+      }
+      
+      if (responseData) {
+        const responseStr = typeof responseData === 'string' 
+          ? responseData 
+          : JSON.stringify(responseData);
+        console.log(`   Response: ${responseStr.substring(0, 300)}`);
+      }
     }
     
-    if (error.response?.data) {
-      console.log(`   Response:`, JSON.stringify(error.response.data).substring(0, 300));
-    }
-    
+    // Return empty array on error - caller should handle gracefully
+    // Don't mark trades as closed if we can't verify positions
     return [];
   }
 }
