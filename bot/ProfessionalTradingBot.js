@@ -596,7 +596,18 @@ class ProfessionalTradingBot {
     }
 
     const timeframes = consensusRules.timeframes || ['4h', '1d', '1w'];
-    const requiredMatches = consensusRules.requiredMatches || timeframes.length;
+    
+    // Use minTimeframeAlignment from patterns if available (respects user's trading rules setting)
+    // Otherwise fall back to requiredMatches from multiTimeframeConsensus
+    let requiredMatches;
+    if (analysis.action === 'BUY' && this.tradingRules.patterns.buy.minTimeframeAlignment) {
+      requiredMatches = this.tradingRules.patterns.buy.minTimeframeAlignment;
+    } else if (analysis.action === 'SELL' && this.tradingRules.patterns.sell.minTimeframeAlignment) {
+      requiredMatches = this.tradingRules.patterns.sell.minTimeframeAlignment;
+    } else {
+      requiredMatches = consensusRules.requiredMatches || timeframes.length;
+    }
+    
     const frames =
       analysis.frames ||
       analysis.indicators?.frames ||
