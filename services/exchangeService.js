@@ -1057,13 +1057,28 @@ async function getBybitOpenOrders(apiKey, apiSecret, baseUrl) {
     const signature = generateBybitSignature(params, apiSecret);
     params.signature = signature;
 
-    // Use ScraperAPI proxy if configured (bypasses geo-blocking)
+    // Use proxy if configured (ScrapeOps preferred, ScraperAPI as fallback)
+    const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
     const scraperApiKey = config.SCRAPER_API_KEY || '';
-    const useScraperAPI = scraperApiKey && scraperApiKey.length > 0;
+    const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
+    
+    const useScrapeOps = scrapeOpsKey && scrapeOpsKey.length > 0 && (proxyPriority === 'scrapeops' || !scraperApiKey);
+    const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
+    const useProxy = useScrapeOps || useScraperAPI;
     
     let targetUrl = `${baseUrl}/v5/order/realtime`;
     let requestConfig = {
-      params: useScraperAPI ? {
+      params: useScrapeOps ? {
+        api_key: scrapeOpsKey,
+        url: `${baseUrl}/v5/order/realtime?${new URLSearchParams(params).toString()}`,
+        method: 'GET',
+        headers: JSON.stringify({
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp.toString(),
+          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+          'X-BAPI-SIGN': signature
+        })
+      } : useScraperAPI ? {
         api_key: scraperApiKey,
         url: `${baseUrl}/v5/order/realtime?${new URLSearchParams(params).toString()}`,
         method: 'GET',
