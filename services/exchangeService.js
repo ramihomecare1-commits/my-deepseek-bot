@@ -164,6 +164,13 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
     const scraperApiKey = config.SCRAPER_API_KEY || '';
     const useScraperAPI = scraperApiKey && scraperApiKey.length > 0;
     
+    // Debug logging for ScraperAPI status
+    if (!useScraperAPI) {
+      console.log(`⚠️ [BYBIT API] ScraperAPI not configured - SCRAPER_API_KEY not set`);
+      console.log(`   💡 To bypass geo-blocking, set SCRAPER_API_KEY environment variable`);
+      console.log(`   💡 Get free key at: https://www.scraperapi.com/`);
+    }
+    
     let targetUrl = `${baseUrl}/v5/order/create`;
     let requestConfig = {
       headers: {

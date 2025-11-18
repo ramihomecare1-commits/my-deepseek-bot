@@ -148,6 +148,10 @@ console.log(`   Telegram: ${TELEGRAM_ENABLED ? 'ENABLED' : 'DISABLED'}`);
 console.log(`   CoinMarketCap: ${COINMARKETCAP_ENABLED ? 'ENABLED ✅' : 'DISABLED ❌ (Set COINMARKETCAP_API_KEY)'}`);
 console.log(`   CryptoCompare: ${process.env.CRYPTOCOMPARE_API_KEY ? 'ENABLED ✅' : 'DISABLED ❌'}`);
 console.log(`   ScraperAPI Proxy: ${SCRAPER_API_ENABLED ? 'ENABLED ✅ (Bypasses geo-blocks)' : 'DISABLED ❌'}`);
+if (!SCRAPER_API_ENABLED) {
+  console.log(`   💡 To enable ScraperAPI: Set SCRAPER_API_KEY environment variable`);
+  console.log(`   💡 Get free key: https://www.scraperapi.com/ (1,000 requests/month free)`);
+}
 console.log(`   News: ENABLED ✅ (Free public APIs: CryptoCompare${NEWSAPI_KEY ? ' + NewsAPI.org' : ''})`);
 console.log(`   Mock Notifications: ${ALLOW_MOCK_NOTIFICATIONS ? 'ALLOWED' : 'BLOCKED'}`);
 console.log(`   API Delay: ${API_DELAY}ms between requests`);
@@ -239,5 +243,8 @@ module.exports = {
   BYBIT_API_KEY,
   BYBIT_API_SECRET,
   BYBIT_TESTNET,
-  BYBIT_ENABLED
+  BYBIT_ENABLED,
+  // ScraperAPI Configuration
+  SCRAPER_API_KEY,
+  SCRAPER_API_ENABLED
 };
