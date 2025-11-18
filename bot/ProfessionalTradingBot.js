@@ -33,7 +33,8 @@ const {
   executeAddPosition
 } = require('../services/exchangeService');
 const { quickBacktest } = require('../services/backtestService');
-const { loadTrades, saveTrades, loadClosedTrades, saveClosedTrades } = require('../services/tradePersistenceService');
+// Removed: DynamoDB trade persistence - OKX is now the only source of truth
+// const { loadTrades, saveTrades, loadClosedTrades, saveClosedTrades } = require('../services/tradePersistenceService');
 const { loadPortfolio, recalculateFromTrades, recalculateFromClosedTrades, getPortfolioStats, closeTrade, getDcaTriggerTimestamp, setDcaTriggerTimestamp } = require('../services/portfolioService');
 
 // Helper function to add log entries
@@ -249,8 +250,8 @@ class ProfessionalTradingBot {
         console.log(`📅 Loaded unified trigger timestamp: ${elapsedHours}h ${elapsedMinutes}m ago`);
       }
       
-      // Load trades: OKX IS PRIMARY SOURCE, DynamoDB is metadata only
-      console.log('📂 Loading active trades from OKX (primary source)...');
+      // Load trades: OKX IS THE ONLY SOURCE OF TRUTH (no DynamoDB)
+      console.log('📂 Loading active trades from OKX (only source)...');
       
       const { isExchangeTradingEnabled, getPreferredExchange, getOkxOpenPositions } = require('../services/exchangeService');
       const exchangeConfig = isExchangeTradingEnabled();
@@ -260,7 +261,7 @@ class ProfessionalTradingBot {
         const exchange = getPreferredExchange();
         
         try {
-          // Get actual positions from OKX (PRIMARY SOURCE)
+          // Get actual positions from OKX (ONLY SOURCE)
           const okxPositions = await getOkxOpenPositions(
             exchange.apiKey,
             exchange.apiSecret,
@@ -271,87 +272,36 @@ class ProfessionalTradingBot {
           if (okxPositions.length > 0) {
             console.log(`✅ Found ${okxPositions.length} positions on OKX`);
             
-            // Load metadata from DynamoDB (entry price, DCA count, TP/SL levels)
-      const savedTrades = await loadTrades();
-            console.log(`📂 Loaded ${savedTrades ? savedTrades.length : 0} trade metadata records from DynamoDB`);
-            
-            // Match OKX positions with DynamoDB metadata
-            const syncedTrades = [];
+            // Convert OKX positions to trade format (OKX is source of truth)
+            const trades = [];
             
             okxPositions.forEach(okxPos => {
-              // Find matching trade metadata in DynamoDB
-              const tradeMetadata = savedTrades?.find(t => t.symbol === okxPos.coin);
-              
-              if (tradeMetadata) {
-                // Merge: OKX quantities + DynamoDB metadata
-                tradeMetadata.quantity = okxPos.quantity; // OKX is source of truth
-                tradeMetadata.okxQuantity = okxPos.quantity;
-                tradeMetadata.okxFree = okxPos.free;
-                tradeMetadata.okxLocked = okxPos.locked;
-                tradeMetadata.lastSyncedWithOkx = new Date();
-                syncedTrades.push(tradeMetadata);
-                console.log(`   ✅ ${okxPos.coin}: Synced - Quantity: ${okxPos.quantity.toFixed(8)} (from OKX), Entry: $${tradeMetadata.entryPrice?.toFixed(2) || 'N/A'} (from DynamoDB)`);
-              } else {
-                // Position on OKX but no metadata - create minimal trade record
-                console.log(`   ⚠️ ${okxPos.coin}: Found on OKX but no metadata in DynamoDB - creating minimal record`);
-                syncedTrades.push({
-                  id: `${okxPos.coin}-${Date.now()}`,
-                  symbol: okxPos.coin,
-                  action: 'BUY', // Default assumption
-                  entryPrice: 0, // Unknown - will be updated on next price fetch
-                  quantity: okxPos.quantity,
-                  okxQuantity: okxPos.quantity,
-                  okxFree: okxPos.free,
-                  okxLocked: okxPos.locked,
-                  status: 'OPEN',
-                  entryTime: new Date(),
-                  lastSyncedWithOkx: new Date(),
-                  note: 'Position found on OKX without metadata'
-                });
-              }
+              // Create trade record from OKX position
+              trades.push({
+                id: `${okxPos.coin}-${Date.now()}`,
+                symbol: okxPos.coin,
+                action: okxPos.side === 'short' ? 'SELL' : 'BUY', // OKX side: 'long' or 'short'
+                entryPrice: okxPos.avgPrice || 0, // Use average price from OKX
+                quantity: okxPos.quantity,
+                leverage: okxPos.leverage || 1,
+                status: 'OPEN',
+                entryTime: new Date(), // Approximate - OKX doesn't provide exact entry time
+                lastSyncedWithOkx: new Date(),
+                note: 'Position loaded from OKX'
+              });
+              console.log(`   ✅ ${okxPos.coin}: ${okxPos.side} position - Quantity: ${okxPos.quantity.toFixed(8)}, Avg Price: $${(okxPos.avgPrice || 0).toFixed(2)}`);
             });
             
-            // Check for trades in DynamoDB that aren't on OKX (closed positions)
-            if (savedTrades) {
-              savedTrades.forEach(trade => {
-                const onOkx = okxPositions.find(p => p.coin === trade.symbol);
-                if (!onOkx && trade.quantity > 0) {
-                  console.log(`   ⚠️ ${trade.symbol}: In DynamoDB but not on OKX - position likely closed`);
-                }
-              });
-            }
-            
-            this.activeTrades = syncedTrades;
-            console.log(`✅ Loaded ${syncedTrades.length} active trades from OKX (with DynamoDB metadata)`);
-            
-            // Save synced trades back to DynamoDB (metadata sync)
-            if (syncedTrades.length > 0) {
-              await saveTrades(syncedTrades);
-              console.log(`💾 Synced trade metadata to DynamoDB`);
-            }
+            this.activeTrades = trades;
+            console.log(`✅ Loaded ${trades.length} active trades from OKX`);
           } else {
             console.log(`✅ No open positions on OKX`);
             this.activeTrades = [];
-            
-            // Clear any stale trades from DynamoDB if OKX has no positions
-            const savedTrades = await loadTrades();
-            if (savedTrades && savedTrades.length > 0) {
-              console.log(`⚠️ Found ${savedTrades.length} trades in DynamoDB but none on OKX - positions may be closed`);
-              // Don't auto-delete - let user verify
-            }
           }
         } catch (error) {
           console.error(`❌ Error fetching OKX positions: ${error.message}`);
-          console.log('📂 Falling back to DynamoDB metadata only (OKX unavailable)');
-          
-          // Fallback: Load from DynamoDB if OKX unavailable
-          const savedTrades = await loadTrades();
-          if (savedTrades && savedTrades.length > 0) {
-            this.activeTrades = savedTrades;
-            console.log(`⚠️ Loaded ${savedTrades.length} trades from DynamoDB (OKX unavailable - verify positions manually)`);
-          } else {
-            this.activeTrades = [];
-          }
+          console.log('⚠️ OKX unavailable - starting with empty trade list');
+          this.activeTrades = [];
         }
       } else {
         // OKX not enabled - can't load real positions
@@ -368,7 +318,7 @@ class ProfessionalTradingBot {
       }
       
       // Load closed trades
-      await this.loadClosedTrades();
+      // Removed: DynamoDB persistence - OKX is the only source of truth
       
       // Recalculate portfolio from closed trades first (historical P&L)
       if (this.closedTrades && this.closedTrades.length > 0) {
@@ -519,7 +469,7 @@ class ProfessionalTradingBot {
           }
           
           // Save closed trades to DynamoDB
-          await this.saveClosedTrades();
+          // Removed: DynamoDB persistence - OKX is the only source of truth
           
           // Update portfolio with partial closure
           const { closeTrade } = require('../services/portfolioService');
@@ -542,7 +492,7 @@ class ProfessionalTradingBot {
           'info'
         );
 
-        await saveTrades(this.activeTrades);
+        // Removed: DynamoDB persistence - OKX is the only source of truth
         await sendTelegramMessage(
           `✂️ Partial Take-Profit\n\n${trade.symbol} locked in ${takePercent}% of the position at $${currentPrice.toFixed(
             2
@@ -1630,7 +1580,7 @@ class ProfessionalTradingBot {
           existingTrade.reason = `${existingTrade.reason || ''} | Updated: ${newReason?.substring(0, 100)}`;
           existingTrade.confidence = Math.max(existingTrade.confidence || 0.5, newConfidence);
           
-          await saveTrades(this.activeTrades);
+          // Removed: DynamoDB persistence - OKX is the only source of truth
           
           await sendTelegramMessage(`📊 Position Updated: ${symbol}
 
@@ -1657,7 +1607,7 @@ Reason: ${newReason?.substring(0, 200)}`);
         if (existingTrade.action === 'BUY' && newSLPrice > existingTrade.stopLoss) {
           existingTrade.stopLoss = newSLPrice;
           console.log(`   🛡️ Tightened Stop Loss to $${newSLPrice.toFixed(2)}`);
-          await saveTrades(this.activeTrades);
+          // Removed: DynamoDB persistence - OKX is the only source of truth
           return true;
         }
         return true; // Handled
@@ -1679,7 +1629,7 @@ Reason: ${newReason?.substring(0, 200)}`);
         
         // Remove from active trades
         this.activeTrades = this.activeTrades.filter(t => t.id !== existingTrade.id);
-        await saveTrades(this.activeTrades);
+        // Removed: DynamoDB persistence - OKX is the only source of truth
         
         await sendTelegramMessage(`🔄 Position Closed Early: ${symbol}
 
@@ -3184,16 +3134,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     // Record trade in portfolio
     await recordTrade(newTrade);
     
-    // Save trades to DynamoDB (metadata only - OKX is source of truth)
-    try {
-    await saveTrades(this.activeTrades);
-      if (newTrade.symbol === 'BTC' || newTrade.symbol === 'btc') {
-        console.log(`🔵 BTC TRADE SAVED TO DYNAMODB: id=${newTrade.id || newTrade.tradeId}, total activeTrades=${this.activeTrades.length}`);
-      }
-    } catch (saveError) {
-      console.error(`⚠️ Failed to save trade metadata to DynamoDB (trade still active on OKX):`, saveError.message);
-      // Don't throw - trade is already on OKX, DynamoDB is just metadata
-    }
+    // Removed: DynamoDB persistence - OKX is the only source of truth
     
     addLogEntry(`NEW TRADE EXECUTED ON OKX: ${newTrade.action} ${newTrade.symbol} at $${newTrade.entryPrice.toFixed(2)} (TP: $${newTrade.takeProfit.toFixed(2)}, SL: $${newTrade.stopLoss.toFixed(2)})`, 'success');
     // TODO: Send Telegram notification for new trade opened
@@ -3254,10 +3195,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       });
       
       if (syncedCount > 0) {
-        // Save synced trades
-        const { saveTrades } = require('../services/tradePersistenceService');
-        await saveTrades(this.activeTrades);
-        console.log(`💾 Synced ${syncedCount} trades with OKX positions`);
+        // Removed: DynamoDB persistence - OKX is the only source of truth
+        console.log(`✅ Synced ${syncedCount} trades with OKX positions`);
       }
     } catch (error) {
       console.error(`❌ Error syncing with OKX positions: ${error.message}`);
@@ -3561,7 +3500,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 
                 // Explicitly save trade after successful DCA
                 try {
-                  await saveTrades(this.activeTrades);
+                  // Removed: DynamoDB persistence - OKX is the only source of truth
                   console.log(`💾 Saved ${trade.symbol} trade after DCA #${trade.dcaCount} execution`);
                 } catch (saveError) {
                   console.error(`❌ Failed to save ${trade.symbol} trade after DCA:`, saveError.message);
@@ -3629,7 +3568,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 
                 // Still save the trade state even on failure
                 try {
-                  await saveTrades(this.activeTrades);
+                  // Removed: DynamoDB persistence - OKX is the only source of truth
                   console.log(`💾 Saved ${trade.symbol} trade state after DCA failure`);
                 } catch (saveError) {
                   console.error(`❌ Failed to save ${trade.symbol} trade after DCA failure:`, saveError.message);
@@ -3824,7 +3763,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 
                 // Explicitly save trade after successful DCA
                 try {
-                  await saveTrades(this.activeTrades);
+                  // Removed: DynamoDB persistence - OKX is the only source of truth
                   console.log(`💾 Saved ${trade.symbol} trade after DCA #${trade.dcaCount} execution (SHORT)`);
                 } catch (saveError) {
                   console.error(`❌ Failed to save ${trade.symbol} trade after DCA:`, saveError.message);
@@ -3890,7 +3829,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 
                 // Still save the trade state even on failure
                 try {
-                  await saveTrades(this.activeTrades);
+                  // Removed: DynamoDB persistence - OKX is the only source of truth
                   console.log(`💾 Saved ${trade.symbol} trade state after DCA failure (SHORT)`);
                 } catch (saveError) {
                   console.error(`❌ Failed to save ${trade.symbol} trade after DCA failure:`, saveError.message);
@@ -4087,45 +4026,14 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         this.closedTrades = this.closedTrades.slice(-100);
       }
       
-      // Save closed trades
-      await this.saveClosedTrades();
+      // Removed: DynamoDB persistence - OKX is the only source of truth
       
       console.log(`✅ Moved ${closedTradesToMove.length} closed trade(s) to closedTrades and updated portfolio`);
     }
     
-    // Sync trades from DynamoDB BEFORE saving - reload any open trades that exist in DB but not in memory
-    // This prevents losing trades that were in DynamoDB but somehow not in memory
-    try {
-      const { loadTrades } = require('../services/tradePersistenceService');
-      const dbTrades = await loadTrades();
-      const memoryTradeIds = new Set(this.activeTrades.map(t => t.id || t.tradeId).filter(Boolean));
-      
-      const tradesToReload = dbTrades.filter(dbTrade => {
-        const dbTradeId = dbTrade.id || dbTrade.tradeId;
-        const isOpen = dbTrade.status === 'OPEN' || dbTrade.status === 'DCA_HIT';
-        return dbTradeId && !memoryTradeIds.has(dbTradeId) && isOpen;
-      });
-      
-      if (tradesToReload.length > 0) {
-        console.log(`🔄 Reloading ${tradesToReload.length} open trade(s) from DynamoDB that weren't in memory:`);
-        for (const trade of tradesToReload) {
-          // Convert entryTime back to Date if needed
-          if (trade.entryTime && typeof trade.entryTime === 'number') {
-            trade.entryTime = new Date(trade.entryTime);
-          }
-          this.activeTrades.push(trade);
-          console.log(`   ✅ Reloaded ${trade.symbol} (id=${trade.id || trade.tradeId}, status=${trade.status})`);
-        }
-        console.log(`   💡 These trades will now be preserved in the next save.`);
-      }
-    } catch (syncError) {
-      console.error(`⚠️ Error syncing trades from DynamoDB:`, syncError.message);
-    }
+    // Removed: DynamoDB sync logic - OKX is the only source of truth
     
-    // Save trades to disk after updates (now includes any reloaded trades)
-    await saveTrades(this.activeTrades);
-    
-    // Log all active trades for tracking (helps identify missing trades)
+    // Log all active trades for tracking
     if (this.activeTrades.length > 0) {
       const tradeSummary = this.activeTrades.map(t => ({
         symbol: t.symbol,
@@ -4136,65 +4044,6 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         dcaCount: t.dcaCount || 0
       }));
       console.log(`📊 Active trades summary (${this.activeTrades.length} total):`, tradeSummary);
-      
-      // Check for specific symbols that might be missing (e.g., BTC)
-      // Only log when there's an actual issue, not on every check (reduces log noise)
-      const btcTrade = this.activeTrades.find(t => t.symbol === 'BTC');
-      if (!btcTrade) {
-        // Only check DynamoDB if BTC is missing - but don't log routine checks
-        try {
-          const { loadTrades, loadClosedTrades } = require('../services/tradePersistenceService');
-          const dbActiveTrades = await loadTrades();
-          const dbClosedTrades = await loadClosedTrades();
-          
-          // Check for BTC with case-insensitive matching
-          const dbBtcActive = dbActiveTrades.find(t => 
-            t.symbol === 'BTC' || t.symbol === 'btc' || (t.symbol && t.symbol.toUpperCase() === 'BTC')
-          );
-          const dbBtcClosed = dbClosedTrades.find(t => 
-            t.symbol === 'BTC' || t.symbol === 'btc' || (t.symbol && t.symbol.toUpperCase() === 'BTC')
-          );
-          
-          if (dbBtcActive) {
-            // ISSUE: BTC exists in DB but not in memory - this is a problem!
-            console.warn(`⚠️ BTC found in DynamoDB activeTrades but not in memory!`);
-            console.warn(`   Trade details: id=${dbBtcActive.id || dbBtcActive.tradeId}, status=${dbBtcActive.status}, entryPrice=$${dbBtcActive.entryPrice}`);
-            console.warn(`   🔧 Attempting to reload BTC trade into memory...`);
-            
-            // Try to reload the trade
-            const existingIndex = this.activeTrades.findIndex(t => 
-              (t.id === dbBtcActive.id || t.tradeId === dbBtcActive.id || t.tradeId === dbBtcActive.tradeId) &&
-              (t.symbol === 'BTC' || t.symbol === 'btc')
-            );
-            
-            if (existingIndex === -1) {
-              // Convert entryTime back to Date if needed
-              if (dbBtcActive.entryTime && typeof dbBtcActive.entryTime === 'number') {
-                dbBtcActive.entryTime = new Date(dbBtcActive.entryTime);
-              }
-              this.activeTrades.push(dbBtcActive);
-              console.log(`   ✅ Reloaded BTC trade into activeTrades`);
-            }
-          } else if (!dbBtcClosed) {
-            // BTC completely missing - only log once per hour to avoid spam
-            const now = Date.now();
-            const lastBtcWarning = this.lastBtcMissingWarning || 0;
-            const oneHour = 60 * 60 * 1000;
-            
-            if (now - lastBtcWarning > oneHour) {
-              this.lastBtcMissingWarning = now;
-              console.error(`❌ BTC trade not found in DynamoDB! (logged once per hour)`);
-              console.error(`   📋 All symbols in DynamoDB: ${dbActiveTrades.map(t => t.symbol).join(', ') || 'none'}`);
-              console.error(`   💡 Possible causes: Trade was never saved, save failed, or was deleted`);
-            }
-          }
-          // If BTC is in closedTrades, that's fine - don't log (it's expected)
-        } catch (dbError) {
-          // Only log errors, not routine checks
-          console.error(`❌ Error checking DynamoDB for BTC: ${dbError.message}`);
-        }
-      }
-      // Don't log when BTC is found - that's normal, no need to spam logs
     } else {
       console.log(`📊 No active trades currently`);
     }
@@ -4794,7 +4643,7 @@ Return JSON array format:
               telegramMessage += `   ⚙️ DCA: $${oldDca.toFixed(2)} → $${newDcaValue.toFixed(2)}\n`;
             }
             if (adjusted) {
-              await saveTrades(this.activeTrades);
+              // Removed: DynamoDB persistence - OKX is the only source of truth
               addLogEntry(`✅ ${symbol}: Trade parameters updated by AI`, 'success');
             }
           } else if (recommendation === 'CLOSE') {
@@ -4940,8 +4789,8 @@ Return JSON array format:
       );
       
       // Save both active and closed trades
-      await saveTrades(this.activeTrades);
-      await this.saveClosedTrades();
+        // Removed: DynamoDB persistence - OKX is the only source of truth
+      // Removed: DynamoDB persistence - OKX is the only source of truth
       
       // Recalculate portfolio
       await recalculateFromTrades(this.activeTrades);

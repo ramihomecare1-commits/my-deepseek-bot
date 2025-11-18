@@ -560,8 +560,7 @@ Respond ONLY with valid JSON.`;
       activeTrade.dcaPrice = recommendations.dcaPrice;
       
       // Save trades
-      const { saveTrades } = require('./tradePersistenceService');
-      await saveTrades(this.bot.activeTrades);
+      // Removed: DynamoDB persistence - OKX is the only source of truth
       
       console.log(`✅ DCA level set to $${recommendations.dcaPrice.toFixed(2)}. Will execute automatically when price hits this level.`);
       return true;
@@ -611,8 +610,7 @@ Respond ONLY with valid JSON.`;
       }
 
       // Save trades
-      const { saveTrades } = require('./tradePersistenceService');
-      await saveTrades(this.bot.activeTrades);
+      // Removed: DynamoDB persistence - OKX is the only source of truth
 
       console.log(`✅ DCA executed successfully`);
       console.log(`   New average entry: $${newEntryPrice.toFixed(2)}`);
@@ -637,8 +635,7 @@ Respond ONLY with valid JSON.`;
       activeTrade.dcaPrice = calculatedDcaPrice;
       
       // Save trades
-      const { saveTrades } = require('./tradePersistenceService');
-      await saveTrades(this.bot.activeTrades);
+      // Removed: DynamoDB persistence - OKX is the only source of truth
       
       console.log(`✅ DCA level set to $${calculatedDcaPrice.toFixed(2)}. Will execute automatically when price hits this level.`);
       return true;
@@ -682,8 +679,7 @@ Respond ONLY with valid JSON.`;
     });
 
     // Save trades
-    const { saveTrades } = require('./tradePersistenceService');
-    await saveTrades(this.bot.activeTrades);
+    // Removed: DynamoDB persistence - OKX is the only source of truth
 
     console.log(`✅ Stop Loss adjusted successfully`);
     return true;
@@ -723,8 +719,7 @@ Respond ONLY with valid JSON.`;
     });
 
     // Save trades
-    const { saveTrades } = require('./tradePersistenceService');
-    await saveTrades(this.bot.activeTrades);
+    // Removed: DynamoDB persistence - OKX is the only source of truth
 
     console.log(`✅ Take Profit adjusted successfully`);
     return true;
