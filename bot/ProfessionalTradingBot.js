@@ -637,11 +637,26 @@ class ProfessionalTradingBot {
       }
       
       const trend = (frame.trend || '').toUpperCase();
-      const rsi = Number(frame.rsi) || null;
+      // Handle RSI as string or number (it might be stored as "28.27" string)
+      let rsi = null;
+      if (frame.rsi !== undefined && frame.rsi !== null && frame.rsi !== 'N/A') {
+        rsi = Number(frame.rsi);
+        if (isNaN(rsi)) rsi = null;
+      }
       const bollingerPos = frame.bollingerPosition || 'MIDDLE';
       const currentPrice = Number(frame.price) || null;
       const support = Number(frame.support) || null;
       const resistance = Number(frame.resistance) || null;
+      
+      // Debug logging for first timeframe to diagnose issues
+      if (tf === timeframes[0] && analysis.action === 'BUY') {
+        console.log(`🔍 [${analysis.symbol}] Frame data for ${tf}:`);
+        console.log(`   - RSI: ${rsi} (raw: ${frame.rsi}, type: ${typeof frame.rsi})`);
+        console.log(`   - Trend: ${trend} (raw: ${frame.trend})`);
+        console.log(`   - Bollinger: ${bollingerPos}`);
+        console.log(`   - RSI Oversold Threshold: ${rsiOversold}`);
+        console.log(`   - Full frame keys: ${Object.keys(frame).join(', ')}`);
+      }
       
       // Get trading rules to check which requirements are enabled
       const buyRules = this.tradingRules.patterns.buy;
@@ -2234,6 +2249,13 @@ Reason: ${newReason?.substring(0, 200)}`);
             if (!consensusResult.passed) {
               console.log(`🚫 ${coin.symbol}: Fails multi-timeframe consensus check (${consensusResult.matches}/${consensusResult.required} timeframes match)`);
               console.log(`   Current setting: minTimeframeAlignment=${this.tradingRules.patterns[analysis.action.toLowerCase()]?.minTimeframeAlignment || 'N/A'}`);
+              // Debug: Show which timeframes were checked and why they didn't match
+              if (consensusResult.timeframes && consensusResult.timeframes.length > 0) {
+                console.log(`   Timeframe details:`);
+                consensusResult.timeframes.forEach(tf => {
+                  console.log(`     - ${tf.timeframe}: ${tf.trend} ${tf.matched ? '✅' : '❌'}`);
+                });
+              }
               
               // Send Telegram notification for multi-timeframe consensus rejection
               if (config.ENABLE_REJECTION_NOTIFICATIONS && isActionNotifiable && this.shouldNotifyRejection(coin.symbol, 'consensus')) {

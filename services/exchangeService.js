@@ -483,11 +483,17 @@ async function executeOkxRequestWithFallback(options) {
         
         scrapeOpsParams.headers = JSON.stringify(customHeaders);
         
+        // For POST requests, include body in params
+        if (method === 'POST' && body) {
+          scrapeOpsParams.body = JSON.stringify(body);
+        }
+        
         targetUrl = proxy.url;
         requestConfig = {
           params: scrapeOpsParams,
-          headers: {},
-          data: body ? JSON.stringify(body) : undefined,
+          headers: {
+            'Content-Type': 'application/json'
+          },
           timeout: 20000,
           validateStatus: (status) => status < 500
         };
@@ -528,7 +534,27 @@ async function executeOkxRequestWithFallback(options) {
       if (method === 'GET') {
         response = await axios.get(targetUrl, requestConfig);
       } else {
-        response = await axios.post(targetUrl, requestConfig.data || requestConfig.params, requestConfig);
+        // For POST requests, ensure Content-Type is set correctly
+        if (!requestConfig.headers) {
+          requestConfig.headers = {};
+        }
+        if (!requestConfig.headers['Content-Type'] && method === 'POST') {
+          requestConfig.headers['Content-Type'] = 'application/json';
+        }
+        
+        // For proxies, send body in data field, not params
+        if (proxy.name !== 'Direct') {
+          // Proxies need body in data field
+          response = await axios.post(targetUrl, requestConfig.data || JSON.stringify(body), {
+            ...requestConfig,
+            headers: {
+              ...requestConfig.headers,
+              'Content-Type': 'application/json'
+            }
+          });
+        } else {
+          response = await axios.post(targetUrl, requestConfig.data || requestConfig.params, requestConfig);
+        }
       }
       
       const duration = Date.now() - startTime;
@@ -637,14 +663,22 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
   try {
     const requestPath = '/api/v5/trade/order';
     
+    // OKX perpetual swaps require quantity to be a multiple of lot size (usually 1 contract)
+    // Round to nearest integer (minimum 1 contract)
+    const roundedQuantity = Math.max(1, Math.round(quantity));
+    
     const body = {
       instId: symbol,
       tdMode: 'cross', // Cross margin for derivatives (allows leverage and shorting)
       side: side.toLowerCase(), // 'buy' (long) or 'sell' (short)
       ordType: 'market', // Market order
-      sz: quantity.toString(), // Size (contract quantity)
+      sz: roundedQuantity.toString(), // Size (contract quantity, rounded to lot size)
       lever: leverage.toString() // Leverage (1-125, default 1x)
     };
+    
+    if (roundedQuantity !== quantity) {
+      console.log(`⚠️ [OKX API] Quantity rounded from ${quantity} to ${roundedQuantity} (lot size requirement)`);
+    }
     
     console.log(`🔵 [OKX API] Sending derivatives order: ${side} ${quantity} ${symbol} (Market, Leverage: ${leverage}x)`);
     console.log(`🔵 [OKX API] API Key: ${apiKey.substring(0, 8)}... (verifying permissions)`);
