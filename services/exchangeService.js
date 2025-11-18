@@ -1940,8 +1940,9 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
     };
     
     // Required: either sz or closeFraction
+    // OKX API expects closeFraction as a string (e.g., "1" for full position)
     if (params.closeFraction) {
-      body.closeFraction = params.closeFraction;
+      body.closeFraction = params.closeFraction.toString();
     } else if (params.sz) {
       body.sz = params.sz.toString();
     } else {
@@ -1979,6 +1980,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
     }
     
     // Optional parameters
+    // OKX API accepts boolean values as actual booleans (true/false)
     if (params.reduceOnly !== undefined) {
       body.reduceOnly = params.reduceOnly;
     }
@@ -2043,6 +2045,11 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
       }
     }
     
+    // executeOkxRequestWithFallback expects body as object (it will stringify internally)
+    // Passing JSON.stringify(body) causes double stringification and invalid JSON
+    // Log the body for debugging
+    console.log(`📋 [OKX API] Algo order body:`, JSON.stringify(body, null, 2));
+    
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -2050,7 +2057,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
       baseUrl,
       requestPath,
       method: 'POST',
-      body: JSON.stringify(body)
+      body: body // Pass as object, not stringified
     });
     
     if (response.data?.code === '0' && response.data?.data?.[0]) {
