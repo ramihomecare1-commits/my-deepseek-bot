@@ -5,8 +5,9 @@ const config = require('../config/config');
 /**
  * Exchange Service
  * Handles order execution via OKX Demo Trading API (primary) or Bybit Demo Trading API
- * Uses OKX demo account for risk-free demo trading
- * Uses ScraperAPI proxy to bypass geo-blocking if configured
+ * Uses OKX demo account for risk-free demo trading with derivatives (perpetual swaps)
+ * Supports leverage, shorting, and cross-margin trading
+ * Uses ScraperAPI/ScrapeOps proxy to bypass geo-blocking if configured
  */
 
 // OKX API endpoints (demo trading uses same endpoint with demo account API keys)
@@ -16,18 +17,19 @@ const OKX_BASE_URL = 'https://www.okx.com';
 const BYBIT_TESTNET_URL = 'https://api-demo.bybit.com';
 const BYBIT_MAINNET_URL = 'https://api.bybit.com';
 
-// Map coin symbols to OKX trading pairs (Spot trading format: BTC-USDT)
+// Map coin symbols to OKX trading pairs (Derivatives/Perpetual Swaps format: BTC-USDT-SWAP)
+// Using perpetual swaps (SWAP) for derivatives trading with leverage and shorting support
 const OKX_SYMBOL_MAP = {
-  'BTC': 'BTC-USDT', 'ETH': 'ETH-USDT', 'BNB': 'BNB-USDT', 'SOL': 'SOL-USDT',
-  'XRP': 'XRP-USDT', 'DOGE': 'DOGE-USDT', 'ADA': 'ADA-USDT', 'AVAX': 'AVAX-USDT',
-  'LINK': 'LINK-USDT', 'DOT': 'DOT-USDT', 'MATIC': 'MATIC-USDT', 'LTC': 'LTC-USDT',
-  'UNI': 'UNI-USDT', 'ATOM': 'ATOM-USDT', 'XLM': 'XLM-USDT', 'ETC': 'ETC-USDT',
-  'XMR': 'XMR-USDT', 'ALGO': 'ALGO-USDT', 'FIL': 'FIL-USDT', 'ICP': 'ICP-USDT',
-  'VET': 'VET-USDT', 'EOS': 'EOS-USDT', 'XTZ': 'XTZ-USDT', 'AAVE': 'AAVE-USDT',
-  'MKR': 'MKR-USDT', 'GRT': 'GRT-USDT', 'THETA': 'THETA-USDT', 'RUNE': 'RUNE-USDT',
-  'NEO': 'NEO-USDT', 'FTM': 'FTM-USDT', 'TRX': 'TRX-USDT', 'SUI': 'SUI-USDT',
-  'ARB': 'ARB-USDT', 'OP': 'OP-USDT', 'TON': 'TON-USDT', 'SHIB': 'SHIB-USDT',
-  'HBAR': 'HBAR-USDT', 'APT': 'APT-USDT'
+  'BTC': 'BTC-USDT-SWAP', 'ETH': 'ETH-USDT-SWAP', 'BNB': 'BNB-USDT-SWAP', 'SOL': 'SOL-USDT-SWAP',
+  'XRP': 'XRP-USDT-SWAP', 'DOGE': 'DOGE-USDT-SWAP', 'ADA': 'ADA-USDT-SWAP', 'AVAX': 'AVAX-USDT-SWAP',
+  'LINK': 'LINK-USDT-SWAP', 'DOT': 'DOT-USDT-SWAP', 'MATIC': 'MATIC-USDT-SWAP', 'LTC': 'LTC-USDT-SWAP',
+  'UNI': 'UNI-USDT-SWAP', 'ATOM': 'ATOM-USDT-SWAP', 'XLM': 'XLM-USDT-SWAP', 'ETC': 'ETC-USDT-SWAP',
+  'XMR': 'XMR-USDT-SWAP', 'ALGO': 'ALGO-USDT-SWAP', 'FIL': 'FIL-USDT-SWAP', 'ICP': 'ICP-USDT-SWAP',
+  'VET': 'VET-USDT-SWAP', 'EOS': 'EOS-USDT-SWAP', 'XTZ': 'XTZ-USDT-SWAP', 'AAVE': 'AAVE-USDT-SWAP',
+  'MKR': 'MKR-USDT-SWAP', 'GRT': 'GRT-USDT-SWAP', 'THETA': 'THETA-USDT-SWAP', 'RUNE': 'RUNE-USDT-SWAP',
+  'NEO': 'NEO-USDT-SWAP', 'FTM': 'FTM-USDT-SWAP', 'TRX': 'TRX-USDT-SWAP', 'SUI': 'SUI-USDT-SWAP',
+  'ARB': 'ARB-USDT-SWAP', 'OP': 'OP-USDT-SWAP', 'TON': 'TON-USDT-SWAP', 'SHIB': 'SHIB-USDT-SWAP',
+  'HBAR': 'HBAR-USDT-SWAP', 'APT': 'APT-USDT-SWAP'
 };
 
 // Map coin symbols to Bybit trading pairs (Spot trading uses same format) - kept for backward compatibility
@@ -620,29 +622,31 @@ async function executeOkxRequestWithFallback(options) {
 }
 
 /**
- * Execute a market order on OKX (Spot Trading)
- * @param {string} symbol - Trading pair symbol (e.g., 'BTC-USDT')
+ * Execute a market order on OKX (Derivatives/Perpetual Swaps)
+ * @param {string} symbol - Trading pair symbol (e.g., 'BTC-USDT-SWAP')
  * @param {string} side - 'buy' or 'sell' (OKX uses lowercase)
- * @param {number} quantity - Amount to trade
+ * @param {number} quantity - Amount to trade (contract size)
  * @param {string} apiKey - OKX API key
  * @param {string} apiSecret - OKX API secret
  * @param {string} passphrase - OKX passphrase
  * @param {string} baseUrl - OKX API base URL
+ * @param {number} leverage - Leverage multiplier (default: 1, max: 125 for most pairs)
  * @returns {Promise<Object>} Order result
  */
-async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, passphrase, baseUrl) {
+async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, passphrase, baseUrl, leverage = 1) {
   try {
     const requestPath = '/api/v5/trade/order';
     
     const body = {
       instId: symbol,
-      tdMode: 'cash', // Spot trading
-      side: side.toLowerCase(), // 'buy' or 'sell'
+      tdMode: 'cross', // Cross margin for derivatives (allows leverage and shorting)
+      side: side.toLowerCase(), // 'buy' (long) or 'sell' (short)
       ordType: 'market', // Market order
-      sz: quantity.toString() // Size (quantity)
+      sz: quantity.toString(), // Size (contract quantity)
+      lever: leverage.toString() // Leverage (1-125, default 1x)
     };
     
-    console.log(`🔵 [OKX API] Sending order: ${side} ${quantity} ${symbol} (Market)`);
+    console.log(`🔵 [OKX API] Sending derivatives order: ${side} ${quantity} ${symbol} (Market, Leverage: ${leverage}x)`);
     console.log(`🔵 [OKX API] API Key: ${apiKey.substring(0, 8)}... (verifying permissions)`);
     
     const response = await executeOkxRequestWithFallback({
@@ -741,16 +745,17 @@ async function getOkxBalance(asset, apiKey, apiSecret, passphrase, baseUrl) {
 }
 
 /**
- * Get open positions from OKX Spot Trading
+ * Get open positions from OKX Derivatives/Perpetual Swaps
  * @param {string} apiKey - OKX API key
  * @param {string} apiSecret - OKX API secret
  * @param {string} passphrase - OKX passphrase
  * @param {string} baseUrl - OKX API base URL
- * @returns {Promise<Array>} Array of open positions {coin, quantity, value}
+ * @returns {Promise<Array>} Array of open positions {coin, quantity, value, side, leverage}
  */
 async function getOkxOpenPositions(apiKey, apiSecret, passphrase, baseUrl) {
   try {
-    const requestPath = '/api/v5/account/balance';
+    // Use positions endpoint for derivatives (not balance endpoint)
+    const requestPath = '/api/v5/account/positions';
     
     const response = await executeOkxRequestWithFallback({
       apiKey,
@@ -762,24 +767,31 @@ async function getOkxOpenPositions(apiKey, apiSecret, passphrase, baseUrl) {
     });
     
     if (response.data && response.data.code === '0' && response.data.data && response.data.data.length > 0) {
-      const balances = response.data.data[0].details || [];
       const positions = [];
       
-      // Filter for coins with non-zero balance (exclude USDT)
-      balances.forEach(balance => {
-        const total = parseFloat(balance.bal || 0);
-        const free = parseFloat(balance.availBal || 0);
-        const frozen = parseFloat(balance.frozenBal || 0);
+      // Filter for positions with non-zero size (open positions)
+      response.data.data.forEach(position => {
+        const pos = parseFloat(position.pos || 0);
+        const avgPx = parseFloat(position.avgPx || 0);
+        const leverage = parseFloat(position.lever || 1);
+        const side = pos > 0 ? 'long' : pos < 0 ? 'short' : null;
+        const absPos = Math.abs(pos);
         
-        if (total > 0.00000001 && balance.ccy !== 'USDT') {
+        if (absPos > 0.00000001) {
+          // Extract coin symbol from instId (e.g., 'BTC-USDT-SWAP' -> 'BTC')
+          const instId = position.instId || '';
+          const coin = instId.split('-')[0] || instId;
+          
           positions.push({
-            coin: balance.ccy,
-            symbol: balance.ccy,
-            quantity: total,
-            free: free,
-            locked: frozen,
-            availableToWithdraw: free,
-            usdValue: parseFloat(balance.eqUsd || 0)
+            coin: coin,
+            symbol: coin,
+            quantity: absPos,
+            side: side, // 'long' or 'short'
+            leverage: leverage,
+            avgPrice: avgPx,
+            unrealizedPnl: parseFloat(position.upl || 0),
+            margin: parseFloat(position.margin || 0),
+            usdValue: Math.abs(parseFloat(position.notionalUsd || 0))
           });
         }
       });
@@ -787,10 +799,10 @@ async function getOkxOpenPositions(apiKey, apiSecret, passphrase, baseUrl) {
       if (positions.length > 0) {
         console.log(`✅ [OKX API] Found ${positions.length} open positions on OKX:`);
         positions.forEach(pos => {
-          console.log(`   - ${pos.coin}: ${pos.quantity.toFixed(8)} (Free: ${pos.free.toFixed(8)}, Locked: ${pos.locked.toFixed(8)})`);
+          console.log(`   - ${pos.coin} ${pos.side?.toUpperCase() || ''}: ${pos.quantity.toFixed(8)} @ ${pos.avgPrice.toFixed(2)} (Leverage: ${pos.leverage}x, PnL: $${pos.unrealizedPnl.toFixed(2)})`);
         });
       } else {
-        console.log(`✅ [OKX API] No open positions found on OKX (all positions closed or zero balance)`);
+        console.log(`✅ [OKX API] No open positions found on OKX (all positions closed)`);
       }
       
       return positions;
@@ -1141,7 +1153,8 @@ async function executeTakeProfit(trade) {
   }
   
   const modeLabel = 'OKX_DEMO';
-  console.log(`📈 Executing TAKE PROFIT (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
+  const leverage = parseFloat(process.env.OKX_LEVERAGE || '1'); // Default 1x leverage
+  console.log(`📈 Executing TAKE PROFIT (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)} (Leverage: ${leverage}x)`);
   
   return await executeOkxMarketOrder(
     okxSymbol,
@@ -1150,7 +1163,8 @@ async function executeTakeProfit(trade) {
     exchange.apiKey,
     exchange.apiSecret,
     exchange.passphrase,
-    exchange.baseUrl
+    exchange.baseUrl,
+    leverage
   );
 }
 
@@ -1205,7 +1219,8 @@ async function executeStopLoss(trade) {
   }
   
   const modeLabel = 'OKX_DEMO';
-  console.log(`🛑 Executing STOP LOSS (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
+  const leverage = parseFloat(process.env.OKX_LEVERAGE || '1'); // Default 1x leverage
+  console.log(`🛑 Executing STOP LOSS (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)} (Leverage: ${leverage}x)`);
   
   return await executeOkxMarketOrder(
     okxSymbol,
@@ -1214,7 +1229,8 @@ async function executeStopLoss(trade) {
     exchange.apiKey,
     exchange.apiSecret,
     exchange.passphrase,
-    exchange.baseUrl
+    exchange.baseUrl,
+    leverage
   );
 }
 
@@ -1270,7 +1286,8 @@ async function executeAddPosition(trade) {
   }
   
   const modeLabel = 'OKX_DEMO';
-  console.log(`💰 Executing ADD POSITION (DCA) (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)}`);
+  const leverage = parseFloat(process.env.OKX_LEVERAGE || '1'); // Default 1x leverage
+  console.log(`💰 Executing ADD POSITION (DCA) (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)} (Leverage: ${leverage}x)`);
   
   return await executeOkxMarketOrder(
     okxSymbol,
@@ -1279,7 +1296,8 @@ async function executeAddPosition(trade) {
     exchange.apiKey,
     exchange.apiSecret,
     exchange.passphrase,
-    exchange.baseUrl
+    exchange.baseUrl,
+    leverage
   );
 }
 

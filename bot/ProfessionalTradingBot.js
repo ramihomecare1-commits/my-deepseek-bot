@@ -617,26 +617,156 @@ class ProfessionalTradingBot {
       analysis.frames ||
       analysis.indicators?.frames ||
       {};
+    
+    const indicators = analysis.indicators || {};
+    const patterns = analysis.patterns || [];
+    
+    // Get RSI thresholds from trading rules
+    const rsiOversold = this.tradingRules.rsi.oversold;
+    const rsiOverbought = this.tradingRules.rsi.overbought;
 
     let matches = 0;
     const timeframeDetails = [];
+    let patternMatched = false; // Track if patterns have been counted
+    
     timeframes.forEach((tf) => {
       const frame = frames[tf];
-      if (!frame || !frame.trend) {
+      if (!frame) {
         timeframeDetails.push({ timeframe: tf, trend: 'N/A', matched: false });
         return;
       }
+      
       const trend = (frame.trend || '').toUpperCase();
+      const rsi = Number(frame.rsi) || null;
+      const bollingerPos = frame.bollingerPosition || 'MIDDLE';
+      const currentPrice = Number(frame.price) || null;
+      const support = Number(frame.support) || null;
+      const resistance = Number(frame.resistance) || null;
+      
+      // Get trading rules to check which requirements are enabled
+      const buyRules = this.tradingRules.patterns.buy;
+      const sellRules = this.tradingRules.patterns.sell;
+      
       let matched = false;
+      let matchReason = '';
+      
+      // Check trend alignment (existing check)
       if (analysis.action === 'BUY' && trend === 'BULLISH') {
         matches += 1;
         matched = true;
+        matchReason = 'BULLISH_TREND';
       } else if (analysis.action === 'SELL' && trend === 'BEARISH') {
         matches += 1;
         matched = true;
+        matchReason = 'BEARISH_TREND';
       }
-      timeframeDetails.push({ timeframe: tf, trend, matched });
+      
+      // If not matched by trend, check other bullish/bearish signals
+      // These conditions count as timeframe alignment matches regardless of whether they're "required"
+      if (!matched) {
+        if (analysis.action === 'BUY') {
+          // RSI oversold counts as bullish signal
+          if (rsi !== null && rsi < rsiOversold) {
+            matches += 1;
+            matched = true;
+            matchReason = 'RSI_OVERSOLD';
+          }
+          // Bollinger Lower counts as bullish signal
+          else if (bollingerPos === 'LOWER') {
+            matches += 1;
+            matched = true;
+            matchReason = 'BOLLINGER_LOWER';
+          }
+          // Support Level: Price within 2% of support level (bullish signal)
+          else if (currentPrice !== null && support !== null) {
+            const priceToSupportRatio = (currentPrice - support) / support;
+            if (priceToSupportRatio >= 0 && priceToSupportRatio <= 0.02) { // Within 2% of support
+              matches += 1;
+              matched = true;
+              matchReason = 'SUPPORT_LEVEL';
+            }
+          }
+          // Fibonacci Support: Price near Fibonacci support levels (uses support level as proxy)
+          // Note: Fibonacci support levels (0.618, 0.786) are typically near support zones
+          else if (currentPrice !== null && support !== null) {
+            const priceToSupportRatio = (currentPrice - support) / support;
+            if (priceToSupportRatio >= 0 && priceToSupportRatio <= 0.02) {
+              matches += 1;
+              matched = true;
+              matchReason = 'FIBONACCI_SUPPORT';
+            }
+          }
+        } else if (analysis.action === 'SELL') {
+          // RSI overbought counts as bearish signal
+          if (rsi !== null && rsi > rsiOverbought) {
+            matches += 1;
+            matched = true;
+            matchReason = 'RSI_OVERBOUGHT';
+          }
+          // Bollinger Upper counts as bearish signal
+          else if (bollingerPos === 'UPPER') {
+            matches += 1;
+            matched = true;
+            matchReason = 'BOLLINGER_UPPER';
+          }
+          // Resistance Level: Price within 2% of resistance level (bearish signal)
+          else if (currentPrice !== null && resistance !== null) {
+            const priceToResistanceRatio = (resistance - currentPrice) / currentPrice;
+            if (priceToResistanceRatio >= 0 && priceToResistanceRatio <= 0.02) { // Within 2% of resistance
+              matches += 1;
+              matched = true;
+              matchReason = 'RESISTANCE_LEVEL';
+            }
+          }
+          // Fibonacci Resistance: Price near Fibonacci resistance levels (uses resistance level as proxy)
+          // Note: Fibonacci resistance levels (0.236, 0.382) are typically near resistance zones
+          else if (currentPrice !== null && resistance !== null) {
+            const priceToResistanceRatio = (resistance - currentPrice) / currentPrice;
+            if (priceToResistanceRatio >= 0 && priceToResistanceRatio <= 0.02) {
+              matches += 1;
+              matched = true;
+              matchReason = 'FIBONACCI_RESISTANCE';
+            }
+          }
+        }
+      }
+      
+      // Note: Fibonacci Support/Resistance uses the same logic as Support/Resistance levels
+      // since Fibonacci levels are typically calculated from support/resistance zones
+      // If a more sophisticated Fibonacci retracement calculation is implemented later,
+      // it can be added as a separate check here
+      
+      const trendDisplay = trend || (matched ? matchReason : 'N/A');
+      timeframeDetails.push({ timeframe: tf, trend: trendDisplay, matched });
     });
+    
+    // Check patterns separately (patterns are global, not per-timeframe)
+    // If we have matching patterns and haven't reached requiredMatches yet, add one match
+    if (matches < requiredMatches && !patternMatched) {
+      if (analysis.action === 'BUY') {
+        const bullishPatterns = patterns.filter(p => p.signal === 'BULLISH');
+        if (bullishPatterns.length > 0) {
+          matches += 1;
+          patternMatched = true;
+          timeframeDetails.push({ 
+            timeframe: 'PATTERNS', 
+            trend: 'BULLISH_PATTERN', 
+            matched: true 
+          });
+        }
+      } else if (analysis.action === 'SELL') {
+        const bearishPatterns = patterns.filter(p => p.signal === 'BEARISH');
+        if (bearishPatterns.length > 0) {
+          matches += 1;
+          patternMatched = true;
+          timeframeDetails.push({ 
+            timeframe: 'PATTERNS', 
+            trend: 'BEARISH_PATTERN', 
+            matched: true 
+          });
+        }
+      }
+    }
 
     const passed = matches >= requiredMatches;
     return {
@@ -1197,7 +1327,11 @@ class ProfessionalTradingBot {
                 signal: analysis.recommendation,
                 confidence: analysis.confidence,
                 reason: analysis.reason,
-                shouldEscalate: true
+                shouldEscalate: true,
+                // Include full analysis data for AI prompts
+                patterns: analysis.patterns || [],
+                indicators: analysis.indicators || {},
+                frames: analysis.frames || {}
               };
               escalations.push({ coinData, v3Analysis, isPriority: false });
               console.log(`🔍 ${coinData.symbol} (Rank #${bulkResult.rank}): ${analysis.recommendation} (${(analysis.confidence * 100).toFixed(0)}%) - ${bulkResult.triggerCount} triggers - Will escalate to premium`);
@@ -4174,6 +4308,12 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         
         try {
           const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${batch.length} open trades and provide your recommendation for each.
+
+IMPORTANT CONTEXT: This is derivatives trading (perpetual swaps):
+- BUY trades = Long positions (profit when price goes UP)
+- SELL trades = Short positions (profit when price goes DOWN)
+- For SELL (short) trades: profit when price decreases, loss when price increases
+
 IMPORTANT: Consider technical analysis, recent news, AND historical context when making recommendations.
 - Review previous evaluations to see if patterns are consistent or changing
 - Historical news can provide context for current price movements

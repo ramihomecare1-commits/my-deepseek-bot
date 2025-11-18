@@ -1299,6 +1299,46 @@ Keep it brief and actionable.`;
    */
   createConfirmationPrompt(coinData, v3Analysis) {
     const { symbol, name, currentPrice, priceChange24h, volume24h } = coinData;
+    
+    // Extract technical data from v3Analysis if available
+    const patterns = v3Analysis.patterns || [];
+    const indicators = v3Analysis.indicators || {};
+    const frames = v3Analysis.frames || indicators.frames || {};
+    
+    // Build patterns text
+    let patternsText = '';
+    if (patterns.length > 0) {
+      patternsText = '\n\nDETECTED PATTERNS:\n';
+      patterns.forEach((p, i) => {
+        patternsText += `${i + 1}. ${p.pattern.replace(/_/g, ' ')} - ${p.signal} signal (${(p.confidence * 100).toFixed(0)}% confidence)\n`;
+      });
+    } else {
+      patternsText = '\n\nDETECTED PATTERNS: None detected';
+    }
+    
+    // Build indicators text for each timeframe
+    let indicatorsText = '\n\nTECHNICAL INDICATORS:\n';
+    const timeframes = ['1h', '4h', '1d', '1w'];
+    timeframes.forEach(tf => {
+      const frame = frames[tf] || {};
+      if (frame.rsi || frame.trend || frame.bollingerPosition) {
+        indicatorsText += `${tf.toUpperCase()}:\n`;
+        if (frame.rsi && frame.rsi !== 'N/A') indicatorsText += `  - RSI: ${frame.rsi}\n`;
+        if (frame.trend) indicatorsText += `  - Trend: ${frame.trend}\n`;
+        if (frame.bollingerPosition) indicatorsText += `  - Bollinger: ${frame.bollingerPosition}\n`;
+        if (frame.support) indicatorsText += `  - Support: $${Number(frame.support).toFixed(2)}\n`;
+        if (frame.resistance) indicatorsText += `  - Resistance: $${Number(frame.resistance).toFixed(2)}\n`;
+      }
+    });
+    
+    // Also check daily indicators if available
+    const daily = indicators.daily || {};
+    if (daily.rsi && !frames['1d']) {
+      indicatorsText += `DAILY:\n`;
+      if (daily.rsi && daily.rsi !== 'N/A') indicatorsText += `  - RSI: ${daily.rsi}\n`;
+      if (daily.trend) indicatorsText += `  - Trend: ${daily.trend}\n`;
+      if (daily.bollingerPosition) indicatorsText += `  - Bollinger: ${daily.bollingerPosition}\n`;
+    }
 
     return `CONFIRMATION REQUEST FROM MONITORING AI
 
@@ -1310,17 +1350,33 @@ Current Price: $${currentPrice}
 INITIAL DETECTION (v3):
 - Signal: ${v3Analysis.signal}
 - Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%
-- Reason: ${v3Analysis.reason}
+- Reason: ${v3Analysis.reason}${patternsText}${indicatorsText}
 
 YOUR TASK:
 Provide final trading decision. Confirm or reject this opportunity.
+
+IMPORTANT: This is derivatives trading (perpetual swaps) where you can:
+- BUY = Long position (profit when price goes UP)
+- SELL = Short position (profit when price goes DOWN)
+- HOLD = No action
+
+You can profit from both upward and downward price movements. Consider both long and short opportunities.
+
+CRITICAL REQUIREMENT: In your "reason" field, you MUST explicitly mention:
+1. ALL patterns you used in your decision (if any)
+2. ALL indicators you used (RSI, Bollinger Bands, Trend, Support/Resistance levels)
+3. Which timeframes you analyzed (1h, 4h, 1d, 1w)
+4. How these patterns and indicators support your decision
+
+Example format for reason:
+"RSI oversold at 28 on daily timeframe, Bollinger Lower band touched, Bullish trend on 4h and daily, Head and Shoulders pattern detected with bullish signal. Multiple timeframes align for a BUY opportunity."
 
 Respond in JSON format:
 {
   "decision": "CONFIRMED/REJECTED",
   "action": "BUY/SELL/HOLD",
   "confidence": 0.0-1.0,
-  "reason": "detailed reasoning",
+  "reason": "detailed reasoning mentioning ALL patterns and indicators used",
   "stopLoss": percentage,
   "takeProfit": percentage
 }
@@ -1339,6 +1395,53 @@ Be thorough and conservative. Only confirm high-probability setups.`;
       const { coinData, v3Analysis } = esc;
       const { symbol, name, currentPrice, priceChange24h, volume24h } = coinData;
       
+      // Extract technical data from v3Analysis if available
+      const patterns = v3Analysis.patterns || [];
+      const indicators = v3Analysis.indicators || {};
+      const frames = v3Analysis.frames || indicators.frames || {};
+      
+      // Build patterns text
+      let patternsText = '';
+      if (patterns.length > 0) {
+        patternsText = '\n  DETECTED PATTERNS:\n';
+        patterns.forEach((p, i) => {
+          patternsText += `    ${i + 1}. ${p.pattern.replace(/_/g, ' ')} - ${p.signal} signal (${(p.confidence * 100).toFixed(0)}% confidence)\n`;
+        });
+      } else {
+        patternsText = '\n  DETECTED PATTERNS: None detected\n';
+      }
+      
+      // Build indicators text for each timeframe
+      let indicatorsText = '  TECHNICAL INDICATORS:\n';
+      const timeframes = ['1h', '4h', '1d', '1w'];
+      let hasIndicators = false;
+      timeframes.forEach(tf => {
+        const frame = frames[tf] || {};
+        if (frame.rsi || frame.trend || frame.bollingerPosition) {
+          hasIndicators = true;
+          indicatorsText += `    ${tf.toUpperCase()}:\n`;
+          if (frame.rsi && frame.rsi !== 'N/A') indicatorsText += `      - RSI: ${frame.rsi}\n`;
+          if (frame.trend) indicatorsText += `      - Trend: ${frame.trend}\n`;
+          if (frame.bollingerPosition) indicatorsText += `      - Bollinger: ${frame.bollingerPosition}\n`;
+          if (frame.support) indicatorsText += `      - Support: $${Number(frame.support).toFixed(2)}\n`;
+          if (frame.resistance) indicatorsText += `      - Resistance: $${Number(frame.resistance).toFixed(2)}\n`;
+        }
+      });
+      
+      // Also check daily indicators if available
+      const daily = indicators.daily || {};
+      if (daily.rsi && !frames['1d']) {
+        hasIndicators = true;
+        indicatorsText += `    DAILY:\n`;
+        if (daily.rsi && daily.rsi !== 'N/A') indicatorsText += `      - RSI: ${daily.rsi}\n`;
+        if (daily.trend) indicatorsText += `      - Trend: ${daily.trend}\n`;
+        if (daily.bollingerPosition) indicatorsText += `      - Bollinger: ${daily.bollingerPosition}\n`;
+      }
+      
+      if (!hasIndicators) {
+        indicatorsText = '  TECHNICAL INDICATORS: No indicator data available\n';
+      }
+      
       prompt += `[${index + 1}] ${symbol} - ${name}
 Current Price: $${currentPrice}
 24h Change: ${priceChange24h?.toFixed(2)}%
@@ -1347,7 +1450,7 @@ Current Price: $${currentPrice}
 Free AI Detection:
 - Signal: ${v3Analysis.signal}
 - Confidence: ${(v3Analysis.confidence * 100).toFixed(0)}%
-- Reason: ${v3Analysis.reason}
+- Reason: ${v3Analysis.reason}${patternsText}${indicatorsText}
 
 `;
 
@@ -1356,6 +1459,22 @@ Free AI Detection:
     prompt += `\nYOUR TASK:
 For each coin above, provide a final trading decision. Confirm or reject each opportunity.
 
+IMPORTANT: This is derivatives trading (perpetual swaps) where you can:
+- BUY = Long position (profit when price goes UP)
+- SELL = Short position (profit when price goes DOWN)
+- HOLD = No action
+
+You can profit from both upward and downward price movements. Consider both long and short opportunities.
+
+CRITICAL REQUIREMENT: In your "reason" field for EACH coin, you MUST explicitly mention:
+1. ALL patterns you used in your decision (if any)
+2. ALL indicators you used (RSI, Bollinger Bands, Trend, Support/Resistance levels)
+3. Which timeframes you analyzed (1h, 4h, 1d, 1w)
+4. How these patterns and indicators support your decision
+
+Example format for reason:
+"RSI oversold at 28 on daily timeframe, Bollinger Lower band touched, Bullish trend on 4h and daily, Head and Shoulders pattern detected with bullish signal. Multiple timeframes align for a BUY opportunity."
+
 Respond in JSON array format (one object per coin, in order):
 [
   {
@@ -1363,7 +1482,7 @@ Respond in JSON array format (one object per coin, in order):
     "decision": "CONFIRMED/REJECTED",
     "action": "BUY/SELL/HOLD",
     "confidence": 0.0-1.0,
-    "reason": "detailed reasoning",
+    "reason": "detailed reasoning mentioning ALL patterns and indicators used",
     "stopLoss": percentage,
     "takeProfit": percentage
   },
