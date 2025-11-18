@@ -4812,13 +4812,11 @@ Return JSON array format:
 
   /**
    * Save closed trades to storage
+   * Removed: DynamoDB persistence - OKX is the only source of truth
    */
   async saveClosedTrades() {
-    try {
-      await saveClosedTrades(this.closedTrades);
-    } catch (error) {
-      console.error('❌ Error saving closed trades:', error);
-    }
+    // Removed: DynamoDB persistence - OKX is the only source of truth
+    // Closed trades are kept in memory only (last 100)
   }
 
   /**
