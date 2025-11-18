@@ -729,6 +729,9 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       lever: leverage.toString() // Leverage (1-125, default 1x)
     };
     
+    // Log order details for debugging
+    console.log(`🔵 [OKX API] Order body:`, JSON.stringify(body));
+    
     if (roundedQuantity !== quantity) {
       console.log(`⚠️ [OKX API] Quantity rounded from ${quantity} to ${roundedQuantity} (lot size requirement)`);
     }
