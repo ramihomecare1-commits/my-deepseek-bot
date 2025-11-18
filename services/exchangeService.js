@@ -191,12 +191,12 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
     
     if (useScraperAPI) {
       // Route through ScraperAPI to bypass geo-blocking
-      // ScraperAPI format: POST to api.scraperapi.com with url, method, headers, and body
+      // NOTE: ScraperAPI may have limitations with authenticated POST requests
+      // If this doesn't work, consider using a VPN or different proxy service
       targetUrl = 'http://api.scraperapi.com';
       const fullUrl = `${baseUrl}/v5/order/create`;
       
-      // ScraperAPI supports custom headers via headers parameter
-      // Format: JSON string of headers object
+      // ScraperAPI custom headers format
       const customHeaders = {
         'X-BAPI-API-KEY': apiKey,
         'X-BAPI-TIMESTAMP': timestamp.toString(),
@@ -205,7 +205,8 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
         'Content-Type': 'application/json'
       };
       
-      // ScraperAPI expects headers as JSON string and body as JSON string
+      // Try different ScraperAPI formats - some versions support different syntax
+      // Format 1: Headers as JSON string, body as JSON string in params
       requestConfig.params = {
         api_key: scraperApiKey,
         url: fullUrl,
@@ -214,12 +215,16 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
         body: JSON.stringify(requestParams)
       };
       
-      // For ScraperAPI, we send everything via params, not as axios data/headers
-      requestConfig.data = undefined;
-      requestConfig.headers = {}; // Headers are in ScraperAPI params
+      // Also try sending body via axios data (some ScraperAPI versions need this)
+      // ScraperAPI might forward the body from axios data instead of params
+      requestConfig.data = JSON.stringify(requestParams);
+      requestConfig.headers = {}; // Headers must be in ScraperAPI params
+      
       console.log(`🔵 [BYBIT API] Using ScraperAPI proxy to bypass geo-blocking`);
-      console.log(`   📤 Forwarding headers: X-BAPI-API-KEY=${apiKey.substring(0, 8)}..., X-BAPI-SIGN, etc.`);
-      console.log(`   📤 POST body: ${JSON.stringify(requestParams).substring(0, 100)}...`);
+      console.log(`   📤 Headers: X-BAPI-API-KEY=${apiKey.substring(0, 8)}..., X-BAPI-SIGN, etc.`);
+      console.log(`   📤 Body: ${JSON.stringify(requestParams).substring(0, 100)}...`);
+      console.log(`   ⚠️  If you see 'apiKey is missing', ScraperAPI may not support authenticated POST requests`);
+      console.log(`   💡 Alternative: Use a VPN or proxy service designed for API calls`);
     } else {
       requestConfig.data = requestParams; // POST body for direct request
     }
