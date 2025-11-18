@@ -625,9 +625,15 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
         'X-BAPI-API-KEY': apiKey,
         'X-BAPI-TIMESTAMP': timestamp.toString(),
         'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-        'X-BAPI-SIGN': signature
+        'X-BAPI-SIGN': signature,
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9'
       },
-      timeout: 10000
+      timeout: 10000,
+      validateStatus: function (status) {
+        return status < 500; // Don't throw for 4xx errors, we'll handle them
+      }
     });
 
     if (response.data && response.data.retCode === 0 && response.data.result) {
@@ -680,9 +686,15 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
         'X-BAPI-API-KEY': apiKey,
         'X-BAPI-TIMESTAMP': timestamp.toString(),
         'X-BAPI-RECV-WINDOW': recvWindow.toString(),
-        'X-BAPI-SIGN': signature
+        'X-BAPI-SIGN': signature,
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9'
       },
-      timeout: 10000
+      timeout: 10000,
+      validateStatus: function (status) {
+        return status < 500; // Don't throw for 4xx errors, we'll handle them
+      }
     });
 
     if (response.data && response.data.retCode === 0 && response.data.result) {
