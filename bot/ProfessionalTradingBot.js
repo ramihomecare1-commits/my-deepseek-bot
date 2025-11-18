@@ -4788,8 +4788,6 @@ Return JSON array format:
         closedTrade.executedQty || trade.quantity
       );
       
-      // Save both active and closed trades
-        // Removed: DynamoDB persistence - OKX is the only source of truth
       // Removed: DynamoDB persistence - OKX is the only source of truth
       
       // Recalculate portfolio
@@ -4825,18 +4823,13 @@ Return JSON array format:
 
   /**
    * Load closed trades from storage
+   * Removed: DynamoDB persistence - OKX is the only source of truth
    */
   async loadClosedTrades() {
-    try {
-      const closed = await loadClosedTrades();
-      if (closed && closed.length > 0) {
-        this.closedTrades = closed.slice(-100); // Keep last 100 in memory
-        console.log(`✅ Loaded ${this.closedTrades.length} closed trades from storage`);
-      }
-    } catch (error) {
-      console.error('❌ Error loading closed trades:', error);
-      this.closedTrades = [];
-    }
+    // Removed: DynamoDB persistence - OKX is the only source of truth
+    // Closed trades are kept in memory only (last 100)
+    this.closedTrades = [];
+    console.log('📂 Closed trades: OKX is the only source of truth (no DynamoDB persistence)');
   }
 
   getActiveTrades() {
