@@ -1083,7 +1083,7 @@ async function getBybitOpenOrders(apiKey, apiSecret, baseUrl) {
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9'
       },
-      timeout: useScraperAPI ? 45000 : 10000 // Much longer timeout for ScraperAPI (45s)
+      timeout: useProxy ? 45000 : 10000 // Longer timeout for proxy (45s), shorter for direct (10s)
     };
     
     if (useScrapeOps) {

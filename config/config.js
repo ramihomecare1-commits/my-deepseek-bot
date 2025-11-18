@@ -150,10 +150,13 @@ console.log('🔧 Configuration Status:');
 console.log(`   Telegram: ${TELEGRAM_ENABLED ? 'ENABLED' : 'DISABLED'}`);
 console.log(`   CoinMarketCap: ${COINMARKETCAP_ENABLED ? 'ENABLED ✅' : 'DISABLED ❌ (Set COINMARKETCAP_API_KEY)'}`);
 console.log(`   CryptoCompare: ${process.env.CRYPTOCOMPARE_API_KEY ? 'ENABLED ✅' : 'DISABLED ❌'}`);
-console.log(`   ScraperAPI Proxy: ${SCRAPER_API_ENABLED ? 'ENABLED ✅ (Bypasses geo-blocks)' : 'DISABLED ❌'}`);
-if (!SCRAPER_API_ENABLED) {
-  console.log(`   💡 To enable ScraperAPI: Set SCRAPER_API_KEY environment variable`);
-  console.log(`   💡 Get free key: https://www.scraperapi.com/ (1,000 requests/month free)`);
+console.log(`   Proxy Services:`);
+console.log(`   - ScrapeOps: ${SCRAPEOPS_ENABLED ? 'ENABLED ✅' : 'DISABLED ❌'} (Priority: ${PROXY_PRIORITY === 'scrapeops' ? 'Primary' : 'Fallback'})`);
+console.log(`   - ScraperAPI: ${SCRAPER_API_ENABLED ? 'ENABLED ✅' : 'DISABLED ❌'} (Priority: ${PROXY_PRIORITY === 'scraperapi' ? 'Primary' : 'Fallback'})`);
+if (!SCRAPEOPS_ENABLED && !SCRAPER_API_ENABLED) {
+  console.log(`   💡 To enable proxy: Set SCRAPEOPS_API_KEY or SCRAPER_API_KEY environment variable`);
+  console.log(`   💡 ScrapeOps: https://scrapeops.io/ (1,000 free credits)`);
+  console.log(`   💡 ScraperAPI: https://www.scraperapi.com/ (1,000 requests/month free)`);
 }
 console.log(`   News: ENABLED ✅ (Free public APIs: CryptoCompare${NEWSAPI_KEY ? ' + NewsAPI.org' : ''})`);
 console.log(`   Mock Notifications: ${ALLOW_MOCK_NOTIFICATIONS ? 'ALLOWED' : 'BLOCKED'}`);
