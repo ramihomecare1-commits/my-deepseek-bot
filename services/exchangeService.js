@@ -464,14 +464,17 @@ async function executeOkxRequestWithFallback(options) {
         
         console.log(`🔄 [OKX API] Attempt ${i + 1}/${proxies.length}: Trying direct connection...`);
       } else if (proxy.name === 'ScrapeOps') {
-        // ScrapeOps proxy
+        // ScrapeOps proxy - Note: ScrapeOps may not properly forward custom headers for authenticated APIs
+        // This is a limitation of free proxy services
         const fullUrl = `${baseUrl}${requestPath}`;
         const scrapeOpsParams = {
           api_key: proxy.key,
           url: fullUrl,
-          keep_headers: 'true'
+          render: 'false', // Don't render JavaScript
+          keep_headers: 'true' // Try to keep headers
         };
         
+        // ScrapeOps requires headers to be passed as a JSON string in the params
         const customHeaders = {
           'OK-ACCESS-KEY': apiKey,
           'OK-ACCESS-SIGN': signature,
@@ -481,22 +484,24 @@ async function executeOkxRequestWithFallback(options) {
           'Content-Type': 'application/json'
         };
         
+        // ScrapeOps expects headers as a JSON string
         scrapeOpsParams.headers = JSON.stringify(customHeaders);
         
-        // For POST requests, include body in params
+        // For POST requests, include body in params (ScrapeOps needs it in params, not data)
         if (method === 'POST' && body) {
           scrapeOpsParams.body = JSON.stringify(body);
+          scrapeOpsParams.method = 'POST';
         }
         
         targetUrl = proxy.url;
         requestConfig = {
           params: scrapeOpsParams,
-          headers: {
-            'Content-Type': 'application/json'
-          },
+          method: 'GET', // ScrapeOps proxy uses GET with params
           timeout: 20000,
           validateStatus: (status) => status < 500
         };
+        
+        console.log(`⚠️ [OKX API] ScrapeOps may not forward authentication headers correctly - this is a known limitation`);
         
         console.log(`🔄 [OKX API] Attempt ${i + 1}/${proxies.length}: Trying ScrapeOps proxy (fallback)...`);
       } else {
@@ -544,14 +549,20 @@ async function executeOkxRequestWithFallback(options) {
         
         // For proxies, send body in data field, not params
         if (proxy.name !== 'Direct') {
-          // Proxies need body in data field
-          response = await axios.post(targetUrl, requestConfig.data || JSON.stringify(body), {
-            ...requestConfig,
-            headers: {
-              ...requestConfig.headers,
-              'Content-Type': 'application/json'
-            }
-          });
+          // ScrapeOps uses GET with params, so we need to handle it differently
+          if (proxy.name === 'ScrapeOps') {
+            // ScrapeOps proxy - use GET with all params (including body)
+            response = await axios.get(targetUrl, requestConfig);
+          } else {
+            // Other proxies (ScraperAPI) need body in data field
+            response = await axios.post(targetUrl, requestConfig.data || JSON.stringify(body), {
+              ...requestConfig,
+              headers: {
+                ...requestConfig.headers,
+                'Content-Type': 'application/json'
+              }
+            });
+          }
         } else {
           response = await axios.post(targetUrl, requestConfig.data || requestConfig.params, requestConfig);
         }
@@ -718,14 +729,32 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
     } else {
       const errorMsg = response.data?.msg || response.data?.message || 'Unknown error';
       const errorCode = response.data?.code || response.status || 0;
+      const sCode = response.data?.data?.[0]?.sCode;
+      const sMsg = response.data?.data?.[0]?.sMsg;
       
-      console.log(`❌ [OKX API] Order failed: ${errorMsg} (Code: ${errorCode})`);
-      console.log(`   Full response:`, JSON.stringify(response.data).substring(0, 500));
+      // Handle specific OKX error codes
+      if (errorCode === '1' && sCode === '51010') {
+        console.log(`❌ [OKX API] Order failed: Account mode error (Code: ${sCode})`);
+        console.log(`   Error: ${sMsg || errorMsg}`);
+        console.log(`   💡 This error means your OKX account is not in the correct mode for this operation.`);
+        console.log(`   💡 Solutions:`);
+        console.log(`      1. Verify you're using a DEMO/SIMULATED trading account API key`);
+        console.log(`      2. Check your OKX account settings: https://www.okx.com → Demo Trading`);
+        console.log(`      3. Ensure your API key has 'Trade' permissions enabled`);
+        console.log(`      4. Make sure you're using the demo account API key, not a live account key`);
+        console.log(`      5. The 'x-simulated-trading: 1' header is automatically added, but your account must be in demo mode`);
+      } else {
+        console.log(`❌ [OKX API] Order failed: ${errorMsg} (Code: ${errorCode})`);
+        if (sCode && sMsg) {
+          console.log(`   Detailed error: ${sMsg} (Code: ${sCode})`);
+        }
+        console.log(`   Full response:`, JSON.stringify(response.data).substring(0, 500));
+      }
       
       return {
         success: false,
-        error: errorMsg,
-        code: errorCode,
+        error: sMsg || errorMsg,
+        code: sCode || errorCode,
         rawResponse: response.data
       };
     }
