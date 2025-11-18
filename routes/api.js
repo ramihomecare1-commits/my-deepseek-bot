@@ -383,11 +383,15 @@ router.get('/logs', (req, res) => {
 });
 
 // Active trades endpoint
+// NOTE: OKX is the source of truth for positions. Trade data is kept in memory only for trigger monitoring (DCA, SL, TP proximity).
 router.get('/active-trades', (req, res) => {
   try {
-    const { tradingBot } = req.app.locals;
-    const activeTrades = tradingBot.getActiveTrades();
-    res.json(activeTrades);
+    // Return empty array - OKX is source of truth, trade data kept only for triggers
+    res.json([]);
+    // Original code kept for reference:
+    // const { tradingBot } = req.app.locals;
+    // const activeTrades = tradingBot.getActiveTrades();
+    // res.json(activeTrades);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -405,11 +409,19 @@ router.get('/closed-trades', (req, res) => {
 });
 
 // Portfolio stats endpoint
+// NOTE: OKX is the source of truth for balance and positions. Portfolio data is kept only for trigger monitoring.
 router.get('/portfolio', (req, res) => {
   try {
-    const { getPortfolioStats } = require('../services/portfolioService');
-    const portfolio = getPortfolioStats();
-    res.json(portfolio);
+    // Return empty/minimal data - OKX is source of truth
+    res.json({
+      message: 'OKX is the source of truth for balance and positions. Check OKX dashboard for accurate data.',
+      source: 'OKX',
+      note: 'Portfolio data kept in memory only for trigger monitoring (DCA, SL, TP proximity detection)'
+    });
+    // Original code kept for reference:
+    // const { getPortfolioStats } = require('../services/portfolioService');
+    // const portfolio = getPortfolioStats();
+    // res.json(portfolio);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -480,7 +492,7 @@ router.get('/exchange-status', (req, res) => {
 });
 
 // Test OKX Connection endpoint
-router.get('/test-bybit-connection', async (req, res) => {
+router.get('/test-okx-connection', async (req, res) => {
   try {
     const { isExchangeTradingEnabled, getPreferredExchange, getOkxBalance, getOkxOpenPositions } = require('../services/exchangeService');
     const status = isExchangeTradingEnabled();
@@ -552,6 +564,43 @@ router.get('/test-bybit-connection', async (req, res) => {
       success: false,
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Test OKX Account Mode endpoint
+router.get('/test-okx-account-mode', async (req, res) => {
+  try {
+    const { getPreferredExchange, verifyOkxAccountMode } = require('../services/exchangeService');
+    const exchange = getPreferredExchange();
+    
+    if (exchange.exchange !== 'OKX') {
+      return res.json({ 
+        success: false,
+        error: 'OKX is not configured',
+        message: 'Please set OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE in your environment variables'
+      });
+    }
+    
+    const result = await verifyOkxAccountMode(
+      exchange.apiKey,
+      exchange.apiSecret,
+      exchange.passphrase,
+      exchange.baseUrl
+    );
+    
+    res.json({
+      ...result,
+      config: {
+        exchange: exchange.exchange,
+        baseUrl: exchange.baseUrl,
+        testnet: exchange.testnet
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
     });
   }
 });

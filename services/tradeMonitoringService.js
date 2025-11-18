@@ -81,6 +81,8 @@ class TradeMonitoringService {
 
   /**
    * Check all open trades for proximity to key levels
+   * NOTE: Trade data is kept in memory only for trigger monitoring (DCA, SL, TP proximity detection)
+   * OKX is the source of truth for actual positions and balance
    */
   async checkTrades() {
     if (!this.bot || !this.bot.activeTrades || this.bot.activeTrades.length === 0) {
@@ -88,6 +90,11 @@ class TradeMonitoringService {
     }
 
     try {
+      // Sync with OKX positions first to ensure trigger data matches OKX
+      if (this.bot.syncWithOkxPositions) {
+        await this.bot.syncWithOkxPositions();
+      }
+
       for (const trade of this.bot.activeTrades) {
         await this.checkTrade(trade);
       }

@@ -3675,6 +3675,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     }
 
     // Sync with OKX positions first (source of truth for quantities)
+    // NOTE: Trade data is kept in memory only for trigger monitoring (DCA, SL, TP proximity detection)
+    // OKX is the source of truth for actual positions and balance
     await this.syncWithOkxPositions();
 
     addLogEntry(`Updating ${this.activeTrades.length} active trades...`, 'info');

@@ -856,7 +856,8 @@
           <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
               <button class="btn-secondary" onclick="openTriggerSettings()" style="background: linear-gradient(135deg, #22c55e, #10b981); color: white; font-weight: 600;">🎯 Trigger Settings</button>
               <button class="btn-secondary" onclick="toggleTradeMonitoring()" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; font-weight: 600;">📊 Monitoring Panel</button>
-              <button class="btn-secondary" onclick="testBybitConnection()" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; font-weight: 600;">🔗 Test OKX Connection</button>
+              <button class="btn-secondary" onclick="testOkxConnection()" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; font-weight: 600;">🔗 Test OKX Connection</button>
+              <button class="btn-secondary" onclick="testOkxAccountMode()" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; font-weight: 600;">🔍 Verify Account Mode</button>
               <button class="btn-primary" onclick="handleEvaluateTrades()">🤖 Re-evaluate Trades</button>
         </div>
             <div class="pill-list">
@@ -1014,7 +1015,8 @@
         </div>
       </div>
 
-      <section id="portfolio" class="section-block">
+      <!-- Portfolio section hidden - OKX is the source of truth for positions and balance -->
+      <section id="portfolio" class="section-block" style="display: none;">
       <div>
         <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">💼 Portfolio</h3>
         <div id="portfolio-container" class="portfolio-container">
@@ -1166,7 +1168,9 @@
       </div>
       </section>
 
-      <div>
+      <!-- Active Trades section hidden - OKX is the source of truth for positions -->
+      <!-- Trade data is kept in memory only for trigger monitoring (DCA, SL, TP proximity) -->
+      <div style="display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
           <h3 style="margin: 0; color: #0f172a; font-size: 1.5em; font-weight: 700;">💰 Active Trades</h3>
           <button id="evaluateTradesBtn" onclick="handleEvaluateTrades()" style="padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9em; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s;" onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.2)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)';">🤖 AI Re-evaluate Trades</button>
@@ -1323,7 +1327,7 @@
     window.handleSaveTriggerSettings = handleSaveTriggerSettings;
     function handleEvaluateTrades() { handleUserAction('evaluate', evaluateTradesWithAI); }
     
-    async function testBybitConnection() {
+    async function testOkxConnection() {
       const button = event?.target;
       const originalText = button ? button.textContent : '🔗 Test OKX Connection';
       
@@ -1333,7 +1337,7 @@
           button.textContent = '⏳ Testing...';
         }
         
-        const response = await fetch(API_BASE + '/test-bybit-connection');
+        const response = await fetch(API_BASE + '/test-okx-connection');
         const result = await response.json();
         
         let message = '';
@@ -1405,6 +1409,120 @@
         
       } catch (error) {
         const errorMsg = `❌ Error testing Bybit connection: ${error.message}`;
+        console.error(errorMsg, error);
+        
+        if (typeof showToast === 'function') {
+          showToast(errorMsg, 'error');
+        } else {
+          alert(errorMsg);
+        }
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = originalText;
+        }
+      }
+    }
+    
+    async function testOkxAccountMode() {
+      const button = event?.target;
+      const originalText = button ? button.textContent : '🔍 Verify Account Mode';
+      
+      try {
+        if (button) {
+          button.disabled = true;
+          button.textContent = '⏳ Verifying...';
+        }
+        
+        const response = await fetch(API_BASE + '/test-okx-account-mode');
+        const result = await response.json();
+        
+        let message = '';
+        let isSuccess = false;
+        
+        if (result.success) {
+          isSuccess = result.supportsDerivatives;
+          
+          message = '🔍 OKX Account Mode Verification:\n\n';
+          message += `📋 Detected Mode: ${result.accountMode}\n`;
+          if (result.accountLevel) {
+            message += `📋 Account Level: ${result.accountLevel}\n`;
+          }
+          if (result.positionMode) {
+            message += `📋 Position Mode: ${result.positionMode}\n`;
+          }
+          message += `\n`;
+          
+          message += `📊 Derivatives Support: ${result.supportsDerivatives ? '✅ YES' : '❌ NO'}\n`;
+          message += `📊 SWAP Instruments: ${result.canAccessSwapInstruments ? `✅ YES (${result.swapInstrumentsCount} available)` : '❌ NO'}\n\n`;
+          
+          if (result.config) {
+            message += `📋 Account Configuration:\n`;
+            message += `   - Account Level: ${result.config.acctLv || 'N/A'}\n`;
+            message += `   - Position Mode: ${result.config.posMode || 'N/A'}\n`;
+            message += `   - Permissions: ${result.config.perm || 'N/A'}\n\n`;
+          }
+          
+          if (result.instrumentsError) {
+            message += `⚠️ Instruments API Error: ${result.instrumentsError}\n\n`;
+          }
+          
+          message += `💡 ${result.recommendation}\n`;
+          
+          // Show actionable steps if available
+          if (result.actionableSteps && result.actionableSteps.length > 0) {
+            message += `\n📋 Detailed Actionable Steps:\n`;
+            result.actionableSteps.forEach((step, index) => {
+              message += `   ${index + 1}. ${step}\n`;
+            });
+          }
+          
+          // Show switch precheck details if available
+          if (result.switchPrecheck) {
+            message += `\n🔍 Switch Precheck Details:\n`;
+            message += `   - Status Code: ${result.switchPrecheck.sCode || 'N/A'}\n`;
+            message += `   - Current Mode: ${result.switchPrecheck.curAcctLv || 'N/A'}\n`;
+            message += `   - Target Mode: ${result.switchPrecheck.acctLv || 'N/A'}\n`;
+            
+            if (result.switchPrecheck.mgnBf && result.switchPrecheck.mgnAft) {
+              const mgnRatioBf = parseFloat(result.switchPrecheck.mgnBf.mgnRatio || 0);
+              const mgnRatioAft = parseFloat(result.switchPrecheck.mgnAft.mgnRatio || 0);
+              message += `   - Margin Ratio: ${mgnRatioBf.toFixed(2)}% → ${mgnRatioAft.toFixed(2)}%\n`;
+            }
+            
+            if (result.switchPrecheck.unmatchedInfoCheck && result.switchPrecheck.unmatchedInfoCheck.length > 0) {
+              message += `   - Issues Found: ${result.switchPrecheck.unmatchedInfoCheck.length} item(s)\n`;
+            }
+          }
+          
+          if (!result.supportsDerivatives && (!result.actionableSteps || result.actionableSteps.length === 0)) {
+            message += `\n📝 General Steps to Fix:\n`;
+            message += `   1. Go to https://www.okx.com\n`;
+            message += `   2. Log in to your DEMO account\n`;
+            message += `   3. Navigate to: Trade → Futures → Settings\n`;
+            message += `   4. Find "Trading Mode" option\n`;
+            message += `   5. Select "Futures mode" or "Multi-currency margin mode"\n`;
+            message += `   6. Click "Switch" to confirm\n`;
+            message += `   7. Wait a few seconds, then test again`;
+          }
+        } else {
+          message = `❌ Account Mode Verification Failed:\n\n`;
+          message += `${result.error || 'Unknown error'}\n\n`;
+          message += `💡 ${result.recommendation || 'Please check your API credentials and try again.'}`;
+        }
+        
+        // Show result in alert or toast
+        if (typeof showToast === 'function') {
+          showToast(message, isSuccess ? 'success' : 'error');
+        } else {
+          alert(message);
+        }
+        
+        // Also log to console
+        console.log('🔍 OKX Account Mode Verification Result:', result);
+        
+      } catch (error) {
+        const errorMsg = `❌ Error verifying account mode: ${error.message}`;
         console.error(errorMsg, error);
         
         if (typeof showToast === 'function') {
@@ -2558,9 +2676,9 @@
     
     updateStats();
     updateAIEvaluation();
-    updateActiveTradesDisplay(); // Initial load of active trades
+    // updateActiveTradesDisplay(); // Disabled - OKX is source of truth, trade data kept only for triggers
     updateClosedTradesDisplay(); // Initial load of closed trades
-    updatePortfolioDisplay(); // Initial load of portfolio
+    // updatePortfolioDisplay(); // Disabled - OKX is source of truth, portfolio section hidden
     console.log('✅ Initial data fetch started');
 
     // AI Trade Re-evaluation function
@@ -2681,13 +2799,13 @@
       }
     }
 
-    updatePortfolioDisplay(); // Initial load of portfolio
+    // updatePortfolioDisplay(); // Disabled - OKX is source of truth, portfolio section hidden
     updateAnalyticsDisplay(); // Initial load of analytics
     setInterval(updateStats, 30000);
     setInterval(updateAIEvaluation, 5000); // Update AI display every 5 seconds
-    setInterval(updateActiveTradesDisplay, 10000); // Update active trades every 10 seconds
+    // setInterval(updateActiveTradesDisplay, 10000); // Disabled - OKX is source of truth, trade data kept only for triggers
     setInterval(updateClosedTradesDisplay, 10000); // Update closed trades every 10 seconds
-    setInterval(updatePortfolioDisplay, 10000); // Update portfolio every 10 seconds
+    // setInterval(updatePortfolioDisplay, 10000); // Disabled - OKX is source of truth, portfolio section hidden
     setInterval(updateAnalyticsDisplay, 30000); // Update analytics every 30 seconds
     setInterval(updateNextScanTime, 5000); // Update next scan time every 5 seconds
     
