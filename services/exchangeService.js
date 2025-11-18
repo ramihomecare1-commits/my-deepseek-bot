@@ -1007,7 +1007,7 @@ async function getBybitOpenOrders(apiKey, apiSecret, baseUrl) {
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9'
       },
-      timeout: useScraperAPI ? 20000 : 10000
+      timeout: useScraperAPI ? 45000 : 10000 // Much longer timeout for ScraperAPI (45s)
     };
     
     if (useScraperAPI) {
