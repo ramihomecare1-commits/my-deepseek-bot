@@ -941,7 +941,7 @@
                 </label>
                 <div style="margin-top: 12px;">
                   <label style="display: block; margin-bottom: 4px; font-size: 0.9em;">Min Timeframe Alignment:</label>
-                  <input type="number" id="buyTimeframeAlignment" min="1" max="5" value="2" style="width: 60px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
+                  <input type="number" id="buyTimeframeAlignment" min="1" max="5" value="1" style="width: 60px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
                 </div>
               </div>
             </div>
@@ -983,7 +983,7 @@
                 </label>
                 <div style="margin-top: 12px;">
                   <label style="display: block; margin-bottom: 4px; font-size: 0.9em;">Min Timeframe Alignment:</label>
-                  <input type="number" id="sellTimeframeAlignment" min="1" max="5" value="2" style="width: 60px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
+                  <input type="number" id="sellTimeframeAlignment" min="1" max="5" value="1" style="width: 60px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
                 </div>
               </div>
             </div>
@@ -1857,7 +1857,7 @@
           document.getElementById('buyRequireFibonacci').checked = rules.patterns.buy.requireFibonacciSupport || false;
           document.getElementById('buyRequireTrend').checked = rules.patterns.buy.requireBullishTrend || false;
           document.getElementById('buyRequirePattern').checked = rules.patterns.buy.requirePattern || false;
-          document.getElementById('buyTimeframeAlignment').value = rules.patterns.buy.minTimeframeAlignment || 2;
+          document.getElementById('buyTimeframeAlignment').value = rules.patterns.buy.minTimeframeAlignment || 1;
         }
         
         if (rules.patterns && rules.patterns.sell) {
@@ -1868,7 +1868,7 @@
           document.getElementById('sellRequireFibonacci').checked = rules.patterns.sell.requireFibonacciResistance || false;
           document.getElementById('sellRequireTrend').checked = rules.patterns.sell.requireBearishTrend || false;
           document.getElementById('sellRequirePattern').checked = rules.patterns.sell.requirePattern || false;
-          document.getElementById('sellTimeframeAlignment').value = rules.patterns.sell.minTimeframeAlignment || 2;
+          document.getElementById('sellTimeframeAlignment').value = rules.patterns.sell.minTimeframeAlignment || 1;
         }
         
       } catch (error) {
