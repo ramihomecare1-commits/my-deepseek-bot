@@ -591,8 +591,17 @@ async function executeOkxRequestWithFallback(options) {
         const sCode = response.data?.data?.[0]?.sCode;
         const sMsg = response.data?.data?.[0]?.sMsg;
         
-        // Handle specific error 51010 (account mode error) with detailed guidance
-        if (errorCode === '1' && sCode === '51010') {
+        // Handle specific error 51000 (parameter error)
+        if (errorCode === '1' && sCode === '51000') {
+          console.log(`\n❌ [OKX API] Parameter error detected (Code: ${sCode})`);
+          console.log(`   Error: ${sMsg || errorMsg}`);
+          console.log(`   💡 This error means a required parameter is missing or incorrect.`);
+          console.log(`   💡 Common causes:`);
+          console.log(`      1. Missing 'posSide' parameter for derivatives orders`);
+          console.log(`      2. Invalid 'tdMode' or 'posSide' combination`);
+          console.log(`      3. Missing or incorrect 'instId' (symbol format)`);
+          console.log(`   💡 The bot automatically adds 'posSide' parameter - if error persists, check OKX API documentation\n`);
+        } else if (errorCode === '1' && sCode === '51010') {
           console.log(`\n❌ [OKX API] Account mode error detected (Code: ${sCode})`);
           console.log(`   Error: ${sMsg || errorMsg}`);
           console.log(`   💡 This error means your OKX account is not in the correct trading mode for derivatives.`);
@@ -650,8 +659,17 @@ async function executeOkxRequestWithFallback(options) {
         const sCode = error.response.data?.data?.[0]?.sCode;
         const sMsg = error.response.data?.data?.[0]?.sMsg;
         
-        // Handle specific error 51010 (account mode error) with detailed guidance
-        if (errorCode === '1' && sCode === '51010') {
+        // Handle specific error 51000 (parameter error)
+        if (errorCode === '1' && sCode === '51000') {
+          console.log(`\n❌ [OKX API] Parameter error detected (Code: ${sCode})`);
+          console.log(`   Error: ${sMsg || errorMsg}`);
+          console.log(`   💡 This error means a required parameter is missing or incorrect.`);
+          console.log(`   💡 Common causes:`);
+          console.log(`      1. Missing 'posSide' parameter for derivatives orders`);
+          console.log(`      2. Invalid 'tdMode' or 'posSide' combination`);
+          console.log(`      3. Missing or incorrect 'instId' (symbol format)`);
+          console.log(`   💡 The bot automatically adds 'posSide' parameter - if error persists, check OKX API documentation\n`);
+        } else if (errorCode === '1' && sCode === '51010') {
           console.log(`\n❌ [OKX API] Account mode error detected (Code: ${sCode})`);
           console.log(`   Error: ${sMsg || errorMsg}`);
           console.log(`   💡 This error means your OKX account is not in the correct trading mode for derivatives.`);
@@ -720,10 +738,15 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
     // Round to nearest integer (minimum 1 contract)
     const roundedQuantity = Math.max(1, Math.round(quantity));
     
+    // For cross margin mode, posSide should match the side
+    // 'buy' = long position, 'sell' = short position
+    const posSide = side.toLowerCase() === 'buy' ? 'long' : 'short';
+    
     const body = {
       instId: symbol,
       tdMode: 'cross', // Cross margin for derivatives (allows leverage and shorting)
       side: side.toLowerCase(), // 'buy' (long) or 'sell' (short)
+      posSide: posSide, // Position side: 'long' for buy, 'short' for sell (required for derivatives)
       ordType: 'market', // Market order
       sz: roundedQuantity.toString(), // Size (contract quantity, rounded to lot size)
       lever: leverage.toString() // Leverage (1-125, default 1x)
@@ -778,7 +801,16 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       const sMsg = response.data?.data?.[0]?.sMsg;
       
       // Handle specific OKX error codes
-      if (errorCode === '1' && sCode === '51010') {
+      if (errorCode === '1' && sCode === '51000') {
+        console.log(`❌ [OKX API] Order failed: Parameter error (Code: ${sCode})`);
+        console.log(`   Error: ${sMsg || errorMsg}`);
+        console.log(`   💡 This error means a required parameter is missing or incorrect.`);
+        console.log(`   💡 Common causes:`);
+        console.log(`      1. Missing 'posSide' parameter for derivatives orders`);
+        console.log(`      2. Invalid 'tdMode' or 'posSide' combination`);
+        console.log(`      3. Missing or incorrect 'instId' (symbol format)`);
+        console.log(`   💡 The bot automatically adds 'posSide' parameter - if error persists, check OKX API documentation\n`);
+      } else if (errorCode === '1' && sCode === '51010') {
         console.log(`❌ [OKX API] Order failed: Account mode error (Code: ${sCode})`);
         console.log(`   Error: ${sMsg || errorMsg}`);
         console.log(`   💡 This error means your OKX account is not in the correct trading mode for derivatives.`);
