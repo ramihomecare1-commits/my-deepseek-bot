@@ -890,6 +890,22 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
       return [];
     }
   } catch (error) {
+    // Check for timeout errors first
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      console.log(`❌ [BYBIT API] Request timeout - ScraperAPI may be slow or unresponsive`);
+      console.log(`   💡 Timeout occurred after ${error.config?.timeout || 'unknown'}ms`);
+      console.log(`   💡 Possible causes:`);
+      console.log(`      1. ScraperAPI is experiencing high latency`);
+      console.log(`      2. ScraperAPI free tier may have rate limits`);
+      console.log(`      3. Network connectivity issues`);
+      console.log(`   💡 Solutions:`);
+      console.log(`      1. Try again in a few moments`);
+      console.log(`      2. Consider upgrading ScraperAPI plan`);
+      console.log(`      3. Use a VPN or deploy to a different region`);
+      console.log(`      4. Check ScraperAPI dashboard for service status`);
+      return [];
+    }
+    
     const errorMsg = error.response?.data?.retMsg || error.response?.data?.retMsg || error.message;
     const errorCode = error.response?.data?.retCode || error.response?.status || 0;
     
