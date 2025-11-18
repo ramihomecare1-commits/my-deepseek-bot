@@ -217,8 +217,21 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
       console.log(`   Full response:`, JSON.stringify(response.data).substring(0, 500));
       
       // Check for common error patterns
-      if (response.data && typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
-        console.log(`   ⚠️ HTML response detected - Cloudflare blocking`);
+      if (response.data && typeof response.data === 'string') {
+        if (response.data.includes('<!DOCTYPE')) {
+          if (response.data.includes('CloudFront') || response.data.includes('block access from your country')) {
+            console.log(`   ⚠️ GEO-BLOCKING DETECTED: CloudFront is blocking your server's country/region`);
+            console.log(`   💡 This is NOT an API key issue - it's a network geo-blocking issue`);
+            console.log(`   💡 Solutions:`);
+            console.log(`      1. Deploy to a server in a different country/region (US, EU, Singapore)`);
+            console.log(`      2. Use a VPN or proxy service to route requests`);
+            console.log(`      3. Contact Bybit support about geo-restrictions`);
+            console.log(`      4. Check if your hosting provider offers different regions`);
+            console.log(`   💡 Your server IP is being blocked by CloudFront, not Bybit API`);
+          } else {
+            console.log(`   ⚠️ HTML response detected - CDN/Cloudflare blocking`);
+          }
+        }
       }
       
       if (errorCode === 0 && !response.data) {
@@ -783,21 +796,36 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
        error.response?.headers?.['content-type']?.includes('text/html'));
     
     if (isHtmlResponse) {
-      console.log(`❌ [BYBIT API] Error fetching positions: Request blocked by CDN/Cloudflare (Code: ${errorCode})`);
-      console.log(`   💡 This indicates the request is being blocked BEFORE reaching Bybit API`);
-      console.log(`   💡 The HTML response suggests Cloudflare is blocking your server's IP`);
-      console.log(`   💡 Possible causes:`);
-      console.log(`   1. Geo-blocking: Your server IP may be in a blocked region`);
-      console.log(`   2. IP reputation: Your server IP may be flagged by Cloudflare`);
-      console.log(`   3. Rate limiting: Too many requests from this IP`);
-      console.log(`   4. Network/firewall: Corporate firewall or proxy blocking requests`);
-      console.log(`   💡 Solutions:`);
-      console.log(`   - Added User-Agent headers to bypass Cloudflare bot detection`);
-      console.log(`   - Check if your server can access ${baseUrl} from command line`);
-      console.log(`   - Your server IP may be flagged by Cloudflare's automatic protection`);
-      console.log(`   - Try using a different server location or contact Bybit support`);
-      console.log(`   - Verify API endpoint: ${baseUrl}/v5/account/wallet-balance`);
-      console.log(`   - Note: IP restriction is disabled, so this is a Cloudflare network-level block`);
+      const isGeoBlocked = responseData && typeof responseData === 'string' && 
+        (responseData.includes('CloudFront') || responseData.includes('block access from your country'));
+      
+      if (isGeoBlocked) {
+        console.log(`❌ [BYBIT API] Error fetching positions: GEO-BLOCKING DETECTED (Code: ${errorCode})`);
+        console.log(`   💡 CloudFront is blocking your server's country/region`);
+        console.log(`   💡 This is NOT an API key issue - it's a network geo-blocking issue`);
+        console.log(`   💡 Solutions:`);
+        console.log(`      1. Deploy to a server in a different country/region (US, EU, Singapore)`);
+        console.log(`      2. Use a VPN or proxy service to route requests`);
+        console.log(`      3. Contact Bybit support about geo-restrictions`);
+        console.log(`      4. Check if your hosting provider offers different regions`);
+        console.log(`   💡 Your server IP is being blocked by CloudFront, not Bybit API`);
+      } else {
+        console.log(`❌ [BYBIT API] Error fetching positions: Request blocked by CDN/Cloudflare (Code: ${errorCode})`);
+        console.log(`   💡 This indicates the request is being blocked BEFORE reaching Bybit API`);
+        console.log(`   💡 The HTML response suggests Cloudflare is blocking your server's IP`);
+        console.log(`   💡 Possible causes:`);
+        console.log(`   1. Geo-blocking: Your server IP may be in a blocked region`);
+        console.log(`   2. IP reputation: Your server IP may be flagged by Cloudflare`);
+        console.log(`   3. Rate limiting: Too many requests from this IP`);
+        console.log(`   4. Network/firewall: Corporate firewall or proxy blocking requests`);
+        console.log(`   💡 Solutions:`);
+        console.log(`   - Added User-Agent headers to bypass Cloudflare bot detection`);
+        console.log(`   - Check if your server can access ${baseUrl} from command line`);
+        console.log(`   - Your server IP may be flagged by Cloudflare's automatic protection`);
+        console.log(`   - Try using a different server location or contact Bybit support`);
+        console.log(`   - Verify API endpoint: ${baseUrl}/v5/account/wallet-balance`);
+        console.log(`   - Note: IP restriction is disabled, so this is a Cloudflare network-level block`);
+      }
     } else {
       console.log(`❌ [BYBIT API] Error fetching positions: ${errorMsg} (Code: ${errorCode})`);
       
