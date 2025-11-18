@@ -565,11 +565,11 @@ class BulkIndicatorService {
   /**
    * Scan top coins for oversold opportunities
    * Returns coins sorted by most oversold (lowest RSI, below BB lower, etc.)
-   * Default: 25 coins (configurable via maxCoins parameter)
+   * Default: 10 coins (configurable via maxCoins parameter)
    */
   async scanBulkCoinsForOversold(options = {}) {
     const {
-      maxCoins = 25, // Reduced to 25 to avoid rate limits (was 200)
+      maxCoins = 10, // Reduced to 10 to save API calls while fixing OKX issues
       rsiThreshold = 30,
       minTriggers = 2, // Need at least 2 indicators to trigger
       enableBollinger = true, // Whether to check Bollinger Bands
@@ -802,7 +802,7 @@ class BulkIndicatorService {
    */
   async quickScan(topN = 10, rsiThreshold = 30) {
     const allOversold = await this.scanBulkCoinsForOversold({
-      maxCoins: 25, // Reduced to 25 to avoid rate limits
+      maxCoins: 10, // Reduced to 10 to save API calls while fixing OKX issues
       rsiThreshold,
       minTriggers: 2
     });
