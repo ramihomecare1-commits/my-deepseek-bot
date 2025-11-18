@@ -879,6 +879,9 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
     const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
     const useProxy = useScrapeOps || useScraperAPI;
     
+    // Debug logging for positions function
+    console.log(`🔍 [PROXY DEBUG] Positions - ScrapeOps: ${scrapeOpsKey ? 'SET' : 'NOT SET'}, ScraperAPI: ${scraperApiKey ? 'SET' : 'NOT SET'}, Priority: ${proxyPriority}, Using: ${useScrapeOps ? 'ScrapeOps ✅' : useScraperAPI ? 'ScraperAPI ✅' : 'Direct ⚠️'}`);
+    
     let targetUrl = `${baseUrl}/v5/account/wallet-balance`;
     let requestConfig = {
       params: useScrapeOps ? {
