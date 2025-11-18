@@ -160,6 +160,7 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
 
     console.log(`🔵 [BYBIT API] Sending order to ${baseUrl}/v5/order/create`);
     console.log(`🔵 [BYBIT API] Order: ${side} ${quantity} ${symbol} (Market)`);
+    console.log(`🔵 [BYBIT API] API Key: ${apiKey.substring(0, 8)}... (verifying permissions)`);
     
     const response = await axios.post(
       `${baseUrl}/v5/order/create`,
@@ -210,10 +211,37 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
   } catch (error) {
     const errorMsg = error.response?.data?.retMsg || error.response?.data?.message || error.message;
     const errorCode = error.response?.data?.retCode || error.response?.status || 0;
+    
     console.log(`❌ [BYBIT API] Order execution error: ${errorMsg} (Code: ${errorCode})`);
-    if (error.response?.data) {
-      console.log(`   Response:`, JSON.stringify(error.response.data).substring(0, 200));
+    
+    // Detailed diagnostics for common errors
+    if (errorCode === 403 || error.response?.status === 403) {
+      console.log(`   💡 403 Forbidden - Possible causes:`);
+      console.log(`   1. API key doesn't have 'Write' or 'Trade' permissions`);
+      console.log(`   2. API key is from mainnet but using testnet (or vice versa)`);
+      console.log(`   3. IP address not whitelisted (if IP whitelist is enabled)`);
+      console.log(`   4. Invalid API key or secret`);
+      console.log(`   5. API key doesn't have 'Spot Trading' scope enabled`);
+      console.log(`   💡 Check: https://testnet.bybit.com → Profile → API Management`);
+      console.log(`   💡 Required: Read-Write permissions + Spot Trading scope`);
+    } else if (errorCode === 401 || error.response?.status === 401) {
+      console.log(`   💡 401 Unauthorized - Invalid API key or signature`);
+      console.log(`   💡 Verify: API key and secret are correct`);
+    } else if (errorCode === 10001) {
+      console.log(`   💡 10001 - Invalid API key`);
+    } else if (errorCode === 10002) {
+      console.log(`   💡 10002 - Invalid signature`);
+    } else if (errorCode === 10003) {
+      console.log(`   💡 10003 - Request timestamp expired`);
+    } else if (errorCode === 10004) {
+      console.log(`   💡 10004 - Invalid request parameter`);
     }
+    
+    if (error.response?.data) {
+      const responseData = JSON.stringify(error.response.data);
+      console.log(`   Full Response: ${responseData.substring(0, 400)}`);
+    }
+    
     return {
       success: false,
       error: errorMsg,
