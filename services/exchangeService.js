@@ -452,11 +452,12 @@ async function executeOkxRequestWithFallback(options) {
             'OK-ACCESS-SIGN': signature,
             'OK-ACCESS-TIMESTAMP': timestamp,
             'OK-ACCESS-PASSPHRASE': passphrase,
+            'x-simulated-trading': '1', // Required for demo/simulated accounts
             'Content-Type': 'application/json'
           },
           data: body ? JSON.stringify(body) : undefined,
           timeout: 10000, // 10s for direct
-          validateStatus: (status) => status < 500
+          validateStatus: (status) => status >= 200 && status < 300 // Only accept 2xx as success
         };
         
         console.log(`🔄 [OKX API] Attempt ${i + 1}/${proxies.length}: Trying direct connection...`);
@@ -474,6 +475,7 @@ async function executeOkxRequestWithFallback(options) {
           'OK-ACCESS-SIGN': signature,
           'OK-ACCESS-TIMESTAMP': timestamp,
           'OK-ACCESS-PASSPHRASE': passphrase,
+          'x-simulated-trading': '1', // Required for demo/simulated accounts
           'Content-Type': 'application/json'
         };
         
@@ -503,6 +505,7 @@ async function executeOkxRequestWithFallback(options) {
               'OK-ACCESS-SIGN': signature,
               'OK-ACCESS-TIMESTAMP': timestamp,
               'OK-ACCESS-PASSPHRASE': passphrase,
+              'x-simulated-trading': '1', // Required for demo/simulated accounts
               'Content-Type': 'application/json'
             }),
             body: body ? JSON.stringify(body) : undefined
@@ -529,10 +532,24 @@ async function executeOkxRequestWithFallback(options) {
       const duration = Date.now() - startTime;
       console.log(`   ⏱️ Request completed in ${duration}ms`);
       console.log(`   📥 Response status: ${response.status}`);
+      console.log(`   📥 Response data: ${JSON.stringify(response.data).substring(0, 200)}...`);
       
       // Check if response is valid (not HTML/Cloudflare block)
       if (response.data && typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
         throw new Error('GEO_BLOCKED');
+      }
+      
+      // Check for OKX API errors (401, or code !== '0')
+      if (response.status === 401) {
+        const errorMsg = response.data?.msg || response.data?.message || 'Unauthorized';
+        throw new Error(`OKX Authentication Error: ${errorMsg}`);
+      }
+      
+      // Check OKX response code (OKX uses 'code' field, '0' means success)
+      if (response.data && response.data.code !== undefined && response.data.code !== '0') {
+        const errorMsg = response.data.msg || response.data.message || 'Unknown error';
+        const errorCode = response.data.code;
+        throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
       }
       
       // Success! Return response
@@ -540,6 +557,38 @@ async function executeOkxRequestWithFallback(options) {
       return response;
       
     } catch (error) {
+      // Handle 401 errors from axios (when validateStatus rejects)
+      if (error.response && error.response.status === 401) {
+        const okxError = error.response.data?.msg || error.response.data?.message || 'Unauthorized';
+        const okxCode = error.response.data?.code || '401';
+        
+        // Provide helpful guidance for common errors
+        if (okxError.includes('APIKey does not match current environment') || okxError.includes('environment')) {
+          console.log(`\n💡 [OKX API] Authentication Error: ${okxError}`);
+          console.log(`   💡 This error means your API key doesn't match the trading environment (demo vs real)`);
+          console.log(`   💡 Possible causes:`);
+          console.log(`      1. API key was created for real account but you're using demo (or vice versa)`);
+          console.log(`      2. API key, secret, or passphrase is incorrect`);
+          console.log(`      3. Passphrase doesn't match the one set when creating the API key`);
+          console.log(`   💡 Solution:`);
+          console.log(`      - Make sure you're using a DEMO/SIMULATED account API key`);
+          console.log(`      - Verify your OKX API credentials in environment variables:`);
+          console.log(`        * OKX_API_KEY`);
+          console.log(`        * OKX_API_SECRET`);
+          console.log(`        * OKX_PASSPHRASE`);
+          console.log(`      - The bot automatically adds 'x-simulated-trading: 1' header for demo accounts`);
+          console.log(`   💡 Check: https://www.okx.com → Account → API → Manage API Keys\n`);
+        }
+        
+        throw new Error(`OKX Authentication Error (${okxCode}): ${okxError}`);
+      }
+      
+      // Handle OKX error codes in error response
+      if (error.response && error.response.data && error.response.data.code !== undefined && error.response.data.code !== '0') {
+        const errorMsg = error.response.data.msg || error.response.data.message || 'Unknown error';
+        const errorCode = error.response.data.code;
+        throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
+      }
       const isTimeout = error.code === 'ECONNABORTED' || 
                        error.message?.toLowerCase().includes('timeout') ||
                        error.message?.toLowerCase().includes('exceeded');
