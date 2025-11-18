@@ -169,6 +169,12 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
     const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
     const useProxy = useScrapeOps || useScraperAPI;
     
+    // Debug logging for proxy selection
+    console.log(`🔍 [PROXY DEBUG] ScrapeOps Key: ${scrapeOpsKey ? 'SET (' + scrapeOpsKey.substring(0, 8) + '...)' : 'NOT SET'}`);
+    console.log(`🔍 [PROXY DEBUG] ScraperAPI Key: ${scraperApiKey ? 'SET (' + scraperApiKey.substring(0, 8) + '...)' : 'NOT SET'}`);
+    console.log(`🔍 [PROXY DEBUG] Priority Setting: ${proxyPriority}`);
+    console.log(`🔍 [PROXY DEBUG] Selected Proxy: ${useScrapeOps ? 'ScrapeOps ✅' : useScraperAPI ? 'ScraperAPI ✅' : 'Direct Connection ⚠️'}`);
+    
     // Debug logging for proxy status
     if (!useProxy) {
       console.log(`⚠️ [BYBIT API] No proxy configured - requests may be geo-blocked`);
