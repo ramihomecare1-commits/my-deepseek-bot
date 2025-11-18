@@ -415,6 +415,16 @@ class ProfessionalTradingBot {
         if (fixedCount > 0) {
           console.log(`🔧 Fixed ${fixedCount} existing trade(s) with missing TP, SL, or DCA levels`);
         }
+        
+        // Place algo orders for trades that don't have them (after a short delay to ensure OKX is ready)
+        setTimeout(async () => {
+          try {
+            await this.placeMissingAlgoOrders();
+          } catch (error) {
+            console.error(`❌ Error placing missing algo orders on startup: ${error.message}`);
+          }
+        }, 5000); // Wait 5 seconds after initialization
+        
         console.log('✅ Trades will be synced with OKX on next update');
       } else {
         console.log('📂 No active trades found');
@@ -3733,6 +3743,110 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
   }
 
   /**
+   * Place TP/SL algo orders on OKX for a trade
+   * @param {Object} trade - Trade object with symbol, action, takeProfit, stopLoss
+   * @returns {Promise<boolean>} Success status
+   */
+  async placeTradeAlgoOrders(trade) {
+    // Skip if already placed
+    if (trade.okxAlgoId || trade.okxAlgoClOrdId || trade.tpSlAutoPlaced) {
+      return true; // Already has algo orders
+    }
+    
+    // Skip if missing required fields
+    if (!trade.takeProfit || !trade.stopLoss || !trade.entryPrice) {
+      console.warn(`⚠️ ${trade.symbol}: Cannot place algo orders - missing TP, SL, or entry price`);
+      return false;
+    }
+    
+    try {
+      const { isExchangeTradingEnabled, getPreferredExchange, placeOkxAlgoOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+      const exchangeConfig = isExchangeTradingEnabled();
+      
+      if (!exchangeConfig.enabled) {
+        console.log(`⚠️ ${trade.symbol}: Exchange trading not enabled, cannot place algo orders`);
+        return false;
+      }
+      
+      const exchange = getPreferredExchange();
+      if (!exchange || exchange.exchange !== 'OKX') {
+        console.log(`⚠️ ${trade.symbol}: OKX not configured, cannot place algo orders`);
+        return false;
+      }
+      
+      const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+      if (!okxSymbol) {
+        console.warn(`⚠️ ${trade.symbol}: Symbol not available on OKX`);
+        return false;
+      }
+      
+      const side = trade.action === 'BUY' ? 'buy' : 'sell';
+      const posSide = side === 'buy' ? 'long' : 'short';
+      
+      // Calculate TP/SL trigger prices
+      let tpTriggerPrice, slTriggerPrice, tpOrderSide;
+      
+      if (trade.action === 'BUY') {
+        // Long position
+        tpTriggerPrice = trade.takeProfit; // Higher price = profit
+        slTriggerPrice = trade.stopLoss; // Lower price = loss
+        tpOrderSide = 'sell'; // Sell to close long position
+      } else {
+        // Short position
+        tpTriggerPrice = trade.takeProfit; // Lower price = profit for short
+        slTriggerPrice = trade.stopLoss; // Higher price = loss for short
+        tpOrderSide = 'buy'; // Buy to close short position
+      }
+      
+      const algoOrderParams = {
+        instId: okxSymbol,
+        tdMode: 'cross',
+        side: tpOrderSide,
+        posSide: posSide,
+        ordType: 'conditional',
+        closeFraction: '1', // Close full position when triggered
+        tpTriggerPx: tpTriggerPrice.toFixed(2),
+        tpOrdPx: '-1', // Market order for TP
+        slTriggerPx: slTriggerPrice.toFixed(2),
+        slOrdPx: '-1', // Market order for SL
+        tpTriggerPxType: 'last', // Use last price as trigger
+        slTriggerPxType: 'last',
+        reduceOnly: true, // Only reduce position
+        cxlOnClosePos: true, // Cancel TP/SL when position is closed
+        algoClOrdId: `tp-sl-${trade.symbol}-${Date.now()}`
+      };
+      
+      console.log(`📊 Placing TP/SL algo orders on OKX for ${trade.symbol}...`);
+      console.log(`   TP: $${tpTriggerPrice.toFixed(2)} (${tpOrderSide}), SL: $${slTriggerPrice.toFixed(2)}`);
+      
+      const algoResult = await placeOkxAlgoOrder(
+        algoOrderParams,
+        exchange.apiKey,
+        exchange.apiSecret,
+        exchange.passphrase,
+        exchange.baseUrl
+      );
+      
+      if (algoResult.success) {
+        console.log(`✅ TP/SL algo orders placed successfully for ${trade.symbol}! Algo ID: ${algoResult.algoId || algoResult.algoClOrdId}`);
+        trade.okxAlgoId = algoResult.algoId;
+        trade.okxAlgoClOrdId = algoResult.algoClOrdId;
+        trade.tpSlAutoPlaced = true;
+        addLogEntry(`TP/SL algo orders placed on OKX for ${trade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
+        return true;
+      } else {
+        console.log(`⚠️ Failed to place TP/SL algo orders for ${trade.symbol}: ${algoResult.error}`);
+        trade.tpSlAutoPlaced = false;
+        return false;
+      }
+    } catch (error) {
+      console.error(`❌ Error placing TP/SL algo orders for ${trade.symbol}: ${error.message}`);
+      trade.tpSlAutoPlaced = false;
+      return false;
+    }
+  }
+
+  /**
    * Fix existing trades that are missing TP, SL, or DCA levels
    * This ensures all trades have proper trigger levels for monitoring
    */
@@ -3796,6 +3910,46 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     return fixedCount;
   }
 
+  /**
+   * Place algo orders for trades that don't have them yet
+   * This ensures all trades on OKX have TP/SL algo orders
+   */
+  async placeMissingAlgoOrders() {
+    if (this.activeTrades.length === 0) {
+      return;
+    }
+    
+    let placedCount = 0;
+    let failedCount = 0;
+    
+    for (const trade of this.activeTrades) {
+      // Only place for OPEN trades that don't have algo orders yet
+      if (trade.status === 'OPEN' && !trade.okxAlgoId && !trade.okxAlgoClOrdId && !trade.tpSlAutoPlaced) {
+        if (trade.takeProfit && trade.stopLoss && trade.entryPrice) {
+          const success = await this.placeTradeAlgoOrders(trade);
+          if (success) {
+            placedCount++;
+          } else {
+            failedCount++;
+          }
+          // Small delay between orders to avoid rate limits
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+          console.warn(`⚠️ ${trade.symbol}: Cannot place algo orders - missing TP, SL, or entry price`);
+        }
+      }
+    }
+    
+    if (placedCount > 0) {
+      console.log(`✅ Placed TP/SL algo orders for ${placedCount} trade(s) on OKX`);
+    }
+    if (failedCount > 0) {
+      console.warn(`⚠️ Failed to place algo orders for ${failedCount} trade(s)`);
+    }
+    
+    return { placed: placedCount, failed: failedCount };
+  }
+
   async updateActiveTrades() {
     if (this.activeTrades.length === 0) {
       return;
@@ -3808,6 +3962,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     // NOTE: Trade data is kept in memory only for trigger monitoring (DCA, SL, TP proximity detection)
     // OKX is the source of truth for actual positions and balance
     await this.syncWithOkxPositions();
+    
+    // Place algo orders for trades that don't have them yet
+    await this.placeMissingAlgoOrders();
 
     addLogEntry(`Updating ${this.activeTrades.length} active trades...`, 'info');
 
