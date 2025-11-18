@@ -183,7 +183,7 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9'
       },
-      timeout: 20000, // Longer timeout for proxy
+      timeout: 45000, // Much longer timeout for ScraperAPI (45s)
       validateStatus: function (status) {
         return status < 500; // Don't throw for 4xx errors, we'll handle them
       }
@@ -746,7 +746,7 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9'
       },
-      timeout: useScraperAPI ? 20000 : 10000, // Longer timeout for proxy
+      timeout: useScraperAPI ? 45000 : 10000, // Much longer timeout for ScraperAPI (45s)
       validateStatus: function (status) {
         return status < 500; // Don't throw for 4xx errors, we'll handle them
       }
@@ -765,7 +765,15 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
     }
     return 0;
   } catch (error) {
-    console.log(`⚠️ Failed to get Bybit balance for ${asset}: ${error.message}`);
+    // Check for timeout errors
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      console.log(`❌ [BYBIT API] Balance request timeout - ScraperAPI may be slow`);
+      console.log(`   💡 Timeout occurred after ${error.config?.timeout || 'unknown'}ms`);
+      console.log(`   💡 ScraperAPI free tier may have rate limits or high latency`);
+      console.log(`   💡 Try again in a few moments or check ScraperAPI status`);
+    } else {
+      console.log(`⚠️ Failed to get Bybit balance for ${asset}: ${error.message}`);
+    }
     return 0;
   }
 }
@@ -825,7 +833,7 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9'
       },
-      timeout: useScraperAPI ? 20000 : 10000, // Longer timeout for proxy
+      timeout: useScraperAPI ? 45000 : 10000, // Much longer timeout for ScraperAPI (45s)
       validateStatus: function (status) {
         return status < 500; // Don't throw for 4xx errors, we'll handle them
       }
