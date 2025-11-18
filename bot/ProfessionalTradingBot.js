@@ -598,14 +598,18 @@ class ProfessionalTradingBot {
     const timeframes = consensusRules.timeframes || ['4h', '1d', '1w'];
     
     // Use minTimeframeAlignment from patterns if available (respects user's trading rules setting)
+    // This allows users to set "one timeframe alignment" (minTimeframeAlignment: 1)
     // Otherwise fall back to requiredMatches from multiTimeframeConsensus
     let requiredMatches;
-    if (analysis.action === 'BUY' && this.tradingRules.patterns.buy.minTimeframeAlignment) {
+    if (analysis.action === 'BUY' && this.tradingRules.patterns.buy.minTimeframeAlignment !== undefined) {
       requiredMatches = this.tradingRules.patterns.buy.minTimeframeAlignment;
-    } else if (analysis.action === 'SELL' && this.tradingRules.patterns.sell.minTimeframeAlignment) {
+      console.log(`🔍 [BUY] Using minTimeframeAlignment from trading rules: ${requiredMatches}`);
+    } else if (analysis.action === 'SELL' && this.tradingRules.patterns.sell.minTimeframeAlignment !== undefined) {
       requiredMatches = this.tradingRules.patterns.sell.minTimeframeAlignment;
+      console.log(`🔍 [SELL] Using minTimeframeAlignment from trading rules: ${requiredMatches}`);
     } else {
       requiredMatches = consensusRules.requiredMatches || timeframes.length;
+      console.log(`🔍 Using requiredMatches from multiTimeframeConsensus: ${requiredMatches}`);
     }
     
     const frames =
@@ -4994,6 +4998,9 @@ Return JSON array format:
     }
     if (newRules.patternDetection) {
       this.tradingRules.patternDetection = { ...this.tradingRules.patternDetection, ...newRules.patternDetection };
+    }
+    if (newRules.multiTimeframeConsensus) {
+      this.tradingRules.multiTimeframeConsensus = { ...this.tradingRules.multiTimeframeConsensus, ...newRules.multiTimeframeConsensus };
     }
     // Update minConfidence reference
     this.minConfidence = this.tradingRules.minConfidence;
