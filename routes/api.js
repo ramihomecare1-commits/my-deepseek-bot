@@ -479,6 +479,83 @@ router.get('/exchange-status', (req, res) => {
   }
 });
 
+// Test Bybit Connection endpoint
+router.get('/test-bybit-connection', async (req, res) => {
+  try {
+    const { isExchangeTradingEnabled, getPreferredExchange, getBybitBalance, getBybitOpenPositions } = require('../services/exchangeService');
+    const status = isExchangeTradingEnabled();
+    
+    if (!status.enabled) {
+      return res.json({
+        success: false,
+        error: 'Bybit is not configured',
+        message: 'Please set BYBIT_API_KEY and BYBIT_API_SECRET in your environment variables'
+      });
+    }
+    
+    const exchange = getPreferredExchange();
+    const results = {
+      success: true,
+      config: {
+        enabled: status.enabled,
+        mode: status.mode,
+        exchange: exchange.exchange,
+        baseUrl: exchange.baseUrl,
+        testnet: exchange.testnet
+      },
+      tests: {}
+    };
+    
+    // Test 1: Balance retrieval
+    try {
+      const balance = await getBybitBalance('USDT', exchange.apiKey, exchange.apiSecret, exchange.baseUrl);
+      results.tests.balance = {
+        success: true,
+        usdtBalance: balance,
+        message: balance > 0 ? `Balance: ${balance} USDT` : 'Balance: 0 USDT (normal for fresh demo account)'
+      };
+    } catch (error) {
+      results.tests.balance = {
+        success: false,
+        error: error.message,
+        details: error.response?.data || null
+      };
+    }
+    
+    // Test 2: Positions retrieval
+    try {
+      const positions = await getBybitOpenPositions(exchange.apiKey, exchange.apiSecret, exchange.baseUrl);
+      results.tests.positions = {
+        success: true,
+        count: positions.length,
+        positions: positions,
+        message: `Found ${positions.length} open position(s)`
+      };
+    } catch (error) {
+      results.tests.positions = {
+        success: false,
+        error: error.message,
+        details: error.response?.data || null
+      };
+    }
+    
+    // Overall success if config is enabled (balance/positions may fail due to API issues)
+    results.overallSuccess = status.enabled && (
+      results.tests.balance.success || 
+      results.tests.positions.success ||
+      (results.tests.balance.error && !results.tests.balance.error.includes('403'))
+    );
+    
+    res.json(results);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
 // AI Trade Re-evaluation endpoint
 router.post('/evaluate-trades', async (req, res) => {
   try {

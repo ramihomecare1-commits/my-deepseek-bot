@@ -856,6 +856,7 @@
           <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
               <button class="btn-secondary" onclick="openTriggerSettings()" style="background: linear-gradient(135deg, #22c55e, #10b981); color: white; font-weight: 600;">🎯 Trigger Settings</button>
               <button class="btn-secondary" onclick="toggleTradeMonitoring()" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; font-weight: 600;">📊 Monitoring Panel</button>
+              <button class="btn-secondary" onclick="testBybitConnection()" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; font-weight: 600;">🔗 Test Bybit Connection</button>
               <button class="btn-primary" onclick="handleEvaluateTrades()">🤖 Re-evaluate Trades</button>
         </div>
             <div class="pill-list">
@@ -1321,6 +1322,103 @@
     // Make sure function is globally accessible
     window.handleSaveTriggerSettings = handleSaveTriggerSettings;
     function handleEvaluateTrades() { handleUserAction('evaluate', evaluateTradesWithAI); }
+    
+    async function testBybitConnection() {
+      const button = event?.target;
+      const originalText = button ? button.textContent : '🔗 Test Bybit Connection';
+      
+      try {
+        if (button) {
+          button.disabled = true;
+          button.textContent = '⏳ Testing...';
+        }
+        
+        const response = await fetch(API_BASE + '/test-bybit-connection');
+        const result = await response.json();
+        
+        let message = '';
+        let isSuccess = false;
+        
+        if (result.success && result.overallSuccess) {
+          isSuccess = true;
+          message = '✅ Bybit Connection Test Results:\n\n';
+          message += `📋 Configuration:\n`;
+          message += `   Mode: ${result.config.mode}\n`;
+          message += `   Exchange: ${result.config.exchange}\n`;
+          message += `   Base URL: ${result.config.baseUrl}\n`;
+          message += `   Testnet: ${result.config.testnet ? 'Yes' : 'No'}\n\n`;
+          
+          if (result.tests.balance) {
+            if (result.tests.balance.success) {
+              message += `💰 Balance Test: ✅ Success\n`;
+              message += `   ${result.tests.balance.message}\n\n`;
+            } else {
+              message += `💰 Balance Test: ❌ Failed\n`;
+              message += `   Error: ${result.tests.balance.error}\n\n`;
+            }
+          }
+          
+          if (result.tests.positions) {
+            if (result.tests.positions.success) {
+              message += `📊 Positions Test: ✅ Success\n`;
+              message += `   ${result.tests.positions.message}\n`;
+              if (result.tests.positions.positions && result.tests.positions.positions.length > 0) {
+                message += `   Positions:\n`;
+                result.tests.positions.positions.forEach(pos => {
+                  message += `     - ${pos.coin}: ${pos.quantity.toFixed(8)}\n`;
+                });
+              }
+            } else {
+              message += `📊 Positions Test: ❌ Failed\n`;
+              message += `   Error: ${result.tests.positions.error}\n`;
+            }
+          }
+        } else if (result.success === false) {
+          message = `❌ Bybit Connection Test Failed:\n\n`;
+          message += `${result.error || result.message || 'Unknown error'}\n\n`;
+          message += `💡 Please check:\n`;
+          message += `   1. BYBIT_API_KEY is set in environment variables\n`;
+          message += `   2. BYBIT_API_SECRET is set in environment variables\n`;
+          message += `   3. API keys have Read-Write (Trade) permissions\n`;
+          message += `   4. Spot Trading scope is enabled on your API key`;
+        } else {
+          message = `⚠️ Bybit Connection Test: Partial Success\n\n`;
+          message += `Configuration: ✅ Enabled\n`;
+          if (result.tests.balance && !result.tests.balance.success) {
+            message += `Balance Test: ❌ ${result.tests.balance.error}\n`;
+          }
+          if (result.tests.positions && !result.tests.positions.success) {
+            message += `Positions Test: ❌ ${result.tests.positions.error}\n`;
+          }
+          message += `\n💡 This might indicate API permission issues or network problems.`;
+        }
+        
+        // Show result in alert or toast
+        if (typeof showToast === 'function') {
+          showToast(message, isSuccess ? 'success' : 'error');
+        } else {
+          alert(message);
+        }
+        
+        // Also log to console
+        console.log('🔗 Bybit Connection Test Result:', result);
+        
+      } catch (error) {
+        const errorMsg = `❌ Error testing Bybit connection: ${error.message}`;
+        console.error(errorMsg, error);
+        
+        if (typeof showToast === 'function') {
+          showToast(errorMsg, 'error');
+        } else {
+          alert(errorMsg);
+        }
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = originalText;
+        }
+      }
+    }
     
     async function testTelegram(evt) {
       const button = evt?.target || event?.target;
