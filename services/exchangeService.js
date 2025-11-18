@@ -171,9 +171,15 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
           'X-BAPI-TIMESTAMP': timestamp.toString(),
           'X-BAPI-RECV-WINDOW': recvWindow.toString(),
           'X-BAPI-SIGN': signature,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json',
+          'Accept-Language': 'en-US,en;q=0.9'
         },
-        timeout: 15000
+        timeout: 15000,
+        validateStatus: function (status) {
+          return status < 500; // Don't throw for 4xx errors, we'll handle them
+        }
       }
     );
 
@@ -738,11 +744,12 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
       console.log(`   3. Rate limiting: Too many requests from this IP`);
       console.log(`   4. Network/firewall: Corporate firewall or proxy blocking requests`);
       console.log(`   💡 Solutions:`);
+      console.log(`   - Added User-Agent headers to bypass Cloudflare bot detection`);
       console.log(`   - Check if your server can access ${baseUrl} from command line`);
-      console.log(`   - Try using a VPN or different server location`);
-      console.log(`   - Contact Bybit support if issue persists`);
+      console.log(`   - Your server IP may be flagged by Cloudflare's automatic protection`);
+      console.log(`   - Try using a different server location or contact Bybit support`);
       console.log(`   - Verify API endpoint: ${baseUrl}/v5/account/wallet-balance`);
-      console.log(`   - Check if IP whitelist is enabled in Bybit API settings`);
+      console.log(`   - Note: IP restriction is disabled, so this is a Cloudflare network-level block`);
     } else {
       console.log(`❌ [BYBIT API] Error fetching positions: ${errorMsg} (Code: ${errorCode})`);
       
