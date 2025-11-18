@@ -3378,8 +3378,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 tpTriggerPxType: 'last', // Use last price as trigger
                 slTriggerPxType: 'last',
                 reduceOnly: true, // Only reduce position
-                cxlOnClosePos: true, // Cancel TP/SL when position is closed
-                algoClOrdId: `tp-sl-${newTrade.symbol}-${Date.now()}`
+                cxlOnClosePos: true // Cancel TP/SL when position is closed
+                // Note: algoClOrdId is optional - OKX will generate one if not provided
+                // If you want to set it, use format: SYMBOL-timestamp (max 32 chars, alphanumeric/hyphens only)
+                // algoClOrdId: `${newTrade.symbol.toUpperCase()}-${Date.now().toString().slice(-8)}`
               };
               
               console.log(`📊 Placing TP/SL algo orders on OKX for ${newTrade.symbol}...`);
@@ -3812,8 +3814,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         tpTriggerPxType: 'last', // Use last price as trigger
         slTriggerPxType: 'last',
         reduceOnly: true, // Only reduce position
-        cxlOnClosePos: true, // Cancel TP/SL when position is closed
-        algoClOrdId: `tp-sl-${trade.symbol}-${Date.now()}`
+        cxlOnClosePos: true // Cancel TP/SL when position is closed
+        // Note: algoClOrdId is optional - OKX will generate one if not provided
+        // If you want to set it, use format: SYMBOL-timestamp (max 32 chars, alphanumeric/hyphens only)
+        // algoClOrdId: `${trade.symbol.toUpperCase()}-${Date.now().toString().slice(-8)}`
       };
       
       console.log(`📊 Placing TP/SL algo orders on OKX for ${trade.symbol}...`);
