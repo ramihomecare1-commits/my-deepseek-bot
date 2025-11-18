@@ -712,7 +712,13 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
       params: useScraperAPI ? {
         api_key: scraperApiKey,
         url: `${baseUrl}/v5/account/wallet-balance?${new URLSearchParams(requestParams).toString()}`,
-        method: 'GET'
+        method: 'GET',
+        headers: JSON.stringify({
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp.toString(),
+          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+          'X-BAPI-SIGN': signature
+        })
       } : requestParams,
       headers: {
         'X-BAPI-API-KEY': apiKey,
