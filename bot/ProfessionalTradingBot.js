@@ -147,6 +147,8 @@ class ProfessionalTradingBot {
     // Customizable trading rules
     this.tradingRules = {
       minConfidence: 0.65,
+      defaultTakeProfit: 5.0, // 5% default TP for validation
+      defaultStopLoss: 5.0, // 5% default SL for validation
       enabledIndicators: {
         rsi: true,
         bollinger: true,
@@ -352,20 +354,40 @@ class ProfessionalTradingBot {
             const trades = [];
             
             okxPositions.forEach(okxPos => {
-              // Create trade record from OKX position
+              // Create trade record from OKX position with TP, SL, and DCA defaults
+              const entryPrice = okxPos.avgPrice || 0;
+              const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 5.0;
+              const defaultSLPercent = this.tradingRules?.defaultStopLoss || 5.0;
+              const action = okxPos.side === 'short' ? 'SELL' : 'BUY';
+              
+              let takeProfit, stopLoss, addPosition;
+              if (action === 'BUY') {
+                takeProfit = entryPrice * (1 + defaultTPPercent / 100);
+                stopLoss = entryPrice * (1 - defaultSLPercent / 100);
+                addPosition = entryPrice * 0.90; // 10% below entry
+              } else {
+                takeProfit = entryPrice * (1 - defaultTPPercent / 100);
+                stopLoss = entryPrice * (1 + defaultSLPercent / 100);
+                addPosition = entryPrice * 1.10; // 10% above entry
+              }
+              
               trades.push({
                 id: `${okxPos.coin}-${Date.now()}`,
                 symbol: okxPos.coin,
-                action: okxPos.side === 'short' ? 'SELL' : 'BUY', // OKX side: 'long' or 'short'
-                entryPrice: okxPos.avgPrice || 0, // Use average price from OKX
+                action: action,
+                entryPrice: entryPrice,
+                takeProfit: takeProfit,
+                stopLoss: stopLoss,
+                addPosition: addPosition,
+                dcaPrice: addPosition, // For compatibility
                 quantity: okxPos.quantity,
                 leverage: okxPos.leverage || 1,
                 status: 'OPEN',
                 entryTime: new Date(), // Approximate - OKX doesn't provide exact entry time
                 lastSyncedWithOkx: new Date(),
-                note: 'Position loaded from OKX'
+                note: 'Position loaded from OKX - TP/SL/DCA set with defaults'
               });
-              console.log(`   ✅ ${okxPos.coin}: ${okxPos.side} position - Quantity: ${okxPos.quantity.toFixed(8)}, Avg Price: $${(okxPos.avgPrice || 0).toFixed(2)}`);
+              console.log(`   ✅ ${okxPos.coin}: ${okxPos.side} position - Quantity: ${okxPos.quantity.toFixed(8)}, Avg Price: $${entryPrice.toFixed(2)}, TP: $${takeProfit.toFixed(2)}, SL: $${stopLoss.toFixed(2)}`);
             });
             
             this.activeTrades = trades;
@@ -388,6 +410,11 @@ class ProfessionalTradingBot {
       
       if (this.activeTrades && this.activeTrades.length > 0) {
         console.log(`✅ Active trades loaded: ${this.activeTrades.length} trades`);
+        // Fix any trades missing TP, SL, or DCA levels
+        const fixedCount = this.fixMissingTradeLevels();
+        if (fixedCount > 0) {
+          console.log(`🔧 Fixed ${fixedCount} existing trade(s) with missing TP, SL, or DCA levels`);
+        }
         console.log('✅ Trades will be synced with OKX on next update');
       } else {
         console.log('📂 No active trades found');
@@ -3113,9 +3140,45 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     
     const currentPrice = parsePrice(opportunity.price);
     const entryPrice = parsePrice(opportunity.entryPrice) || currentPrice;
-    const takeProfit = parsePrice(opportunity.takeProfit) || currentPrice * 1.05;
-    const stopLoss = parsePrice(opportunity.stopLoss) || currentPrice * 0.95;
-    const addPosition = parsePrice(opportunity.addPosition) || currentPrice;
+    
+    // Ensure TP, SL, and DCA levels are always set with proper defaults
+    // Default: 5% TP, 5% SL, DCA at 10% below entry for BUY (or 10% above for SELL)
+    const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 5.0; // 5% default
+    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 5.0; // 5% default
+    
+    let takeProfit = parsePrice(opportunity.takeProfit);
+    let stopLoss = parsePrice(opportunity.stopLoss);
+    let addPosition = parsePrice(opportunity.addPosition);
+    
+    // Validate and set defaults for TP
+    if (!takeProfit || takeProfit <= 0 || takeProfit === entryPrice) {
+      if (opportunity.action === 'BUY') {
+        takeProfit = entryPrice * (1 + defaultTPPercent / 100);
+      } else {
+        takeProfit = entryPrice * (1 - defaultTPPercent / 100); // For SELL, TP is lower price
+      }
+      console.log(`⚠️ ${opportunity.symbol}: Missing or invalid TP, using default ${defaultTPPercent}%`);
+    }
+    
+    // Validate and set defaults for SL
+    if (!stopLoss || stopLoss <= 0 || stopLoss === entryPrice) {
+      if (opportunity.action === 'BUY') {
+        stopLoss = entryPrice * (1 - defaultSLPercent / 100);
+      } else {
+        stopLoss = entryPrice * (1 + defaultSLPercent / 100); // For SELL, SL is higher price
+      }
+      console.log(`⚠️ ${opportunity.symbol}: Missing or invalid SL, using default ${defaultSLPercent}%`);
+    }
+    
+    // Validate and set defaults for DCA (addPosition)
+    if (!addPosition || addPosition <= 0 || addPosition === entryPrice) {
+      if (opportunity.action === 'BUY') {
+        addPosition = entryPrice * 0.90; // 10% below entry for BUY (DCA on dip)
+      } else {
+        addPosition = entryPrice * 1.10; // 10% above entry for SELL (DCA on rally)
+      }
+      console.log(`⚠️ ${opportunity.symbol}: Missing or invalid DCA level, using default 10% from entry`);
+    }
     
     // Calculate position size using risk management
     const { calculateQuantity } = require('../services/exchangeService');
@@ -3669,10 +3732,77 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     }
   }
 
+  /**
+   * Fix existing trades that are missing TP, SL, or DCA levels
+   * This ensures all trades have proper trigger levels for monitoring
+   */
+  fixMissingTradeLevels() {
+    let fixedCount = 0;
+    const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 5.0;
+    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 5.0;
+    
+    this.activeTrades.forEach(trade => {
+      let needsFix = false;
+      const entryPrice = trade.entryPrice || trade.currentPrice || 0;
+      
+      if (!entryPrice || entryPrice <= 0) {
+        console.warn(`⚠️ ${trade.symbol}: Missing entry price, cannot fix levels`);
+        return;
+      }
+      
+      // Fix missing or invalid Take Profit
+      if (!trade.takeProfit || trade.takeProfit <= 0 || trade.takeProfit === entryPrice) {
+        if (trade.action === 'BUY') {
+          trade.takeProfit = entryPrice * (1 + defaultTPPercent / 100);
+        } else {
+          trade.takeProfit = entryPrice * (1 - defaultTPPercent / 100);
+        }
+        needsFix = true;
+        console.log(`🔧 ${trade.symbol}: Fixed missing TP to $${trade.takeProfit.toFixed(2)} (${defaultTPPercent}%)`);
+      }
+      
+      // Fix missing or invalid Stop Loss
+      if (!trade.stopLoss || trade.stopLoss <= 0 || trade.stopLoss === entryPrice) {
+        if (trade.action === 'BUY') {
+          trade.stopLoss = entryPrice * (1 - defaultSLPercent / 100);
+        } else {
+          trade.stopLoss = entryPrice * (1 + defaultSLPercent / 100);
+        }
+        needsFix = true;
+        console.log(`🔧 ${trade.symbol}: Fixed missing SL to $${trade.stopLoss.toFixed(2)} (${defaultSLPercent}%)`);
+      }
+      
+      // Fix missing or invalid DCA level (addPosition)
+      if (!trade.addPosition || trade.addPosition <= 0 || trade.addPosition === entryPrice) {
+        if (trade.action === 'BUY') {
+          trade.addPosition = entryPrice * 0.90; // 10% below entry
+        } else {
+          trade.addPosition = entryPrice * 1.10; // 10% above entry
+        }
+        trade.dcaPrice = trade.addPosition; // Also set dcaPrice for compatibility
+        needsFix = true;
+        console.log(`🔧 ${trade.symbol}: Fixed missing DCA level to $${trade.addPosition.toFixed(2)}`);
+      }
+      
+      if (needsFix) {
+        fixedCount++;
+      }
+    });
+    
+    if (fixedCount > 0) {
+      console.log(`✅ Fixed ${fixedCount} trade(s) with missing TP, SL, or DCA levels`);
+    }
+    
+    return fixedCount;
+  }
+
   async updateActiveTrades() {
     if (this.activeTrades.length === 0) {
       return;
     }
+
+    // Fix any trades missing TP, SL, or DCA levels first
+    this.fixMissingTradeLevels();
 
     // Sync with OKX positions first (source of truth for quantities)
     // NOTE: Trade data is kept in memory only for trigger monitoring (DCA, SL, TP proximity detection)
