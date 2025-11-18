@@ -160,15 +160,21 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
       signature: signature
     };
 
-    // Use ScraperAPI proxy if configured (bypasses geo-blocking)
+    // Use proxy if configured (ScrapeOps preferred, ScraperAPI as fallback)
+    const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
     const scraperApiKey = config.SCRAPER_API_KEY || '';
-    const useScraperAPI = scraperApiKey && scraperApiKey.length > 0;
+    const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
     
-    // Debug logging for ScraperAPI status
-    if (!useScraperAPI) {
-      console.log(`⚠️ [BYBIT API] ScraperAPI not configured - SCRAPER_API_KEY not set`);
-      console.log(`   💡 To bypass geo-blocking, set SCRAPER_API_KEY environment variable`);
-      console.log(`   💡 Get free key at: https://www.scraperapi.com/`);
+    const useScrapeOps = scrapeOpsKey && scrapeOpsKey.length > 0 && (proxyPriority === 'scrapeops' || !scraperApiKey);
+    const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
+    const useProxy = useScrapeOps || useScraperAPI;
+    
+    // Debug logging for proxy status
+    if (!useProxy) {
+      console.log(`⚠️ [BYBIT API] No proxy configured - requests may be geo-blocked`);
+      console.log(`   💡 To bypass geo-blocking, set SCRAPEOPS_API_KEY or SCRAPER_API_KEY`);
+      console.log(`   💡 ScrapeOps: https://scrapeops.io/ (1,000 free credits)`);
+      console.log(`   💡 ScraperAPI: https://www.scraperapi.com/ (1,000 requests/month free)`);
     }
     
     let targetUrl = `${baseUrl}/v5/order/create`;
@@ -183,20 +189,18 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9'
       },
-      timeout: 45000, // Much longer timeout for ScraperAPI (45s)
+      timeout: useProxy ? 45000 : 10000, // Longer timeout for proxy (45s), shorter for direct (10s)
       validateStatus: function (status) {
         return status < 500; // Don't throw for 4xx errors, we'll handle them
       }
     };
     
-    if (useScraperAPI) {
-      // Route through ScraperAPI to bypass geo-blocking
-      // NOTE: ScraperAPI may have limitations with authenticated POST requests
-      // If this doesn't work, consider using a VPN or different proxy service
-      targetUrl = 'http://api.scraperapi.com';
+    if (useScrapeOps) {
+      // Route through ScrapeOps to bypass geo-blocking
+      targetUrl = 'https://proxy.scrapeops.io/v1/';
       const fullUrl = `${baseUrl}/v5/order/create`;
       
-      // ScraperAPI custom headers format
+      // ScrapeOps format: uses 'url' parameter and supports custom headers
       const customHeaders = {
         'X-BAPI-API-KEY': apiKey,
         'X-BAPI-TIMESTAMP': timestamp.toString(),
@@ -205,8 +209,32 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
         'Content-Type': 'application/json'
       };
       
-      // Try different ScraperAPI formats - some versions support different syntax
-      // Format 1: Headers as JSON string, body as JSON string in params
+      requestConfig.params = {
+        api_key: scrapeOpsKey,
+        url: fullUrl,
+        method: 'POST',
+        headers: JSON.stringify(customHeaders)
+      };
+      
+      // POST body as JSON
+      requestConfig.data = JSON.stringify(requestParams);
+      requestConfig.headers = {}; // Headers are in ScrapeOps params
+      
+      console.log(`🔵 [BYBIT API] Using ScrapeOps proxy to bypass geo-blocking`);
+      console.log(`   📤 Headers: X-BAPI-API-KEY=${apiKey.substring(0, 8)}..., X-BAPI-SIGN, etc.`);
+    } else if (useScraperAPI) {
+      // Route through ScraperAPI to bypass geo-blocking (fallback)
+      targetUrl = 'http://api.scraperapi.com';
+      const fullUrl = `${baseUrl}/v5/order/create`;
+      
+      const customHeaders = {
+        'X-BAPI-API-KEY': apiKey,
+        'X-BAPI-TIMESTAMP': timestamp.toString(),
+        'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+        'X-BAPI-SIGN': signature,
+        'Content-Type': 'application/json'
+      };
+      
       requestConfig.params = {
         api_key: scraperApiKey,
         url: fullUrl,
@@ -215,21 +243,16 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
         body: JSON.stringify(requestParams)
       };
       
-      // Also try sending body via axios data (some ScraperAPI versions need this)
-      // ScraperAPI might forward the body from axios data instead of params
       requestConfig.data = JSON.stringify(requestParams);
-      requestConfig.headers = {}; // Headers must be in ScraperAPI params
+      requestConfig.headers = {};
       
-      console.log(`🔵 [BYBIT API] Using ScraperAPI proxy to bypass geo-blocking`);
-      console.log(`   📤 Headers: X-BAPI-API-KEY=${apiKey.substring(0, 8)}..., X-BAPI-SIGN, etc.`);
-      console.log(`   📤 Body: ${JSON.stringify(requestParams).substring(0, 100)}...`);
-      console.log(`   ⚠️  If you see 'apiKey is missing', ScraperAPI may not support authenticated POST requests`);
-      console.log(`   💡 Alternative: Use a VPN or proxy service designed for API calls`);
+      console.log(`🔵 [BYBIT API] Using ScraperAPI proxy to bypass geo-blocking (fallback)`);
     } else {
       requestConfig.data = requestParams; // POST body for direct request
     }
     
-    console.log(`🔵 [BYBIT API] Sending order to ${useScraperAPI ? 'ScraperAPI → ' : ''}${baseUrl}/v5/order/create`);
+    const proxyLabel = useScrapeOps ? 'ScrapeOps → ' : useScraperAPI ? 'ScraperAPI → ' : '';
+    console.log(`🔵 [BYBIT API] Sending order to ${proxyLabel}${baseUrl}/v5/order/create`);
     console.log(`🔵 [BYBIT API] Order: ${side} ${quantity} ${symbol} (Market)`);
     console.log(`🔵 [BYBIT API] API Key: ${apiKey.substring(0, 8)}... (verifying permissions)`);
     
@@ -720,13 +743,28 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
       signature: signature
     };
 
-    // Use ScraperAPI proxy if configured (bypasses geo-blocking)
+    // Use proxy if configured (ScrapeOps preferred, ScraperAPI as fallback)
+    const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
     const scraperApiKey = config.SCRAPER_API_KEY || '';
-    const useScraperAPI = scraperApiKey && scraperApiKey.length > 0;
+    const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
+    
+    const useScrapeOps = scrapeOpsKey && scrapeOpsKey.length > 0 && (proxyPriority === 'scrapeops' || !scraperApiKey);
+    const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
+    const useProxy = useScrapeOps || useScraperAPI;
     
     let targetUrl = `${baseUrl}/v5/account/wallet-balance`;
     let requestConfig = {
-      params: useScraperAPI ? {
+      params: useScrapeOps ? {
+        api_key: scrapeOpsKey,
+        url: `${baseUrl}/v5/account/wallet-balance?${new URLSearchParams(requestParams).toString()}`,
+        method: 'GET',
+        headers: JSON.stringify({
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp.toString(),
+          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+          'X-BAPI-SIGN': signature
+        })
+      } : useScraperAPI ? {
         api_key: scraperApiKey,
         url: `${baseUrl}/v5/account/wallet-balance?${new URLSearchParams(requestParams).toString()}`,
         method: 'GET',
@@ -746,15 +784,18 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9'
       },
-      timeout: useScraperAPI ? 45000 : 10000, // Much longer timeout for ScraperAPI (45s)
+      timeout: useProxy ? 45000 : 10000, // Longer timeout for proxy (45s), shorter for direct (10s)
       validateStatus: function (status) {
         return status < 500; // Don't throw for 4xx errors, we'll handle them
       }
     };
     
-    if (useScraperAPI) {
+    if (useScrapeOps) {
+      targetUrl = 'https://proxy.scrapeops.io/v1/';
+      console.log(`🔵 [BYBIT API] Using ScrapeOps proxy to bypass geo-blocking`);
+    } else if (useScraperAPI) {
       targetUrl = 'http://api.scraperapi.com';
-      console.log(`🔵 [BYBIT API] Using ScraperAPI proxy to bypass geo-blocking`);
+      console.log(`🔵 [BYBIT API] Using ScraperAPI proxy to bypass geo-blocking (fallback)`);
     }
     
     const response = await axios.get(targetUrl, requestConfig);
@@ -807,13 +848,28 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
       signature: signature
     };
 
-    // Use ScraperAPI proxy if configured (bypasses geo-blocking)
+    // Use proxy if configured (ScrapeOps preferred, ScraperAPI as fallback)
+    const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
     const scraperApiKey = config.SCRAPER_API_KEY || '';
-    const useScraperAPI = scraperApiKey && scraperApiKey.length > 0;
+    const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
+    
+    const useScrapeOps = scrapeOpsKey && scrapeOpsKey.length > 0 && (proxyPriority === 'scrapeops' || !scraperApiKey);
+    const useScraperAPI = scraperApiKey && scraperApiKey.length > 0 && !useScrapeOps;
+    const useProxy = useScrapeOps || useScraperAPI;
     
     let targetUrl = `${baseUrl}/v5/account/wallet-balance`;
     let requestConfig = {
-      params: useScraperAPI ? {
+      params: useScrapeOps ? {
+        api_key: scrapeOpsKey,
+        url: `${baseUrl}/v5/account/wallet-balance?${new URLSearchParams(requestParams).toString()}`,
+        method: 'GET',
+        headers: JSON.stringify({
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp.toString(),
+          'X-BAPI-RECV-WINDOW': recvWindow.toString(),
+          'X-BAPI-SIGN': signature
+        })
+      } : useScraperAPI ? {
         api_key: scraperApiKey,
         url: `${baseUrl}/v5/account/wallet-balance?${new URLSearchParams(requestParams).toString()}`,
         method: 'GET',
@@ -833,18 +889,22 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9'
       },
-      timeout: useScraperAPI ? 45000 : 10000, // Much longer timeout for ScraperAPI (45s)
+      timeout: useProxy ? 45000 : 10000, // Longer timeout for proxy (45s), shorter for direct (10s)
       validateStatus: function (status) {
         return status < 500; // Don't throw for 4xx errors, we'll handle them
       }
     };
     
-    if (useScraperAPI) {
+    if (useScrapeOps) {
+      targetUrl = 'https://proxy.scrapeops.io/v1/';
+      console.log(`🔵 [BYBIT API] Using ScrapeOps proxy to bypass geo-blocking`);
+    } else if (useScraperAPI) {
       targetUrl = 'http://api.scraperapi.com';
-      console.log(`🔵 [BYBIT API] Using ScraperAPI proxy to bypass geo-blocking`);
+      console.log(`🔵 [BYBIT API] Using ScraperAPI proxy to bypass geo-blocking (fallback)`);
     }
     
-    console.log(`🔵 [BYBIT API] Fetching open positions from ${useScraperAPI ? 'ScraperAPI → ' : ''}${baseUrl}/v5/account/wallet-balance`);
+    const proxyLabel = useScrapeOps ? 'ScrapeOps → ' : useScraperAPI ? 'ScraperAPI → ' : '';
+    console.log(`🔵 [BYBIT API] Fetching open positions from ${proxyLabel}${baseUrl}/v5/account/wallet-balance`);
     console.log(`🔵 [BYBIT API] Params: accountType=SPOT, timestamp=${timestamp}, recvWindow=${recvWindow}`);
     console.log(`🔵 [BYBIT API] API Key: ${apiKey.substring(0, 8)}... (checking permissions)`);
     
@@ -1026,7 +1086,9 @@ async function getBybitOpenOrders(apiKey, apiSecret, baseUrl) {
       timeout: useScraperAPI ? 45000 : 10000 // Much longer timeout for ScraperAPI (45s)
     };
     
-    if (useScraperAPI) {
+    if (useScrapeOps) {
+      targetUrl = 'https://proxy.scrapeops.io/v1/';
+    } else if (useScraperAPI) {
       targetUrl = 'http://api.scraperapi.com';
     }
     

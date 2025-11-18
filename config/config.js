@@ -134,6 +134,9 @@ const ALLOW_MOCK_NOTIFICATIONS = (process.env.ALLOW_MOCK_NOTIFICATIONS || 'false
 // Proxy configuration for bypassing geo-restrictions
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
 const SCRAPER_API_ENABLED = SCRAPER_API_KEY.length > 0;
+const SCRAPEOPS_API_KEY = process.env.SCRAPEOPS_API_KEY || '';
+const SCRAPEOPS_ENABLED = SCRAPEOPS_API_KEY.length > 0;
+const PROXY_PRIORITY = process.env.PROXY_PRIORITY || 'scrapeops'; // 'scrapeops', 'scraperapi', 'none'
 
 // TAAPI.IO Configuration for bulk technical indicators
 const TAAPI_API_KEY = process.env.TAAPI_API_KEY || '';
@@ -244,7 +247,10 @@ module.exports = {
   BYBIT_API_SECRET,
   BYBIT_TESTNET,
   BYBIT_ENABLED,
-  // ScraperAPI Configuration
+  // Proxy Configuration
   SCRAPER_API_KEY,
-  SCRAPER_API_ENABLED
+  SCRAPER_API_ENABLED,
+  SCRAPEOPS_API_KEY,
+  SCRAPEOPS_ENABLED,
+  PROXY_PRIORITY
 };
