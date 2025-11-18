@@ -6,7 +6,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Free CoinGecko API: 10-30 requests/minute
 // Free CoinPaprika API: 20,000 requests/month (~13 per minute sustained)
 function getTop100Coins() {
-  return [
+  const allCoins = [
     { symbol: 'BTC', name: 'Bitcoin', id: 'bitcoin', coinmarketcap_id: '1', coinpaprika_id: 'btc-bitcoin' },
     { symbol: 'ETH', name: 'Ethereum', id: 'ethereum', coinmarketcap_id: '1027', coinpaprika_id: 'eth-ethereum' },
     { symbol: 'BNB', name: 'Binance Coin', id: 'binancecoin', coinmarketcap_id: '1839', coinpaprika_id: 'bnb-binance-coin' },
@@ -32,13 +32,16 @@ function getTop100Coins() {
     { symbol: 'SUI', name: 'Sui', id: 'sui', coinmarketcap_id: '20947', coinpaprika_id: 'sui-sui' },
     { symbol: 'TON', name: 'Toncoin', id: 'the-open-network', coinmarketcap_id: '11419', coinpaprika_id: 'ton-toncoin' },
     { symbol: 'SHIB', name: 'Shiba Inu', id: 'shiba-inu', coinmarketcap_id: '11974', coinpaprika_id: 'shib-shiba-inu' }
-    // 10 coins total - matches bulk scan monitoring
-    // Excludes: USDT, USDC, BUSD, DAI, TUSD (stablecoins)
-    // Excludes: WETH, WBTC, WBNB (wrapped tokens)
-    // Each coin makes ~3-4 API calls (price + historical data)
-    // 10 coins = ~40 requests per scan
-    // With 3-5 second delays, this stays under free tier limits
   ];
+  
+  // Return only first 10 coins to save API calls
+  return allCoins.slice(0, 10);
+  
+  // Note: Excludes: USDT, USDC, BUSD, DAI, TUSD (stablecoins)
+  // Excludes: WETH, WBTC, WBNB (wrapped tokens)
+  // Each coin makes ~3-4 API calls (price + historical data)
+  // 10 coins = ~40 requests per scan
+  // With 3-5 second delays, this stays under free tier limits
 }
 
 // Format currency
