@@ -188,7 +188,7 @@ class ProfessionalTradingBot {
       },
       multiTimeframeConsensus: {
         enabled: true,
-        requiredMatches: 2,
+        requiredMatches: 1,  // Default to 1, can be overridden by minTimeframeAlignment in patterns
         timeframes: ['4h', '1d', '1w']  // Long-term trading: 4h, daily, and weekly
       },
       patterns: {
@@ -200,7 +200,7 @@ class ProfessionalTradingBot {
           requireFibonacciSupport: false,
           requireBullishTrend: false,
           requirePattern: false,  // Require trading pattern (H&S, channels, etc.)
-          minTimeframeAlignment: 2  // At least 2 timeframes must align
+          minTimeframeAlignment: 1  // Default to 1 timeframe alignment (user can change in UI)
         },
         sell: {
           enabled: true,
@@ -210,7 +210,7 @@ class ProfessionalTradingBot {
           requireFibonacciResistance: false,
           requireBearishTrend: false,
           requirePattern: false,  // Require trading pattern
-          minTimeframeAlignment: 2
+          minTimeframeAlignment: 1  // Default to 1 timeframe alignment (user can change in UI)
         }
       },
       patternDetection: {
