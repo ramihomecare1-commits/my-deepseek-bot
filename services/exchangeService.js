@@ -810,6 +810,16 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
         console.log(`      2. Invalid 'tdMode' or 'posSide' combination`);
         console.log(`      3. Missing or incorrect 'instId' (symbol format)`);
         console.log(`   💡 The bot automatically adds 'posSide' parameter - if error persists, check OKX API documentation\n`);
+      } else if (errorCode === '1' && sCode === '51008') {
+        console.log(`❌ [OKX API] Order failed: Insufficient margin (Code: ${sCode})`);
+        console.log(`   Error: ${sMsg || errorMsg}`);
+        console.log(`   💡 This error means your OKX demo account doesn't have enough USDT balance to execute this order.`);
+        console.log(`   💡 SOLUTION:`);
+        console.log(`      1. Check your OKX demo account balance at https://www.okx.com`);
+        console.log(`      2. Demo accounts typically start with limited balance (e.g., $10,000 virtual USD)`);
+        console.log(`      3. The bot is trying to place an order larger than available margin`);
+        console.log(`      4. Reduce position size in trading rules or wait for existing positions to close`);
+        console.log(`      5. For testing, you can manually fund your demo account via OKX website if needed\n`);
       } else if (errorCode === '1' && sCode === '51010') {
         console.log(`❌ [OKX API] Order failed: Account mode error (Code: ${sCode})`);
         console.log(`   Error: ${sMsg || errorMsg}`);
@@ -843,8 +853,23 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
   } catch (error) {
     const errorMsg = error.response?.data?.msg || error.response?.data?.message || error.message;
     const errorCode = error.response?.data?.code || error.response?.status || 0;
+    const sCode = error.response?.data?.data?.[0]?.sCode;
+    const sMsg = error.response?.data?.data?.[0]?.sMsg;
     
-    console.log(`❌ [OKX API] Order execution error: ${errorMsg} (Code: ${errorCode})`);
+    // Handle specific error 51008 (insufficient margin)
+    if (errorCode === '1' && sCode === '51008') {
+      console.log(`❌ [OKX API] Order execution error: Insufficient margin (Code: ${sCode})`);
+      console.log(`   Error: ${sMsg || errorMsg}`);
+      console.log(`   💡 This error means your OKX demo account doesn't have enough USDT balance to execute this order.`);
+      console.log(`   💡 SOLUTION:`);
+      console.log(`      1. Check your OKX demo account balance at https://www.okx.com`);
+      console.log(`      2. Demo accounts typically start with limited balance (e.g., $10,000 virtual USD)`);
+      console.log(`      3. The bot is trying to place an order larger than available margin`);
+      console.log(`      4. Reduce position size in trading rules or wait for existing positions to close`);
+      console.log(`      5. For testing, you can manually fund your demo account via OKX website if needed\n`);
+    } else {
+      console.log(`❌ [OKX API] Order execution error: ${errorMsg} (Code: ${errorCode})`);
+    }
     
     return {
       success: false,
