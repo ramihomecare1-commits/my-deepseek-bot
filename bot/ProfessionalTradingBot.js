@@ -1361,7 +1361,9 @@ class ProfessionalTradingBot {
       if (escalations.length > 0) {
         console.log(`\n🚨 Batch escalating ${escalations.length} coins to Premium AI in one API call...`);
         
-        const batchEscalationResults = await monitoringService.batchEscalateToR1(escalations);
+        // Pass current active trades count to AI so it knows position limits
+        const activeTradesCount = this.activeTrades ? this.activeTrades.length : 0;
+        const batchEscalationResults = await monitoringService.batchEscalateToR1(escalations, activeTradesCount);
         
         // Process batch escalation results
         for (const result of batchEscalationResults) {
@@ -1760,7 +1762,7 @@ Reason: ${newReason?.substring(0, 200)}`);
       
       const strategy = getRebalancingStrategy(this.activeTrades, this.targetAllocation, {
         deviationThreshold: this.rebalancingDeviationThreshold,
-        maxPositions: 10,
+        maxPositions: 5, // Maximum 5 positions can be open at once
         minPositionSize: 50
       });
 
@@ -2562,7 +2564,14 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           );
           // Add the opportunity as an active trade if it's a BUY/SELL signal
           if (opp.action === 'BUY' || opp.action === 'SELL') {
-            console.log(`💼 Executing trade for ${opp.symbol}: ${opp.action} at $${opp.entryPrice?.toFixed(2) || 'N/A'}`);
+            // Check if we've reached max positions (5)
+            const currentActiveTrades = this.activeTrades ? this.activeTrades.length : 0;
+            if (currentActiveTrades >= 5) {
+              console.log(`⏭️ Skipping trade execution for ${opp.symbol} - Maximum 5 positions already open (${currentActiveTrades}/5)`);
+              continue;
+            }
+            
+            console.log(`💼 Executing trade for ${opp.symbol}: ${opp.action} at $${opp.entryPrice?.toFixed(2) || 'N/A'} (${currentActiveTrades + 1}/5 positions)`);
             try {
             await this.addActiveTrade(opp);
               console.log(`✅ Trade executed successfully for ${opp.symbol}`);
@@ -4413,6 +4422,17 @@ For each trade, provide:
    IMPORTANT: newTakeProfit and newStopLoss must be DOLLAR AMOUNTS (e.g., $1000.00), NOT percentages
    Example: If you want to adjust TP to $1000, use newTakeProfit: 1000.00 (not 1000%)
 5. If CLOSE: consider DCA/addPosition first - if DCA is still available (dcaCount < 5), suggest DCA instead of closing
+
+POSITION SIZING RULES (CRITICAL):
+- Maximum 5 positions can be open at once
+- Each position should reach a maximum of 10% of total portfolio after all DCAs
+- DCA (Dollar-Cost Averaging) plan per position:
+  * Initial position: 1.5% of portfolio
+  * DCA 1: +1% of portfolio (total: 2.5%)
+  * DCA 2: +2% of portfolio (total: 4.5%)
+  * DCA 3: +4% of portfolio (total: 8.5%)
+  * DCA 4: +1.5% of portfolio (total: 10% max)
+- Consider portfolio allocation when making recommendations
 
 IMPORTANT RULES:
 - Before recommending CLOSE on a losing trade, check if DCA is available (dcaCount < 5). DCA is often better than closing at a loss.

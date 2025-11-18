@@ -757,7 +757,7 @@ class MonitoringService {
   /**
    * Batch escalate multiple coins to premium model in one API call
    */
-  async batchEscalateToR1(escalations) {
+  async batchEscalateToR1(escalations, activeTradesCount = 0) {
     try {
       if (!escalations || escalations.length === 0) {
         return [];
@@ -832,8 +832,8 @@ class MonitoringService {
         }));
       }
 
-      // Create batch prompt
-      const prompt = this.createBatchConfirmationPrompt(validEscalations);
+      // Create batch prompt with active trades count
+      const prompt = this.createBatchConfirmationPrompt(validEscalations, activeTradesCount);
       console.log(`📝 Batch prompt created (${prompt.length} chars) for ${validEscalations.length} coins`);
 
       // Call premium tier API with longer timeout for batch
@@ -1113,7 +1113,8 @@ class MonitoringService {
       // Note: Telegram notification will be sent after premium response in batch mode
 
       // Create detailed prompt for premium model
-      const prompt = this.createConfirmationPrompt(coinData, v3Analysis);
+      // Note: activeTradesCount will be passed from the caller if available
+      const prompt = this.createConfirmationPrompt(coinData, v3Analysis, 0);
 
       // Check premium API key
       if (!this.PREMIUM_API_KEY) {
@@ -1297,7 +1298,7 @@ Keep it brief and actionable.`;
   /**
    * Create confirmation prompt for R1 (single coin)
    */
-  createConfirmationPrompt(coinData, v3Analysis) {
+  createConfirmationPrompt(coinData, v3Analysis, activeTradesCount = 0) {
     const { symbol, name, currentPrice, priceChange24h, volume24h } = coinData;
     
     // Extract technical data from v3Analysis if available
@@ -1362,6 +1363,19 @@ IMPORTANT: This is derivatives trading (perpetual swaps) where you can:
 
 You can profit from both upward and downward price movements. Consider both long and short opportunities.
 
+POSITION SIZING RULES (CRITICAL):
+- Maximum 5 positions can be open at once
+- CURRENT STATUS: ${activeTradesCount}/5 positions already open
+- Each position should reach a maximum of 10% of total portfolio after all DCAs
+- DCA (Dollar-Cost Averaging) plan per position:
+  * Initial position: 1.5% of portfolio
+  * DCA 1: +1% of portfolio (total: 2.5%)
+  * DCA 2: +2% of portfolio (total: 4.5%)
+  * DCA 3: +4% of portfolio (total: 8.5%)
+  * DCA 4: +1.5% of portfolio (total: 10% max)
+- If 5 positions are already open (${activeTradesCount} >= 5), you MUST REJECT this opportunity
+- Consider portfolio diversification when confirming trades
+
 CRITICAL REQUIREMENT: In your "reason" field, you MUST explicitly mention:
 1. ALL patterns you used in your decision (if any)
 2. ALL indicators you used (RSI, Bollinger Bands, Trend, Support/Resistance levels)
@@ -1387,9 +1401,10 @@ Be thorough and conservative. Only confirm high-probability setups.`;
   /**
    * Create batch confirmation prompt for multiple coins
    */
-  createBatchConfirmationPrompt(escalations) {
+  createBatchConfirmationPrompt(escalations, activeTradesCount = 0) {
     let prompt = `BATCH CONFIRMATION REQUEST FROM MONITORING AI\n\n`;
     prompt += `Analyze ${escalations.length} coins that were flagged by the free monitoring AI.\n\n`;
+    prompt += `CURRENT PORTFOLIO STATUS: ${activeTradesCount}/5 positions already open\n\n`;
     
     escalations.forEach((esc, index) => {
       const { coinData, v3Analysis } = esc;
@@ -1465,6 +1480,20 @@ IMPORTANT: This is derivatives trading (perpetual swaps) where you can:
 - HOLD = No action
 
 You can profit from both upward and downward price movements. Consider both long and short opportunities.
+
+POSITION SIZING RULES (CRITICAL):
+- Maximum 5 positions can be open at once
+- CURRENT STATUS: ${activeTradesCount}/5 positions already open
+- Each position should reach a maximum of 10% of total portfolio after all DCAs
+- DCA (Dollar-Cost Averaging) plan per position:
+  * Initial position: 1.5% of portfolio
+  * DCA 1: +1% of portfolio (total: 2.5%)
+  * DCA 2: +2% of portfolio (total: 4.5%)
+  * DCA 3: +4% of portfolio (total: 8.5%)
+  * DCA 4: +1.5% of portfolio (total: 10% max)
+- If 5 positions are already open (${activeTradesCount} >= 5), you MUST REJECT all new opportunities
+- Consider portfolio diversification when confirming trades
+- Prioritize the best opportunities if multiple coins are available but you're near the limit
 
 CRITICAL REQUIREMENT: In your "reason" field for EACH coin, you MUST explicitly mention:
 1. ALL patterns you used in your decision (if any)
