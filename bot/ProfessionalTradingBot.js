@@ -3405,7 +3405,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               console.log(`   Entry: $${entryPrice.toFixed(2)}, Current: $${currentPrice.toFixed(2)}`);
               console.log(`   TP: $${tpTriggerPrice.toFixed(2)} (${tpOrderSide}), SL: $${slTriggerPrice.toFixed(2)}`);
               
-              const algoResult = await placeOkxAlgoOrder(
+              let algoResult = await placeOkxAlgoOrder(
                 algoOrderParams,
                 exchange.apiKey,
                 exchange.apiSecret,
@@ -3413,16 +3413,83 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 exchange.baseUrl
               );
               
-              if (algoResult.success) {
+              // If combined order fails, try placing TP and SL as separate orders
+              // OKX error 51088: "You can only place 1 TP/SL order to close an entire position"
+              if (!algoResult.success) {
+                const errorCode = algoResult.sCode || algoResult.code;
+                const errorMsg = algoResult.error || algoResult.sMsg || '';
+                console.log(`⚠️ Combined TP/SL order failed (${errorCode || 'unknown'}), trying separate orders...`);
+                
+                // Place TP order
+                const tpOrderParams = {
+                  instId: okxSymbol,
+                  tdMode: 'cross',
+                  side: tpOrderSide,
+                  posSide: posSide,
+                  ordType: 'conditional',
+                  closeFraction: '1',
+                  tpTriggerPx: tpTriggerPrice.toFixed(8),
+                  tpOrdPx: '-1',
+                  tpTriggerPxType: 'last',
+                  reduceOnly: true,
+                  cxlOnClosePos: true
+                };
+                
+                const tpResult = await placeOkxAlgoOrder(
+                  tpOrderParams,
+                  exchange.apiKey,
+                  exchange.apiSecret,
+                  exchange.passphrase,
+                  exchange.baseUrl
+                );
+                
+                // Small delay between orders
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Place SL order
+                const slOrderParams = {
+                  instId: okxSymbol,
+                  tdMode: 'cross',
+                  side: tpOrderSide,
+                  posSide: posSide,
+                  ordType: 'conditional',
+                  closeFraction: '1',
+                  slTriggerPx: slTriggerPrice.toFixed(8),
+                  slOrdPx: '-1',
+                  slTriggerPxType: 'last',
+                  reduceOnly: true,
+                  cxlOnClosePos: true
+                };
+                
+                const slResult = await placeOkxAlgoOrder(
+                  slOrderParams,
+                  exchange.apiKey,
+                  exchange.apiSecret,
+                  exchange.passphrase,
+                  exchange.baseUrl
+                );
+                
+                if (tpResult.success && slResult.success) {
+                  console.log(`✅ TP and SL algo orders placed separately for ${newTrade.symbol}!`);
+                  console.log(`   TP Algo ID: ${tpResult.algoId || tpResult.algoClOrdId}`);
+                  console.log(`   SL Algo ID: ${slResult.algoId || slResult.algoClOrdId}`);
+                  newTrade.okxAlgoId = tpResult.algoId || slResult.algoId;
+                  newTrade.okxAlgoClOrdId = tpResult.algoClOrdId || slResult.algoClOrdId;
+                  newTrade.tpSlAutoPlaced = true;
+                  addLogEntry(`TP/SL algo orders placed separately on OKX for ${newTrade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
+                } else {
+                  console.log(`⚠️ Failed to place separate TP/SL orders for ${newTrade.symbol}`);
+                  if (!tpResult.success) console.log(`   TP error: ${tpResult.error}`);
+                  if (!slResult.success) console.log(`   SL error: ${slResult.error}`);
+                  console.log(`   Trade will be monitored manually for TP/SL execution`);
+                  newTrade.tpSlAutoPlaced = false;
+                }
+              } else {
                 console.log(`✅ TP/SL algo orders placed successfully! Algo ID: ${algoResult.algoId || algoResult.algoClOrdId}`);
                 newTrade.okxAlgoId = algoResult.algoId;
                 newTrade.okxAlgoClOrdId = algoResult.algoClOrdId;
                 newTrade.tpSlAutoPlaced = true;
                 addLogEntry(`TP/SL algo orders placed on OKX for ${newTrade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
-              } else {
-                console.log(`⚠️ Failed to place TP/SL algo orders: ${algoResult.error}`);
-                console.log(`   Trade will be monitored manually for TP/SL execution`);
-                newTrade.tpSlAutoPlaced = false;
               }
             } catch (algoError) {
               console.log(`⚠️ Error placing TP/SL algo orders: ${algoError.message}`);
@@ -3876,8 +3943,15 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       );
       
       // If combined order fails, try placing TP and SL as separate orders
-      if (!algoResult.success && algoResult.code !== '0') {
-        console.log(`⚠️ Combined TP/SL order failed, trying separate orders...`);
+      // OKX error 51088: "You can only place 1 TP/SL order to close an entire position"
+      // OKX requires separate orders when using closeFraction: '1' to close entire position
+      if (!algoResult.success) {
+        const errorCode = algoResult.sCode || algoResult.code;
+        const errorMsg = algoResult.error || algoResult.sMsg || '';
+        console.log(`⚠️ Combined TP/SL order failed (${errorCode || 'unknown'}), trying separate orders...`);
+        if (errorCode === '51088' || errorMsg.includes('only place 1 TP/SL')) {
+          console.log(`   OKX requires separate TP/SL orders when closing entire position`);
+        }
         
         // Place TP order
         const tpOrderParams = {

@@ -2058,8 +2058,28 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
       body: body // Pass as object, not stringified
     });
     
+    // OKX API response structure:
+    // Success: code === '0', data[0] contains order info
+    // Error: code === '1' or other, data[0] contains error info with sCode and sMsg
     if (response.data?.code === '0' && response.data?.data?.[0]) {
       const algoData = response.data.data[0];
+      // Check if there's an error in the data (sCode indicates error)
+      if (algoData.sCode && algoData.sCode !== '0') {
+        // Error in response data
+        const errorMsg = algoData.sMsg || 'Unknown error';
+        const errorCode = algoData.sCode;
+        console.log(`❌ [OKX API] Algo order failed: ${errorMsg} (sCode: ${errorCode})`);
+        
+        return {
+          success: false,
+          error: errorMsg,
+          code: errorCode,
+          sCode: errorCode,
+          sMsg: errorMsg,
+          fullResponse: JSON.stringify(response.data, null, 2)
+        };
+      }
+      
       console.log(`✅ [OKX API] Algo order placed: ${algoData.algoId || algoData.algoClOrdId}`);
       console.log(`   Response: ${JSON.stringify(algoData, null, 2)}`);
       return {
@@ -2071,8 +2091,10 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
         tag: algoData.tag
       };
     } else {
-      const errorMsg = response.data?.msg || 'Unknown error';
-      const errorCode = response.data?.code;
+      // Extract error from response
+      const responseData = response.data?.data?.[0];
+      const errorMsg = responseData?.sMsg || response.data?.msg || 'Unknown error';
+      const errorCode = responseData?.sCode || response.data?.code;
       const fullResponse = JSON.stringify(response.data, null, 2);
       
       console.log(`❌ [OKX API] Algo order failed: ${errorMsg} (code: ${errorCode})`);
@@ -2094,6 +2116,8 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
         success: false,
         error: errorMsg,
         code: errorCode,
+        sCode: responseData?.sCode,
+        sMsg: responseData?.sMsg || errorMsg,
         fullResponse: fullResponse
       };
     }
