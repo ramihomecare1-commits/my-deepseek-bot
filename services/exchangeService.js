@@ -3831,6 +3831,59 @@ async function getBybitOpenOrders(apiKey, apiSecret, baseUrl) {
 }
 
 
+/**
+ * Get pending orders for an instrument
+ * @param {string} instId - Instrument ID (e.g., 'BTC-USDT-SWAP')
+ * @param {string} apiKey - OKX API key
+ * @param {string} apiSecret - OKX API secret
+ * @param {string} passphrase - OKX passphrase
+ * @param {string} baseUrl - OKX API base URL
+ * @returns {Promise<Object>} Pending orders list
+ */
+async function getOkxPendingOrders(instId, apiKey, apiSecret, passphrase, baseUrl) {
+  try {
+    const requestPath = '/api/v5/trade/orders-pending';
+    
+    const params = {
+      instId: instId
+    };
+    
+    const queryString = new URLSearchParams(params).toString();
+    const fullPath = `${requestPath}?${queryString}`;
+    
+    const response = await executeOkxRequestWithFallback({
+      apiKey,
+      apiSecret,
+      passphrase,
+      baseUrl,
+      requestPath: fullPath,
+      method: 'GET'
+    });
+    
+    if (response.data?.code === '0' && response.data?.data) {
+      const orders = Array.isArray(response.data.data) ? response.data.data : [];
+      return {
+        success: true,
+        orders: orders
+      };
+    } else {
+      const errorMsg = response.data?.msg || 'Unknown error';
+      return {
+        success: false,
+        error: errorMsg,
+        orders: []
+      };
+    }
+  } catch (error) {
+    console.log(`❌ [OKX API] Error getting pending orders: ${error.message}`);
+    return {
+      success: false,
+      error: error.message,
+      orders: []
+    };
+  }
+}
+
 module.exports = {
   isExchangeTradingEnabled,
   executeTakeProfit,
@@ -3860,6 +3913,7 @@ module.exports = {
   getOkxAlgoOrders,
   getOkxAlgoOrderDetails,
   checkOkxAlgoOrderStatus,
+  getOkxPendingOrders,
   validateOkxLeverage,
   amendOkxAlgoOrder,
   getOkxTicker,

@@ -4958,7 +4958,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       return;
     }
     
-    const { isExchangeTradingEnabled, getPreferredExchange, OKX_SYMBOL_MAP, executeOkxLimitOrder, getOkxOpenPositions } = require('../services/exchangeService');
+    const { isExchangeTradingEnabled, getPreferredExchange, OKX_SYMBOL_MAP, executeOkxLimitOrder, getOkxOpenPositions, getOkxPendingOrders } = require('../services/exchangeService');
     const exchangeConfig = isExchangeTradingEnabled();
     
     if (!exchangeConfig.enabled) {
@@ -4985,9 +4985,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         continue;
       }
       
-      // Check if trade has DCA order ID
-      const hasDcaOrder = trade.okxDcaOrderId;
-      console.log(`   📋 ${trade.symbol}: okxDcaOrderId=${hasDcaOrder || 'none'}`);
+      // Check if trade has DCA order ID in trade object
+      const hasDcaOrderInTrade = trade.okxDcaOrderId;
+      console.log(`   📋 ${trade.symbol}: okxDcaOrderId=${hasDcaOrderInTrade || 'none'}`);
       
       // Check if trade has required fields
       const hasAddPosition = trade.addPosition || trade.dcaPrice;
@@ -5003,13 +5003,6 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         continue;
       }
       
-      // If DCA order already exists, skip
-      if (hasDcaOrder) {
-        console.log(`   ⏭️ ${trade.symbol}: Skipping - already has DCA order (ID: ${hasDcaOrder})`);
-        skippedCount++;
-        continue;
-      }
-      
       const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
       if (!okxSymbol) {
         console.warn(`⚠️ ${trade.symbol}: No OKX symbol mapping found`);
@@ -5018,6 +5011,63 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         continue;
       }
       console.log(`   ✅ OKX symbol mapping: ${trade.symbol} -> ${okxSymbol}`);
+      
+      // Check OKX for existing limit orders (to prevent duplicates)
+      let hasDcaOrderOnOkx = false;
+      const dcaPrice = trade.addPosition || trade.dcaPrice;
+      try {
+        const { getOkxPendingOrders } = require('../services/exchangeService');
+        const pendingOrders = await getOkxPendingOrders(
+          okxSymbol,
+          exchange.apiKey,
+          exchange.apiSecret,
+          exchange.passphrase,
+          exchange.baseUrl
+        );
+        
+        if (pendingOrders && pendingOrders.success && pendingOrders.orders && pendingOrders.orders.length > 0) {
+          // Filter to active limit orders only
+          const activeLimitOrders = pendingOrders.orders.filter(order => {
+            const state = order.state || order.ordState || '';
+            const ordType = order.ordType || '';
+            // Check for live/partially_filled limit orders
+            const isActive = (state === 'live' || state === 'partially_filled') && ordType === 'limit';
+            return isActive;
+          });
+          
+          // Check if any limit order matches our DCA price (within 1% tolerance)
+          for (const order of activeLimitOrders) {
+            const orderPrice = parseFloat(order.px || order.price || 0);
+            const priceDiff = Math.abs(orderPrice - dcaPrice) / dcaPrice;
+            const side = order.side || '';
+            const expectedSide = trade.action === 'BUY' ? 'buy' : 'sell';
+            
+            // If order price is close to DCA price and side matches, consider it a DCA order
+            if (priceDiff < 0.01 && side === expectedSide) {
+              hasDcaOrderOnOkx = true;
+              console.log(`   ✅ ${trade.symbol}: Found existing DCA limit order on OKX (Order ID: ${order.ordId || order.clOrdId || 'unknown'}, Price: $${orderPrice.toFixed(2)})`);
+              
+              // Update trade object with order ID if not set
+              if (!hasDcaOrderInTrade) {
+                trade.okxDcaOrderId = order.ordId || order.clOrdId;
+                trade.okxDcaPrice = orderPrice;
+                console.log(`   📝 Updated trade object with DCA order ID: ${trade.okxDcaOrderId}`);
+              }
+              break;
+            }
+          }
+        }
+      } catch (checkError) {
+        console.warn(`⚠️ ${trade.symbol}: Could not check OKX for existing limit orders: ${checkError.message}`);
+        // Continue anyway - we'll try to place orders
+      }
+      
+      // If DCA order already exists (either in trade object or on OKX), skip
+      if (hasDcaOrderInTrade || hasDcaOrderOnOkx) {
+        console.log(`   ⏭️ ${trade.symbol}: Skipping - already has DCA order ${hasDcaOrderInTrade ? '(in trade object)' : '(on OKX)'}`);
+        skippedCount++;
+        continue;
+      }
       
       // Validate DCA price direction
       const dcaPrice = trade.addPosition || trade.dcaPrice;
