@@ -7116,6 +7116,21 @@ Return JSON array format:
                   adjusted = true;
                   addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
                   telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
+                  
+                  // FIX: Ensure DCA is positioned correctly relative to new SL
+                  // For BUY: DCA must be below SL (so DCA triggers before SL closes position)
+                  const currentDca = trade.addPosition || trade.dcaPrice;
+                  if (currentDca && currentDca > 0) {
+                    if (currentDca >= newSL) {
+                      // DCA is at or above SL - adjust DCA to be below SL
+                      const adjustedDca = newSL * 0.99; // 1% below SL
+                      console.log(`   🔄 ${symbol}: Adjusting DCA from $${currentDca.toFixed(2)} to $${adjustedDca.toFixed(2)} (must be below SL: $${newSL.toFixed(2)})`);
+                      trade.addPosition = adjustedDca;
+                      trade.dcaPrice = adjustedDca;
+                      addLogEntry(`🟡 ${symbol}: DCA auto-adjusted to $${adjustedDca.toFixed(2)} (below SL: $${newSL.toFixed(2)})`, 'info');
+                      telegramMessage += `   ⚙️ DCA: $${currentDca.toFixed(2)} → $${adjustedDca.toFixed(2)} (aligned with SL)\n`;
+                    }
+                  }
                 }
               } else if (trade.action === 'SELL') {
                 // For SELL (short): SL should be > entry price (loss limit above entry)
@@ -7145,6 +7160,21 @@ Return JSON array format:
                   adjusted = true;
                   addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
                   telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
+                  
+                  // FIX: Ensure DCA is positioned correctly relative to new SL
+                  // For SELL (short): DCA must be above SL (so DCA triggers before SL closes position)
+                  const currentDca = trade.addPosition || trade.dcaPrice;
+                  if (currentDca && currentDca > 0) {
+                    if (currentDca <= newSL) {
+                      // DCA is at or below SL - adjust DCA to be above SL
+                      const adjustedDca = newSL * 1.01; // 1% above SL
+                      console.log(`   🔄 ${symbol}: Adjusting DCA from $${currentDca.toFixed(2)} to $${adjustedDca.toFixed(2)} (must be above SL: $${newSL.toFixed(2)})`);
+                      trade.addPosition = adjustedDca;
+                      trade.dcaPrice = adjustedDca;
+                      addLogEntry(`🟡 ${symbol}: DCA auto-adjusted to $${adjustedDca.toFixed(2)} (above SL: $${newSL.toFixed(2)})`, 'info');
+                      telegramMessage += `   ⚙️ DCA: $${currentDca.toFixed(2)} → $${adjustedDca.toFixed(2)} (aligned with SL)\n`;
+                    }
+                  }
                 }
               }
             }
@@ -7153,11 +7183,43 @@ Return JSON array format:
             const newDcaValue = rec.newDcaPrice || rec.newAddPosition;
             if (newDcaValue && typeof newDcaValue === 'number' && newDcaValue > 0) {
               const oldDca = trade.addPosition || trade.dcaPrice || trade.entryPrice;
-              trade.addPosition = newDcaValue;
-              trade.dcaPrice = newDcaValue; // Store in both fields for consistency
+              const currentSL = trade.stopLoss;
+              
+              // FIX: Validate DCA position relative to SL before applying
+              let finalDcaValue = newDcaValue;
+              let dcaAdjusted = false;
+              
+              if (currentSL && currentSL > 0) {
+                if (trade.action === 'BUY') {
+                  // For BUY: DCA must be below SL (so DCA triggers before SL closes position)
+                  if (newDcaValue >= currentSL) {
+                    finalDcaValue = currentSL * 0.99; // 1% below SL
+                    dcaAdjusted = true;
+                    console.log(`   🔄 ${symbol}: DCA value $${newDcaValue.toFixed(2)} is at/above SL $${currentSL.toFixed(2)} - adjusting to $${finalDcaValue.toFixed(2)}`);
+                    addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(2)} to $${finalDcaValue.toFixed(2)} (must be below SL: $${currentSL.toFixed(2)})`, 'warning');
+                  }
+                } else if (trade.action === 'SELL') {
+                  // For SELL (short): DCA must be above SL (so DCA triggers before SL closes position)
+                  if (newDcaValue <= currentSL) {
+                    finalDcaValue = currentSL * 1.01; // 1% above SL
+                    dcaAdjusted = true;
+                    console.log(`   🔄 ${symbol}: DCA value $${newDcaValue.toFixed(2)} is at/below SL $${currentSL.toFixed(2)} - adjusting to $${finalDcaValue.toFixed(2)}`);
+                    addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(2)} to $${finalDcaValue.toFixed(2)} (must be above SL: $${currentSL.toFixed(2)})`, 'warning');
+                  }
+                }
+              }
+              
+              trade.addPosition = finalDcaValue;
+              trade.dcaPrice = finalDcaValue; // Store in both fields for consistency
               adjusted = true;
-              addLogEntry(`🟡 ${symbol}: AI adjusted DCA Price from $${oldDca.toFixed(2)} to $${newDcaValue.toFixed(2)}`, 'info');
-              telegramMessage += `   ⚙️ DCA: $${oldDca.toFixed(2)} → $${newDcaValue.toFixed(2)}\n`;
+              
+              if (dcaAdjusted) {
+                addLogEntry(`🟡 ${symbol}: AI adjusted DCA Price from $${oldDca.toFixed(2)} to $${finalDcaValue.toFixed(2)} (auto-aligned with SL)`, 'info');
+                telegramMessage += `   ⚙️ DCA: $${oldDca.toFixed(2)} → $${finalDcaValue.toFixed(2)} (aligned with SL)\n`;
+              } else {
+                addLogEntry(`🟡 ${symbol}: AI adjusted DCA Price from $${oldDca.toFixed(2)} to $${finalDcaValue.toFixed(2)}`, 'info');
+                telegramMessage += `   ⚙️ DCA: $${oldDca.toFixed(2)} → $${finalDcaValue.toFixed(2)}\n`;
+              }
             }
             if (adjusted) {
               // Removed: DynamoDB persistence - OKX is the only source of truth
