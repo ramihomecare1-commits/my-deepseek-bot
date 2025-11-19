@@ -5180,6 +5180,15 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 trade.okxDcaPrice = orderPrice;
                 console.log(`   📝 Updated trade object with DCA order ID: ${trade.okxDcaOrderId}`);
               }
+              
+              // IMPORTANT: Sync the actual DCA price from OKX to trade object
+              // This ensures proximity detection uses the correct price
+              const currentDcaPrice = trade.addPosition || trade.dcaPrice || 0;
+              if (Math.abs(orderPrice - currentDcaPrice) > 0.01) { // Only update if significantly different
+                console.log(`   🔄 Syncing DCA price from OKX: $${currentDcaPrice.toFixed(2)} → $${orderPrice.toFixed(2)}`);
+                trade.addPosition = orderPrice;
+                trade.dcaPrice = orderPrice; // Also update dcaPrice for compatibility
+              }
               break;
             }
           }
