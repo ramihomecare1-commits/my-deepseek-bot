@@ -3762,7 +3762,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               // For BUY: DCA limit buy order at lower price (addPosition < entryPrice)
               // For SELL: DCA limit sell order at higher price (addPosition > entryPrice)
               try {
-                const dcaPrice = addPosition;
+                let dcaPrice = addPosition; // Use let instead of const (may be adjusted)
                 const dcaSide = newTrade.action === 'BUY' ? 'buy' : 'sell';
                 
                 // FIX: Check if DCA order already exists in trade object FIRST (prevent duplicates)
