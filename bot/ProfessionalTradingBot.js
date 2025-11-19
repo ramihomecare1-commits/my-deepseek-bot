@@ -3785,10 +3785,34 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     }
                   }
                   
-                  if (shouldPlaceDCA) {
-                    // Check OKX for existing limit orders to prevent duplicates
-                    const { getOkxPendingOrders, getOkxOpenPositions } = require('../services/exchangeService');
-                    let hasExistingDcaOrder = false;
+                if (shouldPlaceDCA) {
+                  // FIX: Ensure DCA is positioned correctly relative to SL before placing
+                  const currentSL = newTrade.stopLoss;
+                  if (currentSL && currentSL > 0) {
+                    if (newTrade.action === 'BUY') {
+                      // For BUY: DCA must be below SL
+                      if (dcaPrice >= currentSL) {
+                        const adjustedDca = currentSL * 0.99; // 1% below SL
+                        console.log(`   🔄 ${newTrade.symbol}: DCA price $${dcaPrice.toFixed(2)} is at/above SL $${currentSL.toFixed(2)} - adjusting to $${adjustedDca.toFixed(2)}`);
+                        dcaPrice = adjustedDca;
+                        newTrade.addPosition = adjustedDca;
+                        newTrade.dcaPrice = adjustedDca;
+                      }
+                    } else if (newTrade.action === 'SELL') {
+                      // For SELL: DCA must be above SL
+                      if (dcaPrice <= currentSL) {
+                        const adjustedDca = currentSL * 1.01; // 1% above SL
+                        console.log(`   🔄 ${newTrade.symbol}: DCA price $${dcaPrice.toFixed(2)} is at/below SL $${currentSL.toFixed(2)} - adjusting to $${adjustedDca.toFixed(2)}`);
+                        dcaPrice = adjustedDca;
+                        newTrade.addPosition = adjustedDca;
+                        newTrade.dcaPrice = adjustedDca;
+                      }
+                    }
+                  }
+                  
+                  // Check OKX for existing limit orders to prevent duplicates
+                  const { getOkxPendingOrders, getOkxOpenPositions } = require('../services/exchangeService');
+                  let hasExistingDcaOrder = false;
                   
                   try {
                     const pendingOrders = await getOkxPendingOrders(
