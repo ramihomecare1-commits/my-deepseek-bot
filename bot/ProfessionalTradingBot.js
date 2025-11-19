@@ -5069,8 +5069,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         continue;
       }
       
-      // Validate DCA price direction
-      const dcaPrice = trade.addPosition || trade.dcaPrice;
+      // Validate DCA price direction (dcaPrice already set above)
       const entryPrice = trade.entryPrice;
       let shouldPlaceDCA = false;
       
