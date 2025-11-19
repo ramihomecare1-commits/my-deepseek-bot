@@ -7056,8 +7056,88 @@ Return JSON array format:
               try {
                 console.log(`🔄 ${symbol}: Updating orders on OKX after AI adjustment...`);
                 
-                // If TP or SL was adjusted, update algo orders on OKX
+                // If TP or SL was adjusted, cancel old orders and place new ones on OKX
                 if (rec.newTakeProfit || rec.newStopLoss) {
+                  // Cancel existing TP/SL algo orders first
+                  try {
+                    const { getOkxAlgoOrders, cancelOkxAlgoOrders } = require('../services/exchangeService');
+                    const { isExchangeTradingEnabled, getPreferredExchange, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+                    const exchangeConfig = isExchangeTradingEnabled();
+                    
+                    if (exchangeConfig.enabled) {
+                      const exchange = getPreferredExchange();
+                      const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+                      
+                      if (okxSymbol && exchange) {
+                        // Cancel orders we know about from trade object
+                        if (trade.okxTpAlgoId || trade.okxTpAlgoClOrdId || trade.okxSlAlgoId || trade.okxSlAlgoClOrdId || trade.okxAlgoId || trade.okxAlgoClOrdId) {
+                          await this.cancelTradeAlgoOrders(trade);
+                          console.log(`🗑️ ${symbol}: Canceled existing TP/SL algo orders from trade object`);
+                        }
+                        
+                        // Also fetch and cancel all pending algo orders from OKX (catches any we don't know about)
+                        try {
+                          const algoOrders = await Promise.race([
+                            getOkxAlgoOrders(
+                              okxSymbol,
+                              'conditional',
+                              exchange.apiKey,
+                              exchange.apiSecret,
+                              exchange.passphrase,
+                              exchange.baseUrl
+                            ),
+                            new Promise((_, reject) => 
+                              setTimeout(() => reject(new Error('OKX API timeout (5s)')), 5000)
+                            )
+                          ]).catch(err => {
+                            console.warn(`⚠️ ${symbol}: Timeout checking algo orders: ${err.message}`);
+                            return { success: false, error: err.message };
+                          });
+                          
+                          if (algoOrders && algoOrders.success && algoOrders.orders && algoOrders.orders.length > 0) {
+                            const activeOrders = algoOrders.orders.filter(order => {
+                              const state = order.state || order.ordState || '';
+                              return state === 'live' || state === 'effective' || state === 'partially_filled';
+                            });
+                            
+                            if (activeOrders.length > 0) {
+                              const ordersToCancel = activeOrders
+                                .map(order => ({
+                                  instId: okxSymbol,
+                                  algoId: order.algoId,
+                                  algoClOrdId: order.algoClOrdId
+                                }))
+                                .filter(order => order.algoId || order.algoClOrdId);
+                              
+                              if (ordersToCancel.length > 0) {
+                                console.log(`🗑️ ${symbol}: Canceling ${ordersToCancel.length} active algo order(s) from OKX...`);
+                                const cancelResult = await cancelOkxAlgoOrders(
+                                  ordersToCancel,
+                                  exchange.apiKey,
+                                  exchange.apiSecret,
+                                  exchange.passphrase,
+                                  exchange.baseUrl
+                                );
+                                
+                                if (cancelResult.success) {
+                                  console.log(`✅ ${symbol}: Canceled ${ordersToCancel.length} existing algo order(s) from OKX`);
+                                } else {
+                                  console.warn(`⚠️ ${symbol}: Failed to cancel some algo orders: ${cancelResult.error || 'Unknown error'}`);
+                                }
+                              }
+                            }
+                          }
+                        } catch (fetchError) {
+                          console.warn(`⚠️ ${symbol}: Could not fetch algo orders from OKX: ${fetchError.message}`);
+                        }
+                      }
+                    }
+                  } catch (cancelError) {
+                    console.warn(`⚠️ ${symbol}: Error canceling existing algo orders: ${cancelError.message}`);
+                    // Continue anyway - try to place new orders
+                  }
+                  
+                  // Now place new TP/SL orders with updated prices
                   const orderResult = await this.placeTradeAlgoOrders(trade);
                   if (orderResult) {
                     console.log(`✅ ${symbol}: TP/SL orders updated on OKX`);
