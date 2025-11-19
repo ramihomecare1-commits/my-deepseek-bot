@@ -3340,7 +3340,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     // Block opening new position if there's ANY open position for this coin
     const existingTrade = this.activeTrades.find(t =>
       t.symbol === opportunity.symbol &&
-      (t.status === 'OPEN' || t.status === 'DCA_HIT')
+      (t.status === 'OPEN' || t.status === 'DCA_HIT' || t.status === 'PENDING')
     );
 
     if (existingTrade) {
@@ -3491,6 +3491,12 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         trailingPercent: this.tradingRules.trailingStopLoss?.trailingPercent || 1.0
       }
     };
+
+    // CRITICAL: Add trade to activeTrades with PENDING status BEFORE OKX execution
+    // This prevents race condition where two trades for the same symbol start executing simultaneously
+    newTrade.status = 'PENDING';
+    this.activeTrades.push(newTrade);
+    console.log(`📝 Added ${newTrade.symbol} to activeTrades with PENDING status (prevents duplicate race condition)`);
 
     // EXECUTE ORDER ON OKX FIRST (source of truth)
     const { isExchangeTradingEnabled, getPreferredExchange, executeOkxMarketOrder, executeOkxBatchOrders, placeOkxAlgoOrder, validateOkxLeverage, OKX_SYMBOL_MAP } = require('../services/exchangeService');
@@ -3933,8 +3939,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       throw new Error('OKX trading not enabled. Configure OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE.');
     }
 
-    // Only add to active trades AFTER successful OKX execution
-    this.activeTrades.push(newTrade);
+    // Trade was already added to activeTrades with PENDING status before OKX execution
+    // Now update status to OPEN after successful execution
+    newTrade.status = 'OPEN';
+    console.log(`✅ Updated ${newTrade.symbol} status from PENDING to OPEN`);
 
     // Special logging for BTC trades to track them
     if (newTrade.symbol === 'BTC' || newTrade.symbol === 'btc') {
