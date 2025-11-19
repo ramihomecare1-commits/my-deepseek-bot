@@ -1717,6 +1717,8 @@ async function setOkxSettleCurrency(settleCcy, apiKey, apiSecret, passphrase, ba
       settleCcy: settleCcy
     };
     
+    // executeOkxRequestWithFallback expects body as object (it will stringify internally)
+    // Passing JSON.stringify(body) causes double stringification and invalid JSON
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -1724,7 +1726,7 @@ async function setOkxSettleCurrency(settleCcy, apiKey, apiSecret, passphrase, ba
       baseUrl,
       requestPath,
       method: 'POST',
-      body: JSON.stringify(body)
+      body: body // Pass as object, not stringified
     });
 
     if (response.data?.code === '0' && response.data?.data?.[0]) {
