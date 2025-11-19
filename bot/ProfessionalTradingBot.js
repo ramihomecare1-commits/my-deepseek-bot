@@ -104,10 +104,11 @@ class ProfessionalTradingBot {
     this.openTradesReevalCooldownMs = 5 * 60 * 1000; // 5 minutes
     this.lastOpenTradesReevalAt = 0; // timestamp of last AI re-evaluation call
     this.lastOpenTradesReevalNotifiedAt = null; // timestamp of last Telegram summary
-    // Unified cooldown for ALL triggers (DCA execution, DCA proximity, TP proximity, SL proximity)
+    // Unified cooldown for ALL triggers (DCA execution, DCA proximity, TP proximity, SL proximity, TP hit, SL hit)
     this.dcaTriggerReevalCooldownMs = 3 * 60 * 60 * 1000; // 3 hours (unified for all triggers)
     this.lastDcaTriggerReevalAt = 0; // timestamp of last trigger-based re-evaluation
     this.dcaTriggerReevalInProgress = false; // flag to prevent multiple simultaneous re-evaluations
+    this.proximityTriggerPercent = 3.0; // Trigger AI when price is within 3% of DCA/TP/SL levels
     this.botStartTime = Date.now(); // track when bot started (prevents re-eval during startup)
     this.dcaTriggerStartupDelayMs = 3 * 60 * 1000; // 3 minutes startup delay (prevents timeout during deployment)
     this.lastBtcMissingWarning = 0; // timestamp of last BTC missing warning (throttles logging)
@@ -3685,7 +3686,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                   if (!shouldPlaceDCA) {
                     console.log(`⚠️ ${newTrade.symbol}: DCA price ($${dcaPrice.toFixed(2)}) must be below entry ($${entryPrice.toFixed(2)}) for BUY position`);
                   }
-                } else {
+              } else {
                   // For SELL: DCA should be above entry (to sell more at higher price)
                   shouldPlaceDCA = dcaPrice > entryPrice && dcaPrice > 0;
                   if (!shouldPlaceDCA) {
@@ -5543,6 +5544,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationNeeded = true;
               addLogEntry(`✅ TP EXECUTED: ${trade.symbol} - Order ID: ${tpResult.orderId}`, 'success');
               this.recordTradeOutcome(trade, 'TAKE_PROFIT');
+              
+              // Trigger AI re-evaluation when TP is hit
+              await this.triggerAIReevaluation(`TP executed for ${trade.symbol}`);
             } else if (!tpResult.skipped) {
               // Only log if it's an actual error (not just disabled)
               trade.status = 'TP_HIT'; // Mark as hit even if execution failed
@@ -5555,6 +5559,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationNeeded = true;
               addLogEntry(`⚠️ TP hit but execution failed: ${trade.symbol} - ${tpResult.error}`, 'warning');
               this.recordTradeOutcome(trade, 'TAKE_PROFIT');
+              
+              // Trigger AI re-evaluation when TP is hit (even if execution failed)
+              await this.triggerAIReevaluation(`TP hit for ${trade.symbol} (execution ${tpResult.error ? 'failed' : 'skipped'})`);
             }
           }
           // Check DCA for BUY (BEFORE stop loss - priority!)
@@ -5770,6 +5777,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationNeeded = true;
               addLogEntry(`🛑 SL EXECUTED: ${trade.symbol} - Order ID: ${slResult.orderId}`, 'error');
               this.recordTradeOutcome(trade, 'STOP_LOSS');
+              
+              // Trigger AI re-evaluation when SL is hit
+              await this.triggerAIReevaluation(`SL executed for ${trade.symbol}`);
             } else if (!slResult.skipped) {
               trade.status = 'SL_HIT';
               trade.executionPrice = executionPrice;
@@ -5781,6 +5791,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationNeeded = true;
               addLogEntry(`⚠️ SL hit but execution failed: ${trade.symbol} - ${slResult.error}`, 'error');
               this.recordTradeOutcome(trade, 'STOP_LOSS');
+              
+              // Trigger AI re-evaluation when SL is hit (even if execution failed)
+              await this.triggerAIReevaluation(`SL hit for ${trade.symbol} (execution ${slResult.error ? 'failed' : 'skipped'})`);
             }
           }
         } else if (trade.action === 'SELL') { // Short position logic
@@ -5814,6 +5827,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationNeeded = true;
               addLogEntry(`✅ TP EXECUTED (SHORT): ${trade.symbol} - Order ID: ${tpResult.orderId}`, 'success');
               this.recordTradeOutcome(trade, 'TAKE_PROFIT');
+              
+              // Trigger AI re-evaluation when TP is hit (SHORT)
+              await this.triggerAIReevaluation(`TP executed for ${trade.symbol} (SHORT)`);
             } else if (!tpResult.skipped) {
               trade.status = 'TP_HIT';
               trade.executionPrice = executionPrice;
@@ -5825,6 +5841,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationNeeded = true;
               addLogEntry(`⚠️ TP hit but execution failed (SHORT): ${trade.symbol} - ${tpResult.error}`, 'warning');
               this.recordTradeOutcome(trade, 'TAKE_PROFIT');
+              
+              // Trigger AI re-evaluation when TP is hit (SHORT, even if execution failed)
+              await this.triggerAIReevaluation(`TP hit for ${trade.symbol} (SHORT, execution ${tpResult.error ? 'failed' : 'skipped'})`);
             }
           }
           // Check DCA for SELL (BEFORE stop loss - priority!)
@@ -6038,6 +6057,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationNeeded = true;
               addLogEntry(`🛑 SL EXECUTED (SHORT): ${trade.symbol} - Order ID: ${slResult.orderId}`, 'error');
               this.recordTradeOutcome(trade, 'STOP_LOSS');
+              
+              // Trigger AI re-evaluation when SL is hit (SHORT)
+              await this.triggerAIReevaluation(`SL executed for ${trade.symbol} (SHORT)`);
             } else if (!slResult.skipped) {
               trade.status = 'SL_HIT';
               trade.executionPrice = executionPrice;
@@ -6049,8 +6071,16 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               notificationNeeded = true;
               addLogEntry(`⚠️ SL hit but execution failed (SHORT): ${trade.symbol} - ${slResult.error}`, 'error');
               this.recordTradeOutcome(trade, 'STOP_LOSS');
+              
+              // Trigger AI re-evaluation when SL is hit (SHORT, even if execution failed)
+              await this.triggerAIReevaluation(`SL hit for ${trade.symbol} (SHORT, execution ${slResult.error ? 'failed' : 'skipped'})`);
             }
           }
+        }
+        
+        // Check proximity-based triggers (when price is near but hasn't hit DCA/TP/SL)
+        if (trade.status === 'OPEN' && currentPrice > 0) {
+          await this.checkProximityTriggers(trade, currentPrice);
         }
 
         addLogEntry(`${trade.symbol}: Current Price $${currentPrice.toFixed(2)}, P&L: ${trade.pnlPercent}% (Status: ${trade.status})`, 'info');
