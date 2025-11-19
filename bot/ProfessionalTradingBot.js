@@ -4948,6 +4948,145 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     return { placed: placedCount, failed: failedCount, skipped: skippedCount };
   }
 
+  /**
+   * Place DCA limit orders for trades that don't have them yet
+   * This ensures all trades have DCA limit orders on OKX
+   */
+  async placeMissingDcaOrders() {
+    if (this.activeTrades.length === 0) {
+      return;
+    }
+    
+    const { isExchangeTradingEnabled, getPreferredExchange, OKX_SYMBOL_MAP, executeOkxLimitOrder, getOkxOpenPositions } = require('../services/exchangeService');
+    const exchangeConfig = isExchangeTradingEnabled();
+    
+    if (!exchangeConfig.enabled) {
+      console.log(`⚠️ Exchange trading not enabled, cannot place DCA orders`);
+      return { placed: 0, failed: 0 };
+    }
+    
+    const exchange = getPreferredExchange();
+    if (!exchange || exchange.exchange !== 'OKX') {
+      console.log(`⚠️ OKX not configured, cannot place DCA orders`);
+      return { placed: 0, failed: 0 };
+    }
+    
+    let placedCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+    
+    for (const trade of this.activeTrades) {
+      // Only place for OPEN trades
+      if (trade.status !== 'OPEN') {
+        continue;
+      }
+      
+      // Check if trade has DCA order ID
+      const hasDcaOrder = trade.okxDcaOrderId;
+      
+      // Check if trade has required fields
+      if (!trade.addPosition || !trade.entryPrice || !trade.quantity) {
+        console.warn(`⚠️ ${trade.symbol}: Cannot place DCA order - missing addPosition, entryPrice, or quantity`);
+        failedCount++;
+        continue;
+      }
+      
+      // If DCA order already exists, skip
+      if (hasDcaOrder) {
+        skippedCount++;
+        continue;
+      }
+      
+      const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+      if (!okxSymbol) {
+        console.warn(`⚠️ ${trade.symbol}: No OKX symbol mapping found`);
+        failedCount++;
+        continue;
+      }
+      
+      // Validate DCA price direction
+      const dcaPrice = trade.addPosition || trade.dcaPrice;
+      const entryPrice = trade.entryPrice;
+      let shouldPlaceDCA = false;
+      
+      if (trade.action === 'BUY') {
+        // For BUY: DCA should be below entry (to buy more at lower price)
+        shouldPlaceDCA = dcaPrice < entryPrice && dcaPrice > 0;
+        if (!shouldPlaceDCA) {
+          console.log(`⚠️ ${trade.symbol}: DCA price ($${dcaPrice.toFixed(2)}) must be below entry ($${entryPrice.toFixed(2)}) for BUY position`);
+          failedCount++;
+          continue;
+        }
+      } else {
+        // For SELL: DCA should be above entry (to sell more at higher price)
+        shouldPlaceDCA = dcaPrice > entryPrice && dcaPrice > 0;
+        if (!shouldPlaceDCA) {
+          console.log(`⚠️ ${trade.symbol}: DCA price ($${dcaPrice.toFixed(2)}) must be above entry ($${entryPrice.toFixed(2)}) for SELL position`);
+          failedCount++;
+          continue;
+        }
+      }
+      
+      // Calculate DCA quantity (50% of initial position size)
+      const dcaQuantity = Math.floor(parseFloat(trade.quantity) * 0.5);
+      if (dcaQuantity <= 0) {
+        console.warn(`⚠️ ${trade.symbol}: DCA quantity is 0, skipping DCA limit order`);
+        failedCount++;
+        continue;
+      }
+      
+      // Get leverage from trade or default to 1
+      const leverage = trade.leverage || 1;
+      const dcaSide = trade.action === 'BUY' ? 'buy' : 'sell';
+      
+      try {
+        console.log(`📊 Placing DCA limit order for ${trade.symbol} at $${dcaPrice.toFixed(2)} (${dcaSide}, qty: ${dcaQuantity})...`);
+        
+        const dcaOrderResult = await executeOkxLimitOrder(
+          okxSymbol,
+          dcaSide,
+          dcaQuantity,
+          dcaPrice, // Limit price
+          exchange.apiKey,
+          exchange.apiSecret,
+          exchange.passphrase,
+          exchange.baseUrl,
+          leverage
+        );
+        
+        if (dcaOrderResult.success) {
+          console.log(`✅ DCA limit order placed for ${trade.symbol} at $${dcaPrice.toFixed(2)}! Order ID: ${dcaOrderResult.orderId}`);
+          trade.okxDcaOrderId = dcaOrderResult.orderId;
+          trade.okxDcaPrice = dcaPrice;
+          trade.okxDcaQuantity = dcaQuantity;
+          placedCount++;
+          addLogEntry(`DCA limit order placed on OKX for ${trade.symbol} at $${dcaPrice.toFixed(2)} (will execute if price reaches this level)`, 'info');
+        } else {
+          console.log(`⚠️ Failed to place DCA limit order for ${trade.symbol}: ${dcaOrderResult.error || 'Unknown error'}`);
+          failedCount++;
+        }
+      } catch (dcaError) {
+        console.error(`❌ Error placing DCA limit order for ${trade.symbol}: ${dcaError.message}`);
+        failedCount++;
+      }
+      
+      // Small delay between orders to avoid rate limits
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    if (placedCount > 0) {
+      console.log(`✅ Placed DCA limit orders for ${placedCount} trade(s) on OKX`);
+    }
+    if (skippedCount > 0) {
+      console.log(`⏭️ Skipped ${skippedCount} trade(s) - already have DCA orders`);
+    }
+    if (failedCount > 0) {
+      console.warn(`⚠️ Failed to place DCA orders for ${failedCount} trade(s)`);
+    }
+    
+    return { placed: placedCount, failed: failedCount, skipped: skippedCount };
+  }
+
   async updateActiveTrades() {
     if (this.activeTrades.length === 0) {
       return;
@@ -4963,6 +5102,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     
     // Place algo orders for trades that don't have them yet
     await this.placeMissingAlgoOrders();
+    
+    // Place DCA limit orders for trades that don't have them yet
+    await this.placeMissingDcaOrders();
 
     addLogEntry(`Updating ${this.activeTrades.length} active trades...`, 'info');
 
