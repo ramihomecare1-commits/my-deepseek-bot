@@ -3670,13 +3670,31 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               }
               
               // Place DCA limit order at addPosition price (if trade goes against us)
+              // For BUY: DCA limit buy order at lower price (addPosition < entryPrice)
+              // For SELL: DCA limit sell order at higher price (addPosition > entryPrice)
               try {
                 const dcaPrice = addPosition;
                 const dcaSide = newTrade.action === 'BUY' ? 'buy' : 'sell';
                 const dcaQuantity = Math.floor(initialQuantity * 0.5); // DCA with 50% of initial position size
                 
-                if (dcaQuantity > 0 && dcaPrice > 0) {
-                  console.log(`📊 Placing DCA limit order for ${newTrade.symbol} at $${dcaPrice.toFixed(2)}...`);
+                // Validate DCA price is correct direction
+                let shouldPlaceDCA = false;
+                if (newTrade.action === 'BUY') {
+                  // For BUY: DCA should be below entry (to buy more at lower price)
+                  shouldPlaceDCA = dcaPrice < entryPrice && dcaPrice > 0;
+                  if (!shouldPlaceDCA) {
+                    console.log(`⚠️ ${newTrade.symbol}: DCA price ($${dcaPrice.toFixed(2)}) must be below entry ($${entryPrice.toFixed(2)}) for BUY position`);
+                  }
+                } else {
+                  // For SELL: DCA should be above entry (to sell more at higher price)
+                  shouldPlaceDCA = dcaPrice > entryPrice && dcaPrice > 0;
+                  if (!shouldPlaceDCA) {
+                    console.log(`⚠️ ${newTrade.symbol}: DCA price ($${dcaPrice.toFixed(2)}) must be above entry ($${entryPrice.toFixed(2)}) for SELL position`);
+                  }
+                }
+                
+                if (shouldPlaceDCA && dcaQuantity > 0) {
+                  console.log(`📊 Placing DCA limit order for ${newTrade.symbol} at $${dcaPrice.toFixed(2)} (${dcaSide})...`);
                   
                   const { executeOkxLimitOrder } = require('../services/exchangeService');
                   const dcaOrderResult = await executeOkxLimitOrder(
@@ -3696,10 +3714,12 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     newTrade.okxDcaOrderId = dcaOrderResult.orderId;
                     newTrade.okxDcaPrice = dcaPrice;
                     newTrade.okxDcaQuantity = dcaQuantity;
-                    addLogEntry(`DCA limit order placed on OKX for ${newTrade.symbol} at $${dcaPrice.toFixed(2)}`, 'info');
+                    addLogEntry(`DCA limit order placed on OKX for ${newTrade.symbol} at $${dcaPrice.toFixed(2)} (will execute if price reaches this level)`, 'info');
                   } else {
                     console.log(`⚠️ Failed to place DCA limit order for ${newTrade.symbol}: ${dcaOrderResult.error || 'Unknown error'}`);
                   }
+                } else if (dcaQuantity <= 0) {
+                  console.log(`⚠️ ${newTrade.symbol}: DCA quantity is 0, skipping DCA limit order`);
                 }
               } catch (dcaError) {
                 console.log(`⚠️ Error placing DCA limit order for ${newTrade.symbol}: ${dcaError.message}`);
@@ -4560,35 +4580,111 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       return;
     }
     
+    const { isExchangeTradingEnabled, getPreferredExchange, getOkxAlgoOrders, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+    const exchangeConfig = isExchangeTradingEnabled();
+    
+    if (!exchangeConfig.enabled) {
+      console.log(`⚠️ Exchange trading not enabled, cannot place algo orders`);
+      return { placed: 0, failed: 0 };
+    }
+    
+    const exchange = getPreferredExchange();
+    if (!exchange || exchange.exchange !== 'OKX') {
+      console.log(`⚠️ OKX not configured, cannot place algo orders`);
+      return { placed: 0, failed: 0 };
+    }
+    
     let placedCount = 0;
     let failedCount = 0;
+    let skippedCount = 0;
     
     for (const trade of this.activeTrades) {
-      // Only place for OPEN trades that don't have algo orders yet
-      if (trade.status === 'OPEN' && !trade.okxAlgoId && !trade.okxAlgoClOrdId && !trade.tpSlAutoPlaced) {
-        if (trade.takeProfit && trade.stopLoss && trade.entryPrice) {
-          const success = await this.placeTradeAlgoOrders(trade);
-          if (success) {
-            placedCount++;
-          } else {
-            failedCount++;
-          }
-          // Small delay between orders to avoid rate limits
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        } else {
-          console.warn(`⚠️ ${trade.symbol}: Cannot place algo orders - missing TP, SL, or entry price`);
-        }
+      // Only place for OPEN trades
+      if (trade.status !== 'OPEN') {
+        continue;
       }
+      
+      // Check if we already have algo order IDs in the trade object
+      const hasAlgoIds = trade.okxAlgoId || trade.okxAlgoClOrdId || trade.okxTpAlgoId || trade.okxSlAlgoId;
+      
+      // Also check OKX to see if algo orders actually exist (even if not in trade object)
+      let hasAlgoOrdersOnOkx = false;
+      try {
+        const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+        if (okxSymbol) {
+          const algoOrders = await getOkxAlgoOrders(
+            okxSymbol,
+            'conditional', // Only check conditional orders (TP/SL)
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+          );
+          
+          if (algoOrders && algoOrders.success && algoOrders.orders && algoOrders.orders.length > 0) {
+            // Filter to active orders only
+            const activeOrders = algoOrders.orders.filter(order => {
+              const state = order.state || order.ordState || '';
+              return state === 'live' || state === 'effective' || state === 'partially_filled';
+            });
+            
+            if (activeOrders.length > 0) {
+              hasAlgoOrdersOnOkx = true;
+              console.log(`✅ ${trade.symbol}: Found ${activeOrders.length} existing algo order(s) on OKX`);
+              
+              // Update trade object with algo IDs if we found them
+              if (!hasAlgoIds) {
+                const firstOrder = activeOrders[0];
+                trade.okxAlgoId = firstOrder.algoId;
+                trade.okxAlgoClOrdId = firstOrder.algoClOrdId;
+                trade.tpSlAutoPlaced = true;
+                console.log(`   📝 Updated trade object with algo ID: ${firstOrder.algoId || firstOrder.algoClOrdId}`);
+              }
+            }
+          }
+        }
+      } catch (checkError) {
+        console.warn(`⚠️ ${trade.symbol}: Could not check OKX for existing algo orders: ${checkError.message}`);
+        // Continue anyway - we'll try to place orders
+      }
+      
+      // If we have algo orders (either in trade object or on OKX), skip
+      if (hasAlgoIds || hasAlgoOrdersOnOkx) {
+        skippedCount++;
+        continue;
+      }
+      
+      // Check if trade has required fields
+      if (!trade.takeProfit || !trade.stopLoss || !trade.entryPrice) {
+        console.warn(`⚠️ ${trade.symbol}: Cannot place algo orders - missing TP, SL, or entry price`);
+        failedCount++;
+        continue;
+      }
+      
+      // Place algo orders for this trade
+      console.log(`📊 ${trade.symbol}: No algo orders found, placing TP/SL orders...`);
+      const success = await this.placeTradeAlgoOrders(trade);
+      if (success) {
+        placedCount++;
+      } else {
+        failedCount++;
+      }
+      
+      // Small delay between orders to avoid rate limits
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
     if (placedCount > 0) {
       console.log(`✅ Placed TP/SL algo orders for ${placedCount} trade(s) on OKX`);
     }
+    if (skippedCount > 0) {
+      console.log(`⏭️ Skipped ${skippedCount} trade(s) - already have algo orders`);
+    }
     if (failedCount > 0) {
       console.warn(`⚠️ Failed to place algo orders for ${failedCount} trade(s)`);
     }
     
-    return { placed: placedCount, failed: failedCount };
+    return { placed: placedCount, failed: failedCount, skipped: skippedCount };
   }
 
   async updateActiveTrades() {
