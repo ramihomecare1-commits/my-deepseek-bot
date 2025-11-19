@@ -3765,26 +3765,30 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 const dcaPrice = addPosition;
                 const dcaSide = newTrade.action === 'BUY' ? 'buy' : 'sell';
                 
-                // Validate DCA price is correct direction
-                let shouldPlaceDCA = false;
-                if (newTrade.action === 'BUY') {
-                  // For BUY: DCA should be below entry (to buy more at lower price)
-                  shouldPlaceDCA = dcaPrice < entryPrice && dcaPrice > 0;
-                  if (!shouldPlaceDCA) {
-                    console.log(`⚠️ ${newTrade.symbol}: DCA price ($${dcaPrice.toFixed(2)}) must be below entry ($${entryPrice.toFixed(2)}) for BUY position`);
+                // FIX: Check if DCA order already exists in trade object FIRST (prevent duplicates)
+                if (newTrade.okxDcaOrderId) {
+                  console.log(`⏭️ ${newTrade.symbol}: Skipping DCA order placement - already has okxDcaOrderId=${newTrade.okxDcaOrderId}`);
+                } else {
+                  // Validate DCA price is correct direction
+                  let shouldPlaceDCA = false;
+                  if (newTrade.action === 'BUY') {
+                    // For BUY: DCA should be below entry (to buy more at lower price)
+                    shouldPlaceDCA = dcaPrice < entryPrice && dcaPrice > 0;
+                    if (!shouldPlaceDCA) {
+                      console.log(`⚠️ ${newTrade.symbol}: DCA price ($${dcaPrice.toFixed(2)}) must be below entry ($${entryPrice.toFixed(2)}) for BUY position`);
+                    }
+                  } else {
+                    // For SELL: DCA should be above entry (to sell more at higher price)
+                    shouldPlaceDCA = dcaPrice > entryPrice && dcaPrice > 0;
+                    if (!shouldPlaceDCA) {
+                      console.log(`⚠️ ${newTrade.symbol}: DCA price ($${dcaPrice.toFixed(2)}) must be above entry ($${entryPrice.toFixed(2)}) for SELL position`);
+                    }
                   }
-              } else {
-                  // For SELL: DCA should be above entry (to sell more at higher price)
-                  shouldPlaceDCA = dcaPrice > entryPrice && dcaPrice > 0;
-                  if (!shouldPlaceDCA) {
-                    console.log(`⚠️ ${newTrade.symbol}: DCA price ($${dcaPrice.toFixed(2)}) must be above entry ($${entryPrice.toFixed(2)}) for SELL position`);
-                  }
-                }
-                
-                if (shouldPlaceDCA) {
-                  // Check OKX for existing limit orders to prevent duplicates
-                  const { getOkxPendingOrders, getOkxOpenPositions } = require('../services/exchangeService');
-                  let hasExistingDcaOrder = false;
+                  
+                  if (shouldPlaceDCA) {
+                    // Check OKX for existing limit orders to prevent duplicates
+                    const { getOkxPendingOrders, getOkxOpenPositions } = require('../services/exchangeService');
+                    let hasExistingDcaOrder = false;
                   
                   try {
                     const pendingOrders = await getOkxPendingOrders(
@@ -3813,6 +3817,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                           console.log(`   ✅ ${newTrade.symbol}: Found existing DCA limit order on OKX (Order ID: ${order.ordId || order.clOrdId || 'unknown'}, Price: $${orderPrice.toFixed(2)})`);
                           newTrade.okxDcaOrderId = order.ordId || order.clOrdId;
                           newTrade.okxDcaPrice = orderPrice;
+                          console.log(`   📝 Updated trade object with DCA order ID: ${newTrade.okxDcaOrderId}`);
                           break;
                         }
                       }
@@ -3821,7 +3826,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     console.warn(`⚠️ ${newTrade.symbol}: Could not check OKX for existing limit orders: ${checkError.message}`);
                   }
                   
-                  if (!hasExistingDcaOrder) {
+                  if (hasExistingDcaOrder) {
+                    console.log(`⏭️ ${newTrade.symbol}: Skipping DCA order placement - found existing order on OKX`);
+                  } else if (!hasExistingDcaOrder) {
                     // Get actual position size from OKX (more accurate than initialQuantity)
                     let positionSize = null;
                     try {
@@ -5284,9 +5291,16 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         continue;
       }
       
-      // Check if trade has DCA order ID in trade object
+      // FIX: Check if trade has DCA order ID in trade object FIRST (before checking OKX)
       const hasDcaOrderInTrade = trade.okxDcaOrderId;
       console.log(`   📋 ${trade.symbol}: okxDcaOrderId=${hasDcaOrderInTrade || 'none'}`);
+      
+      // If DCA order ID exists in trade object, skip immediately (no need to check OKX)
+      if (hasDcaOrderInTrade) {
+        console.log(`   ⏭️ ${trade.symbol}: Skipping - already has DCA order ID in trade object (${hasDcaOrderInTrade})`);
+        skippedCount++;
+        continue;
+      }
       
       // Check if trade has required fields
       const hasAddPosition = trade.addPosition || trade.dcaPrice;
