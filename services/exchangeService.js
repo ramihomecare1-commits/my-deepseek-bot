@@ -2239,6 +2239,64 @@ async function cancelOkxAlgoOrders(orders, apiKey, apiSecret, passphrase, baseUr
 }
 
 /**
+ * Get all algo orders for an instrument
+ * @param {string} instId - Instrument ID (e.g., 'BTC-USDT-SWAP')
+ * @param {string} ordType - Order type ('conditional', 'oco', 'trigger', 'move_order_stop', 'iceberg', 'twap')
+ * @param {string} apiKey - OKX API key
+ * @param {string} apiSecret - OKX API secret
+ * @param {string} passphrase - OKX passphrase
+ * @param {string} baseUrl - OKX API base URL
+ * @returns {Promise<Object>} Algo orders list
+ */
+async function getOkxAlgoOrders(instId, ordType, apiKey, apiSecret, passphrase, baseUrl) {
+  try {
+    const requestPath = '/api/v5/trade/orders-algo-pending';
+    
+    const params = {
+      instId: instId
+    };
+    
+    if (ordType) {
+      params.ordType = ordType;
+    }
+    
+    const queryString = new URLSearchParams(params).toString();
+    const fullPath = `${requestPath}?${queryString}`;
+    
+    const response = await executeOkxRequestWithFallback({
+      apiKey,
+      apiSecret,
+      passphrase,
+      baseUrl,
+      requestPath: fullPath,
+      method: 'GET'
+    });
+    
+    if (response.data?.code === '0' && response.data?.data) {
+      const orders = Array.isArray(response.data.data) ? response.data.data : [];
+      return {
+        success: true,
+        orders: orders
+      };
+    } else {
+      const errorMsg = response.data?.msg || 'Unknown error';
+      return {
+        success: false,
+        error: errorMsg,
+        orders: []
+      };
+    }
+  } catch (error) {
+    console.log(`❌ [OKX API] Error getting algo orders: ${error.message}`);
+    return {
+      success: false,
+      error: error.message,
+      orders: []
+    };
+  }
+}
+
+/**
  * Get algo order details
  * @param {string} algoId - Algo ID (optional if algoClOrdId is provided)
  * @param {string} algoClOrdId - Client-supplied algo ID (optional if algoId is provided)
@@ -3718,6 +3776,7 @@ module.exports = {
   cancelOkxOrder,
   placeOkxAlgoOrder,
   cancelOkxAlgoOrders,
+  getOkxAlgoOrders,
   getOkxAlgoOrderDetails,
   checkOkxAlgoOrderStatus,
   validateOkxLeverage,

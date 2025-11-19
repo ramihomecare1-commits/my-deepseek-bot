@@ -2689,6 +2689,18 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               };
             }
             
+            // Check if we already have an open trade for this coin
+            const existingOpenTrade = this.activeTrades.find(t => 
+              t.symbol === coin.symbol && 
+              (t.status === 'OPEN' || t.status === 'DCA_HIT')
+            );
+            
+            if (existingOpenTrade) {
+              console.log(`⏭️ ${coin.symbol}: Skipping - already have open ${existingOpenTrade.action} trade (${existingOpenTrade.status})`);
+              addLogEntry(`${coin.symbol}: Skipped - open trade already exists`, 'info');
+              continue; // Skip this coin, don't add to opportunities
+            }
+            
             opportunities.push(analysis);
             console.log(`✅ ${coin.symbol}: ${analysis.action} (${(analysis.confidence * 100).toFixed(0)}% confidence) - ADDED TO OPPORTUNITIES`);
             addLogEntry(`${coin.symbol}: ${analysis.action} signal detected (${(analysis.confidence * 100).toFixed(0)}% confidence)`, 'success');
@@ -4010,18 +4022,72 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       
       // IMPORTANT: Cancel any existing TP/SL algo orders before placing new ones
       // This prevents contradictions when AI re-evaluates and finds new TP/SL levels
-      if (trade.okxAlgoId || trade.okxAlgoClOrdId) {
-        console.log(`🔄 ${trade.symbol}: Canceling existing TP/SL algo orders before placing new ones...`);
-        try {
+      // We need to fetch all algo orders for this instrument and cancel them all
+      console.log(`🔄 ${trade.symbol}: Checking for existing TP/SL algo orders to cancel...`);
+      try {
+        const { getOkxAlgoOrders, cancelOkxAlgoOrders, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+        
+        // First, try to cancel orders we know about from trade object
+        if (trade.okxAlgoId || trade.okxAlgoClOrdId) {
           await this.cancelTradeAlgoOrders(trade);
-          console.log(`✅ ${trade.symbol}: Existing algo orders canceled`);
-          // Clear the algo IDs so we know they're canceled
-          trade.okxAlgoId = null;
-          trade.okxAlgoClOrdId = null;
-        } catch (cancelError) {
-          console.warn(`⚠️ ${trade.symbol}: Failed to cancel existing algo orders: ${cancelError.message}`);
-          // Continue anyway - OKX might have already canceled them or they might not exist
         }
+        
+        // Also fetch all pending algo orders for this instrument from OKX and cancel them
+        // This catches any orders that might not be in our trade object
+        try {
+          const algoOrders = await getOkxAlgoOrders(
+            okxSymbol,
+            'conditional', // Only get conditional orders (TP/SL)
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+          );
+          
+          if (algoOrders && algoOrders.success && algoOrders.orders && algoOrders.orders.length > 0) {
+            console.log(`   📋 Found ${algoOrders.orders.length} existing algo order(s) for ${trade.symbol}`);
+            
+            // Cancel all found algo orders
+            const ordersToCancel = algoOrders.orders
+              .filter(order => {
+                const state = order.state || order.ordState || '';
+                return state === 'live' || state === 'effective' || state === 'partially_filled';
+              })
+              .map(order => ({
+                instId: okxSymbol,
+                algoId: order.algoId,
+                algoClOrdId: order.algoClOrdId
+              }))
+              .filter(order => order.algoId || order.algoClOrdId);
+            
+            if (ordersToCancel.length > 0) {
+              console.log(`   🗑️ Canceling ${ordersToCancel.length} active algo order(s)...`);
+              const cancelResult = await cancelOkxAlgoOrders(
+                ordersToCancel,
+                exchange.apiKey,
+                exchange.apiSecret,
+                exchange.passphrase,
+                exchange.baseUrl
+              );
+              
+              if (cancelResult.success) {
+                console.log(`✅ ${trade.symbol}: Canceled ${ordersToCancel.length} existing algo order(s)`);
+              } else {
+                console.warn(`⚠️ ${trade.symbol}: Failed to cancel some algo orders: ${cancelResult.error || 'Unknown error'}`);
+              }
+            }
+          }
+        } catch (fetchError) {
+          console.warn(`⚠️ ${trade.symbol}: Could not fetch algo orders from OKX: ${fetchError.message}`);
+          // Continue anyway - we'll try to place new orders
+        }
+        
+        // Clear the algo IDs so we know they're canceled
+        trade.okxAlgoId = null;
+        trade.okxAlgoClOrdId = null;
+      } catch (cancelError) {
+        console.warn(`⚠️ ${trade.symbol}: Error canceling existing algo orders: ${cancelError.message}`);
+        // Continue anyway - OKX might have already canceled them or they might not exist
       }
       
       const side = trade.action === 'BUY' ? 'buy' : 'sell';
