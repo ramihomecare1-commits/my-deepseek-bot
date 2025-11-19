@@ -4410,7 +4410,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           trade.okxTpAlgoId = tpResult.algoId;
           trade.okxTpAlgoClOrdId = tpResult.algoClOrdId;
         } else {
-          console.log(`⚠️ Failed to place TP order for ${trade.symbol}: ${tpResult.error || 'Unknown error'}`);
+          if (needsTp) {
+            // Only log error if we actually tried to place it
+            console.log(`⚠️ Failed to place TP order for ${trade.symbol}: ${tpResult.error || tpResult.sMsg || 'Unknown error'}`);
+            if (tpResult.fullResponse) {
+              console.log(`   Full TP error response: ${tpResult.fullResponse}`);
+            }
+          }
         }
         
         if (slResult.success) {
@@ -4419,7 +4425,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           trade.okxSlAlgoId = slResult.algoId;
           trade.okxSlAlgoClOrdId = slResult.algoClOrdId;
         } else {
-          console.log(`⚠️ Failed to place SL order for ${trade.symbol}: ${slResult.error || 'Unknown error'}`);
+          if (needsSl) {
+            // Only log error if we actually tried to place it
+            console.log(`⚠️ Failed to place SL order for ${trade.symbol}: ${slResult.error || slResult.sMsg || 'Unknown error'}`);
+            if (slResult.fullResponse) {
+              console.log(`   Full SL error response: ${slResult.fullResponse}`);
+            }
+          }
         }
         
         if (tpPlaced || slPlaced) {
@@ -4667,32 +4679,43 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               
               // Check if we have TP and SL orders
               // TP orders have tpTriggerPx, SL orders have slTriggerPx
+              // Log the order structure for debugging
+              console.log(`   🔍 Checking ${activeOrders.length} order(s) for ${trade.symbol}...`);
               for (const order of activeOrders) {
-                if (order.tpTriggerPx || order.tpOrdPx) {
+                const orderStr = JSON.stringify(order, null, 2);
+                console.log(`   📋 Order details: ${orderStr.substring(0, 500)}...`); // Log first 500 chars
+                
+                const hasTpTrigger = order.tpTriggerPx || order.tpTriggerPxType || order.tpOrdPx;
+                const hasSlTrigger = order.slTriggerPx || order.slTriggerPxType || order.slOrdPx;
+                
+                console.log(`   🔍 Order analysis: hasTpTrigger=${!!hasTpTrigger}, hasSlTrigger=${!!hasSlTrigger}`);
+                console.log(`   🔍 Order fields: tpTriggerPx=${order.tpTriggerPx}, slTriggerPx=${order.slTriggerPx}, tpOrdPx=${order.tpOrdPx}, slOrdPx=${order.slOrdPx}`);
+                
+                if (hasTpTrigger) {
                   hasTpOrderOnOkx = true;
                   if (!hasTpOrder) {
                     trade.okxTpAlgoId = order.algoId;
                     trade.okxTpAlgoClOrdId = order.algoClOrdId;
-                    console.log(`   📝 Found TP order on OKX, updated trade object (Algo ID: ${order.algoId || order.algoClOrdId})`);
+                    console.log(`   ✅ Found TP order on OKX, updated trade object (Algo ID: ${order.algoId || order.algoClOrdId})`);
                   }
                 }
-                if (order.slTriggerPx || order.slOrdPx) {
+                if (hasSlTrigger) {
                   hasSlOrderOnOkx = true;
                   if (!hasSlOrder) {
                     trade.okxSlAlgoId = order.algoId;
                     trade.okxSlAlgoClOrdId = order.algoClOrdId;
-                    console.log(`   📝 Found SL order on OKX, updated trade object (Algo ID: ${order.algoId || order.algoClOrdId})`);
+                    console.log(`   ✅ Found SL order on OKX, updated trade object (Algo ID: ${order.algoId || order.algoClOrdId})`);
                   }
                 }
                 // If order has both TP and SL, it's a combined order
-                if ((order.tpTriggerPx || order.tpOrdPx) && (order.slTriggerPx || order.slOrdPx)) {
+                if (hasTpTrigger && hasSlTrigger) {
                   hasTpOrderOnOkx = true;
                   hasSlOrderOnOkx = true;
                   if (!hasAlgoIds) {
                     trade.okxAlgoId = order.algoId;
                     trade.okxAlgoClOrdId = order.algoClOrdId;
                     trade.tpSlAutoPlaced = true;
-                    console.log(`   📝 Found combined TP/SL order on OKX, updated trade object (Algo ID: ${order.algoId || order.algoClOrdId})`);
+                    console.log(`   ✅ Found combined TP/SL order on OKX, updated trade object (Algo ID: ${order.algoId || order.algoClOrdId})`);
                   }
                 }
               }
@@ -4726,13 +4749,16 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       }
       
       // Place algo orders for this trade
-      console.log(`📊 ${trade.symbol}: No algo orders found, placing TP/SL orders...`);
+      console.log(`📊 ${trade.symbol}: Checking if orders need to be placed...`);
       console.log(`   Trade details: Entry=$${trade.entryPrice?.toFixed(2)}, TP=$${trade.takeProfit?.toFixed(2)}, SL=$${trade.stopLoss?.toFixed(2)}`);
+      console.log(`   Current order status: TP=${hasTpOrder || hasTpOrderOnOkx ? '✅' : '❌'}, SL=${hasSlOrder || hasSlOrderOnOkx ? '✅' : '❌'}`);
+      console.log(`   Trade object: okxTpAlgoId=${trade.okxTpAlgoId || 'none'}, okxSlAlgoId=${trade.okxSlAlgoId || 'none'}`);
+      
       try {
         const success = await this.placeTradeAlgoOrders(trade);
         if (success) {
           placedCount++;
-          console.log(`✅ Successfully placed TP/SL orders for ${trade.symbol}`);
+          console.log(`✅ Successfully placed missing TP/SL orders for ${trade.symbol}`);
         } else {
           failedCount++;
           console.warn(`❌ Failed to place TP/SL orders for ${trade.symbol} - check logs above for details`);
