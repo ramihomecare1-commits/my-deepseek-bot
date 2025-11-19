@@ -135,6 +135,7 @@ class ProfessionalTradingBot {
     this.scanInProgress = false;
     this.tradesUpdateTimer = null; // Separate timer for active trades updates
     this.monitoringTimer = null; // Two-tier AI monitoring timer
+    this.cleanupTimer = null; // Timer for orphan order cleanup (5 minutes)
 
     this.trackedCoins = getTop100Coins();
     this.minConfidence = 0.65; // Will be synced with tradingRules.minConfidence
@@ -1118,13 +1119,17 @@ class ProfessionalTradingBot {
 
   stopAutoScan() {
     this.isRunning = false;
+    this.stopTradesUpdateTimer();
+    this.stopMonitoringTimer();
+    this.stopCleanupTimer(); // Stop cleanup timer
+
     if (this.scanTimer) {
       clearTimeout(this.scanTimer);
       this.scanTimer = null;
     }
     this.nextScanTime = null; // Clear next scan time when stopped
-    console.log('🛑 Auto-scan stopped');
-    return { status: 'stopped', time: new Date() };
+    console.log('🛑 Automated scan stopped');
+    return { status: 'stopped' };
   }
 
   // Start separate timer for active trades updates (every 1 minute)
@@ -3331,15 +3336,17 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       return;
     }
 
-    // Check if trade already exists for this symbol (prevent duplicates)
+    // STRICT: Check if ANY trade already exists for this symbol (prevent duplicates)
+    // Block opening new position if there's ANY open position for this coin
     const existingTrade = this.activeTrades.find(t =>
       t.symbol === opportunity.symbol &&
-      t.action === opportunity.action &&
       (t.status === 'OPEN' || t.status === 'DCA_HIT')
     );
 
     if (existingTrade) {
-      addLogEntry(`Trade already exists for ${opportunity.symbol} (${opportunity.action}). Skipping duplicate.`, 'info');
+      const msg = `❌ Cannot open ${opportunity.action} position for ${opportunity.symbol} - already have ${existingTrade.action} position open (Status: ${existingTrade.status})`;
+      addLogEntry(msg, 'warning');
+      console.log(msg);
       return;
     }
 
@@ -5316,6 +5323,182 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     }
 
     return { placed: placedCount, failed: failedCount, skipped: skippedCount };
+  }
+
+  /**
+   * Cleanup orphaned orders on OKX
+   * Cancel any algo/limit orders that don't have matching active trades
+   * Runs every 5 minutes
+   */
+  async cleanupOrphanedOrders() {
+    const { isExchangeTradingEnabled, getPreferredExchange, getOkxAlgoOrders, getOkxPendingOrders, cancelOkxAlgoOrders, cancelOkxOrders, OKX_SYMBOL_MAP, addLogEntry } = require('../services/exchangeService');
+    const exchangeConfig = isExchangeTradingEnabled();
+
+    if (!exchangeConfig.enabled) {
+      return;
+    }
+
+    const exchange = getPreferredExchange();
+    if (!exchange || exchange.exchange !== 'OKX') {
+      return;
+    }
+
+    console.log('🧹 Starting orphan order cleanup...');
+
+    try {
+      // Get all active trade symbols
+      const activeSymbols = this.activeTrades
+        .filter(t => t.status === 'OPEN' || t.status === 'DCA_HIT')
+        .map(t => OKX_SYMBOL_MAP[t.symbol] || t.symbol);
+
+      console.log(`   📊 Active trades: ${activeSymbols.length}`);
+
+      let canceledAlgoCount = 0;
+      let canceledLimitCount = 0;
+
+      // Check all symbols that have been traded
+      const allTradedSymbols = [...new Set(this.activeTrades.map(t => OKX_SYMBOL_MAP[t.symbol] || t.symbol))];
+
+      for (const okxSymbol of allTradedSymbols) {
+        const isActive = activeSymbols.includes(okxSymbol);
+
+        if (isActive) {
+          // Skip - this symbol has active trade
+          continue;
+        }
+
+        // No active trade for this symbol - check for orphaned orders
+        try {
+          // Check algo orders (TP/SL)
+          const algoOrders = await getOkxAlgoOrders(
+            okxSymbol,
+            'conditional',
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+          );
+
+          if (algoOrders && algoOrders.success && algoOrders.orders && algoOrders.orders.length > 0) {
+            const activeAlgoOrders = algoOrders.orders.filter(order => {
+              const state = order.state || order.ordState || '';
+              return state === 'live' || state === 'effective';
+            });
+
+            if (activeAlgoOrders.length > 0) {
+              console.log(`   🗑️ Found ${activeAlgoOrders.length} orphaned algo order(s) for ${okxSymbol}`);
+
+              const ordersToCancel = activeAlgoOrders.map(order => ({
+                instId: okxSymbol,
+                algoId: order.algoId,
+                algoClOrdId: order.algoClOrdId
+              }));
+
+              const cancelResult = await cancelOkxAlgoOrders(
+                ordersToCancel,
+                exchange.apiKey,
+                exchange.apiSecret,
+                exchange.passphrase,
+                exchange.baseUrl
+              );
+
+              if (cancelResult.success) {
+                canceledAlgoCount += activeAlgoOrders.length;
+                console.log(`   ✅ Canceled ${activeAlgoOrders.length} orphaned algo order(s)`);
+              }
+            }
+          }
+
+          // Check pending limit orders (DCA orders)
+          const pendingOrders = await getOkxPendingOrders(
+            okxSymbol,
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+          );
+
+          if (pendingOrders && pendingOrders.success && pendingOrders.orders && pendingOrders.orders.length > 0) {
+            const activeLimitOrders = pendingOrders.orders.filter(order => {
+              const state = order.state || order.ordState || '';
+              const ordType = order.ordType || '';
+              return (state === 'live' || state === 'partially_filled') && ordType === 'limit';
+            });
+
+            if (activeLimitOrders.length > 0) {
+              console.log(`   🗑️ Found ${activeLimitOrders.length} orphaned limit order(s)`);
+
+              const orderIds = activeLimitOrders.map(order => ({
+                instId: okxSymbol,
+                ordId: order.ordId,
+                clOrdId: order.clOrdId
+              }));
+
+              const cancelResult = await cancelOkxOrders(
+                orderIds,
+                exchange.apiKey,
+                exchange.apiSecret,
+                exchange.passphrase,
+                exchange.baseUrl
+              );
+
+              if (cancelResult.success) {
+                canceledLimitCount += activeLimitOrders.length;
+                console.log(`   ✅ Canceled ${activeLimitOrders.length} orphaned limit orders`);
+              }
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ Error checking orders for ${okxSymbol}: ${error.message}`);
+        }
+      }
+
+      if (canceledAlgoCount > 0 || canceledLimitCount > 0) {
+        console.log(`✅ Cleanup complete: ${canceledAlgoCount} algo + ${canceledLimitCount} limit orders`);
+        addLogEntry(`Orphan cleanup: Canceled ${canceledAlgoCount} TP/SL + ${canceledLimitCount} limit orders`, 'info');
+      } else {
+        console.log('✅ Cleanup complete: No orphaned orders found');
+      }
+    } catch (error) {
+      console.error(`❌ Orphan cleanup error: ${error.message}`);
+    }
+  }
+
+  /**
+   * Start 5-minute cleanup timer
+   */
+  startCleanupTimer() {
+    if (this.cleanupTimer) {
+      console.log('⏰ Cleanup timer already running');
+      return;
+    }
+
+    console.log('🧹 Starting 5-minute orphan order cleanup timer');
+
+    // Run immediately on start
+    this.cleanupOrphanedOrders().catch(err => {
+      console.error(`⚠️ Initial cleanup error: ${err.message}`);
+    });
+
+    // Then run every 5 minutes
+    this.cleanupTimer = setInterval(async () => {
+      try {
+        await this.cleanupOrphanedOrders();
+      } catch (error) {
+        console.error(`⚠️ Cleanup timer error: ${error.message}`);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+  }
+
+  /**
+   * Stop cleanup timer
+   */
+  stopCleanupTimer() {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+      console.log('⏰ Cleanup timer stopped');
+    }
   }
 
   /**
