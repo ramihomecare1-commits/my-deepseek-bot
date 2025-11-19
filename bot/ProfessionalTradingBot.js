@@ -7073,7 +7073,7 @@ Return JSON array format:
                   // Cancel existing DCA order if it exists
                   if (trade.okxDcaOrderId) {
                     try {
-                      const { isExchangeTradingEnabled, getPreferredExchange } = require('../services/exchangeService');
+                      const { isExchangeTradingEnabled, getPreferredExchange, cancelOkxOrder } = require('../services/exchangeService');
                       const exchangeConfig = isExchangeTradingEnabled();
                       
                       if (exchangeConfig.enabled) {
@@ -7081,29 +7081,15 @@ Return JSON array format:
                         const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
                         
                         if (okxSymbol && exchange) {
-                          // Use OKX API to cancel order
-                          const axios = require('axios');
-                          const { createOkxSignature } = require('../services/exchangeService');
-                          
-                          const timestamp = (Date.now() / 1000).toFixed(0);
-                          const requestPath = `/api/v5/trade/cancel-order`;
-                          const body = JSON.stringify({
-                            instId: okxSymbol,
-                            ordId: trade.okxDcaOrderId
-                          });
-                          
-                          const signature = createOkxSignature(timestamp, 'POST', requestPath, body, exchange.apiSecret);
-                          
-                          await axios.post(`${exchange.baseUrl}${requestPath}`, body, {
-                            headers: {
-                              'OK-ACCESS-KEY': exchange.apiKey,
-                              'OK-ACCESS-SIGN': signature,
-                              'OK-ACCESS-TIMESTAMP': timestamp,
-                              'OK-ACCESS-PASSPHRASE': exchange.passphrase,
-                              'Content-Type': 'application/json'
-                            },
-                            timeout: 10000
-                          });
+                          await cancelOkxOrder(
+                            okxSymbol,
+                            trade.okxDcaOrderId,
+                            null, // clOrdId
+                            exchange.apiKey,
+                            exchange.apiSecret,
+                            exchange.passphrase,
+                            exchange.baseUrl
+                          );
                           
                           console.log(`🗑️ ${symbol}: Canceled old DCA order on OKX`);
                         }
