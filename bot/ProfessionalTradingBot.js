@@ -3925,6 +3925,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     }
                   }
                 }
+                }
               } catch (dcaError) {
                 console.error(`❌ Error placing DCA limit order for ${newTrade.symbol}: ${dcaError.message}`);
                 // Don't fail the trade if DCA order fails - it's optional
