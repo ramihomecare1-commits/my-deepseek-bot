@@ -5545,8 +5545,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               addLogEntry(`✅ TP EXECUTED: ${trade.symbol} - Order ID: ${tpResult.orderId}`, 'success');
               this.recordTradeOutcome(trade, 'TAKE_PROFIT');
               
-              // Trigger AI re-evaluation when TP is hit
-              await this.triggerAIReevaluation(`TP executed for ${trade.symbol}`);
+              // Trigger AI re-evaluation when TP is hit (don't await to avoid blocking)
+              this.triggerAIReevaluation(`TP executed for ${trade.symbol}`).catch(err => {
+                console.error(`⚠️ Error triggering AI after TP: ${err.message}`);
+              });
             } else if (!tpResult.skipped) {
               // Only log if it's an actual error (not just disabled)
               trade.status = 'TP_HIT'; // Mark as hit even if execution failed
