@@ -3382,14 +3382,15 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 }
               }
               
-              // Use closeFraction = "1" to close full position automatically
+              // OKX doesn't support closeFraction for conditional orders - use actual executed quantity
+              const executedQty = orderResult.executedQty || initialQuantity;
               const algoOrderParams = {
                 instId: okxSymbol,
                 tdMode: 'cross',
                 side: tpOrderSide, // Opposite side to close position
                 posSide: posSide,
                 ordType: 'conditional',
-                closeFraction: '1', // Close full position when triggered
+                sz: executedQty.toString(), // Use actual executed quantity (OKX doesn't support closeFraction for conditional orders)
                 tpTriggerPx: tpTriggerPrice.toFixed(8), // Use more precision for OKX
                 tpOrdPx: '-1', // Market order for TP
                 slTriggerPx: slTriggerPrice.toFixed(8), // Use more precision for OKX
@@ -3420,69 +3421,102 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 const errorMsg = algoResult.error || algoResult.sMsg || '';
                 console.log(`⚠️ Combined TP/SL order failed (${errorCode || 'unknown'}), trying separate orders...`);
                 
-                // Place TP order
-                const tpOrderParams = {
-                  instId: okxSymbol,
-                  tdMode: 'cross',
-                  side: tpOrderSide,
-                  posSide: posSide,
-                  ordType: 'conditional',
-                  closeFraction: '1',
-                  tpTriggerPx: tpTriggerPrice.toFixed(8),
-                  tpOrdPx: '-1',
-                  tpTriggerPxType: 'last',
-                  reduceOnly: true,
-                  cxlOnClosePos: true
-                };
+                // Get actual position size from OKX (OKX doesn't support closeFraction for conditional orders)
+                const { getOkxOpenPositions } = require('../services/exchangeService');
+                let positionSize = null;
+                try {
+                  const positions = await getOkxOpenPositions(
+                    exchange.apiKey,
+                    exchange.apiSecret,
+                    exchange.passphrase,
+                    exchange.baseUrl
+                  );
+                  const position = positions.find(p => {
+                    const instId = p.instId || p.symbol || '';
+                    return instId === okxSymbol || instId.includes(newTrade.symbol.split('-')[0]);
+                  });
+                  if (position) {
+                    positionSize = Math.abs(parseFloat(position.quantity || position.pos || 0));
+                    console.log(`   📊 Found position size: ${positionSize} for ${okxSymbol}`);
+                  } else {
+                    // Fallback to executed quantity
+                    positionSize = parseFloat(orderResult.executedQty || initialQuantity || 0);
+                    console.log(`   ⚠️ Position not found on OKX, using executed quantity: ${positionSize}`);
+                  }
+                } catch (posError) {
+                  // Fallback to executed quantity
+                  positionSize = parseFloat(orderResult.executedQty || initialQuantity || 0);
+                  console.log(`   ⚠️ Failed to get position size, using executed quantity: ${positionSize}`);
+                }
                 
-                const tpResult = await placeOkxAlgoOrder(
-                  tpOrderParams,
-                  exchange.apiKey,
-                  exchange.apiSecret,
-                  exchange.passphrase,
-                  exchange.baseUrl
-                );
-                
-                // Small delay between orders
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                // Place SL order
-                const slOrderParams = {
-                  instId: okxSymbol,
-                  tdMode: 'cross',
-                  side: tpOrderSide,
-                  posSide: posSide,
-                  ordType: 'conditional',
-                  closeFraction: '1',
-                  slTriggerPx: slTriggerPrice.toFixed(8),
-                  slOrdPx: '-1',
-                  slTriggerPxType: 'last',
-                  reduceOnly: true,
-                  cxlOnClosePos: true
-                };
-                
-                const slResult = await placeOkxAlgoOrder(
-                  slOrderParams,
-                  exchange.apiKey,
-                  exchange.apiSecret,
-                  exchange.passphrase,
-                  exchange.baseUrl
-                );
-                
-                if (tpResult.success && slResult.success) {
-                  console.log(`✅ TP and SL algo orders placed separately for ${newTrade.symbol}!`);
-                  console.log(`   TP Algo ID: ${tpResult.algoId || tpResult.algoClOrdId}`);
-                  console.log(`   SL Algo ID: ${slResult.algoId || slResult.algoClOrdId}`);
-                  newTrade.okxAlgoId = tpResult.algoId || slResult.algoId;
-                  newTrade.okxAlgoClOrdId = tpResult.algoClOrdId || slResult.algoClOrdId;
-                  newTrade.tpSlAutoPlaced = true;
-                  addLogEntry(`TP/SL algo orders placed separately on OKX for ${newTrade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
-                } else {
-                  console.log(`⚠️ Failed to place separate TP/SL orders for ${newTrade.symbol}`);
-                  if (!tpResult.success) console.log(`   TP error: ${tpResult.error}`);
-                  if (!slResult.success) console.log(`   SL error: ${slResult.error}`);
-                  console.log(`   Trade will be monitored manually for TP/SL execution`);
+                if (!positionSize || positionSize <= 0) {
+                  console.log(`   ❌ Cannot place separate orders - no valid position size found`);
                   newTrade.tpSlAutoPlaced = false;
+                } else {
+                  // Place TP order with actual position size
+                  const tpOrderParams = {
+                    instId: okxSymbol,
+                    tdMode: 'cross',
+                    side: tpOrderSide,
+                    posSide: posSide,
+                    ordType: 'conditional',
+                    sz: positionSize.toString(), // Use actual position size instead of closeFraction
+                    tpTriggerPx: tpTriggerPrice.toFixed(8),
+                    tpOrdPx: '-1',
+                    tpTriggerPxType: 'last',
+                    reduceOnly: true,
+                    cxlOnClosePos: true
+                  };
+                  
+                  const tpResult = await placeOkxAlgoOrder(
+                    tpOrderParams,
+                    exchange.apiKey,
+                    exchange.apiSecret,
+                    exchange.passphrase,
+                    exchange.baseUrl
+                  );
+                  
+                  // Small delay between orders
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  
+                  // Place SL order with actual position size
+                  const slOrderParams = {
+                    instId: okxSymbol,
+                    tdMode: 'cross',
+                    side: tpOrderSide,
+                    posSide: posSide,
+                    ordType: 'conditional',
+                    sz: positionSize.toString(), // Use actual position size instead of closeFraction
+                    slTriggerPx: slTriggerPrice.toFixed(8),
+                    slOrdPx: '-1',
+                    slTriggerPxType: 'last',
+                    reduceOnly: true,
+                    cxlOnClosePos: true
+                  };
+                  
+                  const slResult = await placeOkxAlgoOrder(
+                    slOrderParams,
+                    exchange.apiKey,
+                    exchange.apiSecret,
+                    exchange.passphrase,
+                    exchange.baseUrl
+                  );
+                  
+                  if (tpResult.success && slResult.success) {
+                    console.log(`✅ TP and SL algo orders placed separately for ${newTrade.symbol}!`);
+                    console.log(`   TP Algo ID: ${tpResult.algoId || tpResult.algoClOrdId}`);
+                    console.log(`   SL Algo ID: ${slResult.algoId || slResult.algoClOrdId}`);
+                    newTrade.okxAlgoId = tpResult.algoId || slResult.algoId;
+                    newTrade.okxAlgoClOrdId = tpResult.algoClOrdId || slResult.algoClOrdId;
+                    newTrade.tpSlAutoPlaced = true;
+                    addLogEntry(`TP/SL algo orders placed separately on OKX for ${newTrade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
+                  } else {
+                    console.log(`⚠️ Failed to place separate TP/SL orders for ${newTrade.symbol}`);
+                    if (!tpResult.success) console.log(`   TP error: ${tpResult.error}`);
+                    if (!slResult.success) console.log(`   SL error: ${slResult.error}`);
+                    console.log(`   Trade will be monitored manually for TP/SL execution`);
+                    newTrade.tpSlAutoPlaced = false;
+                  }
                 }
               } else {
                 console.log(`✅ TP/SL algo orders placed successfully! Algo ID: ${algoResult.algoId || algoResult.algoClOrdId}`);
@@ -3911,6 +3945,40 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         }
       }
       
+      // Get actual position size from OKX (OKX doesn't support closeFraction for conditional orders)
+      const { getOkxOpenPositions } = require('../services/exchangeService');
+      let positionSize = null;
+      try {
+        const positions = await getOkxOpenPositions(
+          exchange.apiKey,
+          exchange.apiSecret,
+          exchange.passphrase,
+          exchange.baseUrl
+        );
+        const position = positions.find(p => {
+          const instId = p.instId || p.symbol || '';
+          return instId === okxSymbol || instId.includes(trade.symbol.split('-')[0]);
+        });
+        if (position) {
+          positionSize = Math.abs(parseFloat(position.quantity || position.pos || 0));
+          console.log(`   📊 Found position size: ${positionSize} for ${okxSymbol}`);
+        } else {
+          // Fallback to trade quantity
+          positionSize = parseFloat(trade.quantity || 0);
+          console.log(`   ⚠️ Position not found on OKX, using trade quantity: ${positionSize}`);
+        }
+      } catch (posError) {
+        // Fallback to trade quantity
+        positionSize = parseFloat(trade.quantity || 0);
+        console.log(`   ⚠️ Failed to get position size, using trade quantity: ${positionSize}`);
+      }
+      
+      if (!positionSize || positionSize <= 0) {
+        console.log(`   ❌ Cannot place algo orders - no valid position size found`);
+        trade.tpSlAutoPlaced = false;
+        return false;
+      }
+      
       // Try placing both TP and SL in a single conditional order first
       // If that fails, we'll try separate orders
       const algoOrderParams = {
@@ -3919,7 +3987,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         side: tpOrderSide,
         posSide: posSide,
         ordType: 'conditional',
-        closeFraction: '1', // Close full position when triggered
+        sz: positionSize.toString(), // Use actual position size (OKX doesn't support closeFraction for conditional orders)
         tpTriggerPx: tpTriggerPrice.toFixed(8), // Use more precision for OKX
         tpOrdPx: '-1', // Market order for TP
         slTriggerPx: slTriggerPrice.toFixed(8), // Use more precision for OKX
@@ -3944,24 +4012,58 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       
       // If combined order fails, try placing TP and SL as separate orders
       // OKX error 51088: "You can only place 1 TP/SL order to close an entire position"
-      // OKX requires separate orders when using closeFraction: '1' to close entire position
+      // OKX doesn't support closeFraction for conditional orders - need to use actual position size
       if (!algoResult.success) {
         const errorCode = algoResult.sCode || algoResult.code;
         const errorMsg = algoResult.error || algoResult.sMsg || '';
-        console.log(`⚠️ Combined TP/SL order failed (errorCode: ${errorCode}, sCode: ${algoResult.sCode}, code: ${algoResult.code}), trying separate orders...`);
+        console.log(`⚠️ Combined TP/SL order failed (errorCode: ${errorCode}, sCode: ${algoResult.sCode}, code: ${algoResult.code}), trying separate orders with position size...`);
         console.log(`   Error message: ${errorMsg}`);
         if (errorCode === '51088' || errorCode === 51088 || errorMsg.includes('only place 1 TP/SL')) {
-          console.log(`   ✅ Detected OKX error 51088 - OKX requires separate TP/SL orders when closing entire position`);
+          console.log(`   ✅ Detected OKX error 51088 - OKX doesn't support closeFraction, using actual position size instead`);
         }
         
-        // Place TP order
+        // Get actual position size from OKX
+        const { getOkxOpenPositions } = require('../services/exchangeService');
+        let positionSize = null;
+        try {
+          const positions = await getOkxOpenPositions(
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+          );
+          const position = positions.find(p => {
+            const instId = p.instId || p.symbol || '';
+            return instId === okxSymbol || instId.includes(trade.symbol.split('-')[0]);
+          });
+          if (position) {
+            positionSize = Math.abs(parseFloat(position.quantity || position.pos || 0));
+            console.log(`   📊 Found position size: ${positionSize} for ${okxSymbol}`);
+          } else {
+            // Fallback to trade quantity
+            positionSize = parseFloat(trade.quantity || 0);
+            console.log(`   ⚠️ Position not found on OKX, using trade quantity: ${positionSize}`);
+          }
+        } catch (posError) {
+          // Fallback to trade quantity
+          positionSize = parseFloat(trade.quantity || 0);
+          console.log(`   ⚠️ Failed to get position size, using trade quantity: ${positionSize}`);
+        }
+        
+        if (!positionSize || positionSize <= 0) {
+          console.log(`   ❌ Cannot place separate orders - no valid position size found`);
+          trade.tpSlAutoPlaced = false;
+          return false;
+        }
+        
+        // Place TP order with actual position size
         const tpOrderParams = {
           instId: okxSymbol,
           tdMode: 'cross',
           side: tpOrderSide,
           posSide: posSide,
           ordType: 'conditional',
-          closeFraction: '1',
+          sz: positionSize.toString(), // Use actual position size instead of closeFraction
           tpTriggerPx: tpTriggerPrice.toFixed(8),
           tpOrdPx: '-1',
           tpTriggerPxType: 'last',
@@ -3980,14 +4082,14 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         // Small delay between orders
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        // Place SL order
+        // Place SL order with actual position size
         const slOrderParams = {
           instId: okxSymbol,
           tdMode: 'cross',
           side: tpOrderSide, // Same side to close position
           posSide: posSide,
           ordType: 'conditional',
-          closeFraction: '1',
+          sz: positionSize.toString(), // Use actual position size instead of closeFraction
           slTriggerPx: slTriggerPrice.toFixed(8),
           slOrdPx: '-1',
           slTriggerPxType: 'last',
