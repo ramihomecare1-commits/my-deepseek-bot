@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <title>🤖 AI Crypto Trading Scanner Pro</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,13 +8,19 @@
   <!-- Tailwind CSS for modern layout & styling -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: radial-gradient(circle at top left, #1f2937, #0f172a 55%, #020617 100%);
       min-height: 100vh;
       color: #1a202c;
     }
+
     .top-nav {
       position: sticky;
       top: 0;
@@ -26,6 +33,7 @@
       align-items: center;
       border-bottom: 1px solid rgba(148, 163, 184, 0.3);
     }
+
     .top-nav h2 {
       color: #e2e8f0;
       font-size: 1.1em;
@@ -33,11 +41,13 @@
       letter-spacing: 0.05em;
       text-transform: uppercase;
     }
+
     .top-nav .nav-links {
       display: flex;
       gap: 12px;
       flex-wrap: wrap;
     }
+
     .top-nav .nav-links a {
       color: #cbd5f5;
       text-decoration: none;
@@ -48,25 +58,30 @@
       border: 1px solid transparent;
       transition: all 0.2s ease;
     }
+
     .top-nav .nav-links a:hover {
       border-color: rgba(99, 102, 241, 0.4);
       color: #f8fafc;
     }
+
     .section-block {
       margin-bottom: 32px;
       scroll-margin-top: 80px;
     }
+
     .section-title {
       display: flex;
       align-items: center;
       justify-content: space-between;
       margin-bottom: 16px;
     }
+
     .section-title h3 {
       font-size: 1.2em;
       font-weight: 700;
       color: #0f172a;
     }
+
     .pill {
       padding: 4px 10px;
       border-radius: 999px;
@@ -75,18 +90,27 @@
       color: #475569;
       font-weight: 600;
     }
+
     .container {
       max-width: 1920px;
       margin: 0 auto;
       padding: 24px;
     }
+
     .main-content {
       background: rgba(255, 255, 255, 0.95);
       border-radius: 20px;
       padding: 20px;
       box-shadow: 0 20px 40px rgba(15, 23, 42, 0.3);
     }
-    .header { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid rgba(148, 163, 184, 0.2); }
+
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid rgba(148, 163, 184, 0.2);
+    }
+
     .header h1 {
       color: #0f172a;
       font-size: 1.8em;
@@ -98,6 +122,7 @@
       -webkit-text-fill-color: transparent;
       color: transparent;
     }
+
     .subtitle {
       color: #334155;
       font-weight: 500;
@@ -105,6 +130,7 @@
       letter-spacing: 0.05em;
       text-transform: uppercase;
     }
+
     .fg-indicator {
       margin-top: 12px;
       padding: 6px 12px;
@@ -116,14 +142,45 @@
       gap: 4px;
       transition: background-color 0.5s, color 0.5s;
     }
-    .fg-label { opacity: 0.7; }
-    .fg-value { font-weight: 700; }
-    .fg-score { font-size: 0.9em; opacity: 0.8; }
-    .fg-indicator.extreme-fear { background: rgba(239, 68, 68, 0.15); color: #b91c1c; }
-    .fg-indicator.fear { background: rgba(245, 158, 11, 0.15); color: #b45309; }
-    .fg-indicator.neutral { background: rgba(100, 116, 139, 0.15); color: #475569; }
-    .fg-indicator.greed { background: rgba(132, 204, 22, 0.15); color: #4d7c0f; }
-    .fg-indicator.extreme-greed { background: rgba(34, 197, 94, 0.15); color: #15803d; }
+
+    .fg-label {
+      opacity: 0.7;
+    }
+
+    .fg-value {
+      font-weight: 700;
+    }
+
+    .fg-score {
+      font-size: 0.9em;
+      opacity: 0.8;
+    }
+
+    .fg-indicator.extreme-fear {
+      background: rgba(239, 68, 68, 0.15);
+      color: #b91c1c;
+    }
+
+    .fg-indicator.fear {
+      background: rgba(245, 158, 11, 0.15);
+      color: #b45309;
+    }
+
+    .fg-indicator.neutral {
+      background: rgba(100, 116, 139, 0.15);
+      color: #475569;
+    }
+
+    .fg-indicator.greed {
+      background: rgba(132, 204, 22, 0.15);
+      color: #4d7c0f;
+    }
+
+    .fg-indicator.extreme-greed {
+      background: rgba(34, 197, 94, 0.15);
+      color: #15803d;
+    }
+
     .controls {
       background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9));
       padding: 16px;
@@ -131,6 +188,7 @@
       margin-bottom: 16px;
       border: 1px solid rgba(148, 163, 184, 0.2);
     }
+
     .heatmap-section {
       background: linear-gradient(135deg, rgba(15, 23, 42, 0.05), rgba(59, 130, 246, 0.08));
       border-radius: 20px;
@@ -138,6 +196,7 @@
       border: 1px solid rgba(148, 163, 184, 0.2);
       margin-bottom: 28px;
     }
+
     .section-header {
       display: flex;
       justify-content: space-between;
@@ -145,17 +204,20 @@
       margin-bottom: 16px;
       color: #0f172a;
     }
+
     .section-header small {
       color: #475569;
       font-size: 0.8em;
       text-transform: uppercase;
       letter-spacing: 0.1em;
     }
+
     .heatmap-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       gap: 12px;
     }
+
     .heatmap-empty {
       grid-column: 1 / -1;
       text-align: center;
@@ -165,6 +227,7 @@
       border-radius: 14px;
       border: 1px dashed rgba(148, 163, 184, 0.4);
     }
+
     .heatmap-cell {
       padding: 16px;
       border-radius: 14px;
@@ -172,10 +235,12 @@
       border: 1px solid rgba(148, 163, 184, 0.25);
       transition: transform 0.2s ease;
     }
+
     .heatmap-cell:hover {
       transform: translateY(-2px);
       box-shadow: 0 18px 32px rgba(15, 23, 42, 0.12);
     }
+
     .heatmap-coin {
       display: flex;
       justify-content: space-between;
@@ -184,10 +249,12 @@
       font-weight: 600;
       color: #0f172a;
     }
+
     .heatmap-score {
       font-size: 1.4em;
       font-weight: 700;
     }
+
     .heatmap-frames {
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -196,6 +263,7 @@
       text-transform: uppercase;
       letter-spacing: 0.08em;
     }
+
     .heatmap-frame {
       padding: 6px;
       border-radius: 8px;
@@ -203,18 +271,21 @@
       text-align: center;
       font-weight: 600;
     }
+
     .button-group {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       margin-bottom: 20px;
     }
+
     .action-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 16px;
       margin-top: 12px;
     }
+
     .action-card {
       background: white;
       border-radius: 16px;
@@ -223,8 +294,9 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
-      box-shadow: 0 2px 6px rgba(15,23,42,0.08);
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
     }
+
     .action-card h4 {
       margin: 0;
       font-size: 0.95em;
@@ -232,11 +304,13 @@
       letter-spacing: 0.05em;
       text-transform: uppercase;
     }
+
     .pill-list {
       display: flex;
       gap: 6px;
       flex-wrap: wrap;
     }
+
     .pill-list span {
       background: rgba(148, 163, 184, 0.2);
       border-radius: 999px;
@@ -245,6 +319,7 @@
       color: #475569;
       font-weight: 600;
     }
+
     button {
       padding: 8px 16px;
       border: 1px solid rgba(15, 23, 42, 0.08);
@@ -263,20 +338,38 @@
       white-space: nowrap;
       background: linear-gradient(135deg, #0f172a, #1e293b);
     }
-    .btn-success { background: linear-gradient(135deg, #22c55e, #16a34a); }
-    .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); }
-    .btn-primary { background: linear-gradient(135deg, #6366f1, #4338ca); }
-    .btn-secondary { background: linear-gradient(135deg, #475569, #334155); }
-    .btn-telegram { background: linear-gradient(135deg, #0088cc, #0369a1); }
+
+    .btn-success {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #6366f1, #4338ca);
+    }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, #475569, #334155);
+    }
+
+    .btn-telegram {
+      background: linear-gradient(135deg, #0088cc, #0369a1);
+    }
+
     button:hover {
       transform: translateY(-1px);
       box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
       opacity: 0.96;
     }
+
     button:active {
       transform: translateY(0);
       box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
     }
+
     .status-card {
       background: linear-gradient(135deg, #0ea5e9, #6366f1);
       color: white;
@@ -284,8 +377,18 @@
       border-radius: 16px;
       text-align: center;
     }
-    .status-card h4 { margin-bottom: 8px; font-size: 1.2em; }
-    .status-meta { font-size: 0.85em; opacity: 0.85; margin-top: 8px; }
+
+    .status-card h4 {
+      margin-bottom: 8px;
+      font-size: 1.2em;
+    }
+
+    .status-meta {
+      font-size: 0.85em;
+      opacity: 0.85;
+      margin-top: 8px;
+    }
+
     .opportunity {
       background: white;
       border-radius: 16px;
@@ -296,6 +399,7 @@
       transition: transform 0.3s ease, box-shadow 0.3s ease;
       position: relative;
     }
+
     .opportunity::before {
       content: '';
       position: absolute;
@@ -305,21 +409,41 @@
       opacity: 0;
       transition: opacity 0.3s ease;
     }
+
     .opportunity:hover {
       transform: translateY(-4px);
       box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
     }
-    .opportunity:hover::before { opacity: 1; }
-    .opportunity.buy { border-left-color: #22c55e; }
-    .opportunity.sell { border-left-color: #ef4444; }
-    .opportunity.hold { border-left-color: #f59e0b; }
+
+    .opportunity:hover::before {
+      opacity: 1;
+    }
+
+    .opportunity.buy {
+      border-left-color: #22c55e;
+    }
+
+    .opportunity.sell {
+      border-left-color: #ef4444;
+    }
+
+    .opportunity.hold {
+      border-left-color: #f59e0b;
+    }
+
     .coin-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 20px;
     }
-    .coin-name { font-size: 1.4em; font-weight: 700; color: #0f172a; }
+
+    .coin-name {
+      font-size: 1.4em;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
     .action-badge {
       padding: 8px 16px;
       border-radius: 999px;
@@ -329,9 +453,22 @@
       align-items: center;
       gap: 6px;
     }
-    .buy-badge { background: rgba(34, 197, 94, 0.15); color: #15803d; }
-    .sell-badge { background: rgba(239, 68, 68, 0.15); color: #b91c1c; }
-    .hold-badge { background: rgba(245, 158, 11, 0.15); color: #b45309; }
+
+    .buy-badge {
+      background: rgba(34, 197, 94, 0.15);
+      color: #15803d;
+    }
+
+    .sell-badge {
+      background: rgba(239, 68, 68, 0.15);
+      color: #b91c1c;
+    }
+
+    .hold-badge {
+      background: rgba(245, 158, 11, 0.15);
+      color: #b45309;
+    }
+
     .price-confidence {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -341,12 +478,15 @@
       background: rgba(148, 163, 184, 0.08);
       border-radius: 12px;
     }
-    .price-box .value, .confidence-box .value {
+
+    .price-box .value,
+    .confidence-box .value {
       font-size: 1.6em;
       font-weight: 700;
       color: #0f172a;
       margin-bottom: 4px;
     }
+
     .confidence-bar {
       height: 10px;
       background: rgba(226, 232, 240, 0.7);
@@ -354,20 +494,32 @@
       margin: 16px 0;
       overflow: hidden;
     }
+
     .confidence-fill {
       height: 100%;
       border-radius: 12px;
       transition: width 0.8s;
     }
-    .high-confidence { background: linear-gradient(90deg, #22c55e, #16a34a); }
-    .medium-confidence { background: linear-gradient(90deg, #f59e0b, #d97706); }
-    .low-confidence { background: linear-gradient(90deg, #ef4444, #b91c1c); }
+
+    .high-confidence {
+      background: linear-gradient(90deg, #22c55e, #16a34a);
+    }
+
+    .medium-confidence {
+      background: linear-gradient(90deg, #f59e0b, #d97706);
+    }
+
+    .low-confidence {
+      background: linear-gradient(90deg, #ef4444, #b91c1c);
+    }
+
     .technical-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
       gap: 12px;
       margin: 20px 0;
     }
+
     .technical-item {
       background: rgba(241, 245, 249, 0.85);
       padding: 14px;
@@ -375,18 +527,21 @@
       text-align: center;
       border: 1px solid rgba(148, 163, 184, 0.25);
     }
+
     .timeframe-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
       gap: 10px;
       margin: 16px 0;
     }
+
     .timeframe-card {
       border-radius: 12px;
       padding: 12px;
       background: rgba(15, 23, 42, 0.05);
       border: 1px solid rgba(148, 163, 184, 0.2);
     }
+
     .timeframe-card h5 {
       font-size: 0.75em;
       text-transform: uppercase;
@@ -394,11 +549,13 @@
       color: #475569;
       margin-bottom: 8px;
     }
+
     .timeframe-card .metric {
       font-size: 0.9em;
       color: #0f172a;
       margin-bottom: 4px;
     }
+
     .technical-item strong {
       display: block;
       color: #475569;
@@ -406,6 +563,7 @@
       text-transform: uppercase;
       margin-bottom: 6px;
     }
+
     .reason-box {
       margin: 16px 0;
       padding: 16px;
@@ -413,7 +571,12 @@
       border-radius: 12px;
       border-left: 4px solid #6366f1;
     }
-    .insights-list ul { list-style: none; padding: 0; }
+
+    .insights-list ul {
+      list-style: none;
+      padding: 0;
+    }
+
     .insights-list li {
       padding: 10px 12px;
       margin-bottom: 8px;
@@ -422,6 +585,7 @@
       padding-left: 32px;
       position: relative;
     }
+
     .insights-list li::before {
       content: '→';
       position: absolute;
@@ -429,11 +593,13 @@
       color: #6366f1;
       font-weight: bold;
     }
+
     .no-opportunities {
       text-align: center;
       padding: 80px 20px;
       color: #64748b;
     }
+
     .ai-visual {
       margin-top: 20px;
       background: rgba(14, 116, 144, 0.15);
@@ -441,9 +607,26 @@
       padding: 18px;
       border: 1px solid rgba(125, 211, 252, 0.3);
     }
-    .ai-visual h4 { color: #bae6fd; font-size: 1.1em; margin-bottom: 12px; }
-    .ai-list { list-style: none; color: #bae6fd; font-size: 0.95em; }
-    .ai-list li { margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+
+    .ai-visual h4 {
+      color: #bae6fd;
+      font-size: 1.1em;
+      margin-bottom: 12px;
+    }
+
+    .ai-list {
+      list-style: none;
+      color: #bae6fd;
+      font-size: 0.95em;
+    }
+
+    .ai-list li {
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
     .ai-tag {
       padding: 2px 10px;
       border-radius: 999px;
@@ -453,6 +636,7 @@
       text-transform: uppercase;
       letter-spacing: 0.08em;
     }
+
     .live-progress {
       margin-top: 16px;
       background: rgba(15, 23, 42, 0.6);
@@ -460,6 +644,7 @@
       border-radius: 12px;
       border: 1px solid rgba(148, 163, 184, 0.2);
     }
+
     .progress-bar {
       height: 6px;
       background: rgba(148, 163, 184, 0.3);
@@ -467,12 +652,14 @@
       overflow: hidden;
       margin-top: 8px;
     }
+
     .progress-fill {
       height: 100%;
       background: linear-gradient(90deg, #38bdf8, #6366f1);
       width: 0;
       transition: width 0.3s ease;
     }
+
     .ai-chip {
       display: inline-flex;
       align-items: center;
@@ -486,6 +673,7 @@
       border-radius: 999px;
       margin-right: 8px;
     }
+
     .history-card {
       margin-top: 20px;
       padding: 16px;
@@ -493,6 +681,7 @@
       border-radius: 12px;
       border: 1px solid rgba(100, 116, 139, 0.35);
     }
+
     .history-item {
       display: flex;
       justify-content: space-between;
@@ -501,11 +690,25 @@
       padding: 10px 0;
       border-bottom: 1px solid rgba(148, 163, 184, 0.15);
     }
-    .history-item:last-child { border-bottom: none; }
-    @media (max-width: 1400px) { .container { grid-template-columns: 1fr; } }
-    @media (max-width: 768px) {
-      .main-content, .sidebar { padding: 20px; }
+
+    .history-item:last-child {
+      border-bottom: none;
     }
+
+    @media (max-width: 1400px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 768px) {
+
+      .main-content,
+      .sidebar {
+        padding: 20px;
+      }
+    }
+
     .insights-list li::before {
       content: '→';
       position: absolute;
@@ -513,6 +716,7 @@
       color: #6366f1;
       font-weight: bold;
     }
+
     .news-section {
       margin-top: 20px;
       padding: 16px;
@@ -520,36 +724,47 @@
       border-radius: 12px;
       border: 1px solid rgba(148, 163, 184, 0.2);
     }
+
     .news-section h4 {
       margin-bottom: 10px;
       font-size: 1em;
       color: #0f172a;
     }
+
     .news-section ul {
       list-style: none;
       padding: 0;
       margin: 0;
     }
+
     .news-section li {
       padding: 8px 0;
       border-bottom: 1px solid rgba(148, 163, 184, 0.2);
     }
+
     .news-section li:last-child {
       border-bottom: none;
     }
+
     .news-section a {
       color: #2563eb;
       text-decoration: none;
     }
+
     .news-section a:hover {
       text-decoration: underline;
     }
+
     @keyframes spin {
-      to { transform: rotate(360deg); }
+      to {
+        transform: rotate(360deg);
+      }
     }
+
     .loading-spinner {
       animation: spin 1s linear infinite;
     }
+
     .sidebar {
       position: sticky;
       top: 24px;
@@ -557,66 +772,84 @@
       max-height: calc(100vh - 48px);
       overflow-y: auto;
     }
+
     .sidebar::-webkit-scrollbar {
       width: 6px;
     }
+
     .sidebar::-webkit-scrollbar-track {
       background: rgba(15, 23, 42, 0.3);
       border-radius: 10px;
     }
+
     .sidebar::-webkit-scrollbar-thumb {
       background: rgba(59, 130, 246, 0.5);
       border-radius: 10px;
     }
+
     .sidebar::-webkit-scrollbar-thumb:hover {
       background: rgba(59, 130, 246, 0.7);
     }
+
     .log-container {
       scrollbar-width: thin;
       scrollbar-color: rgba(59, 130, 246, 0.5) rgba(15, 23, 42, 0.3);
     }
+
     .log-container::-webkit-scrollbar {
       width: 6px;
     }
+
     .log-container::-webkit-scrollbar-track {
       background: rgba(15, 23, 42, 0.3);
       border-radius: 10px;
     }
+
     .log-container::-webkit-scrollbar-thumb {
       background: rgba(59, 130, 246, 0.5);
       border-radius: 10px;
     }
+
     .log-container::-webkit-scrollbar-thumb:hover {
       background: rgba(59, 130, 246, 0.7);
     }
+
     .log-entry {
       padding: 4px 0;
       border-bottom: 1px solid rgba(59, 130, 246, 0.1);
       word-wrap: break-word;
     }
+
     .log-entry:last-child {
       border-bottom: none;
     }
+
     .log-timestamp {
       color: #6a9955;
       margin-right: 8px;
       font-weight: 600;
     }
+
     .log-message {
       color: #d4d4d4;
     }
+
     .log-info .log-message {
       color: #cbd5e1;
     }
+
     .log-success .log-message {
       color: #4ec9b0;
     }
+
     .log-warning .log-message {
       color: #d7ba7d;
     }
+
     .log-error .log-message {
       color: #f48771;
     }
+
     /* Active Trades Dashboard Styles - List View */
     .active-trades-container {
       background: white;
@@ -627,14 +860,17 @@
       overflow-x: auto;
       overflow-y: hidden;
     }
+
     .trades-table {
       width: 100%;
       min-width: 900px;
       border-collapse: collapse;
     }
+
     .trades-table thead {
       background: linear-gradient(135deg, rgba(15, 23, 42, 0.05), rgba(59, 130, 246, 0.08));
     }
+
     .trades-table th {
       padding: 16px 12px;
       text-align: left;
@@ -645,21 +881,26 @@
       color: #475569;
       border-bottom: 2px solid rgba(148, 163, 184, 0.2);
     }
+
     .trades-table td {
       padding: 16px 12px;
       border-bottom: 1px solid rgba(148, 163, 184, 0.1);
       color: #334155;
       font-size: 0.95em;
     }
+
     .trades-table tbody tr {
       transition: background-color 0.2s ease;
     }
+
     .trades-table tbody tr:hover {
       background-color: rgba(59, 130, 246, 0.05);
     }
+
     .trades-table tbody tr:last-child td {
       border-bottom: none;
     }
+
     .trade-action-badge {
       padding: 6px 12px;
       border-radius: 6px;
@@ -667,35 +908,44 @@
       font-size: 0.85em;
       display: inline-block;
     }
+
     .trade-action-badge.buy {
       background: rgba(34, 197, 94, 0.15);
       color: #15803d;
     }
+
     .trade-action-badge.sell {
       background: rgba(239, 68, 68, 0.15);
       color: #b91c1c;
     }
+
     .trade-coin-name {
       font-weight: 600;
       color: #0f172a;
     }
+
     .trade-price {
       font-family: 'Courier New', monospace;
       color: #334155;
     }
+
     .trade-pnl-value {
       font-weight: 700;
       font-family: 'Courier New', monospace;
     }
+
     .trade-pnl-value.positive {
       color: #22c55e;
     }
+
     .trade-pnl-value.negative {
       color: #ef4444;
     }
+
     .trade-pnl-value.neutral {
       color: #f59e0b;
     }
+
     .trade-status-badge {
       padding: 4px 10px;
       border-radius: 4px;
@@ -703,26 +953,32 @@
       font-weight: 600;
       display: inline-block;
     }
+
     .trade-status-badge.open {
       background: rgba(34, 197, 94, 0.15);
       color: #15803d;
     }
+
     .trade-status-badge.tp_hit {
       background: rgba(34, 197, 94, 0.15);
       color: #15803d;
     }
+
     .trade-status-badge.sl_hit {
       background: rgba(239, 68, 68, 0.15);
       color: #b91c1c;
     }
+
     .trade-status-badge.dca_hit {
       background: rgba(245, 158, 11, 0.15);
       color: #b45309;
     }
+
     .trade-time-small {
       font-size: 0.8em;
       color: #94a3b8;
     }
+
     .no-active-trades {
       text-align: center;
       padding: 50px 20px;
@@ -731,6 +987,7 @@
       border: 1px dashed rgba(148, 163, 184, 0.4);
       color: #64748b;
     }
+
     /* Portfolio Display Styles - Compact */
     .portfolio-container {
       background: white;
@@ -739,18 +996,21 @@
       box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
       margin-bottom: 20px;
     }
+
     .portfolio-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
       gap: 8px;
       margin-top: 8px;
     }
+
     .portfolio-metric {
       background: rgba(241, 245, 249, 0.85);
       padding: 8px 10px;
       border-radius: 8px;
       border-left: 3px solid #6366f1;
     }
+
     .portfolio-metric-label {
       font-size: 0.7em;
       color: #64748b;
@@ -758,26 +1018,32 @@
       letter-spacing: 0.05em;
       margin-bottom: 4px;
     }
+
     .portfolio-metric-value {
       font-size: 1em;
       font-weight: 700;
       color: #0f172a;
       font-family: 'Courier New', monospace;
     }
+
     .portfolio-metric-value.positive {
       color: #22c55e;
     }
+
     .portfolio-metric-value.negative {
       color: #ef4444;
     }
+
     .no-active-trades h3 {
       margin-bottom: 10px;
       color: #475569;
     }
+
     @media (max-width: 1200px) {
       .trades-table {
         font-size: 0.85em;
       }
+
       .trades-table th,
       .trades-table td {
         padding: 12px 8px;
@@ -785,11 +1051,13 @@
     }
   </style>
 </head>
+
 <body>
   <nav class="top-nav">
     <div class="mx-auto max-w-6xl flex items-center justify-between px-3 md:px-4">
       <div class="flex items-center gap-2">
-        <span class="text-[11px] md:text-xs font-semibold text-emerald-300 uppercase tracking-[0.18em]">DeepSeek Bot</span>
+        <span class="text-[11px] md:text-xs font-semibold text-emerald-300 uppercase tracking-[0.18em]">DeepSeek
+          Bot</span>
       </div>
       <div class="nav-links text-[11px] md:text-xs">
         <a href="#overview">Overview</a>
@@ -797,106 +1065,130 @@
         <a href="#monitoring">Monitoring</a>
         <a href="#performance">Performance</a>
         <a href="#activity">Activity</a>
+        <a href="#" onclick="openSettingsModal(); return false;">Settings</a>
+        <button onclick="triggerManualScan()"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all">
+          Scan Now
+        </button>
       </div>
     </div>
   </nav>
   <div class="container">
     <div class="main-content">
       <section id="overview" class="section-block">
-      <div class="header">
-        <h1>🤖 AI Crypto Trading Scanner Pro</h1>
-        <div class="subtitle">Multi-API Technical Analysis • AI Validation • Real-time Data</div>
-        <div id="fearGreedIndicator" class="fg-indicator" style="display: none;">
-          <span class="fg-label">Sentiment:</span>
-          <span id="fearGreedClassification" class="fg-value">Neutral</span>
-          <span id="fearGreedValue" class="fg-score">(50)</span>
-        </div>
-      </div>
-
-      <div id="scanProgressContainer" style="display:none; margin-bottom: 20px;">
-        <div style="display:flex; justify-content:space-between; color:#475569; font-weight:600; margin-bottom:6px;">
-          <span>Current scan progress</span>
-          <span id="scanProgressText">0%</span>
-        </div>
-        <div style="height:10px; background:rgba(226,232,240,0.7); border-radius:12px; overflow:hidden;">
-          <div id="scanProgressFill" style="height:100%; width:0%; background:linear-gradient(90deg,#38bdf8,#6366f1); transition:width 0.4s;"></div>
-        </div>
-      </div>
-
-      <div class="controls">
-        <h3>🎯 Scanner Controls</h3>
-        <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
-          <label for="intervalSelect" style="font-weight:600; color:#475569;">Auto-scan interval</label>
-          <select id="intervalSelect" onchange="changeInterval(this.value)" style="padding:10px 14px; border-radius:10px; border:1px solid rgba(148,163,184,0.4); background:white; color:#0f172a;">
-            <option value="10m">Every 10 minutes</option>
-            <option value="1h" selected>Every 1 hour</option>
-            <option value="4h">Every 4 hours</option>
-            <option value="1d">Daily</option>
-            <option value="1w">Weekly</option>
-          </select>
-        </div>
-      <div class="action-grid">
-          <div class="action-card">
-            <h4>Primary Actions</h4>
-        <div class="button-group">
-              <button class="btn-success" onclick="handleStartAutoScan()">🚀 Auto-Scan</button>
-              <button class="btn-danger" onclick="handleStopAutoScan()">🛑 Stop</button>
-              <button class="btn-primary" onclick="handleManualScan()">🔍 Scan Now</button>
-            </div>
-            <div class="pill-list">
-              <span>AI + TA</span>
-              <span>Top 10 Coins</span>
-              <span>Cooldown Protected</span>
-            </div>
+        <div class="header">
+          <h1>🤖 AI Crypto Trading Scanner Pro</h1>
+          <div class="subtitle">Multi-API Technical Analysis • AI Validation • Real-time Data</div>
+          <div id="fearGreedIndicator" class="fg-indicator" style="display: none;">
+            <span class="fg-label">Sentiment:</span>
+            <span id="fearGreedClassification" class="fg-value">Neutral</span>
+            <span id="fearGreedValue" class="fg-score">(50)</span>
           </div>
-          <div class="action-card">
-            <h4>Tools & Monitoring</h4>
-            <div class="button-group">
-              <button class="btn-telegram" onclick="handleTestTelegram(event)">📱 Telegram Test</button>
-          <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
-              <button class="btn-secondary" onclick="openTriggerSettings()" style="background: linear-gradient(135deg, #22c55e, #10b981); color: white; font-weight: 600;">🎯 Trigger Settings</button>
-              <button class="btn-secondary" onclick="toggleTradeMonitoring()" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; font-weight: 600;">📊 Monitoring Panel</button>
-              <button class="btn-secondary" onclick="testOkxConnection()" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; font-weight: 600;">🔗 Test OKX Connection</button>
-              <button class="btn-secondary" onclick="testOkxAccountMode()" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; font-weight: 600;">🔍 Verify Account Mode</button>
-              <button class="btn-primary" onclick="handleEvaluateTrades()">🤖 Re-evaluate Trades</button>
         </div>
-            <div class="pill-list">
-              <span id="current-mode-pill">AI Mode</span>
-              <span>RSI + Bollinger</span>
-              <span>Multi-Timeframe</span>
+
+        <div id="scanProgressContainer" style="display:none; margin-bottom: 20px;">
+          <div style="display:flex; justify-content:space-between; color:#475569; font-weight:600; margin-bottom:6px;">
+            <span>Current scan progress</span>
+            <span id="scanProgressText">0%</span>
+          </div>
+          <div style="height:10px; background:rgba(226,232,240,0.7); border-radius:12px; overflow:hidden;">
+            <div id="scanProgressFill"
+              style="height:100%; width:0%; background:linear-gradient(90deg,#38bdf8,#6366f1); transition:width 0.4s;">
             </div>
           </div>
         </div>
-        <div style="font-size: 9px; color: #64748b; margin-top: 6px; text-align: center;">UI v3.0 - Compact</div>
-        
-        <div class="status-card">
-          <h4>Scanner Status</h4>
-          <div id="statusText">🟢 Ready to start</div>
-          <div id="nextScan">Next scan: Not scheduled</div>
+
+        <div class="controls">
+          <h3>🎯 Scanner Controls</h3>
+          <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
+            <label for="intervalSelect" style="font-weight:600; color:#475569;">Auto-scan interval</label>
+            <select id="intervalSelect" onchange="changeInterval(this.value)"
+              style="padding:10px 14px; border-radius:10px; border:1px solid rgba(148,163,184,0.4); background:white; color:#0f172a;">
+              <option value="10m">Every 10 minutes</option>
+              <option value="1h" selected>Every 1 hour</option>
+              <option value="4h">Every 4 hours</option>
+              <option value="1d">Daily</option>
+              <option value="1w">Weekly</option>
+            </select>
+          </div>
+          <div class="action-grid">
+            <div class="action-card">
+              <h4>Primary Actions</h4>
+              <div class="button-group">
+                <button class="btn-success" onclick="handleStartAutoScan()">🚀 Auto-Scan</button>
+                <button class="btn-danger" onclick="handleStopAutoScan()">🛑 Stop</button>
+                <button class="btn-primary" onclick="handleManualScan()">🔍 Scan Now</button>
+              </div>
+              <div class="pill-list">
+                <span>AI + TA</span>
+                <span>Top 10 Coins</span>
+                <span>Cooldown Protected</span>
+              </div>
+            </div>
+            <div class="action-card">
+              <h4>Tools & Monitoring</h4>
+              <div class="button-group">
+                <button class="btn-telegram" onclick="handleTestTelegram(event)">📱 Telegram Test</button>
+                <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
+                <button class="btn-secondary" onclick="openTriggerSettings()"
+                  style="background: linear-gradient(135deg, #22c55e, #10b981); color: white; font-weight: 600;">🎯
+                  Trigger Settings</button>
+                <button class="btn-secondary" onclick="toggleTradeMonitoring()"
+                  style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; font-weight: 600;">📊
+                  Monitoring Panel</button>
+                <button class="btn-secondary" onclick="testOkxConnection()"
+                  style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; font-weight: 600;">🔗 Test
+                  OKX Connection</button>
+                <button class="btn-secondary" onclick="testOkxAccountMode()"
+                  style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; font-weight: 600;">🔍
+                  Verify Account Mode</button>
+                <button class="btn-primary" onclick="handleEvaluateTrades()">🤖 Re-evaluate Trades</button>
+              </div>
+              <div class="pill-list">
+                <span id="current-mode-pill">AI Mode</span>
+                <span>RSI + Bollinger</span>
+                <span>Multi-Timeframe</span>
+              </div>
+            </div>
+          </div>
+          <div style="font-size: 9px; color: #64748b; margin-top: 6px; text-align: center;">UI v3.0 - Compact</div>
+
+          <div class="status-card">
+            <h4>Scanner Status</h4>
+            <div id="statusText">🟢 Ready to start</div>
+            <div id="nextScan">Next scan: Not scheduled</div>
+          </div>
         </div>
-      </div>
       </section>
 
       <!-- Trading Rules Panel -->
-      <div id="rulesPanel" style="display:none; background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9)); padding: 28px; border-radius: 20px; margin-bottom: 28px; border: 1px solid rgba(148,163,184,0.2);">
+      <div id="rulesPanel"
+        style="display:none; background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9)); padding: 28px; border-radius: 20px; margin-bottom: 28px; border: 1px solid rgba(148,163,184,0.2);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
           <h3 style="color: #0f172a; font-size: 1.5em; font-weight: 700;">⚙️ Trading Rules & Patterns</h3>
           <div style="display: flex; gap: 10px;">
-            <button id="editRulesBtn" onclick="toggleEditMode()" style="background: #6366f1; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">✏️ Edit Rules</button>
-            <button onclick="toggleRules()" style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">✕ Close</button>
+            <button id="editRulesBtn" onclick="toggleEditMode()"
+              style="background: #6366f1; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">✏️
+              Edit Rules</button>
+            <button onclick="toggleRules()"
+              style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">✕
+              Close</button>
           </div>
         </div>
-        
+
         <div id="rulesContent" style="color: #0f172a;">
           <div style="margin-bottom: 24px;">
             <h4 style="color: #6366f1; margin-bottom: 12px; font-size: 1.2em;">📊 Confidence Threshold</h4>
-            <div id="confidenceDisplay" style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #6366f1;">
+            <div id="confidenceDisplay"
+              style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #6366f1;">
               <div style="font-size: 1.5em; font-weight: 700; color: #0f172a;" id="confidenceThreshold">65%</div>
               <div style="color: #64748b; margin-top: 4px;">Minimum confidence required to trigger an opportunity</div>
             </div>
-            <div id="confidenceEdit" style="display:none; background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #6366f1;">
+            <div id="confidenceEdit"
+              style="display:none; background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #6366f1;">
               <label style="display: block; margin-bottom: 8px; font-weight: 600;">Confidence Threshold (%):</label>
-              <input type="range" id="confidenceSlider" min="10" max="95" value="65" step="5" style="width: 100%; margin-bottom: 8px;" oninput="updateConfidenceDisplay(this.value)">
+              <input type="range" id="confidenceSlider" min="10" max="95" value="65" step="5"
+                style="width: 100%; margin-bottom: 8px;" oninput="updateConfidenceDisplay(this.value)">
               <div style="display: flex; justify-content: space-between;">
                 <span id="confidenceValue" style="font-size: 1.2em; font-weight: 700; color: #6366f1;">65%</span>
                 <span style="color: #64748b; font-size: 0.9em;">10% - 95%</span>
@@ -904,15 +1196,18 @@
             </div>
           </div>
 
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px;">
+          <div
+            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px;">
             <div>
               <h4 style="color: #22c55e; margin-bottom: 12px; font-size: 1.1em;">🟢 BUY Patterns</h4>
-              <div id="buyPatterns" style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #22c55e;">
+              <div id="buyPatterns"
+                style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #22c55e;">
                 <ul style="list-style: none; padding: 0; margin: 0;">
                   <li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">Loading...</li>
                 </ul>
               </div>
-              <div id="buyPatternsEdit" style="display:none; background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #22c55e; margin-top: 12px;">
+              <div id="buyPatternsEdit"
+                style="display:none; background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #22c55e; margin-top: 12px;">
                 <label style="display: flex; align-items: center; margin-bottom: 12px;">
                   <input type="checkbox" id="buyEnabled" checked style="margin-right: 8px;">
                   <span>Enable BUY signals</span>
@@ -943,18 +1238,21 @@
                 </label>
                 <div style="margin-top: 12px;">
                   <label style="display: block; margin-bottom: 4px; font-size: 0.9em;">Min Timeframe Alignment:</label>
-                  <input type="number" id="buyTimeframeAlignment" min="1" max="5" value="1" style="width: 60px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
+                  <input type="number" id="buyTimeframeAlignment" min="1" max="5" value="1"
+                    style="width: 60px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
                 </div>
               </div>
             </div>
             <div>
               <h4 style="color: #ef4444; margin-bottom: 12px; font-size: 1.1em;">🔴 SELL Patterns</h4>
-              <div id="sellPatterns" style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #ef4444;">
+              <div id="sellPatterns"
+                style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #ef4444;">
                 <ul style="list-style: none; padding: 0; margin: 0;">
                   <li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">Loading...</li>
                 </ul>
               </div>
-              <div id="sellPatternsEdit" style="display:none; background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #ef4444; margin-top: 12px;">
+              <div id="sellPatternsEdit"
+                style="display:none; background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #ef4444; margin-top: 12px;">
                 <label style="display: flex; align-items: center; margin-bottom: 12px;">
                   <input type="checkbox" id="sellEnabled" checked style="margin-right: 8px;">
                   <span>Enable SELL signals</span>
@@ -985,29 +1283,36 @@
                 </label>
                 <div style="margin-top: 12px;">
                   <label style="display: block; margin-bottom: 4px; font-size: 0.9em;">Min Timeframe Alignment:</label>
-                  <input type="number" id="sellTimeframeAlignment" min="1" max="5" value="1" style="width: 60px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
+                  <input type="number" id="sellTimeframeAlignment" min="1" max="5" value="1"
+                    style="width: 60px; padding: 4px; border-radius: 4px; border: 1px solid #ccc;">
                 </div>
               </div>
             </div>
             <div>
               <h4 style="color: #f59e0b; margin-bottom: 12px; font-size: 1.1em;">🟡 HOLD Patterns</h4>
-              <div id="holdPatterns" style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #f59e0b;">
+              <div id="holdPatterns"
+                style="background: white; padding: 16px; border-radius: 12px; border-left: 4px solid #f59e0b;">
                 <ul style="list-style: none; padding: 0; margin: 0;">
                   <li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">Loading...</li>
                 </ul>
               </div>
             </div>
           </div>
-          
-          <div id="saveRulesSection" style="display:none; margin-top: 24px; padding: 20px; background: white; border-radius: 12px; border: 2px solid #6366f1;">
+
+          <div id="saveRulesSection"
+            style="display:none; margin-top: 24px; padding: 20px; background: white; border-radius: 12px; border: 2px solid #6366f1;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <div>
                 <h4 style="color: #6366f1; margin-bottom: 4px;">Save Your Changes</h4>
-                <p style="color: #64748b; font-size: 0.9em; margin: 0;">Your custom rules will be applied to all future scans</p>
+                <p style="color: #64748b; font-size: 0.9em; margin: 0;">Your custom rules will be applied to all future
+                  scans</p>
               </div>
               <div style="display: flex; gap: 10px;">
-                <button onclick="handleSaveTradingRules()" style="background: #22c55e; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">💾 Save Rules</button>
-                <button onclick="cancelEdit()" style="background: #64748b; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">Cancel</button>
+                <button onclick="handleSaveTradingRules()"
+                  style="background: #22c55e; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">💾
+                  Save Rules</button>
+                <button onclick="cancelEdit()"
+                  style="background: #64748b; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">Cancel</button>
               </div>
             </div>
           </div>
@@ -1017,155 +1322,172 @@
 
       <!-- Portfolio section hidden - OKX is the source of truth for positions and balance -->
       <section id="portfolio" class="section-block" style="display: none;">
-      <div>
-        <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">💼 Portfolio</h3>
-        <div id="portfolio-container" class="portfolio-container">
-          <div class="portfolio-grid">
-            <div class="portfolio-metric">
-              <div class="portfolio-metric-label">Initial Capital</div>
-              <div class="portfolio-metric-value" id="portfolio-initial">$10,000.00</div>
-            </div>
-            <div class="portfolio-metric">
-              <div class="portfolio-metric-label">Current Balance</div>
-              <div class="portfolio-metric-value" id="portfolio-balance">$10,000.00</div>
-            </div>
-            <div class="portfolio-metric">
-              <div class="portfolio-metric-label">Total Equity</div>
-              <div class="portfolio-metric-value" id="portfolio-equity">$10,000.00</div>
-            </div>
-            <div class="portfolio-metric">
-              <div class="portfolio-metric-label">Total P&L</div>
-              <div class="portfolio-metric-value" id="portfolio-pnl">$0.00</div>
-            </div>
-            <div class="portfolio-metric">
-              <div class="portfolio-metric-label">ROI</div>
-              <div class="portfolio-metric-value" id="portfolio-roi">0.00%</div>
-            </div>
-            <div class="portfolio-metric">
-              <div class="portfolio-metric-label">Win Rate</div>
-              <div class="portfolio-metric-value" id="portfolio-winrate">0.00%</div>
-            </div>
-            <div class="portfolio-metric">
-              <div class="portfolio-metric-label">Total Trades</div>
-              <div class="portfolio-metric-value" id="portfolio-trades">0</div>
-            </div>
-            <div class="portfolio-metric">
-              <div class="portfolio-metric-label">Open Positions</div>
-              <div class="portfolio-metric-value" id="portfolio-open">0</div>
+        <div>
+          <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">💼 Portfolio</h3>
+          <div id="portfolio-container" class="portfolio-container">
+            <div class="portfolio-grid">
+              <div class="portfolio-metric">
+                <div class="portfolio-metric-label">Initial Capital</div>
+                <div class="portfolio-metric-value" id="portfolio-initial">$10,000.00</div>
+              </div>
+              <div class="portfolio-metric">
+                <div class="portfolio-metric-label">Current Balance</div>
+                <div class="portfolio-metric-value" id="portfolio-balance">$10,000.00</div>
+              </div>
+              <div class="portfolio-metric">
+                <div class="portfolio-metric-label">Total Equity</div>
+                <div class="portfolio-metric-value" id="portfolio-equity">$10,000.00</div>
+              </div>
+              <div class="portfolio-metric">
+                <div class="portfolio-metric-label">Total P&L</div>
+                <div class="portfolio-metric-value" id="portfolio-pnl">$0.00</div>
+              </div>
+              <div class="portfolio-metric">
+                <div class="portfolio-metric-label">ROI</div>
+                <div class="portfolio-metric-value" id="portfolio-roi">0.00%</div>
+              </div>
+              <div class="portfolio-metric">
+                <div class="portfolio-metric-label">Win Rate</div>
+                <div class="portfolio-metric-value" id="portfolio-winrate">0.00%</div>
+              </div>
+              <div class="portfolio-metric">
+                <div class="portfolio-metric-label">Total Trades</div>
+                <div class="portfolio-metric-value" id="portfolio-trades">0</div>
+              </div>
+              <div class="portfolio-metric">
+                <div class="portfolio-metric-label">Open Positions</div>
+                <div class="portfolio-metric-value" id="portfolio-open">0</div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
       </section>
 
       <section id="performance" class="section-block">
-      <div>
-        <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">📊 Performance Analytics</h3>
-        <div id="analytics-container" style="background: white; padding: 24px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-          <div id="analytics-loading" style="text-align: center; padding: 40px; color: #64748b;">
-            <p>Loading analytics...</p>
-          </div>
-          <div id="analytics-empty" style="display: none; text-align: center; padding: 32px; color: #475569;">
-            <p style="font-size: 1.1em; margin-bottom: 8px;">No closed trades yet.</p>
-            <p style="font-size: 0.95em;">Close at least one trade to unlock performance analytics.</p>
-          </div>
-          <div id="analytics-content" style="display: none;">
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
-              <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); padding: 16px; border-radius: 12px; border-left: 4px solid #0ea5e9;">
-                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Sharpe Ratio</div>
-                <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-sharpe">-</div>
-              </div>
-              <div style="background: linear-gradient(135deg, #fef2f2, #fee2e2); padding: 16px; border-radius: 12px; border-left: 4px solid #ef4444;">
-                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Max Drawdown</div>
-                <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-drawdown">-</div>
-              </div>
-              <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); padding: 16px; border-radius: 12px; border-left: 4px solid #22c55e;">
-                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Avg Holding Time</div>
-                <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-holding">-</div>
-              </div>
-              <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 16px; border-radius: 12px; border-left: 4px solid #f59e0b;">
-                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Profit Factor</div>
-                <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-profit-factor">-</div>
-              </div>
-              <div style="background: linear-gradient(135deg, #ede9fe, #ddd6fe); padding: 16px; border-radius: 12px; border-left: 4px solid #7c3aed;">
-                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Expectancy</div>
-                <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-expectancy">-</div>
-              </div>
-              <div style="background: linear-gradient(135deg, #faf5ff, #f3e8ff); padding: 16px; border-radius: 12px; border-left: 4px solid #a855f7;">
-                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Best Trade</div>
-                <div style="font-size: 1.2em; font-weight: 700; color: #0f172a;" id="analytics-best">-</div>
-              </div>
+        <div>
+          <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">📊 Performance Analytics
+          </h3>
+          <div id="analytics-container"
+            style="background: white; padding: 24px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <div id="analytics-loading" style="text-align: center; padding: 40px; color: #64748b;">
+              <p>Loading analytics...</p>
             </div>
-            <div style="margin-top: 24px;">
-              <h4 style="color: #0f172a; margin-bottom: 12px;">Win Rate by Coin</h4>
-              <div id="analytics-winrate-by-coin" style="background: #f8fafc; padding: 16px; border-radius: 12px; min-height: 100px;">
-                <p style="color: #64748b; text-align: center;">No trade data available</p>
+            <div id="analytics-empty" style="display: none; text-align: center; padding: 32px; color: #475569;">
+              <p style="font-size: 1.1em; margin-bottom: 8px;">No closed trades yet.</p>
+              <p style="font-size: 0.95em;">Close at least one trade to unlock performance analytics.</p>
+            </div>
+            <div id="analytics-content" style="display: none;">
+              <div
+                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <div
+                  style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); padding: 16px; border-radius: 12px; border-left: 4px solid #0ea5e9;">
+                  <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Sharpe Ratio</div>
+                  <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-sharpe">-</div>
+                </div>
+                <div
+                  style="background: linear-gradient(135deg, #fef2f2, #fee2e2); padding: 16px; border-radius: 12px; border-left: 4px solid #ef4444;">
+                  <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Max Drawdown</div>
+                  <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-drawdown">-</div>
+                </div>
+                <div
+                  style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); padding: 16px; border-radius: 12px; border-left: 4px solid #22c55e;">
+                  <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Avg Holding Time</div>
+                  <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-holding">-</div>
+                </div>
+                <div
+                  style="background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 16px; border-radius: 12px; border-left: 4px solid #f59e0b;">
+                  <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Profit Factor</div>
+                  <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-profit-factor">-</div>
+                </div>
+                <div
+                  style="background: linear-gradient(135deg, #ede9fe, #ddd6fe); padding: 16px; border-radius: 12px; border-left: 4px solid #7c3aed;">
+                  <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Expectancy</div>
+                  <div style="font-size: 1.8em; font-weight: 700; color: #0f172a;" id="analytics-expectancy">-</div>
+                </div>
+                <div
+                  style="background: linear-gradient(135deg, #faf5ff, #f3e8ff); padding: 16px; border-radius: 12px; border-left: 4px solid #a855f7;">
+                  <div style="font-size: 0.85em; color: #64748b; margin-bottom: 4px;">Best Trade</div>
+                  <div style="font-size: 1.2em; font-weight: 700; color: #0f172a;" id="analytics-best">-</div>
+                </div>
+              </div>
+              <div style="margin-top: 24px;">
+                <h4 style="color: #0f172a; margin-bottom: 12px;">Win Rate by Coin</h4>
+                <div id="analytics-winrate-by-coin"
+                  style="background: #f8fafc; padding: 16px; border-radius: 12px; min-height: 100px;">
+                  <p style="color: #64748b; text-align: center;">No trade data available</p>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
       </section>
 
       <!-- Trade Monitoring Panel (Collapsible) -->
       <section id="monitoring" class="section-block">
-      <div id="tradeMonitoringPanel" style="display:none; background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9)); padding: 16px; border-radius: 12px; margin-bottom: 16px; border: 1px solid rgba(148,163,184,0.2);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-          <h3 style="color: #0f172a; font-size: 1.2em; font-weight: 700;">🎯 Trade Monitoring</h3>
-          <button onclick="toggleTradeMonitoring()" style="background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 11px;">✕</button>
-        </div>
-        
-        <div style="color: #0f172a;">
-          <div style="margin-bottom: 24px;">
-            <h4 style="color: #6366f1; margin-bottom: 12px; font-size: 1.2em;">📏 Proximity Threshold</h4>
-            <div style="background: white; padding: 20px; border-radius: 12px; border-left: 4px solid #6366f1;">
-              <p style="color: #64748b; margin-bottom: 16px;">Trigger Premium AI evaluation when trade is within this percentage of DCA, Stop Loss, or Take Profit levels.</p>
-              
-              <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
-                <label style="font-weight: 600; min-width: 120px;">Threshold:</label>
-                <input type="range" id="proximitySlider" min="0.5" max="10" value="1.0" step="0.5" style="flex: 1;" oninput="updateProximityDisplay(this.value)">
-                <span id="proximityValue" style="font-size: 1.3em; font-weight: 700; color: #6366f1; min-width: 60px;">1.0%</span>
-              </div>
-              
-              <button onclick="handleSaveProximity()" style="background: #22c55e; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">💾 Save Settings</button>
-            </div>
+        <div id="tradeMonitoringPanel"
+          style="display:none; background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.9)); padding: 16px; border-radius: 12px; margin-bottom: 16px; border: 1px solid rgba(148,163,184,0.2);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="color: #0f172a; font-size: 1.2em; font-weight: 700;">🎯 Trade Monitoring</h3>
+            <button onclick="toggleTradeMonitoring()"
+              style="background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 11px;">✕</button>
           </div>
 
-          <div style="margin-bottom: 24px;">
-            <h4 style="color: #8b5cf6; margin-bottom: 12px; font-size: 1.2em;">ℹ️ How It Works</h4>
-            <div style="background: white; padding: 20px; border-radius: 12px; border-left: 4px solid #8b5cf6;">
-              <ul style="margin: 0; padding-left: 20px; color: #64748b; line-height: 1.8;">
-                <li><strong>DCA Proximity:</strong> AI evaluates if you should add to position</li>
-                <li><strong>Stop Loss Proximity:</strong> AI checks if SL should be adjusted</li>
-                <li><strong>Take Profit Proximity:</strong> AI decides to hold or close</li>
-                <li><strong>Cooldown:</strong> 5 minutes between AI evaluations per trade</li>
-                <li><strong>Notifications:</strong> Get Telegram alerts with AI recommendations</li>
-              </ul>
-            </div>
-          </div>
+          <div style="color: #0f172a;">
+            <div style="margin-bottom: 24px;">
+              <h4 style="color: #6366f1; margin-bottom: 12px; font-size: 1.2em;">📏 Proximity Threshold</h4>
+              <div style="background: white; padding: 20px; border-radius: 12px; border-left: 4px solid #6366f1;">
+                <p style="color: #64748b; margin-bottom: 16px;">Trigger Premium AI evaluation when trade is within this
+                  percentage of DCA, Stop Loss, or Take Profit levels.</p>
 
-          <div>
-            <h4 style="color: #f59e0b; margin-bottom: 12px; font-size: 1.2em;">📊 Current Status</h4>
-            <div style="background: white; padding: 20px; border-radius: 12px; border-left: 4px solid #f59e0b;">
-              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
-                <div>
-                  <div style="color: #64748b; font-size: 0.9em; margin-bottom: 4px;">Service Status</div>
-                  <div id="monitoringStatus" style="font-size: 1.2em; font-weight: 700;">🟢 Active</div>
+                <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+                  <label style="font-weight: 600; min-width: 120px;">Threshold:</label>
+                  <input type="range" id="proximitySlider" min="0.5" max="10" value="1.0" step="0.5" style="flex: 1;"
+                    oninput="updateProximityDisplay(this.value)">
+                  <span id="proximityValue"
+                    style="font-size: 1.3em; font-weight: 700; color: #6366f1; min-width: 60px;">1.0%</span>
                 </div>
-                <div>
-                  <div style="color: #64748b; font-size: 0.9em; margin-bottom: 4px;">Check Interval</div>
-                  <div style="font-size: 1.2em; font-weight: 700;">30 seconds</div>
-                </div>
-                <div>
-                  <div style="color: #64748b; font-size: 0.9em; margin-bottom: 4px;">Active Trades</div>
-                  <div id="monitoredTrades" style="font-size: 1.2em; font-weight: 700;">0</div>
+
+                <button onclick="handleSaveProximity()"
+                  style="background: #22c55e; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">💾
+                  Save Settings</button>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 24px;">
+              <h4 style="color: #8b5cf6; margin-bottom: 12px; font-size: 1.2em;">ℹ️ How It Works</h4>
+              <div style="background: white; padding: 20px; border-radius: 12px; border-left: 4px solid #8b5cf6;">
+                <ul style="margin: 0; padding-left: 20px; color: #64748b; line-height: 1.8;">
+                  <li><strong>DCA Proximity:</strong> AI evaluates if you should add to position</li>
+                  <li><strong>Stop Loss Proximity:</strong> AI checks if SL should be adjusted</li>
+                  <li><strong>Take Profit Proximity:</strong> AI decides to hold or close</li>
+                  <li><strong>Cooldown:</strong> 5 minutes between AI evaluations per trade</li>
+                  <li><strong>Notifications:</strong> Get Telegram alerts with AI recommendations</li>
+                </ul>
+              </div>
+            </div>
+
+            <div>
+              <h4 style="color: #f59e0b; margin-bottom: 12px; font-size: 1.2em;">📊 Current Status</h4>
+              <div style="background: white; padding: 20px; border-radius: 12px; border-left: 4px solid #f59e0b;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                  <div>
+                    <div style="color: #64748b; font-size: 0.9em; margin-bottom: 4px;">Service Status</div>
+                    <div id="monitoringStatus" style="font-size: 1.2em; font-weight: 700;">🟢 Active</div>
+                  </div>
+                  <div>
+                    <div style="color: #64748b; font-size: 0.9em; margin-bottom: 4px;">Check Interval</div>
+                    <div style="font-size: 1.2em; font-weight: 700;">30 seconds</div>
+                  </div>
+                  <div>
+                    <div style="color: #64748b; font-size: 0.9em; margin-bottom: 4px;">Active Trades</div>
+                    <div id="monitoredTrades" style="font-size: 1.2em; font-weight: 700;">0</div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
       </section>
 
       <!-- Active Trades section hidden - OKX is the source of truth for positions -->
@@ -1173,7 +1495,11 @@
       <div style="display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
           <h3 style="margin: 0; color: #0f172a; font-size: 1.5em; font-weight: 700;">💰 Active Trades</h3>
-          <button id="evaluateTradesBtn" onclick="handleEvaluateTrades()" style="padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9em; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s;" onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.2)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)';">🤖 AI Re-evaluate Trades</button>
+          <button id="evaluateTradesBtn" onclick="handleEvaluateTrades()"
+            style="padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9em; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s;"
+            onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.2)';"
+            onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)';">🤖 AI
+            Re-evaluate Trades</button>
         </div>
         <div id="active-trades-container" class="active-trades-container">
           <div class="no-active-trades">
@@ -1194,15 +1520,16 @@
       </div>
 
       <section id="opportunities" class="section-block">
-      <div>
-        <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">📈 Trading Opportunities</h3>
-        <div id="results">
-          <div class="no-opportunities">
-            <h3>🔍 Ready to Scan</h3>
-            <p>Click "Scan Now" to start comprehensive technical analysis</p>
+        <div>
+          <h3 style="margin-bottom: 24px; color: #0f172a; font-size: 1.5em; font-weight: 700;">📈 Trading Opportunities
+          </h3>
+          <div id="results">
+            <div class="no-opportunities">
+              <h3>🔍 Ready to Scan</h3>
+              <p>Click "Scan Now" to start comprehensive technical analysis</p>
+            </div>
           </div>
         </div>
-      </div>
       </section>
     </div>
 
@@ -1217,23 +1544,23 @@
     let progressPollInterval = null;
     let progressBarHideTimeout = null;
     let lastProgressState = { running: false, percent: 0 };
-    
+
     async function updateProgress() {
       try {
         const response = await fetch(API_BASE + '/scan-progress');
         const progress = await response.json();
-        
+
         if (!progress) {
           return;
         }
-        
+
         const percent = progress.percent || 0;
         const isRunning = progress.running || false;
-        
+
         // Always update the progress values
         document.getElementById('scanProgressText').textContent = percent + '%';
         document.getElementById('scanProgressFill').style.width = percent + '%';
-        
+
         // Show progress bar if scan is running
         if (isRunning) {
           // Clear any pending hide timeout
@@ -1243,14 +1570,14 @@
           }
           document.getElementById('scanProgressContainer').style.display = 'block';
           lastProgressState = { running: true, percent: percent };
-        } 
+        }
         // If scan just completed (was running, now not running, and at 100%)
         else if (lastProgressState.running && !isRunning && percent >= 100) {
           // Show 100% for a moment before hiding
           document.getElementById('scanProgressContainer').style.display = 'block';
           document.getElementById('scanProgressText').textContent = '100%';
           document.getElementById('scanProgressFill').style.width = '100%';
-          
+
           // Hide after 1 second delay to show completion
           if (progressBarHideTimeout) {
             clearTimeout(progressBarHideTimeout);
@@ -1259,7 +1586,7 @@
             document.getElementById('scanProgressContainer').style.display = 'none';
             progressBarHideTimeout = null;
           }, 1000);
-          
+
           lastProgressState = { running: false, percent: 100 };
         }
         // If scan is not running and wasn't running before, keep hidden
@@ -1276,13 +1603,13 @@
         console.log('Error updating progress:', error);
       }
     }
-    
+
     // API endpoints
     const API_BASE = '/api';
-    
+
     // Initialize currentMode early to avoid temporal dead zone issues
     let currentMode = 'ai'; // Track current monitoring mode (AI or algorithmic)
-    
+
     const actionConfirmations = {
       start: 'Start automatic scanning with the current interval?',
       stop: 'Stop the current auto-scan session?',
@@ -1306,7 +1633,7 @@
     function handleTestTelegram(evt) { handleUserAction('telegram', () => testTelegram(evt)); }
     function handleSaveTradingRules() { handleUserAction('saveRules', saveTradingRules); }
     function handleSaveProximity() { handleUserAction('saveProximity', saveProximityThreshold); }
-    async function handleSaveTriggerSettings() { 
+    async function handleSaveTriggerSettings() {
       console.log('🔘 handleSaveTriggerSettings called!');
       try {
         const confirmed = window.confirm(actionConfirmations.saveTriggers || 'Save these trigger settings?');
@@ -1322,27 +1649,27 @@
         alert('Error saving settings: ' + error.message);
       }
     }
-    
+
     // Make sure function is globally accessible
     window.handleSaveTriggerSettings = handleSaveTriggerSettings;
     function handleEvaluateTrades() { handleUserAction('evaluate', evaluateTradesWithAI); }
-    
+
     async function testOkxConnection() {
       const button = event?.target;
       const originalText = button ? button.textContent : '🔗 Test OKX Connection';
-      
+
       try {
         if (button) {
           button.disabled = true;
           button.textContent = '⏳ Testing...';
         }
-        
+
         const response = await fetch(API_BASE + '/test-okx-connection');
         const result = await response.json();
-        
+
         let message = '';
         let isSuccess = false;
-        
+
         if (result.success && result.overallSuccess) {
           isSuccess = true;
           message = '✅ OKX Connection Test Results:\n\n';
@@ -1351,7 +1678,7 @@
           message += `   Exchange: ${result.config.exchange}\n`;
           message += `   Base URL: ${result.config.baseUrl}\n`;
           message += `   Testnet: ${result.config.testnet ? 'Yes' : 'No'}\n\n`;
-          
+
           if (result.tests.balance) {
             if (result.tests.balance.success) {
               message += `💰 Balance Test: ✅ Success\n`;
@@ -1361,7 +1688,7 @@
               message += `   Error: ${result.tests.balance.error}\n\n`;
             }
           }
-          
+
           if (result.tests.positions) {
             if (result.tests.positions.success) {
               message += `📊 Positions Test: ✅ Success\n`;
@@ -1396,21 +1723,21 @@
           }
           message += `\n💡 This might indicate API permission issues or network problems.`;
         }
-        
+
         // Show result in alert or toast
         if (typeof showToast === 'function') {
           showToast(message, isSuccess ? 'success' : 'error');
         } else {
           alert(message);
         }
-        
+
         // Also log to console
         console.log('🔗 Bybit Connection Test Result:', result);
-        
+
       } catch (error) {
         const errorMsg = `❌ Error testing Bybit connection: ${error.message}`;
         console.error(errorMsg, error);
-        
+
         if (typeof showToast === 'function') {
           showToast(errorMsg, 'error');
         } else {
@@ -1423,26 +1750,26 @@
         }
       }
     }
-    
+
     async function testOkxAccountMode() {
       const button = event?.target;
       const originalText = button ? button.textContent : '🔍 Verify Account Mode';
-      
+
       try {
         if (button) {
           button.disabled = true;
           button.textContent = '⏳ Verifying...';
         }
-        
+
         const response = await fetch(API_BASE + '/test-okx-account-mode');
         const result = await response.json();
-        
+
         let message = '';
         let isSuccess = false;
-        
+
         if (result.success) {
           isSuccess = result.supportsDerivatives;
-          
+
           message = '🔍 OKX Account Mode Verification:\n\n';
           message += `📋 Detected Mode: ${result.accountMode}\n`;
           if (result.accountLevel) {
@@ -1452,23 +1779,23 @@
             message += `📋 Position Mode: ${result.positionMode}\n`;
           }
           message += `\n`;
-          
+
           message += `📊 Derivatives Support: ${result.supportsDerivatives ? '✅ YES' : '❌ NO'}\n`;
           message += `📊 SWAP Instruments: ${result.canAccessSwapInstruments ? `✅ YES (${result.swapInstrumentsCount} available)` : '❌ NO'}\n\n`;
-          
+
           if (result.config) {
             message += `📋 Account Configuration:\n`;
             message += `   - Account Level: ${result.config.acctLv || 'N/A'}\n`;
             message += `   - Position Mode: ${result.config.posMode || 'N/A'}\n`;
             message += `   - Permissions: ${result.config.perm || 'N/A'}\n\n`;
           }
-          
+
           if (result.instrumentsError) {
             message += `⚠️ Instruments API Error: ${result.instrumentsError}\n\n`;
           }
-          
+
           message += `💡 ${result.recommendation}\n`;
-          
+
           // Show actionable steps if available
           if (result.actionableSteps && result.actionableSteps.length > 0) {
             message += `\n📋 Detailed Actionable Steps:\n`;
@@ -1476,25 +1803,25 @@
               message += `   ${index + 1}. ${step}\n`;
             });
           }
-          
+
           // Show switch precheck details if available
           if (result.switchPrecheck) {
             message += `\n🔍 Switch Precheck Details:\n`;
             message += `   - Status Code: ${result.switchPrecheck.sCode || 'N/A'}\n`;
             message += `   - Current Mode: ${result.switchPrecheck.curAcctLv || 'N/A'}\n`;
             message += `   - Target Mode: ${result.switchPrecheck.acctLv || 'N/A'}\n`;
-            
+
             if (result.switchPrecheck.mgnBf && result.switchPrecheck.mgnAft) {
               const mgnRatioBf = parseFloat(result.switchPrecheck.mgnBf.mgnRatio || 0);
               const mgnRatioAft = parseFloat(result.switchPrecheck.mgnAft.mgnRatio || 0);
               message += `   - Margin Ratio: ${mgnRatioBf.toFixed(2)}% → ${mgnRatioAft.toFixed(2)}%\n`;
             }
-            
+
             if (result.switchPrecheck.unmatchedInfoCheck && result.switchPrecheck.unmatchedInfoCheck.length > 0) {
               message += `   - Issues Found: ${result.switchPrecheck.unmatchedInfoCheck.length} item(s)\n`;
             }
           }
-          
+
           if (!result.supportsDerivatives && (!result.actionableSteps || result.actionableSteps.length === 0)) {
             message += `\n📝 General Steps to Fix:\n`;
             message += `   1. Go to https://www.okx.com\n`;
@@ -1510,21 +1837,21 @@
           message += `${result.error || 'Unknown error'}\n\n`;
           message += `💡 ${result.recommendation || 'Please check your API credentials and try again.'}`;
         }
-        
+
         // Show result in alert or toast
         if (typeof showToast === 'function') {
           showToast(message, isSuccess ? 'success' : 'error');
         } else {
           alert(message);
         }
-        
+
         // Also log to console
         console.log('🔍 OKX Account Mode Verification Result:', result);
-        
+
       } catch (error) {
         const errorMsg = `❌ Error verifying account mode: ${error.message}`;
         console.error(errorMsg, error);
-        
+
         if (typeof showToast === 'function') {
           showToast(errorMsg, 'error');
         } else {
@@ -1537,23 +1864,23 @@
         }
       }
     }
-    
+
     async function testTelegram(evt) {
       const button = evt?.target || event?.target;
       try {
         if (button) {
-        button.disabled = true;
-        button.textContent = '⏳ Testing...';
+          button.disabled = true;
+          button.textContent = '⏳ Testing...';
         }
-        
+
         const response = await fetch(API_BASE + '/test-telegram', { method: 'POST' });
         const result = await response.json();
-        
+
         if (result.success) {
           if (typeof showToast === 'function') {
             showToast('✅ ' + result.message, 'success');
           } else {
-          alert('✅ ' + result.message);
+            alert('✅ ' + result.message);
           }
         } else {
           const msg = '❌ ' + (result.message || 'Failed to send test notification');
@@ -1575,8 +1902,8 @@
         }
       } finally {
         if (button) {
-        button.disabled = false;
-        button.textContent = '📱 Test Telegram';
+          button.disabled = false;
+          button.textContent = '📱 Test Telegram';
         }
       }
     }
@@ -1585,10 +1912,10 @@
       try {
         const response = await fetch(API_BASE + '/diagnostics');
         const data = await response.json();
-        
+
         // Format the diagnostics output
         let message = '🔍 SYSTEM DIAGNOSTICS\n\n';
-        
+
         // Environment variables
         message += '📋 Environment Variables:\n';
         message += `   API_KEY: ${data.environment.API_KEY ? '✅' : '❌'}\n`;
@@ -1597,18 +1924,18 @@
         message += `   TELEGRAM_BOT_TOKEN: ${data.environment.TELEGRAM_BOT_TOKEN ? '✅' : '❌'}\n`;
         message += `   TELEGRAM_CHAT_ID: ${data.environment.TELEGRAM_CHAT_ID ? '✅' : '❌'}\n`;
         message += `   ALLOW_MOCK_NOTIFICATIONS: ${data.environment.ALLOW_MOCK_NOTIFICATIONS}\n\n`;
-        
+
         // Config status
         message += '⚙️ Configuration:\n';
         message += `   AI API Key: ${data.config.AI_API_KEY_PRESENT ? '✅ Present (' + data.config.AI_API_KEY_LENGTH + ' chars)' : '❌ Missing'}\n`;
         message += `   AI Model: ${data.config.AI_MODEL}\n`;
         message += `   Telegram: ${data.config.TELEGRAM_ENABLED ? '✅ Enabled' : '❌ Disabled'}\n\n`;
-        
+
         // Test results
         message += '🧪 API Tests:\n';
         message += `   AI API: ${data.tests.ai.status === 'success' ? '✅ ' + data.tests.ai.message : data.tests.ai.status === 'skipped' ? '⏭️ ' + data.tests.ai.message : '❌ ' + data.tests.ai.error}\n`;
         message += `   Telegram: ${data.tests.telegram.status === 'success' ? '✅ ' + data.tests.telegram.message + ' (@' + data.tests.telegram.botUsername + ')' : data.tests.telegram.status === 'skipped' ? '⏭️ ' + data.tests.telegram.message : '❌ ' + data.tests.telegram.error}\n\n`;
-        
+
         // Recommendations
         if (data.tests.ai.status !== 'success' || data.tests.telegram.status !== 'success') {
           message += '💡 RECOMMENDATIONS:\n';
@@ -1622,20 +1949,20 @@
             message += '   • Get chat ID: Talk to @userinfobot on Telegram\n';
           }
         }
-        
+
         // Show quick summary via toast/alert and full details in console
         if (typeof showToast === 'function') {
           showToast('🔍 Diagnostics completed. See console for full details.', 'info');
         } else {
-        alert(message);
+          alert(message);
         }
         console.log('Full diagnostics:', data);
-        
+
       } catch (error) {
         if (typeof showToast === 'function') {
           showToast('❌ Error running diagnostics: ' + error.message, 'error');
         } else {
-        alert('❌ Error running diagnostics: ' + error.message);
+          alert('❌ Error running diagnostics: ' + error.message);
         }
         console.error('Diagnostics error:', error);
       }
@@ -1649,7 +1976,7 @@
           if (typeof showToast === 'function') {
             showToast('Auto-scan is already running!', 'info');
           } else {
-          alert('Auto-scan is already running!');
+            alert('Auto-scan is already running!');
           }
           return;
         }
@@ -1660,28 +1987,28 @@
         if (typeof showToast === 'function') {
           showToast('Error starting auto-scan: ' + error.message, 'error');
         } else {
-        alert('Error starting auto-scan: ' + error.message);
+          alert('Error starting auto-scan: ' + error.message);
         }
       }
     }
-    
+
     // Function to update next scan time display
     async function updateNextScanTime() {
       try {
         const response = await fetch(API_BASE + '/bot-status');
         const status = await response.json();
-        
+
         if (status.running && status.nextScan) {
           const nextScanDate = new Date(status.nextScan);
           const now = new Date();
           const timeUntil = nextScanDate - now;
-          
+
           if (timeUntil > 0) {
             // Format time until next scan
             const hours = Math.floor(timeUntil / (1000 * 60 * 60));
             const minutes = Math.floor((timeUntil % (1000 * 60 * 60)) / (1000 * 60));
             const seconds = Math.floor((timeUntil % (1000 * 60)) / 1000);
-            
+
             let timeStr = '';
             if (hours > 0) {
               timeStr = `${hours}h ${minutes}m`;
@@ -1690,14 +2017,14 @@
             } else {
               timeStr = `${seconds}s`;
             }
-            
+
             // Also show the actual time
-            const timeStr2 = nextScanDate.toLocaleTimeString('en-US', { 
-              hour: '2-digit', 
+            const timeStr2 = nextScanDate.toLocaleTimeString('en-US', {
+              hour: '2-digit',
               minute: '2-digit',
-              hour12: true 
+              hour12: true
             });
-            
+
             document.getElementById('nextScan').textContent = `Next scan: ${timeStr} (${timeStr2})`;
           } else {
             // Next scan is in the past or happening now
@@ -1721,7 +2048,7 @@
         if (typeof showToast === 'function') {
           showToast('Error stopping auto-scan: ' + error.message, 'error');
         } else {
-        alert('Error stopping auto-scan: ' + error.message);
+          alert('Error stopping auto-scan: ' + error.message);
         }
       }
     }
@@ -1729,53 +2056,53 @@
     async function manualScan() {
       try {
         document.getElementById('results').innerHTML = '<div class="no-opportunities"><div class="loading-spinner" style="width: 40px; height: 40px; border: 4px solid rgba(100, 116, 139, 0.2); border-top-color: #6366f1; border-radius: 999px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div><h3>🔍 Scanning...</h3></div>';
-        
+
         // Reset progress state for new scan
         lastProgressState = { running: false, percent: 0 };
         if (progressBarHideTimeout) {
           clearTimeout(progressBarHideTimeout);
           progressBarHideTimeout = null;
         }
-        
+
         // Show progress bar
         document.getElementById('scanProgressContainer').style.display = 'block';
         document.getElementById('scanProgressText').textContent = '0%';
         document.getElementById('scanProgressFill').style.width = '0%';
-        
+
         // Start polling progress
         if (progressPollInterval) clearInterval(progressPollInterval);
         // Kick an immediate update so we don't get stuck at 60% between polls
         await updateProgress();
         progressPollInterval = setInterval(updateProgress, 800);
-        
+
         const response = await fetch(API_BASE + '/scan-now', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
-        
+
         if (!response.ok) {
           throw new Error(`Scan request failed: ${response.status} ${response.statusText}`);
         }
-        
+
         const data = await response.json();
-        
+
         if (!data) {
           throw new Error('Invalid response from server');
         }
-        
+
         // Stop polling
         if (progressPollInterval) {
           clearInterval(progressPollInterval);
           progressPollInterval = null;
         }
-        
+
         // Update progress state to reflect completion
         lastProgressState = { running: false, percent: 100 };
-        
+
         // Make sure the bar shows completion before hiding
         document.getElementById('scanProgressText').textContent = '100%';
         document.getElementById('scanProgressFill').style.width = '100%';
-        
+
         // Hide progress bar after 1 second to show completion
         if (progressBarHideTimeout) {
           clearTimeout(progressBarHideTimeout);
@@ -1784,7 +2111,7 @@
           document.getElementById('scanProgressContainer').style.display = 'none';
           progressBarHideTimeout = null;
         }, 1000);
-        
+
         if (!data.opportunities || data.opportunities.length === 0) {
           document.getElementById('results').innerHTML = '<div class="no-opportunities"><h3>📭 No High-Confidence Opportunities</h3><p>Scanned ' + (data.analyzedCoins || 0) + ' coins</p></div>';
           return;
@@ -1807,38 +2134,41 @@
               }).join('') +
               '</div>';
           }
-          
+
           html += '<div class="opportunity ' + opp.action.toLowerCase() + '">' +
             '<div class="coin-header">' +
-              '<div class="coin-name">' + opp.name + ' (' + opp.symbol + ')</div>' +
-              '<div class="' + opp.action.toLowerCase() + '-badge action-badge">' + opp.action + '</div>' +
+            '<div class="coin-name">' + opp.name + ' (' + opp.symbol + ')</div>' +
+            '<div class="' + opp.action.toLowerCase() + '-badge action-badge">' + opp.action + '</div>' +
             '</div>' +
             '<div class="price-confidence">' +
-              '<div class="price-box"><div class="value">' + opp.price + '</div><div>Current Price</div></div>' +
-              '<div class="confidence-box"><div class="value">' + (opp.confidence * 100).toFixed(0) + '%</div><div>Confidence</div></div>' +
+            '<div class="price-box"><div class="value">' + opp.price + '</div><div>Current Price</div></div>' +
+            '<div class="confidence-box"><div class="value">' + (opp.confidence * 100).toFixed(0) + '%</div><div>Confidence</div></div>' +
             '</div>' +
             patternsHTML +
-            (opp.backtest && opp.backtest.winRate !== undefined ? 
+            '<div style="margin-top: 12px; display: flex; justify-content: flex-end;">' +
+            '<button onclick="openBacktestModal(\'' + opp.symbol + '\', \'' + opp.action + '\')" style="padding: 6px 12px; font-size: 0.8em; background: rgba(99, 102, 241, 0.1); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px;">⚡ Test Strategy</button>' +
+            '</div>' +
+            (opp.backtest && opp.backtest.winRate !== undefined ?
               '<div style="margin-top: 12px; padding: 12px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1)); border-radius: 8px; border-left: 3px solid #6366f1;">' +
-                '<div style="font-weight: 600; margin-bottom: 8px; color: #6366f1;">📈 Backtest Results:</div>' +
-                '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9em;">' +
-                  '<div><strong>Win Rate:</strong> <span style="color: ' + (opp.backtest.winRate >= 50 ? '#22c55e' : '#ef4444') + ';">' + opp.backtest.winRate.toFixed(1) + '%</span></div>' +
-                  '<div><strong>Trades:</strong> ' + (opp.backtest.totalTrades || 0) + '</div>' +
-                  '<div><strong>Avg Return:</strong> <span style="color: ' + (opp.backtest.avgReturn >= 0 ? '#22c55e' : '#ef4444') + ';">' + (opp.backtest.avgReturn >= 0 ? '+' : '') + opp.backtest.avgReturn.toFixed(2) + '%</span></div>' +
-                  '<div><strong>Profit Factor:</strong> <span style="color: ' + (opp.backtest.profitFactor >= 1.5 ? '#22c55e' : opp.backtest.profitFactor >= 1.0 ? '#f59e0b' : '#ef4444') + '; font-weight: 700;">' + opp.backtest.profitFactor.toFixed(2) + '</span> ' + (opp.backtest.profitFactor >= 1.5 ? '✅' : opp.backtest.profitFactor >= 1.0 ? '⚠️' : '❌') + '</div>' +
-                  '<div><strong>Max Drawdown:</strong> <span style="color: #ef4444;">' + opp.backtest.maxDrawdown.toFixed(2) + '%</span></div>' +
-                  '<div><strong>Data Points:</strong> ' + (opp.backtest.dataPoints || 0) + '</div>' +
-                '</div>' +
-                '<div style="margin-top: 8px; padding: 6px; background: rgba(34, 197, 94, 0.1); border-radius: 4px; font-size: 0.85em; color: #15803d;">' +
-                  '✅ Strategy validated on historical data' +
-                '</div>' +
-              '</div>' : 
-              opp.backtest && opp.backtest.error ? 
-              '<div style="margin-top: 12px; padding: 12px; background: rgba(245, 158, 11, 0.1); border-radius: 8px; border-left: 3px solid #f59e0b;">' +
+              '<div style="font-weight: 600; margin-bottom: 8px; color: #6366f1;">📈 Backtest Results:</div>' +
+              '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9em;">' +
+              '<div><strong>Win Rate:</strong> <span style="color: ' + (opp.backtest.winRate >= 50 ? '#22c55e' : '#ef4444') + ';">' + opp.backtest.winRate.toFixed(1) + '%</span></div>' +
+              '<div><strong>Trades:</strong> ' + (opp.backtest.totalTrades || 0) + '</div>' +
+              '<div><strong>Avg Return:</strong> <span style="color: ' + (opp.backtest.avgReturn >= 0 ? '#22c55e' : '#ef4444') + ';">' + (opp.backtest.avgReturn >= 0 ? '+' : '') + opp.backtest.avgReturn.toFixed(2) + '%</span></div>' +
+              '<div><strong>Profit Factor:</strong> <span style="color: ' + (opp.backtest.profitFactor >= 1.5 ? '#22c55e' : opp.backtest.profitFactor >= 1.0 ? '#f59e0b' : '#ef4444') + '; font-weight: 700;">' + opp.backtest.profitFactor.toFixed(2) + '</span> ' + (opp.backtest.profitFactor >= 1.5 ? '✅' : opp.backtest.profitFactor >= 1.0 ? '⚠️' : '❌') + '</div>' +
+              '<div><strong>Max Drawdown:</strong> <span style="color: #ef4444;">' + opp.backtest.maxDrawdown.toFixed(2) + '%</span></div>' +
+              '<div><strong>Data Points:</strong> ' + (opp.backtest.dataPoints || 0) + '</div>' +
+              '</div>' +
+              '<div style="margin-top: 8px; padding: 6px; background: rgba(34, 197, 94, 0.1); border-radius: 4px; font-size: 0.85em; color: #15803d;">' +
+              '✅ Strategy validated on historical data' +
+              '</div>' +
+              '</div>' :
+              opp.backtest && opp.backtest.error ?
+                '<div style="margin-top: 12px; padding: 12px; background: rgba(245, 158, 11, 0.1); border-radius: 8px; border-left: 3px solid #f59e0b;">' +
                 '<div style="font-weight: 600; color: #f59e0b;">📈 Backtest:</div>' +
                 '<div style="font-size: 0.9em; color: #b45309;">⚠️ ' + opp.backtest.error + '</div>' +
-              '</div>' : '') +
-            (opp.insights && opp.insights.length > 0 ? '<div class="reason-box" style="margin-top: 12px;"><strong>Insights:</strong><ul class="insights-list"><li>' + 
+                '</div>' : '') +
+            (opp.insights && opp.insights.length > 0 ? '<div class="reason-box" style="margin-top: 12px;"><strong>Insights:</strong><ul class="insights-list"><li>' +
               opp.insights.join('</li><li>') + '</li></ul></div>' : '') +
             '</div>';
         });
@@ -1866,15 +2196,15 @@
           const indicatorEl = document.getElementById('fearGreedIndicator');
           const classificationEl = document.getElementById('fearGreedClassification');
           const valueEl = document.getElementById('fearGreedValue');
-          
+
           if (fgIndex.value !== null) {
             indicatorEl.style.display = 'inline-flex';
             classificationEl.textContent = fgIndex.classification;
             valueEl.textContent = `(${fgIndex.value})`;
-            
+
             // Remove old classes
             indicatorEl.classList.remove('extreme-fear', 'fear', 'neutral', 'greed', 'extreme-greed');
-            
+
             // Add new class based on classification
             const classificationClass = fgIndex.classification.toLowerCase().replace(/ /g, '-');
             indicatorEl.classList.add(classificationClass);
@@ -1892,22 +2222,22 @@
       try {
         const response = await fetch(API_BASE + '/live-analysis');
         const data = await response.json();
-        
+
         const aiContent = document.getElementById('aiContent');
         const aiStatus = document.getElementById('aiStatus');
-        
+
         // Check if elements exist before using them
         if (!aiContent || !aiStatus) {
           console.warn('⚠️ AI evaluation elements not found in DOM');
           return;
         }
-        
+
         if (data.currentlyAnalyzing) {
           const current = data.currentlyAnalyzing;
           aiStatus.textContent = 'Analyzing';
           aiStatus.style.background = 'rgba(251, 191, 36, 0.2)';
           aiStatus.style.color = '#fbbf24';
-          
+
           aiContent.innerHTML = `
             <div style="margin-bottom: 16px;">
               <div style="font-size: 1.1em; font-weight: 600; color: #fbbf24; margin-bottom: 8px;">${current.stage}</div>
@@ -1920,22 +2250,22 @@
         } else if (data.batchAI && data.batchAI.results && Object.keys(data.batchAI.results).length > 0) {
           const batchAI = data.batchAI;
           if (aiStatus) {
-          aiStatus.textContent = 'Complete';
-          aiStatus.style.background = 'rgba(34, 197, 94, 0.2)';
-          aiStatus.style.color = '#22c55e';
+            aiStatus.textContent = 'Complete';
+            aiStatus.style.background = 'rgba(34, 197, 94, 0.2)';
+            aiStatus.style.color = '#22c55e';
           }
-          
+
           const results = batchAI.results;
           const buyCount = Object.values(results).filter(r => r.action === 'BUY').length;
           const sellCount = Object.values(results).filter(r => r.action === 'SELL').length;
           const holdCount = Object.values(results).filter(r => r.action === 'HOLD').length;
           const avgConfidence = Object.values(results).reduce((sum, r) => sum + (r.confidence || 0), 0) / Object.keys(results).length;
-          
+
           // Show top 5 AI evaluations
           const topEvaluations = Object.entries(results)
             .sort((a, b) => (b[1].confidence || 0) - (a[1].confidence || 0))
             .slice(0, 5);
-          
+
           let evaluationsHTML = topEvaluations.map(([symbol, result]) => {
             const actionColor = result.action === 'BUY' ? '#22c55e' : result.action === 'SELL' ? '#ef4444' : '#f59e0b';
             return `
@@ -1949,7 +2279,7 @@
               </div>
             `;
           }).join('');
-          
+
           aiContent.innerHTML = `
             <div style="margin-bottom: 16px;">
               <div style="font-size: 1em; font-weight: 600; color: #22d3ee; margin-bottom: 12px;">Batch Analysis Complete</div>
@@ -1976,16 +2306,16 @@
               ${evaluationsHTML}
             </div>
           `;
-          
+
           // Stats elements removed
         } else {
           if (aiStatus) {
-          aiStatus.textContent = 'Ready';
-          aiStatus.style.background = 'rgba(148, 163, 184, 0.2)';
-          aiStatus.style.color = '#94a3b8';
+            aiStatus.textContent = 'Ready';
+            aiStatus.style.background = 'rgba(148, 163, 184, 0.2)';
+            aiStatus.style.color = '#94a3b8';
           }
           if (aiContent) {
-          aiContent.innerHTML = `
+            aiContent.innerHTML = `
             <div style="font-size: 2em; margin-bottom: 10px;">🤖</div>
             <div>Waiting for batch AI analysis...</div>
             <div style="font-size: 0.85em; color: #94a3b8; margin-top: 10px;">All coins analyzed together in one API call</div>
@@ -2042,28 +2372,28 @@
         const response = await fetch(API_BASE + '/trading-rules');
         const rules = await response.json();
         currentRules = rules;
-        
+
         // Update confidence threshold
         const confidencePercent = parseInt(rules.confidenceThreshold);
         document.getElementById('confidenceThreshold').textContent = rules.confidenceThreshold;
         document.getElementById('confidenceSlider').value = confidencePercent;
         document.getElementById('confidenceValue').textContent = rules.confidenceThreshold;
-        
+
         // Update patterns
         const buyPatterns = rules.patterns.buy.description || rules.patterns.buy;
         const sellPatterns = rules.patterns.sell.description || rules.patterns.sell;
         const buyList = Array.isArray(buyPatterns) ? buyPatterns : [buyPatterns];
         const sellList = Array.isArray(sellPatterns) ? sellPatterns : [sellPatterns];
-        
+
         document.getElementById('buyPatterns').innerHTML = '<ul style="list-style: none; padding: 0; margin: 0;">' +
           buyList.map(p => `<li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">✓ ${p}</li>`).join('') + '</ul>';
-        
+
         document.getElementById('sellPatterns').innerHTML = '<ul style="list-style: none; padding: 0; margin: 0;">' +
           sellList.map(p => `<li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">✓ ${p}</li>`).join('') + '</ul>';
-        
+
         document.getElementById('holdPatterns').innerHTML = '<ul style="list-style: none; padding: 0; margin: 0;">' +
           rules.patterns.hold.map(p => `<li style="padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.2);">✓ ${p}</li>`).join('') + '</ul>';
-        
+
         // Update edit form values
         if (rules.patterns && rules.patterns.buy) {
           document.getElementById('buyEnabled').checked = rules.patterns.buy.enabled !== false;
@@ -2075,7 +2405,7 @@
           document.getElementById('buyRequirePattern').checked = rules.patterns.buy.requirePattern || false;
           document.getElementById('buyTimeframeAlignment').value = rules.patterns.buy.minTimeframeAlignment || 1;
         }
-        
+
         if (rules.patterns && rules.patterns.sell) {
           document.getElementById('sellEnabled').checked = rules.patterns.sell.enabled !== false;
           document.getElementById('sellRequireRSI').checked = rules.patterns.sell.requireRSIOverbought || false;
@@ -2086,7 +2416,7 @@
           document.getElementById('sellRequirePattern').checked = rules.patterns.sell.requirePattern || false;
           document.getElementById('sellTimeframeAlignment').value = rules.patterns.sell.minTimeframeAlignment || 1;
         }
-        
+
       } catch (error) {
         console.error('Error loading trading rules:', error);
       }
@@ -2095,7 +2425,7 @@
     function toggleEditMode() {
       editMode = !editMode;
       const btn = document.getElementById('editRulesBtn');
-      
+
       if (editMode) {
         btn.textContent = '👁️ View Mode';
         btn.style.background = '#64748b';
@@ -2127,7 +2457,7 @@
     async function saveTradingRules() {
       try {
         const confidence = parseInt(document.getElementById('confidenceSlider').value) / 100;
-        
+
         const newRules = {
           minConfidence: confidence,
           patterns: {
@@ -2161,12 +2491,12 @@
         });
 
         const result = await response.json();
-        
+
         if (result.success) {
           if (typeof showToast === 'function') {
             showToast('✅ Trading rules saved successfully!', 'success');
           } else {
-          alert('✅ Trading rules saved successfully!');
+            alert('✅ Trading rules saved successfully!');
           }
           toggleEditMode(); // Switch back to view mode
           loadTradingRules(); // Reload to show updated rules
@@ -2198,7 +2528,7 @@
       console.log('🎯 Toggle trade monitoring clicked');
       const panel = document.getElementById('tradeMonitoringPanel');
       console.log('Panel element:', panel);
-      
+
       if (!panel) {
         console.error('❌ Trade monitoring panel not found in DOM');
         const msg = '❌ Trade monitoring panel not found. Please refresh the page.';
@@ -2209,9 +2539,9 @@
         }
         return;
       }
-      
+
       console.log('Current display:', panel.style.display);
-      
+
       if (panel.style.display === 'none' || !panel.style.display) {
         console.log('✅ Opening trade monitoring panel');
         panel.style.display = 'block';
@@ -2226,7 +2556,7 @@
       try {
         const response = await fetch(API_BASE + '/trade-monitoring/settings');
         const settings = await response.json();
-        
+
         // Update proximity threshold slider with null checks
         const slider = document.getElementById('proximitySlider');
         const valueDisplay = document.getElementById('proximityValue');
@@ -2234,13 +2564,13 @@
           slider.value = settings.proximityThreshold || 1.0;
           valueDisplay.textContent = (settings.proximityThreshold || 1.0) + '%';
         }
-        
+
         // Update status indicators with null checks
         const statusEl = document.getElementById('monitoringStatus');
         if (statusEl) {
           statusEl.textContent = settings.isRunning ? '🟢 Active' : '🔴 Stopped';
         }
-        
+
         // Update monitored trades count
         const tradesCountEl = document.getElementById('monitoredTrades');
         if (tradesCountEl) {
@@ -2276,17 +2606,17 @@
           }
           return;
         }
-        
+
         const threshold = parseFloat(slider.value);
-        
+
         const response = await fetch(API_BASE + '/trade-monitoring/proximity', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ threshold })
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
           const msg = `✅ ${result.message}\nThe bot will now trigger AI evaluation when trades are within ${threshold}% of DCA, Stop Loss, or Take Profit levels.`;
           if (typeof showToast === 'function') {
@@ -2322,7 +2652,7 @@
         const activeTrades = await response.json();
         console.log('📊 Active trades data:', activeTrades);
         const container = document.getElementById('active-trades-container');
-        
+
         if (!container) {
           console.warn('⚠️ Active trades container not found in DOM');
           return;
@@ -2354,31 +2684,31 @@
         html += '<th>Status</th>';
         html += '<th>Opened</th>';
         html += '</tr></thead><tbody>';
-        
+
         activeTrades.forEach(trade => {
           const pnlValue = parseFloat(trade.pnlPercent);
           const pnlClass = pnlValue > 0 ? 'positive' : pnlValue < 0 ? 'negative' : 'neutral';
           const pnlSign = pnlValue > 0 ? '+' : '';
           const actionBadgeClass = trade.action === 'BUY' ? 'buy' : 'sell';
           const statusBadgeClass = trade.status.toLowerCase(); // OPEN -> open, TP_HIT -> tp_hit, etc.
-          
+
           // Calculate position size
           const quantity = trade.quantity || (100 / trade.entryPrice); // $100 position size
           const positionValue = quantity * trade.currentPrice; // Current position value
-          
+
           // Show average entry if DCA has been executed
           const dcaCount = trade.dcaCount || 0;
           const avgEntry = trade.averageEntryPrice || trade.entryPrice;
-          const entryDisplay = dcaCount > 0 
+          const entryDisplay = dcaCount > 0
             ? `$${Number(trade.entryPrice).toFixed(2)}<br><span class="trade-time-small" style="color: #f59e0b;">Avg: $${Number(avgEntry).toFixed(2)}</span>`
             : `$${Number(trade.entryPrice).toFixed(2)}`;
-          
+
           // Show DCA count if executed
           const dcaPrice = trade.addPosition || trade.dcaPrice || trade.entryPrice;
           const dcaDisplay = dcaCount > 0
             ? `$${Number(dcaPrice).toFixed(2)}<br><span class="trade-time-small" style="color: #10b981;">DCA ${dcaCount}/5</span>`
             : `$${Number(dcaPrice).toFixed(2)}`;
-          
+
           html += '<tr>';
           html += `<td><span class="trade-coin-name">${trade.name}</span><br><span class="trade-time-small">${trade.symbol}</span></td>`;
           html += `<td><span class="trade-action-badge ${actionBadgeClass}">${trade.action}</span></td>`;
@@ -2393,7 +2723,7 @@
           html += `<td class="trade-time-small">${new Date(trade.entryTime).toLocaleString()}</td>`;
           html += '</tr>';
         });
-        
+
         html += '</tbody></table>';
         container.innerHTML = html;
         console.log(`✅ Active trades display updated (${activeTrades.length} trades)`);
@@ -2422,7 +2752,7 @@
         const closedTrades = await response.json();
         console.log('📊 Closed trades data:', closedTrades);
         const container = document.getElementById('closed-trades-container');
-        
+
         if (!container) {
           console.warn('⚠️ Closed trades container not found in DOM');
           return;
@@ -2461,7 +2791,7 @@
         html += '<th>Reason</th>';
         html += '<th>Closed</th>';
         html += '</tr></thead><tbody>';
-        
+
         sortedTrades.forEach(trade => {
           const pnlValue = parseFloat(trade.finalPnlPercent || trade.pnlPercent || 0);
           const pnlClass = pnlValue > 0 ? 'positive' : pnlValue < 0 ? 'negative' : 'neutral';
@@ -2470,7 +2800,7 @@
           const statusBadgeClass = trade.status?.toLowerCase() || 'closed';
           const isProfit = pnlValue > 0;
           const statusEmoji = isProfit ? '✅' : '❌';
-          
+
           html += '<tr>';
           html += `<td><span class="trade-coin-name">${trade.name || trade.symbol}</span><br><span class="trade-time-small">${trade.symbol}</span></td>`;
           html += `<td><span class="trade-action-badge ${actionBadgeClass}">${trade.action}</span></td>`;
@@ -2485,7 +2815,7 @@
           html += `<td class="trade-time-small">${new Date(trade.closedAt || trade.entryTime).toLocaleString()}</td>`;
           html += '</tr>';
         });
-        
+
         html += '</tbody></table>';
         container.innerHTML = html;
 
@@ -2511,7 +2841,7 @@
         console.log('📊 Portfolio response status:', response.status);
         const portfolio = await response.json();
         console.log('📊 Portfolio data:', portfolio);
-        
+
         // Get all elements with null checks
         const initialEl = document.getElementById('portfolio-initial');
         const balanceEl = document.getElementById('portfolio-balance');
@@ -2521,42 +2851,42 @@
         const winrateEl = document.getElementById('portfolio-winrate');
         const tradesEl = document.getElementById('portfolio-trades');
         const openEl = document.getElementById('portfolio-open');
-        
+
         if (!initialEl || !balanceEl || !equityEl) {
           console.warn('⚠️ Portfolio elements not found in DOM');
           return;
         }
-        
+
         // Update portfolio metrics
         if (initialEl) initialEl.textContent = `$${Number(portfolio.initialCapital || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         if (balanceEl) balanceEl.textContent = `$${Number(portfolio.currentBalance || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         if (equityEl) equityEl.textContent = `$${Number(portfolio.totalEquity || portfolio.currentBalance || 10000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        
+
         // P&L with color coding
         const totalPnl = portfolio.totalPnl || 0;
         if (pnlEl) {
-        pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${Number(totalPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        pnlEl.className = 'portfolio-metric-value' + (totalPnl > 0 ? ' positive' : totalPnl < 0 ? ' negative' : '');
+          pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${Number(totalPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          pnlEl.className = 'portfolio-metric-value' + (totalPnl > 0 ? ' positive' : totalPnl < 0 ? ' negative' : '');
         }
-        
+
         // ROI with color coding
         const roi = portfolio.roi || 0;
         if (roiEl) {
-        roiEl.textContent = `${roi >= 0 ? '+' : ''}${Number(roi).toFixed(2)}%`;
-        roiEl.className = 'portfolio-metric-value' + (roi > 0 ? ' positive' : roi < 0 ? ' negative' : '');
+          roiEl.textContent = `${roi >= 0 ? '+' : ''}${Number(roi).toFixed(2)}%`;
+          roiEl.className = 'portfolio-metric-value' + (roi > 0 ? ' positive' : roi < 0 ? ' negative' : '');
         }
-        
+
         // Win rate
         if (winrateEl) winrateEl.textContent = `${Number(portfolio.winRate || 0).toFixed(2)}%`;
-        
+
         // Total trades
         if (tradesEl) tradesEl.textContent = portfolio.totalTrades || 0;
-        
+
         // Open positions
         if (openEl) openEl.textContent = portfolio.openPositions || 0;
-        
+
         console.log('✅ Portfolio display updated successfully');
-        
+
       } catch (error) {
         console.error('❌ Error updating portfolio display:', error);
         console.error('Error stack:', error.stack);
@@ -2568,22 +2898,22 @@
         console.log('📊 Fetching analytics...');
         const response = await fetch(API_BASE + '/analytics');
         console.log('📊 Analytics response status:', response.status);
-        
+
         if (!response.ok) {
           console.warn('Analytics endpoint returned non-OK status');
           return;
         }
-        
+
         const analytics = await response.json();
         console.log('📊 Analytics data:', analytics);
-        
+
         // Update analytics display
         const container = document.getElementById('analytics-content');
         const loading = document.getElementById('analytics-loading');
-        
+
         if (loading) loading.style.display = 'none';
         if (container) container.style.display = 'block';
-        
+
         // Update individual metrics
         if (analytics.sharpeRatio !== undefined) {
           const el = document.getElementById('analytics-sharpe');
@@ -2593,7 +2923,7 @@
           const el = document.getElementById('analytics-drawdown');
           if (el) el.textContent = analytics.maxDrawdown.toFixed(2) + '%';
         }
-        
+
       } catch (error) {
         console.error('❌ Error updating analytics display:', error);
         console.error('Error stack:', error.stack);
@@ -2607,17 +2937,17 @@
     function appendLog(message, level = 'info') {
       const logContainer = document.getElementById('log-container');
       const logEntry = document.createElement('div');
-      
+
       const timestamp = new Date().toLocaleTimeString();
       logEntry.className = `log-entry log-${level}`;
       logEntry.innerHTML = `
         <span class="log-timestamp">[${timestamp}]</span>
         <span class="log-message">${escapeHtml(message)}</span>
       `;
-      
+
       logContainer.appendChild(logEntry);
       logContainer.scrollTop = logContainer.scrollHeight; // Auto-scroll to bottom
-      
+
       // Keep only last 500 entries to prevent memory issues
       if (logContainer.children.length > 500) {
         logContainer.removeChild(logContainer.firstChild);
@@ -2631,7 +2961,7 @@
     }
 
     // Clear logs button
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
       const clearBtn = document.getElementById('clear-logs');
       if (clearBtn) {
         clearBtn.addEventListener('click', () => {
@@ -2646,7 +2976,7 @@
       try {
         const response = await fetch(API_BASE + '/logs?since=' + lastLogId);
         const data = await response.json();
-        
+
         if (data.logs && Array.isArray(data.logs)) {
           // Add new logs
           data.logs.forEach(log => {
@@ -2663,7 +2993,7 @@
     // Initialize
     console.log('✅ Starting dashboard initialization...');
     console.log('📊 API_BASE:', API_BASE);
-    
+
     // Test API connectivity first
     fetch(API_BASE + '/health').then(r => {
       console.log('✅ Health check status:', r.status);
@@ -2673,7 +3003,7 @@
     }).catch(err => {
       console.error('❌ Health check failed:', err);
     });
-    
+
     updateStats();
     updateAIEvaluation();
     // updateActiveTradesDisplay(); // Disabled - OKX is source of truth, trade data kept only for triggers
@@ -2685,25 +3015,25 @@
     async function evaluateTradesWithAI() {
       const btn = document.getElementById('evaluateTradesBtn');
       const originalText = btn.textContent;
-      
+
       try {
         btn.disabled = true;
         btn.textContent = '⏳ Evaluating...';
         btn.style.opacity = '0.6';
-        
+
         const response = await fetch(API_BASE + '/evaluate-trades', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           }
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
           btn.textContent = '✅ Evaluation Sent!';
           btn.style.background = 'linear-gradient(135deg, #22c55e, #16a34a)';
-          
+
           // Show success message
           const msg = `✅ AI Re-evaluation Complete! ${result.message || 'Evaluation results sent to Telegram.'}`;
           if (typeof showToast === 'function') {
@@ -2711,7 +3041,7 @@
           } else {
             alert(msg);
           }
-          
+
           setTimeout(() => {
             btn.textContent = originalText;
             btn.style.background = 'linear-gradient(135deg, #6366f1, #8b5cf6)';
@@ -2729,7 +3059,7 @@
         } else {
           alert(msg);
         }
-        
+
         setTimeout(() => {
           btn.textContent = originalText;
           btn.style.background = 'linear-gradient(135deg, #6366f1, #8b5cf6)';
@@ -2744,54 +3074,54 @@
       try {
         const response = await fetch(API_BASE + '/analytics');
         const analytics = await response.json();
-        
+
         const loading = document.getElementById('analytics-loading');
         const empty = document.getElementById('analytics-empty');
         const content = document.getElementById('analytics-content');
-        
+
         if (!analytics || analytics.sharpeRatio === undefined) {
           return;
         }
-        
+
         if (!analytics.totalTrades || analytics.totalTrades === 0) {
           if (loading) loading.style.display = 'none';
           if (content) content.style.display = 'none';
           if (empty) empty.style.display = 'block';
           return;
         }
-        
+
         if (loading) loading.style.display = 'none';
         if (empty) empty.style.display = 'none';
         if (content) content.style.display = 'block';
-          
-          // Update metrics
-          document.getElementById('analytics-sharpe').textContent = analytics.sharpeRatio.toFixed(2);
-          document.getElementById('analytics-drawdown').textContent = `${analytics.maxDrawdownPercent.toFixed(2)}%`;
+
+        // Update metrics
+        document.getElementById('analytics-sharpe').textContent = analytics.sharpeRatio.toFixed(2);
+        document.getElementById('analytics-drawdown').textContent = `${analytics.maxDrawdownPercent.toFixed(2)}%`;
         document.getElementById('analytics-holding').textContent = `${analytics.holdingTime?.avgDays?.toFixed(1) || 0} days`;
         document.getElementById('analytics-profit-factor').textContent = (analytics.profitFactor || 0).toFixed(2);
         document.getElementById('analytics-expectancy').textContent = (analytics.expectancy || 0).toFixed(2);
-          
-          if (analytics.bestTrades && analytics.bestTrades.length > 0) {
-            const best = analytics.bestTrades[0];
-            document.getElementById('analytics-best').textContent = `${best.symbol}: +${best.pnlPercent.toFixed(2)}%`;
-          }
-          
-          // Update win rate by coin
-          const winRateContainer = document.getElementById('analytics-winrate-by-coin');
-          if (analytics.winRateByCoin && Object.keys(analytics.winRateByCoin).length > 0) {
-            let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;">';
-            Object.entries(analytics.winRateByCoin)
-              .sort((a, b) => b[1].winRate - a[1].winRate)
-              .forEach(([symbol, stats]) => {
-                html += `<div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">
+
+        if (analytics.bestTrades && analytics.bestTrades.length > 0) {
+          const best = analytics.bestTrades[0];
+          document.getElementById('analytics-best').textContent = `${best.symbol}: +${best.pnlPercent.toFixed(2)}%`;
+        }
+
+        // Update win rate by coin
+        const winRateContainer = document.getElementById('analytics-winrate-by-coin');
+        if (analytics.winRateByCoin && Object.keys(analytics.winRateByCoin).length > 0) {
+          let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;">';
+          Object.entries(analytics.winRateByCoin)
+            .sort((a, b) => b[1].winRate - a[1].winRate)
+            .forEach(([symbol, stats]) => {
+              html += `<div style="background: white; padding: 12px; border-radius: 8px; border-left: 3px solid ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">
                   <div style="font-weight: 600; color: #0f172a;">${symbol}</div>
                   <div style="font-size: 1.2em; font-weight: 700; color: ${stats.winRate > 50 ? '#22c55e' : '#ef4444'};">${stats.winRate.toFixed(1)}%</div>
                   <div style="font-size: 0.8em; color: #64748b;">${stats.wins}W/${stats.losses}L</div>
                 </div>`;
-              });
-            html += '</div>';
-            winRateContainer.innerHTML = html;
-          } else {
+            });
+          html += '</div>';
+          winRateContainer.innerHTML = html;
+        } else {
           winRateContainer.innerHTML = '<p style="color: #64748b; text-align: center;">Close a few trades to unlock win rate insights.</p>';
         }
       } catch (error) {
@@ -2808,17 +3138,17 @@
     // setInterval(updatePortfolioDisplay, 10000); // Disabled - OKX is source of truth, portfolio section hidden
     setInterval(updateAnalyticsDisplay, 30000); // Update analytics every 30 seconds
     setInterval(updateNextScanTime, 5000); // Update next scan time every 5 seconds
-    
+
     // Initialize log window
     appendLog('Bot initialized. Waiting for activity...', 'info');
     appendLog('Ready to scan cryptocurrencies', 'success');
-    
+
     // Poll for logs every 2 seconds
     setInterval(fetchLogs, 2000);
-    
+
     // Wrap existing functions to add logging
     const originalManualScanFn = manualScan;
-    window.manualScan = async function() {
+    window.manualScan = async function () {
       appendLog('Manual scan initiated...', 'info');
       try {
         await originalManualScanFn();
@@ -2827,23 +3157,23 @@
         appendLog('Scan failed: ' + error.message, 'error');
       }
     };
-    
+
     const originalStartAutoScanFn = startAutoScan;
-    window.startAutoScan = async function() {
+    window.startAutoScan = async function () {
       appendLog('Auto-scan started', 'success');
       await originalStartAutoScanFn();
     };
-    
+
     const originalStopAutoScanFn = stopAutoScan;
-    window.stopAutoScan = async function() {
+    window.stopAutoScan = async function () {
       appendLog('Auto-scan stopped', 'warning');
       await originalStopAutoScanFn();
     };
-    
+
     // Free AI Monitoring Display Functions
     let monitoringData = [];
     const MAX_MONITORING_ENTRIES = 10;
-    
+
     async function updateMonitoringDisplay() {
       try {
         const response = await fetch(API_BASE + '/monitoring-activity');
@@ -2852,19 +3182,19 @@
           return;
         }
         const data = await response.json();
-        
+
         console.log('📊 Monitoring data received:', {
           activityCount: data?.activity?.length || 0,
           isActive: data?.isActive,
           activities: data?.activity
         });
-        
+
         const container = document.getElementById('monitoring-container');
         if (!container) {
           console.log('⚠️ Monitoring container not found');
           return;
         }
-        
+
         if (!data || !data.activity || data.activity.length === 0) {
           // Show waiting message only if container is empty
           if (!container.innerHTML.includes('Waiting for monitoring cycle')) {
@@ -2878,10 +3208,10 @@
           }
           return;
         }
-        
+
         const statusBadge = document.getElementById('monitoring-status');
         if (!statusBadge) return;
-        
+
         // Update status
         if (data.isActive) {
           statusBadge.textContent = 'ACTIVE';
@@ -2892,16 +3222,16 @@
           statusBadge.style.background = 'rgba(148, 163, 184, 0.2)';
           statusBadge.style.color = '#94a3b8';
         }
-        
+
         // Keep only last MAX_MONITORING_ENTRIES
         const activities = data.activity.slice(-MAX_MONITORING_ENTRIES).reverse();
-        
+
         let html = '';
         activities.forEach(activity => {
           const volatilityColor = activity.volatility === 'high' ? '#ef4444' : activity.volatility === 'medium' ? '#f59e0b' : '#94a3b8';
           const escalatedBadge = activity.escalated ? '<span style="background: rgba(139, 92, 246, 0.2); color: #a78bfa; padding: 2px 6px; border-radius: 4px; font-size: 0.75em; margin-left: 4px;">💎 ESCALATED</span>' : '';
           const time = new Date(activity.timestamp).toLocaleTimeString();
-          
+
           html += `
             <div style="padding: 10px; margin-bottom: 8px; background: rgba(15, 23, 42, 0.6); border-radius: 8px; border-left: 3px solid ${volatilityColor};">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
@@ -2916,19 +3246,19 @@
             </div>
           `;
         });
-        
+
         container.innerHTML = html;
         container.scrollTop = 0; // Scroll to top (newest)
-        
+
       } catch (error) {
         console.log('Error updating monitoring display:', error);
       }
     }
-    
+
     // Poll monitoring activity every 15 seconds (reduced to minimize log noise)
     setInterval(updateMonitoringDisplay, 15000);
     updateMonitoringDisplay(); // Initial load
-    
+
     // Load current monitoring mode on page load
     (async function loadCurrentMode() {
       try {
@@ -2940,19 +3270,19 @@
         console.log('Could not load monitoring mode:', error);
       }
     })();
-    
+
     // Trigger Settings Modal Functions
     function openTriggerSettings() {
       console.log('📂 Opening trigger settings modal...');
       document.getElementById('trigger-settings-modal').style.display = 'flex';
       loadTriggerSettings();
-      
+
       // Add event listener as backup (in case onclick doesn't work)
       setTimeout(() => {
         const saveBtn = document.getElementById('save-trigger-settings-btn');
         if (saveBtn) {
           console.log('✅ Save button found, adding event listener');
-          saveBtn.addEventListener('click', function(e) {
+          saveBtn.addEventListener('click', function (e) {
             console.log('🔘 Save button clicked via event listener!');
             e.preventDefault();
             handleSaveTriggerSettings();
@@ -2962,23 +3292,23 @@
         }
       }, 100);
     }
-    
+
     function closeTriggerSettings() {
       document.getElementById('trigger-settings-modal').style.display = 'none';
     }
-    
+
     async function loadTriggerSettings() {
       try {
         const response = await fetch(API_BASE + '/trigger-settings');
         const settings = await response.json();
-        
+
         document.getElementById('rsi-oversold').value = settings.rsiOversold || 30;
         document.getElementById('rsi-overbought').value = settings.rsiOverbought || 70;
         document.getElementById('enable-bollinger').checked = settings.enableBollinger !== false;
         document.getElementById('min-price-change').value = settings.minPriceChange || 5;
         document.getElementById('min-triggers').value = settings.minTriggers || 2;
         document.getElementById('require-volume').checked = settings.requireVolume || false;
-        
+
         // Load current mode
         currentMode = settings.monitoringMode || 'ai';
         updateModeButtons(currentMode);
@@ -2987,11 +3317,11 @@
         console.error('Error loading settings:', error);
       }
     }
-    
+
     function updateModeButtons(mode) {
       const aiBtn = document.getElementById('mode-ai');
       const algBtn = document.getElementById('mode-algorithmic');
-      
+
       if (mode === 'ai') {
         aiBtn.style.background = 'rgba(99, 102, 241, 0.3)';
         aiBtn.style.borderColor = 'rgba(99, 102, 241, 0.6)';
@@ -3009,14 +3339,14 @@
       }
       currentMode = mode;
     }
-    
+
     function setMonitoringMode(mode) {
       console.log('🔄 Setting monitoring mode to:', mode);
       currentMode = mode;
       updateModeButtons(mode);
       console.log('Current mode is now:', currentMode);
     }
-    
+
     function updateModePill(mode) {
       const pill = document.getElementById('current-mode-pill');
       if (pill) {
@@ -3031,19 +3361,19 @@
         }
       }
     }
-    
+
     async function saveTriggerSettings() {
       console.log('💾 saveTriggerSettings function called!');
       console.log('💾 Saving trigger settings...');
-      
+
       // Ensure currentMode is defined (fallback to 'ai' if not set)
       if (typeof currentMode === 'undefined') {
         console.warn('⚠️ currentMode was undefined, defaulting to "ai"');
         currentMode = 'ai';
       }
-      
+
       console.log('Current mode before save:', currentMode);
-      
+
       const settings = {
         rsiOversold: parseInt(document.getElementById('rsi-oversold').value),
         rsiOverbought: parseInt(document.getElementById('rsi-overbought').value),
@@ -3053,26 +3383,26 @@
         requireVolume: document.getElementById('require-volume').checked,
         monitoringMode: currentMode || 'ai' // Double safety check
       };
-      
+
       console.log('Settings to save:', settings);
-      
+
       try {
         const response = await fetch(API_BASE + '/trigger-settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(settings)
         });
-        
+
         console.log('Save response status:', response.status);
-        
+
         if (response.ok) {
           const result = await response.json();
           console.log('Save response:', result);
-          
+
           if (typeof showToast === 'function') {
             showToast('✅ Monitoring settings saved!', 'success');
           } else {
-          alert('✅ Settings saved!');
+            alert('✅ Settings saved!');
           }
           updateModePill(currentMode);
           console.log('Updated pill to mode:', currentMode);
@@ -3097,13 +3427,13 @@
         }
       }
     }
-    
+
     // Update trigger display
     async function updateTriggerDisplay() {
       try {
         const response = await fetch(API_BASE + '/active-triggers');
         const data = await response.json();
-        
+
         if (!data.triggers || data.triggers.length === 0) {
           document.getElementById('trigger-summary').innerHTML = '<span style="background: rgba(148, 163, 184, 0.2); padding: 4px 8px; border-radius: 4px;">0 Active</span>';
           document.getElementById('trigger-list').innerHTML = `
@@ -3114,20 +3444,20 @@
           `;
           return;
         }
-        
+
         const activeCount = data.triggers.reduce((sum, t) => sum + (t.activeTriggers?.length || 0), 0);
         const escalatedCount = data.triggers.filter(t => t.shouldEscalate).length;
-        
+
         document.getElementById('trigger-summary').innerHTML = `
           <span style="background: rgba(251, 191, 36, 0.2); padding: 4px 8px; border-radius: 4px; color: #fbbf24;">${activeCount} Active</span>
           ${escalatedCount > 0 ? `<span style="background: rgba(239, 68, 68, 0.2); padding: 4px 8px; border-radius: 4px; color: #f87171; margin-left: 6px;">${escalatedCount} Escalated</span>` : ''}
         `;
-        
+
         document.getElementById('trigger-list').innerHTML = data.triggers.map(coin => {
           const triggers = coin.activeTriggers || [];
           const bgColor = coin.shouldEscalate ? 'rgba(239, 68, 68, 0.15)' : 'rgba(15, 23, 42, 0.3)';
           const borderColor = coin.shouldEscalate ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.2)';
-          
+
           const getTriggerBadge = (trigger) => {
             const badges = {
               rsiOversold: '📉 RSI Low',
@@ -3147,7 +3477,7 @@
             };
             return `<span style="background: rgba(148, 163, 184, 0.2); padding: 2px 6px; border-radius: 4px; font-size: 10px; color: ${colors[trigger] || '#94a3b8'}; display: inline-block; margin: 2px;">${badges[trigger] || trigger}</span>`;
           };
-          
+
           return `
             <div style="background: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 8px; padding: 8px; margin-bottom: 8px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
@@ -3171,28 +3501,34 @@
         console.error('Error updating triggers:', error);
       }
     }
-    
+
     // Poll triggers every 30 seconds (reduced to minimize log noise)
     setInterval(updateTriggerDisplay, 30000);
     updateTriggerDisplay();
   </script>
-  
+
   <!-- Trigger Settings Modal -->
-  <div id="trigger-settings-modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; overflow-y: auto;">
-    <div style="background: #1e293b; padding: 32px; border-radius: 16px; max-width: 650px; width: 90%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid rgba(59,130,246,0.3); margin: 20px auto; max-height: 90vh; overflow-y: auto;">
+  <div id="trigger-settings-modal"
+    style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; overflow-y: auto;">
+    <div
+      style="background: #1e293b; padding: 32px; border-radius: 16px; max-width: 650px; width: 90%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid rgba(59,130,246,0.3); margin: 20px auto; max-height: 90vh; overflow-y: auto;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
         <h2 style="margin: 0; color: #22d3ee; font-size: 1.5em;">⚙️ Monitoring Settings</h2>
-        <button onclick="closeTriggerSettings()" style="background: none; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; padding: 0; width: 32px; height: 32px;">&times;</button>
+        <button onclick="closeTriggerSettings()"
+          style="background: none; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; padding: 0; width: 32px; height: 32px;">&times;</button>
       </div>
-      
+
       <!-- Mode Toggle -->
-      <div style="margin-bottom: 24px; padding: 20px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(34, 211, 238, 0.1)); border-radius: 8px; border: 1px solid rgba(59,130,246,0.3);">
+      <div
+        style="margin-bottom: 24px; padding: 20px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(34, 211, 238, 0.1)); border-radius: 8px; border: 1px solid rgba(59,130,246,0.3);">
         <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1.1em;">🔄 Monitoring Mode</h3>
         <div style="display: flex; gap: 12px; margin-bottom: 12px;">
-          <button id="mode-ai" onclick="setMonitoringMode('ai')" style="flex: 1; padding: 12px; border-radius: 8px; border: 2px solid rgba(99, 102, 241, 0.3); background: rgba(99, 102, 241, 0.2); color: #818cf8; font-weight: 600; cursor: pointer; transition: all 0.3s;">
+          <button id="mode-ai" onclick="setMonitoringMode('ai')"
+            style="flex: 1; padding: 12px; border-radius: 8px; border: 2px solid rgba(99, 102, 241, 0.3); background: rgba(99, 102, 241, 0.2); color: #818cf8; font-weight: 600; cursor: pointer; transition: all 0.3s;">
             🤖 AI Mode
           </button>
-          <button id="mode-algorithmic" onclick="setMonitoringMode('algorithmic')" style="flex: 1; padding: 12px; border-radius: 8px; border: 2px solid rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.1); color: #4ade80; font-weight: 600; cursor: pointer; transition: all 0.3s;">
+          <button id="mode-algorithmic" onclick="setMonitoringMode('algorithmic')"
+            style="flex: 1; padding: 12px; border-radius: 8px; border: 2px solid rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.1); color: #4ade80; font-weight: 600; cursor: pointer; transition: all 0.3s;">
             🎯 Algorithmic Mode
           </button>
         </div>
@@ -3201,20 +3537,24 @@
           <strong>Algorithmic Mode:</strong> Uses technical indicators ($0, instant)
         </div>
       </div>
-      
-      <div style="margin-bottom: 20px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
+
+      <div
+        style="margin-bottom: 20px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
         <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1em;">📊 RSI Thresholds</h3>
         <label style="display: block; margin-bottom: 8px; color: #e2e8f0; font-size: 14px;">
-          Oversold (Buy Signal): 
-          <input type="number" id="rsi-oversold" value="30" min="0" max="100" style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
+          Oversold (Buy Signal):
+          <input type="number" id="rsi-oversold" value="30" min="0" max="100"
+            style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
         </label>
         <label style="display: block; color: #e2e8f0; font-size: 14px;">
-          Overbought (Sell Signal): 
-          <input type="number" id="rsi-overbought" value="70" min="0" max="100" style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
+          Overbought (Sell Signal):
+          <input type="number" id="rsi-overbought" value="70" min="0" max="100"
+            style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
         </label>
       </div>
-      
-      <div style="margin-bottom: 20px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
+
+      <div
+        style="margin-bottom: 20px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
         <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1em;">📈 Bollinger Bands</h3>
         <label style="display: flex; align-items: center; margin-bottom: 8px; color: #e2e8f0; font-size: 14px;">
           <input type="checkbox" id="enable-bollinger" checked style="margin-right: 8px;">
@@ -3224,60 +3564,249 @@
           Triggers on upper/lower band breakouts
         </div>
       </div>
-      
-      <div style="margin-bottom: 20px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
+
+      <div
+        style="margin-bottom: 20px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
         <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1em;">💸 Price Movement</h3>
         <label style="display: block; color: #e2e8f0; font-size: 14px;">
-          Min Price Change (%): 
-          <input type="number" id="min-price-change" value="5" min="1" max="20" step="0.5" style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
+          Min Price Change (%):
+          <input type="number" id="min-price-change" value="5" min="1" max="20" step="0.5"
+            style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
         </label>
       </div>
-      
-      <div style="margin-bottom: 24px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
+
+      <div
+        style="margin-bottom: 24px; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
         <h3 style="margin: 0 0 12px 0; color: #22d3ee; font-size: 1em;">Escalation Rules</h3>
         <label style="display: block; margin-bottom: 8px; color: #e2e8f0; font-size: 14px;">
-          Min Triggers Required: 
-          <input type="number" id="min-triggers" value="2" min="1" max="5" style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
+          Min Triggers Required:
+          <input type="number" id="min-triggers" value="2" min="1" max="5"
+            style="margin-left: 10px; padding: 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3); background: rgba(0,0,0,0.3); color: #e2e8f0; width: 80px;">
         </label>
         <label style="display: flex; align-items: center; color: #e2e8f0; font-size: 14px;">
           <input type="checkbox" id="require-volume" style="margin-right: 8px;">
           Require volume spike
         </label>
       </div>
-      
-      <button id="save-trigger-settings-btn" onclick="handleSaveTriggerSettings()" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #6366f1, #22d3ee); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">💾 Save Settings</button>
+
+      <button id="save-trigger-settings-btn" onclick="handleSaveTriggerSettings()"
+        style="width: 100%; padding: 12px; background: linear-gradient(135deg, #6366f1, #22d3ee); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">💾
+        Save Settings</button>
     </div>
   </div>
 
-<!-- Toastify CSS (for toast notifications) -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+  <!-- Toastify CSS (for toast notifications) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
 
-<!-- Alpine.js (for simple UI state) -->
-<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- Alpine.js (for simple UI state) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
-<!-- Toastify JS -->
-<script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+  <!-- Toastify JS -->
+  <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
 
-<script>
-  function showToast(message, type = 'info') {
-    const bg =
-      type === 'success'
-        ? "linear-gradient(to right, #22c55e, #16a34a)"
-        : type === 'error'
-        ? "linear-gradient(to right, #ef4444, #b91c1c)"
-        : "linear-gradient(to right, #3b82f6, #1d4ed8)";
+  <script>
+    function showToast(message, type = 'info') {
+      const bg =
+        type === 'success'
+          ? "linear-gradient(to right, #22c55e, #16a34a)"
+          : type === 'error'
+            ? "linear-gradient(to right, #ef4444, #b91c1c)"
+            : "linear-gradient(to right, #3b82f6, #1d4ed8)";
 
-    Toastify({
-      text: message,
-      duration: 4000,
-      gravity: "top",
-      position: "right",
-      close: true,
-      stopOnFocus: true,
-      backgroundColor: bg,
-    }).showToast();
-  }
-</script>
+      Toastify({
+        text: message,
+        duration: 4000,
+        gravity: "top",
+        position: "right",
+        close: true,
+        stopOnFocus: true,
+        backgroundColor: bg,
+      }).showToast();
+    }
+  </script>
+
+  <!-- General Settings Modal -->
+  <div id="settings-modal"
+    style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(8px); z-index: 100; align-items: center; justify-content: center;">
+    <div
+      style="background: #1e293b; width: 90%; max-width: 500px; border-radius: 16px; border: 1px solid rgba(148, 163, 184, 0.2); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);">
+      <div
+        style="padding: 20px; border-bottom: 1px solid rgba(148, 163, 184, 0.1); display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="color: #f8fafc; font-size: 1.25em; font-weight: 600;">⚙️ Bot Settings</h3>
+        <button onclick="closeSettingsModal()"
+          style="background: none; border: none; color: #94a3b8; font-size: 1.5em; cursor: pointer;">&times;</button>
+      </div>
+      <div style="padding: 24px;">
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-size: 0.9em;">Min Confidence Score
+            (%)</label>
+          <input type="number" id="setting-min-confidence" value="60" min="1" max="99"
+            style="width: 100%; background: #0f172a; border: 1px solid #334155; color: white; padding: 10px; border-radius: 8px;">
+        </div>
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; color: #cbd5e1; margin-bottom: 8px; font-size: 0.9em;">Scan Interval</label>
+          <select id="setting-scan-interval"
+            style="width: 100%; background: #0f172a; border: 1px solid #334155; color: white; padding: 10px; border-radius: 8px;">
+            <option value="15m">Every 15 Minutes</option>
+            <option value="30m">Every 30 Minutes</option>
+            <option value="1h">Every Hour</option>
+            <option value="4h">Every 4 Hours</option>
+          </select>
+        </div>
+        <button onclick="saveSettings()"
+          style="width: 100%; background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer;">Save
+          Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backtest Results Modal -->
+  <div id="backtest-modal"
+    style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(8px); z-index: 100; align-items: center; justify-content: center;">
+    <div
+      style="background: #1e293b; width: 90%; max-width: 600px; border-radius: 16px; border: 1px solid rgba(148, 163, 184, 0.2); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);">
+      <div
+        style="padding: 20px; border-bottom: 1px solid rgba(148, 163, 184, 0.1); display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="color: #f8fafc; font-size: 1.25em; font-weight: 600;">🔙 Backtest Results</h3>
+        <button onclick="closeBacktestModal()"
+          style="background: none; border: none; color: #94a3b8; font-size: 1.5em; cursor: pointer;">&times;</button>
+      </div>
+      <div id="backtest-content" style="padding: 24px; color: #cbd5e1;">
+        <div style="text-align: center; padding: 20px;">
+          <div class="loading-spinner"
+            style="border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #6366f1; border-radius: 50%; width: 30px; height: 30px; margin: 0 auto 15px;">
+          </div>
+          <p>Running simulation on 5 years of data...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Settings Logic ---
+    function openSettingsModal() {
+      document.getElementById('settings-modal').style.display = 'flex';
+      // Load current settings (mock for now, ideally fetch from API)
+      fetch('/api/bot-status')
+        .then(res => res.json())
+        .then(data => {
+          if (data.minConfidence) document.getElementById('setting-min-confidence').value = data.minConfidence;
+          if (data.interval) document.getElementById('setting-scan-interval').value = data.interval;
+        });
+    }
+
+    function closeSettingsModal() {
+      document.getElementById('settings-modal').style.display = 'none';
+    }
+
+    async function saveSettings() {
+      const minConfidence = document.getElementById('setting-min-confidence').value;
+      const interval = document.getElementById('setting-scan-interval').value;
+
+      try {
+        // Update Trading Rules
+        await fetch('/api/trading-rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ minConfidence: parseInt(minConfidence) })
+        });
+
+        // Update Scan Interval
+        await fetch('/api/auto-scan-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ interval })
+        });
+
+        showToast('Settings saved successfully!', 'success');
+        closeSettingsModal();
+      } catch (error) {
+        showToast('Error saving settings: ' + error.message, 'error');
+      }
+    }
+
+    // --- Manual Scan Logic ---
+    async function triggerManualScan() {
+      showToast('Starting manual scan...', 'info');
+      try {
+        const res = await fetch('/api/scan-now', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Scan complete! Found ${data.opportunities?.length || 0} opportunities.`, 'success');
+          setTimeout(() => window.location.reload(), 1500);
+        } else {
+          showToast('Scan failed: ' + data.error, 'error');
+        }
+      } catch (error) {
+        showToast('Error triggering scan', 'error');
+      }
+    }
+
+    // --- Backtest Logic ---
+    function openBacktestModal(coinSymbol, action) {
+      document.getElementById('backtest-modal').style.display = 'flex';
+      const content = document.getElementById('backtest-content');
+      content.innerHTML = `
+      <div style="text-align: center; padding: 20px;">
+        <div class="loading-spinner" style="border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #6366f1; border-radius: 50%; width: 30px; height: 30px; margin: 0 auto 15px;"></div>
+        <p>Simulating <strong>${action}</strong> strategy for <strong>${coinSymbol}</strong>...</p>
+      </div>
+    `;
+
+      // Run Backtest
+      fetch('/api/backtest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          coin: { symbol: coinSymbol },
+          strategy: { action: action }
+        })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            const winRateColor = data.winRate > 60 ? '#22c55e' : data.winRate > 40 ? '#f59e0b' : '#ef4444';
+            content.innerHTML = `
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+            <div style="background: rgba(15, 23, 42, 0.5); padding: 15px; border-radius: 12px; text-align: center;">
+              <div style="font-size: 0.8em; color: #94a3b8; text-transform: uppercase;">Win Rate</div>
+              <div style="font-size: 1.8em; font-weight: 700; color: ${winRateColor};">${data.winRate.toFixed(1)}%</div>
+            </div>
+            <div style="background: rgba(15, 23, 42, 0.5); padding: 15px; border-radius: 12px; text-align: center;">
+              <div style="font-size: 0.8em; color: #94a3b8; text-transform: uppercase;">Profit Factor</div>
+              <div style="font-size: 1.8em; font-weight: 700; color: #f8fafc;">${data.profitFactor.toFixed(2)}</div>
+            </div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.5); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+              <span style="color: #cbd5e1;">Total Trades:</span>
+              <span style="font-weight: 600; color: white;">${data.totalTrades}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+              <span style="color: #cbd5e1;">Max Drawdown:</span>
+              <span style="font-weight: 600; color: #ef4444;">${data.maxDrawdown.toFixed(2)}%</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #cbd5e1;">Avg Return:</span>
+              <span style="font-weight: 600; color: ${data.avgReturn > 0 ? '#22c55e' : '#ef4444'};">${data.avgReturn.toFixed(2)}%</span>
+            </div>
+          </div>
+          <p style="font-size: 0.8em; color: #64748b; text-align: center;">Based on 5 years of historical data (sampled).</p>
+        `;
+          } else {
+            content.innerHTML = `<div style="color: #ef4444; text-align: center; padding: 20px;">Error: ${data.error}</div>`;
+          }
+        })
+        .catch(err => {
+          content.innerHTML = `<div style="color: #ef4444; text-align: center; padding: 20px;">Failed to run backtest</div>`;
+        });
+    }
+
+    function closeBacktestModal() {
+      document.getElementById('backtest-modal').style.display = 'none';
+    }
+  </script>
 
 </body>
+
 </html>

@@ -799,6 +799,40 @@ router.get('/active-triggers', (req, res) => {
     const triggers = monitoringService.getActiveTriggers();
     // Only log when there are active triggers (reduce log noise)
     if (triggers.length > 0) {
+      console.log(`🔔 Active Triggers: ${triggers.length}`);
+    }
+    res.json(triggers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Backtesting endpoint
+router.post('/backtest', async (req, res) => {
+  try {
+    const { coin, strategy } = req.body;
+    const { quickBacktest } = require('../services/backtestService');
+    
+    if (!coin || !strategy) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing required parameters: coin and strategy' 
+      });
+    }
+
+    // Run quick backtest (5 years, sampled)
+    const result = await quickBacktest(coin, strategy);
+    
+    res.json(result);
+  } catch (error) {
+    console.error('Backtest error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+    if (triggers.length > 0) {
       console.log(`🎯 Triggers: ${triggers.length} coins with active signals`);
     }
     res.json({
