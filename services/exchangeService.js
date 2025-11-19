@@ -599,7 +599,8 @@ async function executeOkxRequestWithFallback(options) {
         // Business logic errors (like 51088) should be returned to caller for handling
         const isAuthError = response.status === 401 || errorCode === '50103' || 
                            errorMsg.includes('APIKey') || errorMsg.includes('authentication') ||
-                           errorMsg.includes('Unauthorized') || errorMsg.includes('Forbidden');
+                           errorMsg.includes('Unauthorized') || errorMsg.includes('Forbidden') ||
+                           errorMsg.includes('OK-ACCESS-KEY');
         
         if (isAuthError) {
           // Handle specific error 51000 (parameter error)
@@ -635,7 +636,7 @@ async function executeOkxRequestWithFallback(options) {
         
         // For business logic errors (like 51088), return the response so caller can handle it
         // Don't try proxy fallback for these - they're valid API responses
-        console.log(`⚠️ [OKX API] Business logic error (code: ${errorCode}, sCode: ${sCode}) - returning response to caller`);
+        console.log(`⚠️ [OKX API] Business logic error (code: ${errorCode}, sCode: ${sCode}) - returning response to caller (no proxy fallback)`);
         return response;
       }
       
@@ -677,6 +678,12 @@ async function executeOkxRequestWithFallback(options) {
         const sCode = error.response.data?.data?.[0]?.sCode;
         const sMsg = error.response.data?.data?.[0]?.sMsg;
         
+        // Check if this is an authentication error (should throw) or business logic error (should return)
+        const isAuthError = errorCode === '50103' || 
+                           errorMsg.includes('APIKey') || errorMsg.includes('authentication') ||
+                           errorMsg.includes('Unauthorized') || errorMsg.includes('Forbidden') ||
+                           errorMsg.includes('OK-ACCESS-KEY');
+        
         // Handle specific error 51000 (parameter error)
         if (errorCode === '1' && sCode === '51000') {
           console.log(`\n❌ [OKX API] Parameter error detected (Code: ${sCode})`);
@@ -704,7 +711,14 @@ async function executeOkxRequestWithFallback(options) {
           console.log(`      - The 'x-simulated-trading: 1' header is automatically added\n`);
         }
         
-        throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
+        // Only throw auth errors - return business logic errors (like 51088) as response
+        if (isAuthError) {
+          throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
+        } else {
+          // For business logic errors, return the error response so caller can handle it
+          console.log(`⚠️ [OKX API] Business logic error in catch (code: ${errorCode}, sCode: ${sCode}) - returning response`);
+          return error.response;
+        }
       }
       const isTimeout = error.code === 'ECONNABORTED' || 
                        error.message?.toLowerCase().includes('timeout') ||
