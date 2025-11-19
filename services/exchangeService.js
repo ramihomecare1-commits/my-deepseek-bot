@@ -585,40 +585,58 @@ async function executeOkxRequestWithFallback(options) {
       }
       
       // Check OKX response code (OKX uses 'code' field, '0' means success)
+      // Note: We return the response even if code !== '0' because:
+      // 1. Business logic errors (like 51088) should be handled by the caller
+      // 2. Only network/auth errors should trigger proxy fallback
+      // 3. The caller can check response.data.code and handle accordingly
       if (response.data && response.data.code !== undefined && response.data.code !== '0') {
         const errorMsg = response.data.msg || response.data.message || 'Unknown error';
         const errorCode = response.data.code;
         const sCode = response.data?.data?.[0]?.sCode;
         const sMsg = response.data?.data?.[0]?.sMsg;
         
-        // Handle specific error 51000 (parameter error)
-        if (errorCode === '1' && sCode === '51000') {
-          console.log(`\n❌ [OKX API] Parameter error detected (Code: ${sCode})`);
-          console.log(`   Error: ${sMsg || errorMsg}`);
-          console.log(`   💡 This error means a required parameter is missing or incorrect.`);
-          console.log(`   💡 Common causes:`);
-          console.log(`      1. Missing 'posSide' parameter for derivatives orders`);
-          console.log(`      2. Invalid 'tdMode' or 'posSide' combination`);
-          console.log(`      3. Missing or incorrect 'instId' (symbol format)`);
-          console.log(`   💡 The bot automatically adds 'posSide' parameter - if error persists, check OKX API documentation\n`);
-        } else if (errorCode === '1' && sCode === '51010') {
-          console.log(`\n❌ [OKX API] Account mode error detected (Code: ${sCode})`);
-          console.log(`   Error: ${sMsg || errorMsg}`);
-          console.log(`   💡 This error means your OKX account is not in the correct trading mode for derivatives.`);
-          console.log(`   💡 SOLUTION: Switch your account to "Spot and Futures" mode:`);
-          console.log(`      1. Go to https://www.okx.com and log in to your DEMO account`);
-          console.log(`      2. Navigate to: Trade → Futures → Settings`);
-          console.log(`      3. Find "Trading Mode" option`);
-          console.log(`      4. Select "Spot and Futures mode" (NOT just "Spot mode")`);
-          console.log(`      5. Click "Switch" to confirm`);
-          console.log(`      6. This MUST be done through the website/app interface first (cannot be done via API)`);
-          console.log(`   💡 Additional checks:`);
-          console.log(`      - Ensure your API key has 'Futures Trading' permissions enabled`);
-          console.log(`      - Verify you're using API keys from your DEMO account (not live account)`);
-          console.log(`      - The 'x-simulated-trading: 1' header is automatically added\n`);
+        // Only throw for authentication/authorization errors that won't benefit from proxy retry
+        // Business logic errors (like 51088) should be returned to caller for handling
+        const isAuthError = response.status === 401 || errorCode === '50103' || 
+                           errorMsg.includes('APIKey') || errorMsg.includes('authentication') ||
+                           errorMsg.includes('Unauthorized') || errorMsg.includes('Forbidden');
+        
+        if (isAuthError) {
+          // Handle specific error 51000 (parameter error)
+          if (errorCode === '1' && sCode === '51000') {
+            console.log(`\n❌ [OKX API] Parameter error detected (Code: ${sCode})`);
+            console.log(`   Error: ${sMsg || errorMsg}`);
+            console.log(`   💡 This error means a required parameter is missing or incorrect.`);
+            console.log(`   💡 Common causes:`);
+            console.log(`      1. Missing 'posSide' parameter for derivatives orders`);
+            console.log(`      2. Invalid 'tdMode' or 'posSide' combination`);
+            console.log(`      3. Missing or incorrect 'instId' (symbol format)`);
+            console.log(`   💡 The bot automatically adds 'posSide' parameter - if error persists, check OKX API documentation\n`);
+          } else if (errorCode === '1' && sCode === '51010') {
+            console.log(`\n❌ [OKX API] Account mode error detected (Code: ${sCode})`);
+            console.log(`   Error: ${sMsg || errorMsg}`);
+            console.log(`   💡 This error means your OKX account is not in the correct trading mode for derivatives.`);
+            console.log(`   💡 SOLUTION: Switch your account to "Spot and Futures" mode:`);
+            console.log(`      1. Go to https://www.okx.com and log in to your DEMO account`);
+            console.log(`      2. Navigate to: Trade → Futures → Settings`);
+            console.log(`      3. Find "Trading Mode" option`);
+            console.log(`      4. Select "Spot and Futures mode" (NOT just "Spot mode")`);
+            console.log(`      5. Click "Switch" to confirm`);
+            console.log(`      6. This MUST be done through the website/app interface first (cannot be done via API)`);
+            console.log(`   💡 Additional checks:`);
+            console.log(`      - Ensure your API key has 'Futures Trading' permissions enabled`);
+            console.log(`      - Verify you're using API keys from your DEMO account (not live account)`);
+            console.log(`      - The 'x-simulated-trading: 1' header is automatically added\n`);
+          }
+          
+          // Only throw auth errors - these won't be fixed by proxy retry
+          throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
         }
         
-        throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
+        // For business logic errors (like 51088), return the response so caller can handle it
+        // Don't try proxy fallback for these - they're valid API responses
+        console.log(`⚠️ [OKX API] Business logic error (code: ${errorCode}, sCode: ${sCode}) - returning response to caller`);
+        return response;
       }
       
       // Success! Return response
