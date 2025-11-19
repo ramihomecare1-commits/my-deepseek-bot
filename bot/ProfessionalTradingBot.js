@@ -3978,10 +3978,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
    * @returns {Promise<boolean>} Success status
    */
   async placeTradeAlgoOrders(trade) {
-    // Skip if already placed
-    if (trade.okxAlgoId || trade.okxAlgoClOrdId || trade.tpSlAutoPlaced) {
-      return true; // Already has algo orders
-    }
+    // Note: We allow replacing existing orders (will cancel old ones first)
+    // This is important when AI re-evaluates and finds new TP/SL levels
     
     // Skip if missing required fields
     if (!trade.takeProfit || !trade.stopLoss || !trade.entryPrice) {
@@ -4008,6 +4006,22 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       if (!okxSymbol) {
         console.warn(`⚠️ ${trade.symbol}: Symbol not available on OKX`);
         return false;
+      }
+      
+      // IMPORTANT: Cancel any existing TP/SL algo orders before placing new ones
+      // This prevents contradictions when AI re-evaluates and finds new TP/SL levels
+      if (trade.okxAlgoId || trade.okxAlgoClOrdId) {
+        console.log(`🔄 ${trade.symbol}: Canceling existing TP/SL algo orders before placing new ones...`);
+        try {
+          await this.cancelTradeAlgoOrders(trade);
+          console.log(`✅ ${trade.symbol}: Existing algo orders canceled`);
+          // Clear the algo IDs so we know they're canceled
+          trade.okxAlgoId = null;
+          trade.okxAlgoClOrdId = null;
+        } catch (cancelError) {
+          console.warn(`⚠️ ${trade.symbol}: Failed to cancel existing algo orders: ${cancelError.message}`);
+          // Continue anyway - OKX might have already canceled them or they might not exist
+        }
       }
       
       const side = trade.action === 'BUY' ? 'buy' : 'sell';
