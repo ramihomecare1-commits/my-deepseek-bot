@@ -5048,12 +5048,56 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         console.log(`   ✅ DCA price validation passed for SELL position`);
       }
       
-      // Calculate DCA quantity (50% of initial position size)
-      const dcaQuantity = Math.floor(parseFloat(trade.quantity) * 0.5);
-      console.log(`   📊 ${trade.symbol}: DCA quantity calculation - trade.quantity=${trade.quantity}, dcaQuantity=${dcaQuantity}`);
+      // Get actual position size from OKX (more accurate than trade.quantity)
+      let positionSize = null;
+      try {
+        const positions = await getOkxOpenPositions(
+          exchange.apiKey,
+          exchange.apiSecret,
+          exchange.passphrase,
+          exchange.baseUrl
+        );
+        const position = positions.find(p => {
+          const instId = p.instId || p.symbol || '';
+          return instId === okxSymbol || instId.includes(trade.symbol.split('-')[0]);
+        });
+        if (position) {
+          positionSize = Math.abs(parseFloat(position.quantity || position.pos || 0));
+          console.log(`   📊 ${trade.symbol}: Found position size from OKX: ${positionSize}`);
+        } else {
+          // Fallback to trade quantity
+          positionSize = parseFloat(trade.quantity || 0);
+          console.log(`   ⚠️ ${trade.symbol}: Position not found on OKX, using trade quantity: ${positionSize}`);
+        }
+      } catch (posError) {
+        // Fallback to trade quantity
+        positionSize = parseFloat(trade.quantity || 0);
+        console.log(`   ⚠️ ${trade.symbol}: Failed to get position size, using trade quantity: ${positionSize}`);
+      }
+      
+      if (!positionSize || positionSize <= 0) {
+        console.warn(`⚠️ ${trade.symbol}: Cannot place DCA order - no valid position size found`);
+        console.warn(`   Position size: ${positionSize}, Trade quantity: ${trade.quantity}`);
+        failedCount++;
+        continue;
+      }
+      
+      // Calculate DCA quantity (50% of position size, minimum 1 for derivatives)
+      // For derivatives, we need at least 1 contract
+      let dcaQuantity = Math.floor(positionSize * 0.5);
+      if (dcaQuantity < 1 && positionSize >= 1) {
+        // If position is >= 1 but 50% rounds to 0, use 1 (minimum)
+        dcaQuantity = 1;
+      } else if (dcaQuantity < 0.01 && positionSize >= 0.01) {
+        // For very small positions, use 50% but ensure minimum 0.01
+        dcaQuantity = Math.max(positionSize * 0.5, 0.01);
+      }
+      
+      console.log(`   📊 ${trade.symbol}: DCA quantity calculation - positionSize=${positionSize}, dcaQuantity=${dcaQuantity}`);
+      
       if (dcaQuantity <= 0) {
         console.warn(`⚠️ ${trade.symbol}: DCA quantity is 0, skipping DCA limit order`);
-        console.warn(`   Trade quantity: ${trade.quantity}, Calculated DCA quantity: ${dcaQuantity}`);
+        console.warn(`   Position size: ${positionSize}, Calculated DCA quantity: ${dcaQuantity}`);
         failedCount++;
         continue;
       }
