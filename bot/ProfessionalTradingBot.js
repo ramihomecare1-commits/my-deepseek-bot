@@ -4578,11 +4578,16 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 const state = order.state || order.ordState || '';
                 return state === 'live' || state === 'effective' || state === 'partially_filled';
               })
-              .map(order => ({
-                instId: okxSymbol,
-                algoId: order.algoId,
-                algoClOrdId: order.algoClOrdId
-              }))
+              .map(order => {
+                const cancelOrder = { instId: okxSymbol };
+                // Only include ONE of algoId or algoClOrdId, not both
+                if (order.algoId) {
+                  cancelOrder.algoId = order.algoId;
+                } else if (order.algoClOrdId) {
+                  cancelOrder.algoClOrdId = order.algoClOrdId;
+                }
+                return cancelOrder;
+              })
               .filter(order => order.algoId || order.algoClOrdId);
 
             if (ordersToCancel.length > 0) {
@@ -5394,11 +5399,16 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             if (activeAlgoOrders.length > 0) {
               console.log(`   🗑️ Found ${activeAlgoOrders.length} orphaned algo order(s) for ${okxSymbol}`);
 
-              const ordersToCancel = activeAlgoOrders.map(order => ({
-                instId: okxSymbol,
-                algoId: order.algoId,
-                algoClOrdId: order.algoClOrdId
-              }));
+              const ordersToCancel = activeAlgoOrders.map(order => {
+                const cancelOrder = { instId: okxSymbol };
+                // Only include ONE of algoId or algoClOrdId, not both
+                if (order.algoId) {
+                  cancelOrder.algoId = order.algoId;
+                } else if (order.algoClOrdId) {
+                  cancelOrder.algoClOrdId = order.algoClOrdId;
+                }
+                return cancelOrder;
+              });
 
               const cancelResult = await cancelOkxAlgoOrders(
                 ordersToCancel,
@@ -7525,11 +7535,16 @@ Return JSON array format:
 
                               if (activeOrders.length > 0) {
                                 const ordersToCancel = activeOrders
-                                  .map(order => ({
-                                    instId: okxSymbol,
-                                    algoId: order.algoId,
-                                    algoClOrdId: order.algoClOrdId
-                                  }))
+                                  .map(order => {
+                                    const cancelOrder = { instId: okxSymbol };
+                                    // Only include ONE of algoId or algoClOrdId, not both
+                                    if (order.algoId) {
+                                      cancelOrder.algoId = order.algoId;
+                                    } else if (order.algoClOrdId) {
+                                      cancelOrder.algoClOrdId = order.algoClOrdId;
+                                    }
+                                    return cancelOrder;
+                                  })
                                   .filter(order => order.algoId || order.algoClOrdId);
 
                                 if (ordersToCancel.length > 0) {
