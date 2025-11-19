@@ -5662,51 +5662,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                   console.error(`❌ Failed to save ${trade.symbol} trade after DCA:`, saveError.message);
                 }
                 
-                // Trigger re-evaluation of ALL open trades after DCA execution (with 1-hour cooldown)
-                // Always check persisted value to ensure cooldown persists across restarts
-                const persistedTimestamp = getDcaTriggerTimestamp();
-                const lastDcaReeval = Math.max(this.lastDcaTriggerReevalAt || 0, persistedTimestamp || 0);
-                const elapsedSinceLastDcaReeval = now - lastDcaReeval;
-                const timeSinceStartup = now - this.botStartTime;
-                
-                // Check startup delay, cooldown, AND if re-evaluation is already in progress
-                if (!this.dcaTriggerReevalInProgress && 
-                    timeSinceStartup >= this.dcaTriggerStartupDelayMs &&
-                    elapsedSinceLastDcaReeval >= this.dcaTriggerReevalCooldownMs) {
-                  // Set flag AND timestamp IMMEDIATELY to prevent other DCAs from triggering
-                  this.dcaTriggerReevalInProgress = true;
-                  const triggerTimestamp = Date.now();
-                  this.lastDcaTriggerReevalAt = triggerTimestamp; // Set immediately, not inside async callback
-                  await setDcaTriggerTimestamp(triggerTimestamp); // Persist to portfolio state
-                  console.log(`🔄 [DCA TRIGGER] DCA executed for ${trade.symbol} - triggering re-evaluation of ALL open trades (3-hour cooldown starts now)...`);
-                  addLogEntry(`🔄 DCA executed for ${trade.symbol} - triggering re-evaluation of all open trades (3-hour cooldown)`, 'info');
-                  
-                  // Trigger re-evaluation asynchronously (don't block DCA execution)
-                  setImmediate(async () => {
-                    try {
-                      await this.reevaluateOpenTradesWithAI();
-                    } catch (reevalError) {
-                      console.error(`❌ Error during DCA-triggered re-evaluation:`, reevalError.message);
-                      addLogEntry(`❌ Error during DCA-triggered re-evaluation: ${reevalError.message}`, 'error');
-                    } finally {
-                      // Always clear the flag when done (success or error)
-                      this.dcaTriggerReevalInProgress = false;
-                    }
-                  });
-                } else if (this.dcaTriggerReevalInProgress) {
-                  console.log(`⏱️ Skipping DCA-triggered re-evaluation (already in progress)`);
-                  addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (already in progress)`, 'info');
-                } else if (timeSinceStartup < this.dcaTriggerStartupDelayMs) {
-                  const remainingStartupDelay = Math.ceil((this.dcaTriggerStartupDelayMs - timeSinceStartup) / 60000);
-                  console.log(`⏱️ Skipping DCA-triggered re-evaluation (startup delay ${remainingStartupDelay}min remaining)`);
-                  addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (startup delay ${remainingStartupDelay}min remaining)`, 'info');
-                } else {
-                  const remainingCooldownMs = this.dcaTriggerReevalCooldownMs - elapsedSinceLastDcaReeval;
-                  const remainingHours = Math.floor(remainingCooldownMs / 3600000);
-                  const remainingMinutes = Math.ceil((remainingCooldownMs % 3600000) / 60000);
-                  console.log(`⏱️ Skipping DCA-triggered re-evaluation (unified cooldown: ${remainingHours}h ${remainingMinutes}m remaining)`);
-                  addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (cooldown: ${remainingHours}h ${remainingMinutes}m remaining)`, 'info');
-                }
+                // Use unified trigger function
+                await this.triggerAIReevaluation(`DCA executed for ${trade.symbol}`);
               } else if (dcaResult && !dcaResult.skipped) {
                 // DCA failed after retries - mark as hit but don't increment count
                 // This allows it to retry on next price update
@@ -6241,6 +6198,144 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
   }
 
   // Re-evaluate open trades with AI during scan
+  /**
+   * Unified function to trigger AI re-evaluation with cooldown management
+   * Used by all triggers: DCA execution, TP hit, SL hit, proximity triggers
+   * @param {string} reason - Reason for triggering (for logging)
+   */
+  async triggerAIReevaluation(reason) {
+    const now = Date.now();
+    const { getDcaTriggerTimestamp, setDcaTriggerTimestamp } = require('../services/portfolioService');
+    
+    // Always check persisted value to ensure cooldown persists across restarts
+    const persistedTimestamp = getDcaTriggerTimestamp();
+    const lastDcaReeval = Math.max(this.lastDcaTriggerReevalAt || 0, persistedTimestamp || 0);
+    const elapsedSinceLastDcaReeval = now - lastDcaReeval;
+    const timeSinceStartup = now - this.botStartTime;
+    
+    // Check startup delay, cooldown, AND if re-evaluation is already in progress
+    if (!this.dcaTriggerReevalInProgress && 
+        timeSinceStartup >= this.dcaTriggerStartupDelayMs &&
+        elapsedSinceLastDcaReeval >= this.dcaTriggerReevalCooldownMs) {
+      // Set flag AND timestamp IMMEDIATELY to prevent other triggers from triggering
+      this.dcaTriggerReevalInProgress = true;
+      const triggerTimestamp = Date.now();
+      this.lastDcaTriggerReevalAt = triggerTimestamp; // Set immediately, not inside async callback
+      await setDcaTriggerTimestamp(triggerTimestamp); // Persist to portfolio state
+      console.log(`🔄 [AI TRIGGER] ${reason} - triggering re-evaluation of ALL open trades (3-hour cooldown starts now)...`);
+      addLogEntry(`🔄 ${reason} - triggering re-evaluation of all open trades (3-hour cooldown)`, 'info');
+      
+      // Trigger re-evaluation asynchronously (don't block execution)
+      setImmediate(async () => {
+        try {
+          await this.reevaluateOpenTradesWithAI();
+        } catch (reevalError) {
+          console.error(`❌ Error during AI re-evaluation:`, reevalError.message);
+          addLogEntry(`❌ Error during AI re-evaluation: ${reevalError.message}`, 'error');
+        } finally {
+          // Always clear the flag when done (success or error)
+          this.dcaTriggerReevalInProgress = false;
+        }
+      });
+    } else if (this.dcaTriggerReevalInProgress) {
+      console.log(`⏱️ Skipping AI re-evaluation (${reason}) - already in progress`);
+      addLogEntry(`⏱️ Skipped AI re-evaluation (${reason}) - already in progress`, 'info');
+    } else if (timeSinceStartup < this.dcaTriggerStartupDelayMs) {
+      const remainingStartupDelay = Math.ceil((this.dcaTriggerStartupDelayMs - timeSinceStartup) / 60000);
+      console.log(`⏱️ Skipping AI re-evaluation (${reason}) - startup delay ${remainingStartupDelay}min remaining`);
+      addLogEntry(`⏱️ Skipped AI re-evaluation (${reason}) - startup delay ${remainingStartupDelay}min remaining`, 'info');
+    } else {
+      const remainingCooldownMs = this.dcaTriggerReevalCooldownMs - elapsedSinceLastDcaReeval;
+      const remainingHours = Math.floor(remainingCooldownMs / 3600000);
+      const remainingMinutes = Math.ceil((remainingCooldownMs % 3600000) / 60000);
+      console.log(`⏱️ Skipping AI re-evaluation (${reason}) - cooldown: ${remainingHours}h ${remainingMinutes}m remaining`);
+      addLogEntry(`⏱️ Skipped AI re-evaluation (${reason}) - cooldown: ${remainingHours}h ${remainingMinutes}m remaining`, 'info');
+    }
+  }
+
+  /**
+   * Check if price is near key levels (DCA/TP/SL) and trigger AI if needed
+   * @param {Object} trade - Trade object
+   * @param {number} currentPrice - Current price
+   */
+  async checkProximityTriggers(trade, currentPrice) {
+    if (!trade || !currentPrice || currentPrice <= 0) {
+      return;
+    }
+    
+    const proximityPercent = this.proximityTriggerPercent || 3.0;
+    let triggered = false;
+    let triggerReason = '';
+    
+    if (trade.action === 'BUY') {
+      // Check proximity to TP (above entry)
+      if (trade.takeProfit && currentPrice < trade.takeProfit) {
+        const distanceToTP = ((trade.takeProfit - currentPrice) / trade.takeProfit) * 100;
+        if (distanceToTP <= proximityPercent && distanceToTP > 0) {
+          triggered = true;
+          triggerReason = `Price within ${distanceToTP.toFixed(1)}% of TP for ${trade.symbol} ($${currentPrice.toFixed(2)} near TP $${trade.takeProfit.toFixed(2)})`;
+        }
+      }
+      
+      // Check proximity to SL (below entry)
+      if (!triggered && trade.stopLoss && currentPrice > trade.stopLoss) {
+        const distanceToSL = ((currentPrice - trade.stopLoss) / currentPrice) * 100;
+        if (distanceToSL <= proximityPercent && distanceToSL > 0) {
+          triggered = true;
+          triggerReason = `Price within ${distanceToSL.toFixed(1)}% of SL for ${trade.symbol} ($${currentPrice.toFixed(2)} near SL $${trade.stopLoss.toFixed(2)})`;
+        }
+      }
+      
+      // Check proximity to DCA (below entry)
+      if (!triggered && trade.addPosition && currentPrice > trade.addPosition) {
+        const distanceToDCA = ((currentPrice - trade.addPosition) / currentPrice) * 100;
+        if (distanceToDCA <= proximityPercent && distanceToDCA > 0) {
+          triggered = true;
+          triggerReason = `Price within ${distanceToDCA.toFixed(1)}% of DCA for ${trade.symbol} ($${currentPrice.toFixed(2)} near DCA $${trade.addPosition.toFixed(2)})`;
+        }
+      }
+    } else if (trade.action === 'SELL') {
+      // Check proximity to TP (below entry for SHORT)
+      if (trade.takeProfit && currentPrice > trade.takeProfit) {
+        const distanceToTP = ((currentPrice - trade.takeProfit) / currentPrice) * 100;
+        if (distanceToTP <= proximityPercent && distanceToTP > 0) {
+          triggered = true;
+          triggerReason = `Price within ${distanceToTP.toFixed(1)}% of TP for ${trade.symbol} (SHORT) ($${currentPrice.toFixed(2)} near TP $${trade.takeProfit.toFixed(2)})`;
+        }
+      }
+      
+      // Check proximity to SL (above entry for SHORT)
+      if (!triggered && trade.stopLoss && currentPrice < trade.stopLoss) {
+        const distanceToSL = ((trade.stopLoss - currentPrice) / trade.stopLoss) * 100;
+        if (distanceToSL <= proximityPercent && distanceToSL > 0) {
+          triggered = true;
+          triggerReason = `Price within ${distanceToSL.toFixed(1)}% of SL for ${trade.symbol} (SHORT) ($${currentPrice.toFixed(2)} near SL $${trade.stopLoss.toFixed(2)})`;
+        }
+      }
+      
+      // Check proximity to DCA (above entry for SHORT)
+      if (!triggered && trade.addPosition && currentPrice < trade.addPosition) {
+        const distanceToDCA = ((trade.addPosition - currentPrice) / trade.addPosition) * 100;
+        if (distanceToDCA <= proximityPercent && distanceToDCA > 0) {
+          triggered = true;
+          triggerReason = `Price within ${distanceToDCA.toFixed(1)}% of DCA for ${trade.symbol} (SHORT) ($${currentPrice.toFixed(2)} near DCA $${trade.addPosition.toFixed(2)})`;
+        }
+      }
+    }
+    
+    if (triggered) {
+      // Only trigger if we haven't triggered for this trade recently (avoid spam)
+      const lastProximityTrigger = trade.lastProximityTriggerAt || 0;
+      const proximityCooldownMs = 30 * 60 * 1000; // 30 minutes per trade
+      
+      if (Date.now() - lastProximityTrigger >= proximityCooldownMs) {
+        trade.lastProximityTriggerAt = Date.now();
+        console.log(`📍 [PROXIMITY TRIGGER] ${triggerReason}`);
+        await this.triggerAIReevaluation(triggerReason);
+      }
+    }
+  }
+
   async reevaluateOpenTradesWithAI() {
     const now = Date.now();
     const lastEval = this.lastOpenTradesReevalAt || 0;
