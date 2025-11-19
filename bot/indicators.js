@@ -167,6 +167,62 @@ function getFibonacciPosition(currentPrice, fibLevels) {
   return 'BELOW_100';
 }
 
+/**
+ * Calculate Volume Profile
+ * Analyzes volume patterns to detect volume spikes and low-volume conditions
+ * @param {Array} prices - Array of price values
+ * @param {Array} volumes - Array of volume values (must match prices length)
+ * @param {number} period - Period for average volume calculation (default: 20)
+ * @returns {Object} Volume profile analysis
+ */
+function calculateVolumeProfile(prices, volumes, period = 20) {
+  if (!prices || !volumes || prices.length !== volumes.length || prices.length < period) {
+    return {
+      avgVolume: 0,
+      currentVolume: 0,
+      volumeRatio: 1,
+      isHighVolume: false,
+      isLowVolume: false,
+      isValid: false
+    };
+  }
+
+  // Ensure volumes are numbers
+  const validVolumes = volumes
+    .map(v => typeof v === 'number' ? v : parseFloat(v))
+    .filter(v => !isNaN(v) && isFinite(v) && v >= 0);
+
+  if (validVolumes.length < period) {
+    return {
+      avgVolume: 0,
+      currentVolume: 0,
+      volumeRatio: 1,
+      isHighVolume: false,
+      isLowVolume: false,
+      isValid: false
+    };
+  }
+
+  // Calculate average volume over the period
+  const recentVolumes = validVolumes.slice(-period);
+  const avgVolume = recentVolumes.reduce((a, b) => a + b, 0) / period;
+
+  // Current volume (most recent)
+  const currentVolume = validVolumes[validVolumes.length - 1];
+
+  // Volume ratio (current vs average)
+  const volumeRatio = avgVolume > 0 ? currentVolume / avgVolume : 1;
+
+  return {
+    avgVolume,
+    currentVolume,
+    volumeRatio,
+    isHighVolume: volumeRatio > 1.5, // 50% above average
+    isLowVolume: volumeRatio < 0.5,   // 50% below average
+    isValid: true
+  };
+}
+
 module.exports = {
   calculateRSI,
   calculateBollingerBands,
@@ -177,5 +233,6 @@ module.exports = {
   calculateFibonacciRetracement,
   calculateFibonacciFromPrices,
   getFibonacciPosition,
-  placeholderBollinger
+  placeholderBollinger,
+  calculateVolumeProfile
 };

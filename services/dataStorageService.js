@@ -563,6 +563,75 @@ async function getStorageStats() {
   }
 }
 
+/**
+ * Get historical win rate for a coin
+ * @param {string} symbol - Coin symbol
+ * @param {Array} closedTrades - Array of closed trades (from portfolioService)
+ * @returns {number} Win rate (0-1) or null if insufficient data
+ */
+function getHistoricalWinRate(symbol, closedTrades = []) {
+  if (!closedTrades || closedTrades.length === 0) {
+    return null;
+  }
+
+  // Filter trades for this symbol
+  const symbolTrades = closedTrades.filter(t => 
+    t.symbol === symbol && 
+    t.status === 'CLOSED' &&
+    typeof t.profitLoss !== 'undefined'
+  );
+
+  if (symbolTrades.length < 5) {
+    // Need at least 5 trades for reliable win rate
+    return null;
+  }
+
+  const winningTrades = symbolTrades.filter(t => (t.profitLoss || 0) > 0);
+  const winRate = winningTrades.length / symbolTrades.length;
+
+  return winRate;
+}
+
+/**
+ * Calculate average win and loss for a coin
+ * @param {string} symbol - Coin symbol
+ * @param {Array} closedTrades - Array of closed trades
+ * @returns {Object} { avgWin, avgLoss, winRate } or null if insufficient data
+ */
+function getCoinPerformanceMetrics(symbol, closedTrades = []) {
+  if (!closedTrades || closedTrades.length === 0) {
+    return null;
+  }
+
+  const symbolTrades = closedTrades.filter(t => 
+    t.symbol === symbol && 
+    t.status === 'CLOSED' &&
+    typeof t.profitLoss !== 'undefined'
+  );
+
+  if (symbolTrades.length < 5) {
+    return null;
+  }
+
+  const wins = symbolTrades.filter(t => (t.profitLoss || 0) > 0);
+  const losses = symbolTrades.filter(t => (t.profitLoss || 0) <= 0);
+
+  const avgWin = wins.length > 0 
+    ? wins.reduce((sum, t) => sum + (t.profitLoss || 0), 0) / wins.length 
+    : 0;
+  const avgLoss = losses.length > 0 
+    ? Math.abs(losses.reduce((sum, t) => sum + (t.profitLoss || 0), 0) / losses.length)
+    : 0;
+  const winRate = wins.length / symbolTrades.length;
+
+  return {
+    avgWin,
+    avgLoss,
+    winRate,
+    totalTrades: symbolTrades.length
+  };
+}
+
 module.exports = {
   storeAIEvaluation,
   storeNews,
@@ -570,5 +639,7 @@ module.exports = {
   retrieveRelatedData,
   linkNewsToTrade,
   getStorageStats,
-  initDynamoDB
+  initDynamoDB,
+  getHistoricalWinRate,
+  getCoinPerformanceMetrics
 };

@@ -7,7 +7,8 @@ const {
   identifyTrend, 
   calculateMomentum,
   getBollingerPosition,
-  identifySupportResistance
+  identifySupportResistance,
+  calculateVolumeProfile
 } = require('./indicators');
 const { 
   fetchEnhancedPriceData, 
@@ -23,7 +24,7 @@ const {
 const { getAITechnicalAnalysis, getBatchAIAnalysis } = require('../services/aiService');
 const { fetchCryptoNews } = require('../services/newsService');
 const { detectTradingPatterns } = require('./patternDetection');
-const { storeAIEvaluation, retrieveRelatedData } = require('../services/dataStorageService');
+const { storeAIEvaluation, retrieveRelatedData, getHistoricalWinRate } = require('../services/dataStorageService');
 const monitoringService = require('../services/monitoringService');
 const tradeMonitoringService = require('../services/tradeMonitoringService');
 const {
@@ -2104,6 +2105,8 @@ Reason: ${newReason?.substring(0, 200)}`);
                 currentPrice: priceValue,
                 frames: analysis.frames,
                 dataSource: analysis.dataSource || 'CoinGecko',
+                volume24h: analysis.volume24h || 0, // Store volume for volume profile calculation
+                historicalData: null // Will be populated from analysis if needed
               });
               
               // Start news fetching when we have enough coins (start early, fetch in parallel)
@@ -2351,6 +2354,84 @@ Reason: ${newReason?.substring(0, 200)}`);
               analysis.stopLoss = riskLevels.stopLoss;
               analysis.addPosition = riskLevels.addPosition;
               analysis.expectedGainPercent = riskLevels.expectedGainPercent;
+            }
+          }
+
+          // Apply volume confirmation filter and performance-based confidence boost
+          let confidenceAdjustment = 0;
+          const originalConfidence = analysis.confidence || 0;
+          
+          // 1. Volume Confirmation Filter
+          try {
+            // Get volume data from coin data or analysis
+            const coinData = allCoinsData.find(c => c.symbol === coin.symbol);
+            const volume24h = coinData?.volume24h || analysis.volume24h || 0;
+            
+            // Try to get historical volume data from the analysis object
+            if (analysis.historicalVolumeData && analysis.historicalVolumeData.dailyData) {
+              const dailyData = analysis.historicalVolumeData.dailyData || [];
+              if (dailyData.length >= 20) {
+                const prices = dailyData.map(d => d.close || d.price || 0).filter(p => p > 0);
+                const volumes = dailyData.map(d => d.volume || 0).filter(v => v >= 0);
+                
+                if (prices.length === volumes.length && prices.length >= 20) {
+                  const volumeProfile = calculateVolumeProfile(prices, volumes, 20);
+                  
+                  if (volumeProfile.isValid) {
+                    // Reject low volume signals (volumeRatio < 0.8)
+                    if (volumeProfile.volumeRatio < 0.8) {
+                      confidenceAdjustment -= 0.1; // -10% penalty for low volume
+                      analysis.insights = analysis.insights || [];
+                      analysis.insights.push(`Low volume detected (${(volumeProfile.volumeRatio * 100).toFixed(0)}% of average) - confidence reduced`);
+                    } 
+                    // Boost high volume signals (volumeRatio > 2.0)
+                    else if (volumeProfile.volumeRatio > 2.0) {
+                      confidenceAdjustment += 0.1; // +10% boost for strong volume
+                      analysis.insights = analysis.insights || [];
+                      analysis.insights.push(`High volume spike detected (${(volumeProfile.volumeRatio * 100).toFixed(0)}% of average) - confidence boosted`);
+                    }
+                  }
+                }
+              }
+            } else if (volume24h > 0) {
+              // Fallback: Use 24h volume as a simple check if historical data not available
+              // This is less accurate but better than nothing
+              // Note: Without historical data, we can't calculate true volume profile
+              // So we skip volume confirmation in this case to avoid false positives
+            }
+          } catch (volumeError) {
+            // Volume analysis failed, continue without adjustment
+            console.log(`⚠️ Volume analysis failed for ${coin.symbol}: ${volumeError.message}`);
+          }
+          
+          // 2. Performance-Based Confidence Boost
+          try {
+            const historicalWinRate = getHistoricalWinRate(coin.symbol, this.closedTrades || []);
+            
+            if (historicalWinRate !== null) {
+              // Boost confidence for proven winners (win rate > 65%)
+              if (historicalWinRate > 0.65) {
+                confidenceAdjustment += 0.05; // +5% boost for proven winners
+                analysis.insights = analysis.insights || [];
+                analysis.insights.push(`Strong historical performance (${(historicalWinRate * 100).toFixed(0)}% win rate) - confidence boosted`);
+              } 
+              // Penalize poor performers (win rate < 45%)
+              else if (historicalWinRate < 0.45) {
+                confidenceAdjustment -= 0.05; // -5% penalty for poor performers
+                analysis.insights = analysis.insights || [];
+                analysis.insights.push(`Weak historical performance (${(historicalWinRate * 100).toFixed(0)}% win rate) - confidence reduced`);
+              }
+            }
+          } catch (perfError) {
+            // Performance analysis failed, continue without adjustment
+            console.log(`⚠️ Performance analysis failed for ${coin.symbol}: ${perfError.message}`);
+          }
+          
+          // Apply confidence adjustments
+          if (confidenceAdjustment !== 0) {
+            analysis.confidence = Math.max(0, Math.min(1, originalConfidence + confidenceAdjustment));
+            if (Math.abs(confidenceAdjustment) > 0.01) {
+              console.log(`📊 ${coin.symbol}: Confidence adjusted from ${(originalConfidence * 100).toFixed(0)}% to ${(analysis.confidence * 100).toFixed(0)}% (${confidenceAdjustment > 0 ? '+' : ''}${(confidenceAdjustment * 100).toFixed(0)}%)`);
             }
           }
 
@@ -2834,6 +2915,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       // Fetch historical data in parallel with price already available (pass price to avoid duplicate fetch)
       const historicalData = await fetchHistoricalData(coin.id, coin, this.stats, config, currentPrice);
       const { dailyData, hourlyData, minuteData, usedMock: historicalMock } = historicalData;
+      
+      // Store historical volume data for volume profile calculation
+      const historicalVolumeData = {
+        dailyData: dailyData || [],
+        hourlyData: hourlyData || [],
+        minuteData: minuteData || []
+      };
 
       // Detect trading patterns (if enabled)
       let patterns = [];
@@ -2932,6 +3020,20 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         }
       }
       
+      // Prepare price data for ATR calculation (daily data with high/low/close)
+      const priceDataForATR = [];
+      if (dailyData && dailyData.length > 0) {
+        dailyData.slice(-30).forEach(d => {
+          // ATR needs high, low, close
+          const high = d.high || d.price || d.close || 0;
+          const low = d.low || d.price || d.close || 0;
+          const close = d.close || d.price || 0;
+          if (high > 0 && low > 0 && close > 0) {
+            priceDataForATR.push({ high, low, close, price: close });
+          }
+        });
+      }
+      
       // Build analysis result with patterns
       const analysis = {
         symbol: coin.symbol,
@@ -2956,6 +3058,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           hourly: framesWithIndicators['1h'] || {},
           momentum: framesWithIndicators['1h']?.momentum || 'NEUTRAL'
         },
+        priceData: priceDataForATR, // Price data for ATR calculation
+        historicalVolumeData: historicalVolumeData, // Historical volume data for volume profile
         heatmapEntry: null
       };
 
@@ -6211,15 +6315,43 @@ Return JSON array format:
     const support = Number(indicators.daily?.support) || currentPrice * 0.95;
     const resistance = Number(indicators.daily?.resistance) || currentPrice * 1.05;
     
-    // Calculate volatility-based stops (ATR-like)
-    const volatility = currentPrice * 0.05; // 5% default volatility
+    // Calculate ATR-based stop loss (volatility-adjusted)
+    const { calculateATR } = require('../services/positionSizingService');
+    let atr = 0;
+    let useATR = false;
+    
+    // Try to get price data for ATR calculation
+    if (analysis.priceData && Array.isArray(analysis.priceData) && analysis.priceData.length >= 15) {
+      try {
+        atr = calculateATR(analysis.priceData, 14);
+        useATR = atr > 0;
+      } catch (error) {
+        console.log(`⚠️ ATR calculation failed, using default: ${error.message}`);
+      }
+    }
+    
+    // Fallback to default if ATR not available
+    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 5.0;
+    const volatility = useATR ? atr : (currentPrice * defaultSLPercent / 100);
     
     let entryPrice, takeProfit, stopLoss, addPosition, expectedGainPercent;
     
     if (action === 'BUY') {
       // BUY signal - Improved risk/reward ratio (target 3:1 or better)
       entryPrice = currentPrice;
-      stopLoss = Math.max(support * 0.98, currentPrice * 0.97); // 2-3% below (tighter stop)
+      
+      // Use ATR-based stop loss: Entry - (2 * ATR)
+      // Fallback to support-based or percentage-based if ATR not available
+      if (useATR) {
+        stopLoss = Math.max(
+          entryPrice - (2 * atr), // ATR-based: 2x ATR below entry
+          support * 0.98, // Don't go below support
+          entryPrice * 0.95 // Minimum 5% stop
+        );
+      } else {
+        stopLoss = Math.max(support * 0.98, entryPrice * (1 - defaultSLPercent / 100));
+      }
+      
       // Target 3:1 risk/reward: if stop is 3%, take profit should be 9%+
       const riskPercent = ((entryPrice - stopLoss) / entryPrice) * 100;
       const targetReward = riskPercent * 3; // 3:1 risk/reward
@@ -6230,7 +6362,19 @@ Return JSON array format:
     } else if (action === 'SELL') {
       // SELL signal - Improved risk/reward ratio (target 3:1 or better)
       entryPrice = currentPrice;
-      stopLoss = Math.min(resistance * 1.02, currentPrice * 1.03); // 2-3% above (tighter stop)
+      
+      // Use ATR-based stop loss: Entry + (2 * ATR)
+      // Fallback to resistance-based or percentage-based if ATR not available
+      if (useATR) {
+        stopLoss = Math.min(
+          entryPrice + (2 * atr), // ATR-based: 2x ATR above entry
+          resistance * 1.02, // Don't go above resistance
+          entryPrice * 1.05 // Minimum 5% stop
+        );
+      } else {
+        stopLoss = Math.min(resistance * 1.02, entryPrice * (1 + defaultSLPercent / 100));
+      }
+      
       // Target 3:1 risk/reward: if stop is 3%, take profit should be 9%+
       const riskPercent = ((stopLoss - entryPrice) / entryPrice) * 100;
       const targetReward = riskPercent * 3; // 3:1 risk/reward
