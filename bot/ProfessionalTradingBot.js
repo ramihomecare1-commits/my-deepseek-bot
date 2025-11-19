@@ -3735,6 +3735,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     newTrade.okxAlgoId = tpResult.algoId || slResult.algoId; // Store primary algo ID
                     newTrade.okxAlgoClOrdId = tpResult.algoClOrdId || slResult.algoClOrdId;
                     newTrade.tpSlAutoPlaced = tpPlaced && slPlaced; // Only fully auto if both placed
+
+                    // Set timestamp to enable cooldown protection
+                    newTrade.lastAlgoOrderPlacement = Date.now();
+
                     if (tpPlaced && slPlaced) {
                       addLogEntry(`TP/SL algo orders placed separately on OKX for ${newTrade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
                     } else {
@@ -3751,6 +3755,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 newTrade.okxAlgoId = algoResult.algoId;
                 newTrade.okxAlgoClOrdId = algoResult.algoClOrdId;
                 newTrade.tpSlAutoPlaced = true;
+
+                // Set timestamp to enable cooldown protection
+                newTrade.lastAlgoOrderPlacement = Date.now();
+
                 addLogEntry(`TP/SL algo orders placed on OKX for ${newTrade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
               }
 
