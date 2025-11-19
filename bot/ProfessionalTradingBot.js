@@ -4107,6 +4107,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     
     try {
       const exchange = getPreferredExchange();
+      
+      // FIX: Check if exchange is null before using it
+      if (!exchange) {
+        console.warn(`⚠️ Cannot sync with OKX - exchange not configured`);
+        return;
+      }
+      
       const okxPositions = await getOkxOpenPositions(
         exchange.apiKey,
         exchange.apiSecret,
@@ -4133,9 +4140,17 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         
         if (!existingTrade) {
           // NEW position found on OKX that we don't have in memory
+          const entryPrice = okxPos.avgPrice || 0;
+          
+          // FIX: Validate entryPrice before creating trade
+          if (!entryPrice || entryPrice <= 0) {
+            console.warn(`⚠️ ${okxPos.coin}: Invalid entry price (${entryPrice}), skipping trade creation`);
+            addLogEntry(`⚠️ ${okxPos.coin}: Invalid entry price, skipping trade creation`, 'warning');
+            continue; // Skip this position
+          }
+          
           console.log(`🆕 Found new position on OKX: ${okxPos.coin} ${okxPos.side} - Adding to active trades...`);
           
-          const entryPrice = okxPos.avgPrice || 0;
           const action = okxPos.side === 'short' ? 'SELL' : 'BUY';
           
           let takeProfit, stopLoss, addPosition;
@@ -7039,6 +7054,7 @@ Return JSON array format:
               }
             }
             // Handle both newDcaPrice (new field) and newAddPosition (legacy field) for backward compatibility
+            // FIX: Declare newDcaValue outside if block to avoid scope issues
             const newDcaValue = rec.newDcaPrice || rec.newAddPosition;
             if (newDcaValue && typeof newDcaValue === 'number' && newDcaValue > 0) {
               const oldDca = trade.addPosition || trade.dcaPrice || trade.entryPrice;
@@ -7149,7 +7165,8 @@ Return JSON array format:
                 }
                 
                 // If DCA was adjusted, cancel old DCA order and place new one
-                if (newDcaValue) {
+                // FIX: Check if newDcaValue exists and is valid before using
+                if (newDcaValue && typeof newDcaValue === 'number' && newDcaValue > 0) {
                   // Cancel existing DCA order if it exists
                   if (trade.okxDcaOrderId) {
                     try {
