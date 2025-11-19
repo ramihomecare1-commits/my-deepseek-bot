@@ -272,17 +272,28 @@ class TradeMonitoringService {
 - Position Size: ${trade.amount} ${trade.symbol}
 - P/L: ${pnlPercent > 0 ? '+' : ''}${pnlPercent.toFixed(2)}%
 
-**CURRENT LEVELS:**
-- Stop Loss: ${trade.stopLoss}% (Price: $${(trade.entryPrice * (1 - trade.stopLoss / 100)).toFixed(6)})
-- Take Profit: ${trade.takeProfit}% (Price: $${(trade.entryPrice * (1 + trade.takeProfit / 100)).toFixed(6)})
-${trade.dcaPrice ? `- DCA Price: $${trade.dcaPrice.toFixed(6)}` : ''}
+**CURRENT TRADE LEVELS:**
+- Entry Price: $${trade.entryPrice.toFixed(2)}
+- Current Price: $${currentPrice.toFixed(2)}
+- Take Profit: $${trade.takeProfit ? trade.takeProfit.toFixed(2) : 'Not set'}
+- Stop Loss: $${trade.stopLoss ? trade.stopLoss.toFixed(2) : 'Not set'}
+- DCA Price: $${trade.dcaPrice ? trade.dcaPrice.toFixed(2) : 'Not set'}
+- Position Size: ${trade.quantity || 'Unknown'}
+- Unrealized P/L: ${pnlPercent.toFixed(2)}%
 
-**PROXIMITY ALERT:**
-Price is within ${triggeredLevel.distance.toFixed(2)}% of ${triggeredLevel.type} level!
-- Target: $${triggeredLevel.targetPrice.toFixed(6)}
-- Current: $${triggeredLevel.currentPrice.toFixed(6)}
+**IMPORTANT**: You can see ALL 3 levels (TP, SL, DCA). When updating DCA, ensure it stays between SL and entry price:
+- For BUY: stopLoss < dcaPrice < entryPrice < takeProfit
+- For SELL: takeProfit < entryPrice < dcaPrice < stopLoss
 
-**MARKET CONTEXT:**
+If you want to move DCA but it would violate this rule, you should ALSO adjust SL to maintain proper spacing.
+
+**TRIGGERED LEVEL:**
+- Type: ${triggeredLevel.type}
+- Distance: ${triggeredLevel.distance.toFixed(2)}%
+- Target Price: $${triggeredLevel.targetPrice.toFixed(6)}
+- Current Distance: ${Math.abs(currentPrice - triggeredLevel.targetPrice).toFixed(2)}
+
+**TECHNICAL INDICATORS:**
 - Price Source: ${priceData.source || 'MEXC'}
 - Current Time: ${new Date().toISOString()}
 
@@ -560,7 +571,7 @@ Respond ONLY with valid JSON.`;
 
     const activeTrade = this.bot.activeTrades[tradeIndex];
 
-    // If dcaPrice is provided, update the DCA level and let existing logic handle execution
+    // If dcaPrice is provided, update the DCA level and replace DCA order on OKX
     if (recommendations.dcaPrice && recommendations.dcaPrice > 0) {
       const { validateDcaPrice } = require('../utils/riskManagement');
 
@@ -571,20 +582,76 @@ Respond ONLY with valid JSON.`;
         stopLoss: activeTrade.stopLoss
       }, recommendations.dcaPrice);
 
-      activeTrade.addPosition = validation.adjustedPrice;
-      activeTrade.dcaPrice = validation.adjustedPrice;
+      const newDcaPrice = validation.adjustedPrice;
 
       if (!validation.valid) {
         console.warn(`⚠️ ${trade.symbol}: AI provided invalid DCA price. ${validation.warning}`);
-        console.log(`💰 DCA level set to validated price: $${validation.adjustedPrice.toFixed(2)}`);
+        console.log(`💰 Adjusted DCA to validated price: $${newDcaPrice.toFixed(2)}`);
       } else {
-        console.log(`💰 Setting DCA level for ${trade.symbol}: $${recommendations.dcaPrice.toFixed(2)}`);
+        console.log(`💰 Updating DCA level for ${trade.symbol}: $${recommendations.dcaPrice.toFixed(2)}`);
       }
 
-      // Save trades
-      // Removed: DynamoDB persistence - OKX is the only source of truth
+      // Cancel old DCA limit order and place new one (like SL/TP updates)
+      try {
+        const { isExchangeTradingEnabled, getPreferredExchange, getOkxPendingOrders, cancelOkxOrders, executeOkxLimitOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+        const exchangeConfig = isExchangeTradingEnabled();
 
-      console.log(`✅ DCA level set to $${validation.adjustedPrice.toFixed(2)}. Will execute automatically when price hits this level.`);
+        if (exchangeConfig.enabled && this.bot.cancelTradeAlgoOrders) {
+          const exchange = getPreferredExchange();
+          const okxSymbol = OKX_SYMBOL_MAP[activeTrade.symbol];
+
+          if (exchange && okxSymbol && activeTrade.okxDcaOrderId) {
+            // Cancel old DCA limit order
+            console.log(`🔄 Cancelling old DCA limit order...`);
+            const cancelResult = await cancelOkxOrders(
+              [{ instId: okxSymbol, ordId: activeTrade.okxDcaOrderId }],
+              exchange.apiKey,
+              exchange.apiSecret,
+              exchange.passphrase,
+              exchange.baseUrl
+            );
+
+            if (cancelResult.success) {
+              console.log(`   ✅ Old DCA limit order cancelled`);
+              activeTrade.okxDcaOrderId = null;
+            }
+          }
+
+          // Place new DCA limit order at new price
+          if (exchange && okxSymbol) {
+            console.log(`📝 Placing new DCA limit order at $${newDcaPrice.toFixed(2)}...`);
+            const dcaSide = activeTrade.action === 'BUY' ? 'buy' : 'sell';
+            const dcaQuantity = activeTrade.quantity * 0.5; // Add 50% more to position
+
+            const dcaResult = await executeOkxLimitOrder(
+              okxSymbol,
+              dcaSide,
+              dcaQuantity,
+              newDcaPrice,
+              exchange.apiKey,
+              exchange.apiSecret,
+              exchange.passphrase,
+              exchange.baseUrl
+            );
+
+            if (dcaResult.success) {
+              activeTrade.okxDcaOrderId = dcaResult.orderId;
+              console.log(`   ✅ New DCA limit order placed (Order ID: ${dcaResult.orderId})`);
+            } else {
+              console.warn(`   ⚠️ Failed to place new DCA order: ${dcaResult.error || 'Unknown error'}`);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`⚠️ Error updating DCA order on OKX: ${error.message}`);
+        // Continue anyway - update happens in memory
+      }
+
+      // Update trade values in memory
+      activeTrade.addPosition = newDcaPrice;
+      activeTrade.dcaPrice = newDcaPrice;
+
+      console.log(`✅ DCA level updated to $${newDcaPrice.toFixed(2)}`);
       return true;
     }
 
