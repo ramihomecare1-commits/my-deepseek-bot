@@ -4243,9 +4243,12 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       
       if (!positionSize || positionSize <= 0) {
         console.log(`   ❌ Cannot place algo orders - no valid position size found`);
+        console.log(`   📊 Position size check: positionSize=${positionSize}, trade.quantity=${trade.quantity}`);
         trade.tpSlAutoPlaced = false;
         return false;
       }
+      
+      console.log(`   📊 Position size: ${positionSize}, TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)}`);
       
       // Try placing both TP and SL in a single conditional order first
       // If that fails, we'll try separate orders
@@ -4324,54 +4327,78 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           return false;
         }
         
-        // Place TP order with actual position size
-        const tpOrderParams = {
-          instId: okxSymbol,
-          tdMode: 'cross',
-          side: tpOrderSide,
-          posSide: posSide,
-          ordType: 'conditional',
-          sz: positionSize.toString(), // Use actual position size instead of closeFraction
-          tpTriggerPx: tpTriggerPrice.toFixed(8),
-          tpOrdPx: '-1',
-          tpTriggerPxType: 'last',
-          reduceOnly: true,
-          cxlOnClosePos: true
-        };
+        // Check if we already have TP or SL orders - only place missing ones
+        const needsTp = !trade.okxTpAlgoId && !trade.okxTpAlgoClOrdId;
+        const needsSl = !trade.okxSlAlgoId && !trade.okxSlAlgoClOrdId;
         
-        const tpResult = await placeOkxAlgoOrder(
-          tpOrderParams,
-          exchange.apiKey,
-          exchange.apiSecret,
-          exchange.passphrase,
-          exchange.baseUrl
-        );
+        if (!needsTp && !needsSl) {
+          console.log(`   ✅ ${trade.symbol}: Already has both TP and SL orders, skipping placement`);
+          return true;
+        }
+        
+        let tpResult = { success: false };
+        let slResult = { success: false };
+        
+        // Place TP order only if we need it
+        if (needsTp) {
+          console.log(`   📊 Placing TP order for ${trade.symbol} at $${tpTriggerPrice.toFixed(2)}...`);
+          const tpOrderParams = {
+            instId: okxSymbol,
+            tdMode: 'cross',
+            side: tpOrderSide,
+            posSide: posSide,
+            ordType: 'conditional',
+            sz: positionSize.toString(), // Use actual position size instead of closeFraction
+            tpTriggerPx: tpTriggerPrice.toFixed(8),
+            tpOrdPx: '-1',
+            tpTriggerPxType: 'last',
+            reduceOnly: true,
+            cxlOnClosePos: true
+          };
+          
+          tpResult = await placeOkxAlgoOrder(
+            tpOrderParams,
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+          );
+        } else {
+          console.log(`   ⏭️ ${trade.symbol}: TP order already exists, skipping`);
+          tpResult = { success: true }; // Mark as success since we already have it
+        }
         
         // Small delay between orders
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        // Place SL order with actual position size
-        const slOrderParams = {
-          instId: okxSymbol,
-          tdMode: 'cross',
-          side: tpOrderSide, // Same side to close position
-          posSide: posSide,
-          ordType: 'conditional',
-          sz: positionSize.toString(), // Use actual position size instead of closeFraction
-          slTriggerPx: slTriggerPrice.toFixed(8),
-          slOrdPx: '-1',
-          slTriggerPxType: 'last',
-          reduceOnly: true,
-          cxlOnClosePos: true
-        };
-        
-        const slResult = await placeOkxAlgoOrder(
-          slOrderParams,
-          exchange.apiKey,
-          exchange.apiSecret,
-          exchange.passphrase,
-          exchange.baseUrl
-        );
+        // Place SL order only if we need it
+        if (needsSl) {
+          console.log(`   📊 Placing SL order for ${trade.symbol} at $${slTriggerPrice.toFixed(2)}...`);
+          const slOrderParams = {
+            instId: okxSymbol,
+            tdMode: 'cross',
+            side: tpOrderSide, // Same side to close position
+            posSide: posSide,
+            ordType: 'conditional',
+            sz: positionSize.toString(), // Use actual position size instead of closeFraction
+            slTriggerPx: slTriggerPrice.toFixed(8),
+            slOrdPx: '-1',
+            slTriggerPxType: 'last',
+            reduceOnly: true,
+            cxlOnClosePos: true
+          };
+          
+          slResult = await placeOkxAlgoOrder(
+            slOrderParams,
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+          );
+        } else {
+          console.log(`   ⏭️ ${trade.symbol}: SL order already exists, skipping`);
+          slResult = { success: true }; // Mark as success since we already have it
+        }
         
         // Handle partial success - place orders individually and track each
         let tpPlaced = false;
@@ -4605,10 +4632,16 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       }
       
       // Check if we already have algo order IDs in the trade object
-      const hasAlgoIds = trade.okxAlgoId || trade.okxAlgoClOrdId || trade.okxTpAlgoId || trade.okxSlAlgoId;
+      const hasAlgoIds = trade.okxAlgoId || trade.okxAlgoClOrdId;
+      const hasTpOrder = trade.okxTpAlgoId || trade.okxTpAlgoClOrdId;
+      const hasSlOrder = trade.okxSlAlgoId || trade.okxSlAlgoClOrdId;
       
       // Also check OKX to see if algo orders actually exist (even if not in trade object)
-      let hasAlgoOrdersOnOkx = false;
+      // IMPORTANT: Check for TP and SL separately - OKX might have one but not both
+      let hasTpOrderOnOkx = false;
+      let hasSlOrderOnOkx = false;
+      let foundOrders = [];
+      
       try {
         const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
         if (okxSymbol) {
@@ -4629,16 +4662,39 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             });
             
             if (activeOrders.length > 0) {
-              hasAlgoOrdersOnOkx = true;
+              foundOrders = activeOrders;
               console.log(`✅ ${trade.symbol}: Found ${activeOrders.length} existing algo order(s) on OKX`);
               
-              // Update trade object with algo IDs if we found them
-              if (!hasAlgoIds) {
-                const firstOrder = activeOrders[0];
-                trade.okxAlgoId = firstOrder.algoId;
-                trade.okxAlgoClOrdId = firstOrder.algoClOrdId;
-                trade.tpSlAutoPlaced = true;
-                console.log(`   📝 Updated trade object with algo ID: ${firstOrder.algoId || firstOrder.algoClOrdId}`);
+              // Check if we have TP and SL orders
+              // TP orders have tpTriggerPx, SL orders have slTriggerPx
+              for (const order of activeOrders) {
+                if (order.tpTriggerPx || order.tpOrdPx) {
+                  hasTpOrderOnOkx = true;
+                  if (!hasTpOrder) {
+                    trade.okxTpAlgoId = order.algoId;
+                    trade.okxTpAlgoClOrdId = order.algoClOrdId;
+                    console.log(`   📝 Found TP order on OKX, updated trade object (Algo ID: ${order.algoId || order.algoClOrdId})`);
+                  }
+                }
+                if (order.slTriggerPx || order.slOrdPx) {
+                  hasSlOrderOnOkx = true;
+                  if (!hasSlOrder) {
+                    trade.okxSlAlgoId = order.algoId;
+                    trade.okxSlAlgoClOrdId = order.algoClOrdId;
+                    console.log(`   📝 Found SL order on OKX, updated trade object (Algo ID: ${order.algoId || order.algoClOrdId})`);
+                  }
+                }
+                // If order has both TP and SL, it's a combined order
+                if ((order.tpTriggerPx || order.tpOrdPx) && (order.slTriggerPx || order.slOrdPx)) {
+                  hasTpOrderOnOkx = true;
+                  hasSlOrderOnOkx = true;
+                  if (!hasAlgoIds) {
+                    trade.okxAlgoId = order.algoId;
+                    trade.okxAlgoClOrdId = order.algoClOrdId;
+                    trade.tpSlAutoPlaced = true;
+                    console.log(`   📝 Found combined TP/SL order on OKX, updated trade object (Algo ID: ${order.algoId || order.algoClOrdId})`);
+                  }
+                }
               }
             }
           }
@@ -4648,10 +4704,18 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         // Continue anyway - we'll try to place orders
       }
       
-      // If we have algo orders (either in trade object or on OKX), skip
-      if (hasAlgoIds || hasAlgoOrdersOnOkx) {
+      // Only skip if we have BOTH TP and SL orders
+      // If we only have one, we should place the missing one
+      const hasBothOrders = (hasTpOrder || hasTpOrderOnOkx) && (hasSlOrder || hasSlOrderOnOkx);
+      const hasAnyOrder = hasAlgoIds || hasTpOrder || hasSlOrder || hasTpOrderOnOkx || hasSlOrderOnOkx;
+      
+      if (hasBothOrders) {
         skippedCount++;
+        console.log(`⏭️ ${trade.symbol}: Skipping - already has both TP and SL orders`);
         continue;
+      } else if (hasAnyOrder) {
+        console.log(`⚠️ ${trade.symbol}: Has partial orders (TP: ${hasTpOrder || hasTpOrderOnOkx ? '✅' : '❌'}, SL: ${hasSlOrder || hasSlOrderOnOkx ? '✅' : '❌'}) - will place missing ones`);
+        // Continue to place missing orders
       }
       
       // Check if trade has required fields
@@ -4663,11 +4727,20 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       
       // Place algo orders for this trade
       console.log(`📊 ${trade.symbol}: No algo orders found, placing TP/SL orders...`);
-      const success = await this.placeTradeAlgoOrders(trade);
-      if (success) {
-        placedCount++;
-      } else {
+      console.log(`   Trade details: Entry=$${trade.entryPrice?.toFixed(2)}, TP=$${trade.takeProfit?.toFixed(2)}, SL=$${trade.stopLoss?.toFixed(2)}`);
+      try {
+        const success = await this.placeTradeAlgoOrders(trade);
+        if (success) {
+          placedCount++;
+          console.log(`✅ Successfully placed TP/SL orders for ${trade.symbol}`);
+        } else {
+          failedCount++;
+          console.warn(`❌ Failed to place TP/SL orders for ${trade.symbol} - check logs above for details`);
+        }
+      } catch (error) {
         failedCount++;
+        console.error(`❌ Error placing TP/SL orders for ${trade.symbol}: ${error.message}`);
+        console.error(`   Stack: ${error.stack}`);
       }
       
       // Small delay between orders to avoid rate limits
