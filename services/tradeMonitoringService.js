@@ -29,7 +29,7 @@ class TradeMonitoringService {
 
     this.bot = bot;
     this.isRunning = true;
-    
+
     console.log('🔍 Trade monitoring service started');
     console.log(`   Proximity threshold: ${this.proximityThreshold}%`);
     console.log(`   Check interval: ${this.checkInterval / 1000}s`);
@@ -112,7 +112,7 @@ class TradeMonitoringService {
       const response = await axios.get(`https://api.mexc.com/api/v3/ticker/price?symbol=${symbol}USDT`, {
         timeout: 5000
       });
-      
+
       if (response.data && response.data.price) {
         return {
           price: parseFloat(response.data.price),
@@ -347,7 +347,7 @@ Respond ONLY with valid JSON.`;
       );
 
       const aiResponse = response.data.choices[0].message.content;
-      
+
       // Helper function to clean and parse JSON
       const cleanAndParseJSON = (jsonString) => {
         try {
@@ -356,21 +356,21 @@ Respond ONLY with valid JSON.`;
         } catch (e) {
           // If that fails, try cleaning common issues
           let cleaned = jsonString.trim();
-          
+
           // Remove markdown code blocks if present
           cleaned = cleaned.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-          
+
           // Try to extract JSON object from text (find the first complete JSON object)
           const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             cleaned = jsonMatch[0];
           }
-          
+
           // Fix common JSON issues step by step:
-          
+
           // 1. Remove trailing commas before closing braces/brackets (safest fix)
           cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
-          
+
           // 2. Fix unquoted property names (only if they're clearly property names)
           // Match: {property: or ,property: (but not already quoted)
           cleaned = cleaned.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, (match, prefix, propName, suffix) => {
@@ -380,16 +380,16 @@ Respond ONLY with valid JSON.`;
             }
             return match;
           });
-          
+
           // 3. Fix single quotes around property names (more careful)
           // Match: 'property': (single quotes around property name)
           cleaned = cleaned.replace(/'([a-zA-Z_][a-zA-Z0-9_]*)':/g, '"$1":');
-          
+
           // 4. Fix single quotes around string values (be careful not to break escaped quotes)
           // Match: : 'value' (but avoid matching inside already-quoted strings)
           // This is tricky, so we'll do a simple replacement for common cases
           cleaned = cleaned.replace(/:\s*'([^'\\]*(\\.[^'\\]*)*)'/g, ': "$1"');
-          
+
           try {
             return JSON.parse(cleaned);
           } catch (e2) {
@@ -400,7 +400,7 @@ Respond ONLY with valid JSON.`;
             console.error('📄 Original JSON (first 1000 chars):', jsonString.substring(0, 1000));
             console.error('📄 Cleaned JSON (first 1000 chars):', cleaned.substring(0, 1000));
             console.error('📄 Error position:', e2.message.match(/position (\d+)/)?.[1] || 'unknown');
-            
+
             // Try to show the problematic area around the error position
             if (e2.message.match(/position (\d+)/)) {
               const errorPos = parseInt(e2.message.match(/position (\d+)/)[1]);
@@ -409,12 +409,12 @@ Respond ONLY with valid JSON.`;
               console.error('📄 Problem area:', cleaned.substring(start, end));
               console.error('   '.padEnd(errorPos - start + 3, ' ') + '^');
             }
-            
+
             throw e2;
           }
         }
       };
-      
+
       // Try to extract JSON from response (handle R1's thinking tags)
       let jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -471,11 +471,11 @@ Respond ONLY with valid JSON.`;
 
     // AUTO-EXECUTE for Bybit demo trading
     const autoExecuteEnabled = config.AUTO_EXECUTE_AI_RECOMMENDATIONS !== false; // Default true for Bybit demo trading
-    
+
     if (autoExecuteEnabled) {
       console.log(`🚀 AUTO-EXECUTING AI recommendation: ${aiEvaluation.action}`);
       const executed = await this.executeAIRecommendation(trade, aiEvaluation, recs);
-      
+
       if (executed) {
         details += `\n✅ **AUTO-EXECUTED** by AI\n`;
       } else {
@@ -516,23 +516,23 @@ Respond ONLY with valid JSON.`;
       switch (action) {
         case 'DCA':
           return await this.executeDCA(trade, recommendations);
-        
+
         case 'ADJUST_SL':
           return await this.adjustStopLoss(trade, recommendations);
-        
+
         case 'ADJUST_TP':
           return await this.adjustTakeProfit(trade, recommendations);
-        
+
         case 'MODIFY':
           return await this.modifyTrade(trade, recommendations);
-        
+
         case 'CLOSE':
           return await this.closeTrade(trade, aiEvaluation.reasoning);
-        
+
         case 'KEEP':
           console.log(`✅ AI recommends KEEP - no action needed for ${trade.symbol}`);
           return true;
-        
+
         default:
           console.log(`⚠️ Unknown action: ${action}`);
           return false;
@@ -549,7 +549,7 @@ Respond ONLY with valid JSON.`;
    */
   async executeDCA(trade, recommendations) {
     // Find the trade in activeTrades array
-    const tradeIndex = this.bot.activeTrades.findIndex(t => 
+    const tradeIndex = this.bot.activeTrades.findIndex(t =>
       (t.id === trade.id || t.tradeId === trade.id) && t.symbol === trade.symbol
     );
 
@@ -562,14 +562,29 @@ Respond ONLY with valid JSON.`;
 
     // If dcaPrice is provided, update the DCA level and let existing logic handle execution
     if (recommendations.dcaPrice && recommendations.dcaPrice > 0) {
-      console.log(`💰 Setting DCA level for ${trade.symbol}: $${recommendations.dcaPrice.toFixed(2)}`);
-      activeTrade.addPosition = recommendations.dcaPrice;
-      activeTrade.dcaPrice = recommendations.dcaPrice;
-      
+      const { validateDcaPrice } = require('../utils/riskManagement');
+
+      // VALIDATE DCA price to ensure it's on correct side of SL
+      const validation = validateDcaPrice({
+        action: activeTrade.action,
+        entryPrice: activeTrade.entryPrice,
+        stopLoss: activeTrade.stopLoss
+      }, recommendations.dcaPrice);
+
+      activeTrade.addPosition = validation.adjustedPrice;
+      activeTrade.dcaPrice = validation.adjustedPrice;
+
+      if (!validation.valid) {
+        console.warn(`⚠️ ${trade.symbol}: AI provided invalid DCA price. ${validation.warning}`);
+        console.log(`💰 DCA level set to validated price: $${validation.adjustedPrice.toFixed(2)}`);
+      } else {
+        console.log(`💰 Setting DCA level for ${trade.symbol}: $${recommendations.dcaPrice.toFixed(2)}`);
+      }
+
       // Save trades
       // Removed: DynamoDB persistence - OKX is the only source of truth
-      
-      console.log(`✅ DCA level set to $${recommendations.dcaPrice.toFixed(2)}. Will execute automatically when price hits this level.`);
+
+      console.log(`✅ DCA level set to $${validation.adjustedPrice.toFixed(2)}. Will execute automatically when price hits this level.`);
       return true;
     }
 
@@ -612,8 +627,21 @@ Respond ONLY with valid JSON.`;
 
       // Update DCA price if provided
       if (recommendations.dcaPrice) {
-        activeTrade.addPosition = recommendations.dcaPrice;
-        activeTrade.dcaPrice = recommendations.dcaPrice;
+        const { validateDcaPrice } = require('../utils/riskManagement');
+
+        // VALIDATE DCA price
+        const validation = validateDcaPrice({
+          action: activeTrade.action,
+          entryPrice: activeTrade.entryPrice,
+          stopLoss: activeTrade.stopLoss
+        }, recommendations.dcaPrice);
+
+        activeTrade.addPosition = validation.adjustedPrice;
+        activeTrade.dcaPrice = validation.adjustedPrice;
+
+        if (!validation.valid) {
+          console.warn(`⚠️ ${trade.symbol}: ${validation.warning}`);
+        }
       }
 
       // Save trades
@@ -630,24 +658,39 @@ Respond ONLY with valid JSON.`;
     // For BUY: 10% below current price, For SELL: 10% above current price
     const currentPrice = activeTrade.currentPrice || activeTrade.entryPrice;
     if (currentPrice && currentPrice > 0) {
-      let calculatedDcaPrice;
+      const { validateDcaPrice } = require('../utils/riskManagement');
+
+      let proposedDca;
       if (activeTrade.action === 'BUY') {
-        calculatedDcaPrice = currentPrice * 0.90; // 10% below for BUY
+        proposedDca = currentPrice * 0.90; // 10% below for BUY
       } else {
-        calculatedDcaPrice = currentPrice * 1.10; // 10% above for SELL
+        proposedDca = currentPrice * 1.10; // 10% above for SELL
       }
-      
-      console.log(`⚠️ No DCA price specified. Using calculated DCA price: $${calculatedDcaPrice.toFixed(2)} (10% ${activeTrade.action === 'BUY' ? 'below' : 'above'} current price)`);
-      activeTrade.addPosition = calculatedDcaPrice;
-      activeTrade.dcaPrice = calculatedDcaPrice;
-      
+
+      // VALIDATE DCA price to ensure it's on correct side of SL
+      const validation = validateDcaPrice({
+        action: activeTrade.action,
+        entryPrice: activeTrade.entryPrice,
+        stopLoss: activeTrade.stopLoss
+      }, proposedDca);
+
+      activeTrade.addPosition = validation.adjustedPrice;
+      activeTrade.dcaPrice = validation.adjustedPrice;
+
+      if (!validation.valid) {
+        console.warn(`⚠️ ${trade.symbol}: ${validation.warning}`);
+        console.log(`💰 DCA level set to validated price: $${validation.adjustedPrice.toFixed(2)}`);
+      } else {
+        console.log(`⚠️ No DCA price specified. Using calculated DCA price: $${validation.adjustedPrice.toFixed(2)} (10% ${activeTrade.action === 'BUY' ? 'below' : 'above'} current price)`);
+      }
+
       // Save trades
       // Removed: DynamoDB persistence - OKX is the only source of truth
-      
-      console.log(`✅ DCA level set to $${calculatedDcaPrice.toFixed(2)}. Will execute automatically when price hits this level.`);
+
+      console.log(`✅ DCA level set to $${validation.adjustedPrice.toFixed(2)}. Will execute automatically when price hits this level.`);
       return true;
     }
-    
+
     console.log('⚠️ No DCA price or amount specified, and could not calculate DCA price. AI should provide dcaPrice (price level).');
     return false;
   }
@@ -666,7 +709,7 @@ Respond ONLY with valid JSON.`;
     console.log(`   New SL: ${recommendations.newStopLoss}%`);
 
     // Find the trade
-    const tradeIndex = this.bot.activeTrades.findIndex(t => 
+    const tradeIndex = this.bot.activeTrades.findIndex(t =>
       t.symbol === trade.symbol && t.entryTime === trade.entryTime
     );
 
@@ -684,6 +727,23 @@ Respond ONLY with valid JSON.`;
       timestamp: new Date(),
       reasoning: 'AI adjustment'
     });
+
+    // Cancel old algo orders and place new ones with updated SL
+    // This prevents duplicate orders with different SL levels
+    if (this.bot.cancelTradeAlgoOrders && this.bot.placeTradeAlgoOrders) {
+      try {
+        console.log(`🔄 Cancelling old TP/SL algo orders for ${trade.symbol}...`);
+        await this.bot.cancelTradeAlgoOrders(this.bot.activeTrades[tradeIndex]);
+        console.log(`✅ Old algo orders cancelled`);
+
+        // Place new algo orders with updated SL
+        console.log(`📝 Placing new TP/SL algo orders with updated SL...`);
+        await this.bot.placeTradeAlgoOrders(this.bot.activeTrades[tradeIndex]);
+        console.log(`✅ New algo orders placed`);
+      } catch (error) {
+        console.error(`⚠️ Failed to update algo orders: ${error.message}`);
+      }
+    }
 
     // Save trades
     // Removed: DynamoDB persistence - OKX is the only source of truth
@@ -706,7 +766,7 @@ Respond ONLY with valid JSON.`;
     console.log(`   New TP: ${recommendations.newTakeProfit}%`);
 
     // Find the trade
-    const tradeIndex = this.bot.activeTrades.findIndex(t => 
+    const tradeIndex = this.bot.activeTrades.findIndex(t =>
       t.symbol === trade.symbol && t.entryTime === trade.entryTime
     );
 
@@ -724,6 +784,23 @@ Respond ONLY with valid JSON.`;
       timestamp: new Date(),
       reasoning: 'AI adjustment'
     });
+
+    // Cancel old algo orders and place new ones with updated TP
+    // This prevents duplicate orders with different TP levels
+    if (this.bot.cancelTradeAlgoOrders && this.bot.placeTradeAlgoOrders) {
+      try {
+        console.log(`🔄 Cancelling old TP/SL algo orders for ${trade.symbol}...`);
+        await this.bot.cancelTradeAlgoOrders(this.bot.activeTrades[tradeIndex]);
+        console.log(`✅ Old algo orders cancelled`);
+
+        // Place new algo orders with updated TP
+        console.log(`📝 Placing new TP/SL algo orders with updated TP...`);
+        await this.bot.placeTradeAlgoOrders(this.bot.activeTrades[tradeIndex]);
+        console.log(`✅ New algo orders placed`);
+      } catch (error) {
+        console.error(`⚠️ Failed to update algo orders: ${error.message}`);
+      }
+    }
 
     // Save trades
     // Removed: DynamoDB persistence - OKX is the only source of truth
@@ -750,10 +827,10 @@ Respond ONLY with valid JSON.`;
 
     if (recommendations.dcaPrice) {
       // Update DCA price
-      const tradeIndex = this.bot.activeTrades.findIndex(t => 
+      const tradeIndex = this.bot.activeTrades.findIndex(t =>
         t.symbol === trade.symbol && t.entryTime === trade.entryTime
       );
-      
+
       if (tradeIndex !== -1) {
         this.bot.activeTrades[tradeIndex].dcaPrice = recommendations.dcaPrice;
         const { saveTrades } = require('./tradePersistenceService');
@@ -773,7 +850,7 @@ Respond ONLY with valid JSON.`;
     console.log(`   Reasoning: ${reasoning}`);
 
     // Find the trade
-    const tradeIndex = this.bot.activeTrades.findIndex(t => 
+    const tradeIndex = this.bot.activeTrades.findIndex(t =>
       t.symbol === trade.symbol && t.entryTime === trade.entryTime
     );
 

@@ -11,22 +11,22 @@ const { calculatePositionSize, calculateRiskPercent, calculateRiskRewardRatio } 
 const RISK_CONFIG = {
   // Maximum percentage of account to risk per trade
   MAX_RISK_PER_TRADE: 2.0, // 2%
-  
+
   // Default risk percentage
   DEFAULT_RISK_PER_TRADE: 1.0, // 1%
-  
+
   // Maximum percentage of account in open trades
   MAX_TOTAL_EXPOSURE: 10.0, // 10%
-  
+
   // Minimum risk/reward ratio
   MIN_RISK_REWARD: 1.5,
-  
+
   // Maximum number of concurrent trades
   MAX_CONCURRENT_TRADES: 5,
-  
+
   // Maximum correlation between trades
   MAX_CORRELATION: 0.7,
-  
+
   // Volatility adjustment factors
   VOLATILITY_LOW: 1.2,     // Increase position size in low volatility
   VOLATILITY_MEDIUM: 1.0,  // Normal position size
@@ -230,6 +230,76 @@ function calculateCorrelation(priceHistory1, priceHistory2) {
 }
 
 /**
+ * Validate and adjust DCA price to ensure it's positioned correctly relative to SL
+ * Prevents adding to positions after stop loss would be hit
+ * @param {Object} trade - Trade object with action, entryPrice, stopLoss
+ * @param {number} proposedDcaPrice - Proposed DCA price
+ * @returns {Object} { valid: boolean, adjustedPrice: number, warning: string }
+ */
+function validateDcaPrice(trade, proposedDcaPrice) {
+  const { action, entryPrice, stopLoss } = trade;
+
+  if (action === 'BUY') {
+    // For BUY trades: DCA should be below entry but ABOVE stopLoss
+    // Required order: stopLoss < dcaPrice < entryPrice
+
+    if (proposedDcaPrice >= entryPrice) {
+      return {
+        valid: false,
+        adjustedPrice: entryPrice * 0.97, // 3% below entry
+        warning: `DCA price $${proposedDcaPrice.toFixed(2)} is above entry $${entryPrice.toFixed(2)}. Adjusted to 3% below entry.`
+      };
+    }
+
+    if (proposedDcaPrice <= stopLoss) {
+      // DCA below SL means buying AFTER stop loss hits
+      const safeDistance = (entryPrice - stopLoss) * 0.4; // 40% between SL and entry
+      const adjustedPrice = stopLoss + safeDistance;
+
+      return {
+        valid: false,
+        adjustedPrice: adjustedPrice,
+        warning: `DCA price $${proposedDcaPrice.toFixed(2)} is below SL $${stopLoss.toFixed(2)}. Adjusted to $${adjustedPrice.toFixed(2)} (40% between SL and entry).`
+      };
+    }
+
+    return { valid: true, adjustedPrice: proposedDcaPrice, warning: null };
+
+  } else if (action === 'SELL') {
+    // For SELL trades: DCA should be above entry but BELOW stopLoss
+    // Required order: entryPrice < dcaPrice < stopLoss
+
+    if (proposedDcaPrice <= entryPrice) {
+      return {
+        valid: false,
+        adjustedPrice: entryPrice * 1.03, // 3% above entry
+        warning: `DCA price $${proposedDcaPrice.toFixed(2)} is below entry $${entryPrice.toFixed(2)}. Adjusted to 3% above entry.`
+      };
+    }
+
+    if (proposedDcaPrice >= stopLoss) {
+      // DCA above SL means selling AFTER stop loss hits
+      const safeDistance = (stopLoss - entryPrice) * 0.4; // 40% between entry and SL
+      const adjustedPrice = stopLoss - safeDistance;
+
+      return {
+        valid: false,
+        adjustedPrice: adjustedPrice,
+        warning: `DCA price $${proposedDcaPrice.toFixed(2)} is above SL $${stopLoss.toFixed(2)}. Adjusted to $${adjustedPrice.toFixed(2)} (40% between entry and SL).`
+      };
+    }
+
+    return { valid: true, adjustedPrice: proposedDcaPrice, warning: null };
+  }
+
+  return {
+    valid: false,
+    adjustedPrice: proposedDcaPrice,
+    warning: `Unknown trade action: ${action}`
+  };
+}
+
+/**
  * Check if adding a new trade would violate correlation limits
  * @param {Object} newTrade - New trade to check
  * @param {Array} existingTrades - Existing open trades
@@ -276,7 +346,7 @@ function checkTradeCorrelation(newTrade, existingTrades, priceHistories) {
     allowed: correlatedSymbols.length === 0,
     maxCorrelation: maxCorrelation,
     correlatedSymbols: correlatedSymbols,
-    warning: correlatedSymbols.length > 0 
+    warning: correlatedSymbols.length > 0
       ? `High correlation with ${correlatedSymbols.map(c => c.symbol).join(', ')}`
       : null
   };
@@ -286,6 +356,7 @@ module.exports = {
   RISK_CONFIG,
   calculateOptimalPositionSize,
   validateTradeSetup,
+  validateDcaPrice,
   calculateCorrelation,
   checkTradeCorrelation,
   getPositionSizeRecommendation
