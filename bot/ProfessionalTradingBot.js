@@ -4098,11 +4098,11 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
    * Updates quantities from OKX, keeps DynamoDB data for tracking
    */
   async syncWithOkxPositions() {
-    const { isExchangeTradingEnabled, getPreferredExchange, getOkxOpenPositions } = require('../services/exchangeService');
+    const { isExchangeTradingEnabled, getPreferredExchange, getOkxOpenPositions, OKX_SYMBOL_MAP } = require('../services/exchangeService');
     const exchangeConfig = isExchangeTradingEnabled();
     
-    if (!exchangeConfig.enabled || this.activeTrades.length === 0) {
-      return; // No OKX or no trades to sync
+    if (!exchangeConfig.enabled) {
+      return; // No OKX configured
     }
     
     try {
@@ -4117,12 +4117,62 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       if (okxPositions.length === 0) {
         // No positions on OKX - but don't mark as closed if API call failed
         // Only log warning, don't update quantities if we can't verify
+        if (this.activeTrades.length > 0) {
         console.log(`⚠️ No positions found on OKX - trades may be closed or API call failed`);
         console.log(`   Keeping existing trade data until successful sync`);
+        }
         return;
       }
       
-      // Update quantities from OKX (source of truth)
+      // Check for NEW positions on OKX that aren't in activeTrades
+      const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 5.0;
+      const defaultSLPercent = this.tradingRules?.defaultStopLoss || 5.0;
+      
+      for (const okxPos of okxPositions) {
+        const existingTrade = this.activeTrades.find(t => t.symbol === okxPos.coin);
+        
+        if (!existingTrade) {
+          // NEW position found on OKX that we don't have in memory
+          console.log(`🆕 Found new position on OKX: ${okxPos.coin} ${okxPos.side} - Adding to active trades...`);
+          
+          const entryPrice = okxPos.avgPrice || 0;
+          const action = okxPos.side === 'short' ? 'SELL' : 'BUY';
+          
+          let takeProfit, stopLoss, addPosition;
+          if (action === 'BUY') {
+            takeProfit = entryPrice * (1 + defaultTPPercent / 100);
+            stopLoss = entryPrice * (1 - defaultSLPercent / 100);
+            addPosition = entryPrice * 0.90; // 10% below entry
+          } else {
+            takeProfit = entryPrice * (1 - defaultTPPercent / 100);
+            stopLoss = entryPrice * (1 + defaultSLPercent / 100);
+            addPosition = entryPrice * 1.10; // 10% above entry
+          }
+          
+          const newTrade = {
+            id: `${okxPos.coin}-${Date.now()}`,
+            symbol: okxPos.coin,
+            action: action,
+            entryPrice: entryPrice,
+            takeProfit: takeProfit,
+            stopLoss: stopLoss,
+            addPosition: addPosition,
+            dcaPrice: addPosition,
+            quantity: okxPos.quantity,
+            leverage: okxPos.leverage || 1,
+            status: 'OPEN',
+            entryTime: new Date(),
+            lastSyncedWithOkx: new Date(),
+            note: 'Position discovered on OKX - TP/SL/DCA set with defaults'
+          };
+          
+          this.activeTrades.push(newTrade);
+          console.log(`✅ Added new trade: ${okxPos.coin} ${okxPos.side} - Quantity: ${okxPos.quantity.toFixed(8)}, Entry: $${entryPrice.toFixed(2)}`);
+          addLogEntry(`🆕 New position discovered on OKX: ${okxPos.coin} ${okxPos.side}`, 'info');
+        }
+      }
+      
+      // Update quantities from OKX (source of truth) for existing trades
       let syncedCount = 0;
       this.activeTrades.forEach(trade => {
         const okxPos = okxPositions.find(p => p.coin === trade.symbol);
@@ -4139,8 +4189,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             console.log(`🔄 ${trade.symbol}: Synced with OKX - Quantity: ${oldQuantity.toFixed(8)} → ${okxPos.quantity.toFixed(8)}`);
             syncedCount++;
           }
-        } else if (trade.quantity > 0) {
-          // Trade in memory but not on OKX
+        } else if (trade.quantity > 0 && trade.status === 'OPEN') {
+          // Trade in memory but not on OKX - mark as closed
+          console.log(`⚠️ ${trade.symbol}: Position not found on OKX - marking as closed`);
+          trade.status = 'CLOSED';
           trade.okxQuantity = 0;
           trade.lastSyncedWithOkx = new Date();
         }
@@ -6999,6 +7051,136 @@ Return JSON array format:
             if (adjusted) {
               // Removed: DynamoDB persistence - OKX is the only source of truth
               addLogEntry(`✅ ${symbol}: Trade parameters updated by AI`, 'success');
+              
+              // IMPORTANT: Update orders on OKX when TP/SL/DCA are adjusted
+              try {
+                console.log(`🔄 ${symbol}: Updating orders on OKX after AI adjustment...`);
+                
+                // If TP or SL was adjusted, update algo orders on OKX
+                if (rec.newTakeProfit || rec.newStopLoss) {
+                  const orderResult = await this.placeTradeAlgoOrders(trade);
+                  if (orderResult) {
+                    console.log(`✅ ${symbol}: TP/SL orders updated on OKX`);
+                    addLogEntry(`✅ ${symbol}: TP/SL orders updated on OKX after AI adjustment`, 'success');
+                  } else {
+                    console.warn(`⚠️ ${symbol}: Failed to update TP/SL orders on OKX`);
+                    addLogEntry(`⚠️ ${symbol}: Failed to update TP/SL orders on OKX`, 'warning');
+                  }
+                }
+                
+                // If DCA was adjusted, cancel old DCA order and place new one
+                if (newDcaValue) {
+                  // Cancel existing DCA order if it exists
+                  if (trade.okxDcaOrderId) {
+                    try {
+                      const { isExchangeTradingEnabled, getPreferredExchange } = require('../services/exchangeService');
+                      const exchangeConfig = isExchangeTradingEnabled();
+                      
+                      if (exchangeConfig.enabled) {
+                        const exchange = getPreferredExchange();
+                        const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+                        
+                        if (okxSymbol && exchange) {
+                          // Use OKX API to cancel order
+                          const axios = require('axios');
+                          const { createOkxSignature } = require('../services/exchangeService');
+                          
+                          const timestamp = (Date.now() / 1000).toFixed(0);
+                          const requestPath = `/api/v5/trade/cancel-order`;
+                          const body = JSON.stringify({
+                            instId: okxSymbol,
+                            ordId: trade.okxDcaOrderId
+                          });
+                          
+                          const signature = createOkxSignature(timestamp, 'POST', requestPath, body, exchange.apiSecret);
+                          
+                          await axios.post(`${exchange.baseUrl}${requestPath}`, body, {
+                            headers: {
+                              'OK-ACCESS-KEY': exchange.apiKey,
+                              'OK-ACCESS-SIGN': signature,
+                              'OK-ACCESS-TIMESTAMP': timestamp,
+                              'OK-ACCESS-PASSPHRASE': exchange.passphrase,
+                              'Content-Type': 'application/json'
+                            },
+                            timeout: 10000
+                          });
+                          
+                          console.log(`🗑️ ${symbol}: Canceled old DCA order on OKX`);
+                        }
+                      }
+                    } catch (cancelError) {
+                      console.warn(`⚠️ ${symbol}: Could not cancel old DCA order: ${cancelError.message}`);
+                    }
+                  }
+                  
+                  // Place new DCA limit order
+                  try {
+                    const { executeOkxLimitOrder, OKX_SYMBOL_MAP, getOkxOpenPositions, isExchangeTradingEnabled, getPreferredExchange } = require('../services/exchangeService');
+                    const exchangeConfig = isExchangeTradingEnabled();
+                    
+                    if (!exchangeConfig.enabled) {
+                      throw new Error('Exchange trading not enabled');
+                    }
+                    
+                    const exchange = getPreferredExchange();
+                    const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+                    
+                    if (okxSymbol && exchange) {
+                      // Get current position size for DCA quantity calculation
+                      const okxPositions = await getOkxOpenPositions(
+                        exchange.apiKey,
+                        exchange.apiSecret,
+                        exchange.passphrase,
+                        exchange.baseUrl
+                      );
+                      const okxPos = okxPositions.find(p => p.coin === trade.symbol);
+                      const positionSize = okxPos?.quantity || trade.quantity || 0;
+                      
+                      // Calculate DCA quantity (same as initial position or 50% of current position)
+                      const dcaQuantity = Math.max(
+                        Math.floor(positionSize * 0.5), // 50% of current position
+                        positionSize >= 1 ? 1 : 0.01 // Minimum 1 contract or 0.01 for very small positions
+                      );
+                      
+                      if (dcaQuantity > 0) {
+                        const dcaSide = trade.action === 'BUY' ? 'buy' : 'sell';
+                        const leverage = trade.leverage || 1;
+                        
+                        const dcaResult = await executeOkxLimitOrder(
+                          okxSymbol,
+                          dcaSide,
+                          dcaQuantity,
+                          newDcaValue,
+                          exchange.apiKey,
+                          exchange.apiSecret,
+                          exchange.passphrase,
+                          exchange.baseUrl,
+                          leverage
+                        );
+                        
+                        if (dcaResult.success) {
+                          trade.okxDcaOrderId = dcaResult.orderId;
+                          trade.okxDcaPrice = newDcaValue;
+                          trade.okxDcaQuantity = dcaQuantity;
+                          console.log(`✅ ${symbol}: New DCA order placed on OKX at $${newDcaValue.toFixed(2)}`);
+                          addLogEntry(`✅ ${symbol}: New DCA order placed on OKX at $${newDcaValue.toFixed(2)}`, 'success');
+                        } else {
+                          console.warn(`⚠️ ${symbol}: Failed to place new DCA order: ${dcaResult.error}`);
+                          addLogEntry(`⚠️ ${symbol}: Failed to place new DCA order: ${dcaResult.error}`, 'warning');
+                        }
+                      } else {
+                        console.warn(`⚠️ ${symbol}: DCA quantity is 0, skipping DCA order placement`);
+                      }
+                    }
+                  } catch (dcaError) {
+                    console.error(`❌ ${symbol}: Error placing new DCA order: ${dcaError.message}`);
+                    addLogEntry(`❌ ${symbol}: Error placing new DCA order: ${dcaError.message}`, 'error');
+                  }
+                }
+              } catch (updateError) {
+                console.error(`❌ ${symbol}: Error updating orders on OKX: ${updateError.message}`);
+                addLogEntry(`❌ ${symbol}: Error updating orders on OKX: ${updateError.message}`, 'error');
+              }
             }
           } else if (recommendation === 'CLOSE') {
             // Check if DCA is still available - warn AI if it should have suggested DCA
