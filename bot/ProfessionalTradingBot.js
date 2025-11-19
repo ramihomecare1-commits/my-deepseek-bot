@@ -5914,51 +5914,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                   console.error(`❌ Failed to save ${trade.symbol} trade after DCA:`, saveError.message);
                 }
                 
-                // Trigger re-evaluation of ALL open trades after DCA execution (with 1-hour cooldown)
-                // Always check persisted value to ensure cooldown persists across restarts
-                const persistedTimestamp = getDcaTriggerTimestamp();
-                const lastDcaReeval = Math.max(this.lastDcaTriggerReevalAt || 0, persistedTimestamp || 0);
-                const elapsedSinceLastDcaReeval = now - lastDcaReeval;
-                const timeSinceStartup = now - this.botStartTime;
-                
-                // Check startup delay, cooldown, AND if re-evaluation is already in progress
-                if (!this.dcaTriggerReevalInProgress && 
-                    timeSinceStartup >= this.dcaTriggerStartupDelayMs &&
-                    elapsedSinceLastDcaReeval >= this.dcaTriggerReevalCooldownMs) {
-                  // Set flag AND timestamp IMMEDIATELY to prevent other DCAs from triggering
-                  this.dcaTriggerReevalInProgress = true;
-                  const triggerTimestamp = Date.now();
-                  this.lastDcaTriggerReevalAt = triggerTimestamp; // Set immediately, not inside async callback
-                  await setDcaTriggerTimestamp(triggerTimestamp); // Persist to portfolio state
-                  console.log(`🔄 [DCA TRIGGER] DCA executed for ${trade.symbol} (SHORT) - triggering re-evaluation of ALL open trades (3-hour cooldown starts now)...`);
-                  addLogEntry(`🔄 DCA executed for ${trade.symbol} (SHORT) - triggering re-evaluation of all open trades (3-hour cooldown)`, 'info');
-                  
-                  // Trigger re-evaluation asynchronously (don't block DCA execution)
-                  setImmediate(async () => {
-                    try {
-                      await this.reevaluateOpenTradesWithAI();
-                    } catch (reevalError) {
-                      console.error(`❌ Error during DCA-triggered re-evaluation:`, reevalError.message);
-                      addLogEntry(`❌ Error during DCA-triggered re-evaluation: ${reevalError.message}`, 'error');
-                    } finally {
-                      // Always clear the flag when done (success or error)
-                      this.dcaTriggerReevalInProgress = false;
-                    }
-                  });
-                } else if (this.dcaTriggerReevalInProgress) {
-                  console.log(`⏱️ Skipping DCA-triggered re-evaluation (already in progress)`);
-                  addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (already in progress)`, 'info');
-                } else if (timeSinceStartup < this.dcaTriggerStartupDelayMs) {
-                  const remainingStartupDelay = Math.ceil((this.dcaTriggerStartupDelayMs - timeSinceStartup) / 60000);
-                  console.log(`⏱️ Skipping DCA-triggered re-evaluation (startup delay ${remainingStartupDelay}min remaining)`);
-                  addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (startup delay ${remainingStartupDelay}min remaining)`, 'info');
-                } else {
-                  const remainingCooldownMs = this.dcaTriggerReevalCooldownMs - elapsedSinceLastDcaReeval;
-                  const remainingHours = Math.floor(remainingCooldownMs / 3600000);
-                  const remainingMinutes = Math.ceil((remainingCooldownMs % 3600000) / 60000);
-                  console.log(`⏱️ Skipping DCA-triggered re-evaluation (unified cooldown: ${remainingHours}h ${remainingMinutes}m remaining)`);
-                  addLogEntry(`⏱️ Skipped DCA-triggered re-evaluation (cooldown: ${remainingHours}h ${remainingMinutes}m remaining)`, 'info');
-                }
+                // Use unified trigger function (don't await to avoid blocking)
+                this.triggerAIReevaluation(`DCA executed for ${trade.symbol} (SHORT)`).catch(err => {
+                  console.error(`⚠️ Error triggering AI after DCA (SHORT): ${err.message}`);
+                });
               } else if (dcaResult && !dcaResult.skipped) {
                 // DCA failed after retries - mark as hit but don't increment count
                 trade.status = 'DCA_HIT';
