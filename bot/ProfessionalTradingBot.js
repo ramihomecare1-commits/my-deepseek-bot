@@ -3890,6 +3890,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                           newTrade.okxDcaOrderId = dcaOrderResult.orderId;
                           newTrade.okxDcaPrice = dcaPrice;
                           newTrade.okxDcaQuantity = dcaQuantity;
+                          console.log(`   📝 Saved DCA order ID to trade object: ${newTrade.okxDcaOrderId}`);
                           addLogEntry(`DCA limit order placed on OKX for ${newTrade.symbol} at $${dcaPrice.toFixed(2)} (will execute if price reaches this level)`, 'info');
                         } else {
                           console.log(`⚠️ Failed to place DCA limit order for ${newTrade.symbol}: ${dcaOrderResult.error || 'Unknown error'}`);
@@ -3901,7 +3902,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                   }
                 }
               } catch (dcaError) {
-                console.log(`⚠️ Error placing DCA limit order for ${newTrade.symbol}: ${dcaError.message}`);
+                console.error(`❌ Error placing DCA limit order for ${newTrade.symbol}: ${dcaError.message}`);
                 // Don't fail the trade if DCA order fails - it's optional
               }
             } catch (algoError) {
