@@ -3676,7 +3676,6 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               try {
                 const dcaPrice = addPosition;
                 const dcaSide = newTrade.action === 'BUY' ? 'buy' : 'sell';
-                const dcaQuantity = Math.floor(initialQuantity * 0.5); // DCA with 50% of initial position size
                 
                 // Validate DCA price is correct direction
                 let shouldPlaceDCA = false;
@@ -3694,33 +3693,117 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                   }
                 }
                 
-                if (shouldPlaceDCA && dcaQuantity > 0) {
-                  console.log(`📊 Placing DCA limit order for ${newTrade.symbol} at $${dcaPrice.toFixed(2)} (${dcaSide})...`);
+                if (shouldPlaceDCA) {
+                  // Check OKX for existing limit orders to prevent duplicates
+                  const { getOkxPendingOrders, getOkxOpenPositions } = require('../services/exchangeService');
+                  let hasExistingDcaOrder = false;
                   
-                  const { executeOkxLimitOrder } = require('../services/exchangeService');
-                  const dcaOrderResult = await executeOkxLimitOrder(
-                    okxSymbol,
-                    dcaSide,
-                    dcaQuantity,
-                    dcaPrice, // Limit price
-                    exchange.apiKey,
-                    exchange.apiSecret,
-                    exchange.passphrase,
-                    exchange.baseUrl,
-                    leverage
-                  );
-                  
-                  if (dcaOrderResult.success) {
-                    console.log(`✅ DCA limit order placed for ${newTrade.symbol} at $${dcaPrice.toFixed(2)}! Order ID: ${dcaOrderResult.orderId}`);
-                    newTrade.okxDcaOrderId = dcaOrderResult.orderId;
-                    newTrade.okxDcaPrice = dcaPrice;
-                    newTrade.okxDcaQuantity = dcaQuantity;
-                    addLogEntry(`DCA limit order placed on OKX for ${newTrade.symbol} at $${dcaPrice.toFixed(2)} (will execute if price reaches this level)`, 'info');
-                  } else {
-                    console.log(`⚠️ Failed to place DCA limit order for ${newTrade.symbol}: ${dcaOrderResult.error || 'Unknown error'}`);
+                  try {
+                    const pendingOrders = await getOkxPendingOrders(
+                      okxSymbol,
+                      exchange.apiKey,
+                      exchange.apiSecret,
+                      exchange.passphrase,
+                      exchange.baseUrl
+                    );
+                    
+                    if (pendingOrders && pendingOrders.success && pendingOrders.orders && pendingOrders.orders.length > 0) {
+                      const activeLimitOrders = pendingOrders.orders.filter(order => {
+                        const state = order.state || order.ordState || '';
+                        const ordType = order.ordType || '';
+                        return (state === 'live' || state === 'partially_filled') && ordType === 'limit';
+                      });
+                      
+                      // Check if any limit order matches our DCA price (within 1% tolerance)
+                      for (const order of activeLimitOrders) {
+                        const orderPrice = parseFloat(order.px || order.price || 0);
+                        const priceDiff = Math.abs(orderPrice - dcaPrice) / dcaPrice;
+                        const side = order.side || '';
+                        
+                        if (priceDiff < 0.01 && side === dcaSide) {
+                          hasExistingDcaOrder = true;
+                          console.log(`   ✅ ${newTrade.symbol}: Found existing DCA limit order on OKX (Order ID: ${order.ordId || order.clOrdId || 'unknown'}, Price: $${orderPrice.toFixed(2)})`);
+                          newTrade.okxDcaOrderId = order.ordId || order.clOrdId;
+                          newTrade.okxDcaPrice = orderPrice;
+                          break;
+                        }
+                      }
+                    }
+                  } catch (checkError) {
+                    console.warn(`⚠️ ${newTrade.symbol}: Could not check OKX for existing limit orders: ${checkError.message}`);
                   }
-                } else if (dcaQuantity <= 0) {
-                  console.log(`⚠️ ${newTrade.symbol}: DCA quantity is 0, skipping DCA limit order`);
+                  
+                  if (!hasExistingDcaOrder) {
+                    // Get actual position size from OKX (more accurate than initialQuantity)
+                    let positionSize = null;
+                    try {
+                      const positions = await getOkxOpenPositions(
+                        exchange.apiKey,
+                        exchange.apiSecret,
+                        exchange.passphrase,
+                        exchange.baseUrl
+                      );
+                      const position = positions.find(p => {
+                        const instId = p.instId || p.symbol || '';
+                        return instId === okxSymbol || instId.includes(newTrade.symbol.split('-')[0]);
+                      });
+                      if (position) {
+                        positionSize = Math.abs(parseFloat(position.quantity || position.pos || 0));
+                        console.log(`   📊 Found position size from OKX: ${positionSize}`);
+                      } else {
+                        // Fallback to executed quantity
+                        positionSize = parseFloat(orderResult.executedQty || initialQuantity || 0);
+                        console.log(`   ⚠️ Position not found on OKX, using executed quantity: ${positionSize}`);
+                      }
+                    } catch (posError) {
+                      // Fallback to executed quantity
+                      positionSize = parseFloat(orderResult.executedQty || initialQuantity || 0);
+                      console.log(`   ⚠️ Failed to get position size, using executed quantity: ${positionSize}`);
+                    }
+                    
+                    if (!positionSize || positionSize <= 0) {
+                      console.log(`⚠️ ${newTrade.symbol}: Cannot place DCA order - no valid position size found`);
+                    } else {
+                      // Calculate DCA quantity (50% of position size, minimum 1 for derivatives)
+                      let dcaQuantity = Math.floor(positionSize * 0.5);
+                      if (dcaQuantity < 1 && positionSize >= 1) {
+                        dcaQuantity = 1; // Minimum 1 contract for derivatives
+                      } else if (dcaQuantity < 0.01 && positionSize >= 0.01) {
+                        dcaQuantity = Math.max(positionSize * 0.5, 0.01); // Minimum 0.01 for very small positions
+                      }
+                      
+                      console.log(`   📊 DCA quantity calculation - positionSize=${positionSize}, dcaQuantity=${dcaQuantity}`);
+                      
+                      if (dcaQuantity > 0) {
+                        console.log(`📊 Placing DCA limit order for ${newTrade.symbol} at $${dcaPrice.toFixed(2)} (${dcaSide}, qty: ${dcaQuantity})...`);
+                        
+                        const { executeOkxLimitOrder } = require('../services/exchangeService');
+                        const dcaOrderResult = await executeOkxLimitOrder(
+                          okxSymbol,
+                          dcaSide,
+                          dcaQuantity,
+                          dcaPrice, // Limit price
+                          exchange.apiKey,
+                          exchange.apiSecret,
+                          exchange.passphrase,
+                          exchange.baseUrl,
+                          leverage
+                        );
+                        
+                        if (dcaOrderResult.success) {
+                          console.log(`✅ DCA limit order placed for ${newTrade.symbol} at $${dcaPrice.toFixed(2)}! Order ID: ${dcaOrderResult.orderId}`);
+                          newTrade.okxDcaOrderId = dcaOrderResult.orderId;
+                          newTrade.okxDcaPrice = dcaPrice;
+                          newTrade.okxDcaQuantity = dcaQuantity;
+                          addLogEntry(`DCA limit order placed on OKX for ${newTrade.symbol} at $${dcaPrice.toFixed(2)} (will execute if price reaches this level)`, 'info');
+                        } else {
+                          console.log(`⚠️ Failed to place DCA limit order for ${newTrade.symbol}: ${dcaOrderResult.error || 'Unknown error'}`);
+                        }
+                      } else {
+                        console.log(`⚠️ ${newTrade.symbol}: DCA quantity is 0, skipping DCA limit order`);
+                      }
+                    }
+                  }
                 }
               } catch (dcaError) {
                 console.log(`⚠️ Error placing DCA limit order for ${newTrade.symbol}: ${dcaError.message}`);
