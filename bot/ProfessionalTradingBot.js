@@ -4750,7 +4750,16 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           };
           
           try {
-            const historicalData = await fetchHistoricalData(coinData.id, coinData, this.stats, config, entryPrice);
+            // Add timeout to prevent blocking deployment (historical data fetch can be slow)
+            const historicalData = await Promise.race([
+              fetchHistoricalData(coinData.id, coinData, this.stats, config, entryPrice),
+              new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Historical data fetch timeout (3s)')), 3000)
+              )
+            ]).catch(err => {
+              console.log(`⚠️ ${trade.symbol}: Timeout fetching historical data: ${err.message}`);
+              return null;
+            });
             const { dailyData } = historicalData || {};
             
             if (dailyData && dailyData.length >= 15) {
