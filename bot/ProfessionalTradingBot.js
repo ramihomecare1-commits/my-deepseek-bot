@@ -412,7 +412,7 @@ class ProfessionalTradingBot {
       if (this.activeTrades && this.activeTrades.length > 0) {
         console.log(`✅ Active trades loaded: ${this.activeTrades.length} trades`);
         // Fix any trades missing TP, SL, or DCA levels
-        const fixedCount = this.fixMissingTradeLevels();
+        const fixedCount = await this.fixMissingTradeLevels();
         if (fixedCount > 0) {
           console.log(`🔧 Fixed ${fixedCount} existing trade(s) with missing TP, SL, or DCA levels`);
         }
@@ -2393,11 +2393,12 @@ Reason: ${newReason?.substring(0, 200)}`);
                   }
                 }
               }
-            } else if (volume24h > 0) {
-              // Fallback: Use 24h volume as a simple check if historical data not available
-              // This is less accurate but better than nothing
-              // Note: Without historical data, we can't calculate true volume profile
-              // So we skip volume confirmation in this case to avoid false positives
+            } else {
+              // No historical volume data available - skip volume confirmation
+              // Log this for debugging but don't penalize the signal
+              if (volume24h > 0) {
+                console.log(`⚠️ ${coin.symbol}: No historical volume data available - skipping volume confirmation (24h volume: ${volume24h.toLocaleString()})`);
+              }
             }
           } catch (volumeError) {
             // Volume analysis failed, continue without adjustment
@@ -3021,14 +3022,18 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       }
       
       // Prepare price data for ATR calculation (daily data with high/low/close)
+      // ATR requires high, low, and close prices for accurate calculation
       const priceDataForATR = [];
       if (dailyData && dailyData.length > 0) {
         dailyData.slice(-30).forEach(d => {
-          // ATR needs high, low, close
-          const high = d.high || d.price || d.close || 0;
-          const low = d.low || d.price || d.close || 0;
+          // ATR needs high, low, close - prefer actual high/low over fallback to price
+          const high = d.high || 0;
+          const low = d.low || 0;
           const close = d.close || d.price || 0;
-          if (high > 0 && low > 0 && close > 0) {
+          
+          // Only add if we have valid high, low, and close
+          // If high/low are missing, we can't calculate accurate ATR
+          if (high > 0 && low > 0 && close > 0 && high >= low) {
             priceDataForATR.push({ high, low, close, price: close });
           }
         });
@@ -4252,19 +4257,74 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
   /**
    * Fix existing trades that are missing TP, SL, or DCA levels
    * This ensures all trades have proper trigger levels for monitoring
+   * Attempts to use ATR-based stop loss when price data is available
    */
-  fixMissingTradeLevels() {
+  async fixMissingTradeLevels() {
     let fixedCount = 0;
     const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 5.0;
     const defaultSLPercent = this.tradingRules?.defaultStopLoss || 5.0;
     
-    this.activeTrades.forEach(trade => {
+    for (const trade of this.activeTrades) {
       let needsFix = false;
       const entryPrice = trade.entryPrice || trade.currentPrice || 0;
       
       if (!entryPrice || entryPrice <= 0) {
         console.warn(`⚠️ ${trade.symbol}: Missing entry price, cannot fix levels`);
-        return;
+        continue;
+      }
+      
+      // Try to get price data for ATR-based stop loss calculation
+      let useATR = false;
+      let atr = 0;
+      try {
+        // Check if we have price data stored in the trade or can fetch it
+        if (trade.priceData && Array.isArray(trade.priceData) && trade.priceData.length >= 15) {
+          const { calculateATR } = require('../services/positionSizingService');
+          atr = calculateATR(trade.priceData, 14);
+          useATR = atr > 0;
+        } else {
+          // Try to fetch historical data for ATR calculation
+          const { fetchHistoricalData } = require('../services/dataFetcher');
+          const coinData = { 
+            symbol: trade.symbol, 
+            id: trade.coinId || trade.symbol.toLowerCase(),
+            coinmarketcap_id: trade.coinmarketcap_id,
+            coinpaprika_id: trade.coinpaprika_id
+          };
+          
+          try {
+            const historicalData = await fetchHistoricalData(coinData.id, coinData, this.stats, config, entryPrice);
+            const { dailyData } = historicalData || {};
+            
+            if (dailyData && dailyData.length >= 15) {
+              // Prepare price data for ATR (ensure high/low exist)
+              const priceDataForATR = [];
+              dailyData.slice(-30).forEach(d => {
+                const high = d.high || 0;
+                const low = d.low || 0;
+                const close = d.close || d.price || 0;
+                if (high > 0 && low > 0 && close > 0 && high >= low) {
+                  priceDataForATR.push({ high, low, close, price: close });
+                }
+              });
+              
+              if (priceDataForATR.length >= 15) {
+                const { calculateATR } = require('../services/positionSizingService');
+                atr = calculateATR(priceDataForATR, 14);
+                useATR = atr > 0;
+                
+                // Store price data for future use
+                trade.priceData = priceDataForATR;
+              }
+            }
+          } catch (fetchError) {
+            // Historical data fetch failed, use fixed percentage
+            console.log(`⚠️ ${trade.symbol}: Could not fetch historical data for ATR, using fixed percentage`);
+          }
+        }
+      } catch (atrError) {
+        // ATR calculation failed, use fixed percentage
+        console.log(`⚠️ ${trade.symbol}: ATR calculation failed, using fixed percentage: ${atrError.message}`);
       }
       
       // Fix missing or invalid Take Profit
@@ -4278,15 +4338,32 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         console.log(`🔧 ${trade.symbol}: Fixed missing TP to $${trade.takeProfit.toFixed(2)} (${defaultTPPercent}%)`);
       }
       
-      // Fix missing or invalid Stop Loss
+      // Fix missing or invalid Stop Loss - use ATR if available
       if (!trade.stopLoss || trade.stopLoss <= 0 || trade.stopLoss === entryPrice) {
-        if (trade.action === 'BUY') {
-          trade.stopLoss = entryPrice * (1 - defaultSLPercent / 100);
+        if (useATR && atr > 0) {
+          // Use ATR-based stop loss
+          if (trade.action === 'BUY') {
+            trade.stopLoss = Math.max(
+              entryPrice - (2 * atr), // 2x ATR below entry
+              entryPrice * 0.95 // Minimum 5% stop
+            );
+          } else {
+            trade.stopLoss = Math.min(
+              entryPrice + (2 * atr), // 2x ATR above entry
+              entryPrice * 1.05 // Minimum 5% stop
+            );
+          }
+          console.log(`🔧 ${trade.symbol}: Fixed missing SL to $${trade.stopLoss.toFixed(2)} (ATR-based: ${atr.toFixed(2)})`);
         } else {
-          trade.stopLoss = entryPrice * (1 + defaultSLPercent / 100);
+          // Fallback to fixed percentage
+          if (trade.action === 'BUY') {
+            trade.stopLoss = entryPrice * (1 - defaultSLPercent / 100);
+          } else {
+            trade.stopLoss = entryPrice * (1 + defaultSLPercent / 100);
+          }
+          console.log(`🔧 ${trade.symbol}: Fixed missing SL to $${trade.stopLoss.toFixed(2)} (${defaultSLPercent}%)`);
         }
         needsFix = true;
-        console.log(`🔧 ${trade.symbol}: Fixed missing SL to $${trade.stopLoss.toFixed(2)} (${defaultSLPercent}%)`);
       }
       
       // Fix missing or invalid DCA level (addPosition)
@@ -4304,7 +4381,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       if (needsFix) {
         fixedCount++;
       }
-    });
+    }
     
     if (fixedCount > 0) {
       console.log(`✅ Fixed ${fixedCount} trade(s) with missing TP, SL, or DCA levels`);
@@ -4359,7 +4436,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     }
 
     // Fix any trades missing TP, SL, or DCA levels first
-    this.fixMissingTradeLevels();
+    await this.fixMissingTradeLevels();
 
     // Sync with OKX positions first (source of truth for quantities)
     // NOTE: Trade data is kept in memory only for trigger monitoring (DCA, SL, TP proximity detection)
@@ -6323,11 +6400,26 @@ Return JSON array format:
     // Try to get price data for ATR calculation
     if (analysis.priceData && Array.isArray(analysis.priceData) && analysis.priceData.length >= 15) {
       try {
-        atr = calculateATR(analysis.priceData, 14);
-        useATR = atr > 0;
+        // Validate price data has required fields (high, low, close)
+        const validPriceData = analysis.priceData.filter(p => 
+          p && (p.high || p.price) && (p.low || p.price) && (p.close || p.price)
+        );
+        
+        if (validPriceData.length >= 15) {
+          atr = calculateATR(validPriceData, 14);
+          useATR = atr > 0;
+          
+          if (!useATR) {
+            console.log(`⚠️ ATR calculation returned 0 for ${analysis.symbol || 'unknown'} - using default stop loss`);
+          }
+        } else {
+          console.log(`⚠️ Insufficient valid price data for ATR (${validPriceData.length}/15 required) - using default stop loss`);
+        }
       } catch (error) {
-        console.log(`⚠️ ATR calculation failed, using default: ${error.message}`);
+        console.log(`⚠️ ATR calculation failed for ${analysis.symbol || 'unknown'}, using default: ${error.message}`);
       }
+    } else if (analysis.priceData) {
+      console.log(`⚠️ Price data available but insufficient length (${analysis.priceData.length || 0}/15 required) - using default stop loss`);
     }
     
     // Fallback to default if ATR not available
