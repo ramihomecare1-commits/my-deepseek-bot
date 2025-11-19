@@ -3623,18 +3623,40 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     exchange.baseUrl
                   );
                   
-                  if (tpResult.success && slResult.success) {
-                    console.log(`✅ TP and SL algo orders placed separately for ${newTrade.symbol}!`);
-                    console.log(`   TP Algo ID: ${tpResult.algoId || tpResult.algoClOrdId}`);
-                    console.log(`   SL Algo ID: ${slResult.algoId || slResult.algoClOrdId}`);
-                    newTrade.okxAlgoId = tpResult.algoId || slResult.algoId;
-                    newTrade.okxAlgoClOrdId = tpResult.algoClOrdId || slResult.algoClOrdId;
-                    newTrade.tpSlAutoPlaced = true;
-                    addLogEntry(`TP/SL algo orders placed separately on OKX for ${newTrade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
+                  // Handle partial success - place orders individually and track each
+                  let tpPlaced = false;
+                  let slPlaced = false;
+                  
+                  if (tpResult.success) {
+                    console.log(`✅ TP algo order placed for ${newTrade.symbol}! TP Algo ID: ${tpResult.algoId || tpResult.algoClOrdId}`);
+                    tpPlaced = true;
+                    newTrade.okxTpAlgoId = tpResult.algoId;
+                    newTrade.okxTpAlgoClOrdId = tpResult.algoClOrdId;
                   } else {
-                    console.log(`⚠️ Failed to place separate TP/SL orders for ${newTrade.symbol}`);
-                    if (!tpResult.success) console.log(`   TP error: ${tpResult.error}`);
-                    if (!slResult.success) console.log(`   SL error: ${slResult.error}`);
+                    console.log(`⚠️ Failed to place TP order for ${newTrade.symbol}: ${tpResult.error || 'Unknown error'}`);
+                  }
+                  
+                  if (slResult.success) {
+                    console.log(`✅ SL algo order placed for ${newTrade.symbol}! SL Algo ID: ${slResult.algoId || slResult.algoClOrdId}`);
+                    slPlaced = true;
+                    newTrade.okxSlAlgoId = slResult.algoId;
+                    newTrade.okxSlAlgoClOrdId = slResult.algoClOrdId;
+                  } else {
+                    console.log(`⚠️ Failed to place SL order for ${newTrade.symbol}: ${slResult.error || 'Unknown error'}`);
+                  }
+                  
+                  if (tpPlaced || slPlaced) {
+                    // At least one order succeeded
+                    newTrade.okxAlgoId = tpResult.algoId || slResult.algoId; // Store primary algo ID
+                    newTrade.okxAlgoClOrdId = tpResult.algoClOrdId || slResult.algoClOrdId;
+                    newTrade.tpSlAutoPlaced = tpPlaced && slPlaced; // Only fully auto if both placed
+                    if (tpPlaced && slPlaced) {
+                      addLogEntry(`TP/SL algo orders placed separately on OKX for ${newTrade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
+                    } else {
+                      addLogEntry(`Partial TP/SL orders placed on OKX for ${newTrade.symbol} (TP: ${tpPlaced ? '✅' : '❌'}, SL: ${slPlaced ? '✅' : '❌'})`, 'warning');
+                    }
+                  } else {
+                    console.log(`❌ Failed to place both TP and SL orders for ${newTrade.symbol}`);
                     console.log(`   Trade will be monitored manually for TP/SL execution`);
                     newTrade.tpSlAutoPlaced = false;
                   }
@@ -3645,6 +3667,43 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 newTrade.okxAlgoClOrdId = algoResult.algoClOrdId;
                 newTrade.tpSlAutoPlaced = true;
                 addLogEntry(`TP/SL algo orders placed on OKX for ${newTrade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
+              }
+              
+              // Place DCA limit order at addPosition price (if trade goes against us)
+              try {
+                const dcaPrice = addPosition;
+                const dcaSide = newTrade.action === 'BUY' ? 'buy' : 'sell';
+                const dcaQuantity = Math.floor(initialQuantity * 0.5); // DCA with 50% of initial position size
+                
+                if (dcaQuantity > 0 && dcaPrice > 0) {
+                  console.log(`📊 Placing DCA limit order for ${newTrade.symbol} at $${dcaPrice.toFixed(2)}...`);
+                  
+                  const { executeOkxLimitOrder } = require('../services/exchangeService');
+                  const dcaOrderResult = await executeOkxLimitOrder(
+                    okxSymbol,
+                    dcaSide,
+                    dcaQuantity,
+                    dcaPrice, // Limit price
+                    exchange.apiKey,
+                    exchange.apiSecret,
+                    exchange.passphrase,
+                    exchange.baseUrl,
+                    leverage
+                  );
+                  
+                  if (dcaOrderResult.success) {
+                    console.log(`✅ DCA limit order placed for ${newTrade.symbol} at $${dcaPrice.toFixed(2)}! Order ID: ${dcaOrderResult.orderId}`);
+                    newTrade.okxDcaOrderId = dcaOrderResult.orderId;
+                    newTrade.okxDcaPrice = dcaPrice;
+                    newTrade.okxDcaQuantity = dcaQuantity;
+                    addLogEntry(`DCA limit order placed on OKX for ${newTrade.symbol} at $${dcaPrice.toFixed(2)}`, 'info');
+                  } else {
+                    console.log(`⚠️ Failed to place DCA limit order for ${newTrade.symbol}: ${dcaOrderResult.error || 'Unknown error'}`);
+                  }
+                }
+              } catch (dcaError) {
+                console.log(`⚠️ Error placing DCA limit order for ${newTrade.symbol}: ${dcaError.message}`);
+                // Don't fail the trade if DCA order fails - it's optional
               }
             } catch (algoError) {
               console.log(`⚠️ Error placing TP/SL algo orders: ${algoError.message}`);
@@ -4294,19 +4353,41 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           exchange.baseUrl
         );
         
-        if (tpResult.success && slResult.success) {
-          console.log(`✅ TP and SL algo orders placed separately for ${trade.symbol}!`);
-          console.log(`   TP Algo ID: ${tpResult.algoId || tpResult.algoClOrdId}`);
-          console.log(`   SL Algo ID: ${slResult.algoId || slResult.algoClOrdId}`);
-          trade.okxAlgoId = tpResult.algoId || slResult.algoId; // Store one as primary
-          trade.okxAlgoClOrdId = tpResult.algoClOrdId || slResult.algoClOrdId;
-          trade.tpSlAutoPlaced = true;
-          addLogEntry(`TP/SL algo orders placed separately on OKX for ${trade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
-          return true;
+        // Handle partial success - place orders individually and track each
+        let tpPlaced = false;
+        let slPlaced = false;
+        
+        if (tpResult.success) {
+          console.log(`✅ TP algo order placed for ${trade.symbol}! TP Algo ID: ${tpResult.algoId || tpResult.algoClOrdId}`);
+          tpPlaced = true;
+          trade.okxTpAlgoId = tpResult.algoId;
+          trade.okxTpAlgoClOrdId = tpResult.algoClOrdId;
         } else {
-          console.log(`⚠️ Failed to place separate TP/SL orders for ${trade.symbol}`);
-          if (!tpResult.success) console.log(`   TP error: ${tpResult.error}`);
-          if (!slResult.success) console.log(`   SL error: ${slResult.error}`);
+          console.log(`⚠️ Failed to place TP order for ${trade.symbol}: ${tpResult.error || 'Unknown error'}`);
+        }
+        
+        if (slResult.success) {
+          console.log(`✅ SL algo order placed for ${trade.symbol}! SL Algo ID: ${slResult.algoId || slResult.algoClOrdId}`);
+          slPlaced = true;
+          trade.okxSlAlgoId = slResult.algoId;
+          trade.okxSlAlgoClOrdId = slResult.algoClOrdId;
+        } else {
+          console.log(`⚠️ Failed to place SL order for ${trade.symbol}: ${slResult.error || 'Unknown error'}`);
+        }
+        
+        if (tpPlaced || slPlaced) {
+          // At least one order succeeded
+          trade.okxAlgoId = tpResult.algoId || slResult.algoId; // Store primary algo ID
+          trade.okxAlgoClOrdId = tpResult.algoClOrdId || slResult.algoClOrdId;
+          trade.tpSlAutoPlaced = tpPlaced && slPlaced; // Only fully auto if both placed
+          if (tpPlaced && slPlaced) {
+            addLogEntry(`TP/SL algo orders placed separately on OKX for ${trade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
+          } else {
+            addLogEntry(`Partial TP/SL orders placed on OKX for ${trade.symbol} (TP: ${tpPlaced ? '✅' : '❌'}, SL: ${slPlaced ? '✅' : '❌'})`, 'warning');
+          }
+          return true; // Return true if at least one order succeeded
+        } else {
+          console.log(`❌ Failed to place both TP and SL orders for ${trade.symbol}`);
           trade.tpSlAutoPlaced = false;
           return false;
         }

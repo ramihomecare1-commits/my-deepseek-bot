@@ -762,6 +762,87 @@ async function executeOkxRequestWithFallback(options) {
  * @param {number} leverage - Leverage multiplier (default: 1, max: 125 for most pairs)
  * @returns {Promise<Object>} Order result
  */
+/**
+ * Execute OKX limit order (for DCA limit orders)
+ * @param {string} symbol - OKX symbol (e.g., 'BTC-USDT-SWAP')
+ * @param {string} side - 'buy' or 'sell'
+ * @param {number} quantity - Order quantity
+ * @param {number} price - Limit price
+ * @param {string} apiKey - OKX API key
+ * @param {string} apiSecret - OKX API secret
+ * @param {string} passphrase - OKX passphrase
+ * @param {string} baseUrl - OKX API base URL
+ * @param {number} leverage - Leverage (default: 1)
+ * @returns {Promise<Object>} Order result
+ */
+async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSecret, passphrase, baseUrl, leverage = 1) {
+  try {
+    const requestPath = '/api/v5/trade/order';
+    const tdMode = 'cross'; // Cross margin for derivatives
+    const posSide = side.toLowerCase() === 'buy' ? 'long' : 'short';
+    
+    // Round quantity to lot size (usually 1 for perpetual swaps)
+    const roundedQuantity = Math.floor(quantity);
+    
+    if (roundedQuantity <= 0) {
+      throw new Error('Invalid quantity: must be greater than 0');
+    }
+    
+    const body = {
+      instId: symbol,
+      tdMode: tdMode,
+      side: side.toLowerCase(),
+      posSide: posSide,
+      ordType: 'limit', // Limit order
+      sz: roundedQuantity.toString(),
+      px: price.toFixed(8), // Limit price with precision
+      lever: leverage.toString()
+    };
+    
+    console.log(`📊 [OKX API] Placing limit order: ${side} ${roundedQuantity} ${symbol} at $${price.toFixed(2)} (Leverage: ${leverage}x)`);
+    
+    const response = await executeOkxRequestWithFallback({
+      apiKey,
+      apiSecret,
+      passphrase,
+      baseUrl,
+      requestPath,
+      method: 'POST',
+      body
+    });
+    
+    if (response.data && response.data.code === '0' && response.data.data && response.data.data.length > 0) {
+      const order = response.data.data[0];
+      console.log(`✅ [OKX API] Limit order placed successfully! Order ID: ${order.ordId}`);
+      
+      return {
+        success: true,
+        orderId: order.ordId,
+        symbol: order.instId,
+        side: order.side,
+        quantity: roundedQuantity,
+        price: price,
+        status: order.state,
+        mode: 'OKX'
+      };
+    } else {
+      const errorMsg = response.data?.msg || 'Unknown error';
+      console.log(`❌ [OKX API] Limit order failed: ${errorMsg}`);
+      return {
+        success: false,
+        error: errorMsg,
+        code: response.data?.code
+      };
+    }
+  } catch (error) {
+    console.log(`❌ [OKX API] Error placing limit order: ${error.message}`);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
 async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, passphrase, baseUrl, leverage = 1) {
   try {
     const requestPath = '/api/v5/trade/order';
@@ -3789,6 +3870,7 @@ module.exports = {
   calculateQuantity,
   getPreferredExchange,
   executeOkxMarketOrder,
+  executeOkxLimitOrder,
   OKX_SYMBOL_MAP,
   BYBIT_SYMBOL_MAP, // Legacy (kept for backward compatibility)
   BINANCE_SYMBOL_MAP, // Legacy
