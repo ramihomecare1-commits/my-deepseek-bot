@@ -58,19 +58,19 @@ function getPreferredExchange() {
   const okxApiKey = process.env.OKX_API_KEY || '';
   const okxApiSecret = process.env.OKX_API_SECRET || '';
   const okxPassphrase = process.env.OKX_PASSPHRASE || '';
-  
+
   // OKX requires API key, secret, and passphrase
   if (okxApiKey && okxApiSecret && okxPassphrase) {
-    return { 
-      exchange: 'OKX', 
-      apiKey: okxApiKey, 
+    return {
+      exchange: 'OKX',
+      apiKey: okxApiKey,
       apiSecret: okxApiSecret,
       passphrase: okxPassphrase,
       testnet: true, // OKX demo uses demo account API keys
       baseUrl: OKX_BASE_URL
     };
   }
-  
+
   return { exchange: 'DISABLED', apiKey: null, apiSecret: null, passphrase: null, testnet: false, baseUrl: null };
 }
 
@@ -82,9 +82,9 @@ function isExchangeTradingEnabled() {
   const okxApiSecret = process.env.OKX_API_SECRET || '';
   const okxPassphrase = process.env.OKX_PASSPHRASE || '';
   const hasOkxKeys = okxApiKey.length > 0 && okxApiSecret.length > 0 && okxPassphrase.length > 0;
-  
+
   const preferredExchange = getPreferredExchange();
-  
+
   // Log exchange status on first call (startup)
   if (!isExchangeTradingEnabled._logged) {
     isExchangeTradingEnabled._logged = true;
@@ -108,7 +108,7 @@ function isExchangeTradingEnabled() {
     }
     console.log('='.repeat(60) + '\n');
   }
-  
+
   return {
     enabled: hasOkxKeys,
     mode: hasOkxKeys ? 'OKX_DEMO' : 'DISABLED',
@@ -143,7 +143,7 @@ function generateBybitSignature(params, apiSecret) {
     .sort()
     .map(key => `${key}=${params[key]}`)
     .join('&');
-  
+
   return crypto
     .createHmac('sha256', apiSecret)
     .update(sortedParams)
@@ -175,11 +175,11 @@ function generateSignature(queryString, apiSecret) {
  */
 async function executeBybitRequestWithFallback(options) {
   const { apiKey, apiSecret, baseUrl, endpoint, method = 'GET', requestParams, body } = options;
-  
+
   const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
   const scraperApiKey = config.SCRAPER_API_KEY || '';
   const proxyPriority = config.PROXY_PRIORITY || 'scrapeops';
-  
+
   // Determine proxy order based on priority
   const proxies = [];
   if (scrapeOpsKey && (proxyPriority === 'scrapeops' || !scraperApiKey)) {
@@ -190,69 +190,69 @@ async function executeBybitRequestWithFallback(options) {
   }
   // Always add direct as last resort (even though it's geo-blocked, worth trying)
   proxies.push({ name: 'Direct', key: null, url: baseUrl });
-  
+
   // Use timestamp and recvWindow from requestParams if available, otherwise generate new ones
   const timestamp = requestParams?.timestamp ? parseInt(requestParams.timestamp) : Date.now();
   const recvWindow = requestParams?.recvWindow ? parseInt(requestParams.recvWindow) : 5000;
   const signature = generateBybitSignature(requestParams || {}, apiSecret);
-  
+
   // Try each proxy in sequence
   for (let i = 0; i < proxies.length; i++) {
     const proxy = proxies[i];
     const isLastAttempt = i === proxies.length - 1;
-    
+
     try {
       let targetUrl, requestConfig;
-      
+
       if (proxy.name === 'ScrapeOps') {
         // ScrapeOps Proxy API format: https://proxy.scrapeops.io/v1/?api_key=xxx&url=xxx
-        const fullUrl = method === 'GET' 
+        const fullUrl = method === 'GET'
           ? `${baseUrl}${endpoint}?${new URLSearchParams({ ...requestParams, signature }).toString()}`
           : `${baseUrl}${endpoint}`;
-        
+
         const customHeaders = {
           'X-BAPI-API-KEY': apiKey,
           'X-BAPI-TIMESTAMP': timestamp.toString(),
           'X-BAPI-RECV-WINDOW': recvWindow.toString(),
           'X-BAPI-SIGN': signature
         };
-        
+
         if (method === 'POST') {
           customHeaders['Content-Type'] = 'application/json';
         }
-        
+
         targetUrl = proxy.url;
-        
+
         // ScrapeOps Proxy API format:
         // GET: https://proxy.scrapeops.io/v1/?api_key=xxx&url=ENCODED_URL
         // POST: Same, but body goes in request body
         // Headers: Pass as 'headers' query param (JSON string) OR in request headers
         const requestBody = method === 'POST' ? (body || { ...requestParams, signature }) : undefined;
-        
+
         // Build query params for ScrapeOps
         const scrapeOpsParams = {
           api_key: proxy.key,
           url: fullUrl,
           keep_headers: 'true' // CRITICAL: Tell ScrapeOps to forward custom headers
         };
-        
+
         // Pass headers as query param (ScrapeOps format)
         // ScrapeOps will forward these headers to the target URL
         scrapeOpsParams.headers = JSON.stringify(customHeaders);
-        
+
         requestConfig = {
           params: scrapeOpsParams,
           headers: {}, // ScrapeOps doesn't need custom headers in request headers
           timeout: 20000, // 20s timeout (if it doesn't work in 20s, try next proxy)
           validateStatus: (status) => status < 600 // Allow 5xx to be handled
         };
-        
+
         // For POST requests, body goes in request body
         if (method === 'POST' && requestBody) {
           requestConfig.data = JSON.stringify(requestBody);
           requestConfig.headers['Content-Type'] = 'application/json';
         }
-        
+
         console.log(`🔄 [BYBIT API] Attempt ${i + 1}/${proxies.length}: Trying ScrapeOps proxy...`);
         console.log(`   📤 ScrapeOps URL: ${targetUrl}`);
         console.log(`   📤 Target URL: ${fullUrl}`);
@@ -269,18 +269,18 @@ async function executeBybitRequestWithFallback(options) {
         const fullUrl = method === 'GET'
           ? `${baseUrl}${endpoint}?${new URLSearchParams({ ...requestParams, signature }).toString()}`
           : `${baseUrl}${endpoint}`;
-        
+
         const customHeaders = {
           'X-BAPI-API-KEY': apiKey,
           'X-BAPI-TIMESTAMP': timestamp.toString(),
           'X-BAPI-RECV-WINDOW': recvWindow.toString(),
           'X-BAPI-SIGN': signature
         };
-        
+
         if (method === 'POST') {
           customHeaders['Content-Type'] = 'application/json';
         }
-        
+
         targetUrl = proxy.url;
         requestConfig = {
           params: {
@@ -295,7 +295,7 @@ async function executeBybitRequestWithFallback(options) {
           timeout: 20000, // 20s timeout (same as ScrapeOps)
           validateStatus: (status) => status < 500
         };
-        
+
         console.log(`🔄 [BYBIT API] Attempt ${i + 1}/${proxies.length}: Trying ScraperAPI proxy (fallback)...`);
         console.log(`   📤 ScraperAPI URL: ${targetUrl}`);
         console.log(`   📤 Target URL: ${fullUrl}`);
@@ -319,19 +319,19 @@ async function executeBybitRequestWithFallback(options) {
           timeout: 10000, // 10s for direct
           validateStatus: (status) => status < 500
         };
-        
+
         if (method === 'POST') {
           requestConfig.headers['Content-Type'] = 'application/json';
         }
-        
+
         console.log(`🔄 [BYBIT API] Attempt ${i + 1}/${proxies.length}: Trying direct connection (last resort)...`);
       }
-      
+
       // Execute request with timing
       let response;
       const startTime = Date.now();
       requestConfig.metadata = { startTime };
-      
+
       try {
         if (method === 'GET') {
           response = await axios.get(targetUrl, requestConfig);
@@ -339,19 +339,19 @@ async function executeBybitRequestWithFallback(options) {
           // For POST requests
           response = await axios.post(targetUrl, requestConfig.data || requestConfig.params, requestConfig);
         }
-        
+
         const duration = Date.now() - startTime;
         console.log(`   ⏱️ Request completed in ${duration}ms`);
-        
+
         // Log response details for debugging
         console.log(`   📥 Response status: ${response.status}`);
         console.log(`   📥 Response data: ${JSON.stringify(response.data).substring(0, 200)}...`);
-        
+
         // Check if response is valid (not HTML/Cloudflare block)
         if (response.data && typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
           throw new Error('GEO_BLOCKED');
         }
-        
+
         // Success! Return response
         console.log(`✅ [BYBIT API] Success via ${proxy.name} proxy`);
         return response;
@@ -364,24 +364,24 @@ async function executeBybitRequestWithFallback(options) {
         }
         throw requestError;
       }
-      
+
     } catch (error) {
       // Enhanced timeout detection
-      const isTimeout = error.code === 'ECONNABORTED' || 
-                       error.message?.toLowerCase().includes('timeout') ||
-                       error.message?.toLowerCase().includes('exceeded') ||
-                       (error.config && Date.now() - error.config.metadata?.startTime > (error.config.timeout || 0));
-      
-      const isGeoBlocked = error.message === 'GEO_BLOCKED' || 
+      const isTimeout = error.code === 'ECONNABORTED' ||
+        error.message?.toLowerCase().includes('timeout') ||
+        error.message?.toLowerCase().includes('exceeded') ||
+        (error.config && Date.now() - error.config.metadata?.startTime > (error.config.timeout || 0));
+
+      const isGeoBlocked = error.message === 'GEO_BLOCKED' ||
         (error.response?.data && typeof error.response.data === 'string' && error.response.data.includes('<!DOCTYPE'));
-      
+
       // Log the error details
       console.log(`   ⚠️ ${proxy.name} error: ${error.message || 'Unknown error'}`);
       console.log(`   ⚠️ Error code: ${error.code || 'N/A'}`);
       if (error.response) {
         console.log(`   ⚠️ Response status: ${error.response.status}`);
       }
-      
+
       if (isLastAttempt) {
         // Last attempt failed, throw the error
         console.log(`\n❌ [BYBIT API] All ${proxies.length} attempts failed. Last error from ${proxy.name}:`);
@@ -416,34 +416,34 @@ async function executeBybitRequestWithFallback(options) {
  */
 async function executeOkxRequestWithFallback(options) {
   const { apiKey, apiSecret, passphrase, baseUrl, requestPath, method = 'GET', body } = options;
-  
+
   const scrapeOpsKey = config.SCRAPEOPS_API_KEY || '';
   const scraperApiKey = config.SCRAPER_API_KEY || '';
-  
+
   // Determine proxy order: Direct first, then ScrapeOps, then ScraperAPI
   const proxies = [
     { name: 'Direct', key: null, url: baseUrl }
   ];
-  
+
   if (scrapeOpsKey) {
     proxies.push({ name: 'ScrapeOps', key: scrapeOpsKey, url: 'https://proxy.scrapeops.io/v1/' });
   }
   if (scraperApiKey) {
     proxies.push({ name: 'ScraperAPI', key: scraperApiKey, url: 'http://api.scraperapi.com' });
   }
-  
+
   // Try each proxy in sequence
   for (let i = 0; i < proxies.length; i++) {
     const proxy = proxies[i];
     const isLastAttempt = i === proxies.length - 1;
-    
+
     try {
       const timestamp = new Date().toISOString();
       const bodyString = body ? JSON.stringify(body) : '';
       const signature = generateOkxSignature(timestamp, method, requestPath, bodyString, apiSecret);
-      
+
       let targetUrl, requestConfig;
-      
+
       if (proxy.name === 'Direct') {
         // Direct connection (first attempt)
         targetUrl = `${baseUrl}${requestPath}`;
@@ -461,7 +461,7 @@ async function executeOkxRequestWithFallback(options) {
           timeout: 10000, // 10s for direct
           validateStatus: (status) => status >= 200 && status < 300 // Only accept 2xx as success
         };
-        
+
         console.log(`🔄 [OKX API] Attempt ${i + 1}/${proxies.length}: Trying direct connection...`);
       } else if (proxy.name === 'ScrapeOps') {
         // ScrapeOps proxy - Note: ScrapeOps may not properly forward custom headers for authenticated APIs
@@ -473,7 +473,7 @@ async function executeOkxRequestWithFallback(options) {
           render: 'false', // Don't render JavaScript
           keep_headers: 'true' // Try to keep headers
         };
-        
+
         // ScrapeOps requires headers to be passed as a JSON string in the params
         const customHeaders = {
           'OK-ACCESS-KEY': apiKey,
@@ -483,16 +483,16 @@ async function executeOkxRequestWithFallback(options) {
           'x-simulated-trading': '1', // Required for demo/simulated accounts
           'Content-Type': 'application/json'
         };
-        
+
         // ScrapeOps expects headers as a JSON string
         scrapeOpsParams.headers = JSON.stringify(customHeaders);
-        
+
         // For POST requests, include body in params (ScrapeOps needs it in params, not data)
         if (method === 'POST' && body) {
           scrapeOpsParams.body = JSON.stringify(body);
           scrapeOpsParams.method = 'POST';
         }
-        
+
         targetUrl = proxy.url;
         requestConfig = {
           params: scrapeOpsParams,
@@ -500,9 +500,9 @@ async function executeOkxRequestWithFallback(options) {
           timeout: 20000,
           validateStatus: (status) => status < 500
         };
-        
+
         console.log(`⚠️ [OKX API] ScrapeOps may not forward authentication headers correctly - this is a known limitation`);
-        
+
         console.log(`🔄 [OKX API] Attempt ${i + 1}/${proxies.length}: Trying ScrapeOps proxy (fallback)...`);
       } else {
         // ScraperAPI proxy
@@ -528,14 +528,14 @@ async function executeOkxRequestWithFallback(options) {
           timeout: 20000,
           validateStatus: (status) => status < 500
         };
-        
+
         console.log(`🔄 [OKX API] Attempt ${i + 1}/${proxies.length}: Trying ScraperAPI proxy (fallback)...`);
       }
-      
+
       // Execute request
       const startTime = Date.now();
       let response;
-      
+
       if (method === 'GET') {
         response = await axios.get(targetUrl, requestConfig);
       } else {
@@ -546,7 +546,7 @@ async function executeOkxRequestWithFallback(options) {
         if (!requestConfig.headers['Content-Type'] && method === 'POST') {
           requestConfig.headers['Content-Type'] = 'application/json';
         }
-        
+
         // For proxies, send body in data field, not params
         if (proxy.name !== 'Direct') {
           // ScrapeOps uses GET with params, so we need to handle it differently
@@ -567,23 +567,23 @@ async function executeOkxRequestWithFallback(options) {
           response = await axios.post(targetUrl, requestConfig.data || requestConfig.params, requestConfig);
         }
       }
-      
+
       const duration = Date.now() - startTime;
       console.log(`   ⏱️ Request completed in ${duration}ms`);
       console.log(`   📥 Response status: ${response.status}`);
       console.log(`   📥 Response data: ${JSON.stringify(response.data).substring(0, 200)}...`);
-      
+
       // Check if response is valid (not HTML/Cloudflare block)
       if (response.data && typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
         throw new Error('GEO_BLOCKED');
       }
-      
+
       // Check for OKX API errors (401, or code !== '0')
       if (response.status === 401) {
         const errorMsg = response.data?.msg || response.data?.message || 'Unauthorized';
         throw new Error(`OKX Authentication Error: ${errorMsg}`);
       }
-      
+
       // Check OKX response code (OKX uses 'code' field, '0' means success)
       // Note: We return the response even if code !== '0' because:
       // 1. Business logic errors (like 51088) should be handled by the caller
@@ -594,14 +594,14 @@ async function executeOkxRequestWithFallback(options) {
         const errorCode = response.data.code;
         const sCode = response.data?.data?.[0]?.sCode;
         const sMsg = response.data?.data?.[0]?.sMsg;
-        
+
         // Only throw for authentication/authorization errors that won't benefit from proxy retry
         // Business logic errors (like 51088) should be returned to caller for handling
-        const isAuthError = response.status === 401 || errorCode === '50103' || 
-                           errorMsg.includes('APIKey') || errorMsg.includes('authentication') ||
-                           errorMsg.includes('Unauthorized') || errorMsg.includes('Forbidden') ||
-                           errorMsg.includes('OK-ACCESS-KEY');
-        
+        const isAuthError = response.status === 401 || errorCode === '50103' ||
+          errorMsg.includes('APIKey') || errorMsg.includes('authentication') ||
+          errorMsg.includes('Unauthorized') || errorMsg.includes('Forbidden') ||
+          errorMsg.includes('OK-ACCESS-KEY');
+
         if (isAuthError) {
           // Handle specific error 51000 (parameter error)
           if (errorCode === '1' && sCode === '51000') {
@@ -629,11 +629,11 @@ async function executeOkxRequestWithFallback(options) {
             console.log(`      - Verify you're using API keys from your DEMO account (not live account)`);
             console.log(`      - The 'x-simulated-trading: 1' header is automatically added\n`);
           }
-          
+
           // Only throw auth errors - these won't be fixed by proxy retry
           throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
         }
-        
+
         // Handle specific business logic errors with helpful messages
         if (errorCode === '50002' || sCode === '50002') {
           console.log(`\n⚠️ [OKX API] Business logic error detected (Code: 50002)`);
@@ -645,23 +645,23 @@ async function executeOkxRequestWithFallback(options) {
           console.log(`      4. Invalid order type or combination of parameters`);
           console.log(`   💡 The bot will attempt to handle this gracefully\n`);
         }
-        
+
         // For business logic errors (like 51088, 50002), return the response so caller can handle it
         // Don't try proxy fallback for these - they're valid API responses
         console.log(`⚠️ [OKX API] Business logic error (code: ${errorCode}, sCode: ${sCode}) - returning response to caller (no proxy fallback)`);
         return response;
       }
-      
+
       // Success! Return response
       console.log(`✅ [OKX API] Success via ${proxy.name}`);
       return response;
-      
+
     } catch (error) {
       // Handle 401 errors from axios (when validateStatus rejects)
       if (error.response && error.response.status === 401) {
         const okxError = error.response.data?.msg || error.response.data?.message || 'Unauthorized';
         const okxCode = error.response.data?.code || '401';
-        
+
         // Provide helpful guidance for common errors
         if (okxError.includes('APIKey does not match current environment') || okxError.includes('environment')) {
           console.log(`\n💡 [OKX API] Authentication Error: ${okxError}`);
@@ -679,23 +679,23 @@ async function executeOkxRequestWithFallback(options) {
           console.log(`      - The bot automatically adds 'x-simulated-trading: 1' header for demo accounts`);
           console.log(`   💡 Check: https://www.okx.com → Account → API → Manage API Keys\n`);
         }
-        
+
         throw new Error(`OKX Authentication Error (${okxCode}): ${okxError}`);
       }
-      
+
       // Handle OKX error codes in error response
       if (error.response && error.response.data && error.response.data.code !== undefined && error.response.data.code !== '0') {
         const errorMsg = error.response.data.msg || error.response.data.message || 'Unknown error';
         const errorCode = error.response.data.code;
         const sCode = error.response.data?.data?.[0]?.sCode;
         const sMsg = error.response.data?.data?.[0]?.sMsg;
-        
+
         // Check if this is an authentication error (should throw) or business logic error (should return)
-        const isAuthError = errorCode === '50103' || 
-                           errorMsg.includes('APIKey') || errorMsg.includes('authentication') ||
-                           errorMsg.includes('Unauthorized') || errorMsg.includes('Forbidden') ||
-                           errorMsg.includes('OK-ACCESS-KEY');
-        
+        const isAuthError = errorCode === '50103' ||
+          errorMsg.includes('APIKey') || errorMsg.includes('authentication') ||
+          errorMsg.includes('Unauthorized') || errorMsg.includes('Forbidden') ||
+          errorMsg.includes('OK-ACCESS-KEY');
+
         // Handle specific error 51000 (parameter error)
         if (errorCode === '1' && sCode === '51000') {
           console.log(`\n❌ [OKX API] Parameter error detected (Code: ${sCode})`);
@@ -722,7 +722,7 @@ async function executeOkxRequestWithFallback(options) {
           console.log(`      - Verify you're using API keys from your DEMO account (not live account)`);
           console.log(`      - The 'x-simulated-trading: 1' header is automatically added\n`);
         }
-        
+
         // Only throw auth errors - return business logic errors (like 51088) as response
         if (isAuthError) {
           throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
@@ -738,22 +738,22 @@ async function executeOkxRequestWithFallback(options) {
             console.log(`      4. Invalid order type or combination of parameters`);
             console.log(`   💡 The bot will attempt to handle this gracefully\n`);
           }
-          
+
           // For business logic errors, return the error response so caller can handle it
           console.log(`⚠️ [OKX API] Business logic error in catch (code: ${errorCode}, sCode: ${sCode}) - returning response`);
           return error.response;
         }
       }
-      const isTimeout = error.code === 'ECONNABORTED' || 
-                       error.message?.toLowerCase().includes('timeout') ||
-                       error.message?.toLowerCase().includes('exceeded');
-      
-      const isGeoBlocked = error.message === 'GEO_BLOCKED' || 
+      const isTimeout = error.code === 'ECONNABORTED' ||
+        error.message?.toLowerCase().includes('timeout') ||
+        error.message?.toLowerCase().includes('exceeded');
+
+      const isGeoBlocked = error.message === 'GEO_BLOCKED' ||
         (error.response?.data && typeof error.response.data === 'string' && error.response.data.includes('<!DOCTYPE'));
-      
+
       console.log(`   ⚠️ ${proxy.name} error: ${error.message || 'Unknown error'}`);
       console.log(`   ⚠️ Error code: ${error.code || 'N/A'}`);
-      
+
       if (isLastAttempt) {
         console.log(`\n❌ [OKX API] All ${proxies.length} attempts failed. Last error from ${proxy.name}:`);
         if (isTimeout) {
@@ -804,14 +804,14 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
     const requestPath = '/api/v5/trade/order';
     const tdMode = 'cross'; // Cross margin for derivatives
     const posSide = side.toLowerCase() === 'buy' ? 'long' : 'short';
-    
+
     // Round quantity to lot size (usually 1 for perpetual swaps)
     const roundedQuantity = Math.floor(quantity);
-    
+
     if (roundedQuantity <= 0) {
       throw new Error('Invalid quantity: must be greater than 0');
     }
-    
+
     const body = {
       instId: symbol,
       tdMode: tdMode,
@@ -822,9 +822,9 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
       px: price.toFixed(8), // Limit price with precision
       lever: leverage.toString()
     };
-    
+
     console.log(`📊 [OKX API] Placing limit order: ${side} ${roundedQuantity} ${symbol} at $${price.toFixed(2)} (Leverage: ${leverage}x)`);
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -834,11 +834,11 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
       method: 'POST',
       body
     });
-    
+
     if (response.data && response.data.code === '0' && response.data.data && response.data.data.length > 0) {
       const order = response.data.data[0];
       console.log(`✅ [OKX API] Limit order placed successfully! Order ID: ${order.ordId}`);
-      
+
       return {
         success: true,
         orderId: order.ordId,
@@ -871,40 +871,40 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
   try {
     const requestPath = '/api/v5/trade/order';
     const tdMode = 'cross'; // Cross margin for derivatives
-    
+
     // OKX perpetual swaps require quantity to be a multiple of lot size (usually 1 contract)
     // Round to nearest integer (minimum 1 contract)
     let roundedQuantity = Math.max(1, Math.round(quantity));
-    
+
     // Pre-order validation: Check max order size and available balance
     try {
       const maxSize = await getOkxMaxSize(symbol, tdMode, apiKey, apiSecret, passphrase, baseUrl, leverage.toString());
       const maxAvailSize = await getOkxMaxAvailSize(symbol, tdMode, apiKey, apiSecret, passphrase, baseUrl);
-      
+
       if (maxSize) {
         const maxBuy = parseFloat(maxSize.maxBuy || 0);
         const maxSell = parseFloat(maxSize.maxSell || 0);
         const maxAllowed = side.toLowerCase() === 'buy' ? maxBuy : maxSell;
-        
+
         if (maxAllowed > 0 && roundedQuantity > maxAllowed) {
           console.log(`⚠️ [OKX API] Order size ${roundedQuantity} exceeds maximum allowed ${maxAllowed}, adjusting...`);
           roundedQuantity = Math.floor(maxAllowed);
-          
+
           if (roundedQuantity < 1) {
             throw new Error(`Order size exceeds maximum allowed (max: ${maxAllowed} contracts). Reduce position size.`);
           }
         }
       }
-      
+
       if (maxAvailSize) {
         const availBuy = parseFloat(maxAvailSize.availBuy || 0);
         const availSell = parseFloat(maxAvailSize.availSell || 0);
         const availAllowed = side.toLowerCase() === 'buy' ? availBuy : availSell;
-        
+
         if (availAllowed > 0 && roundedQuantity > availAllowed) {
           console.log(`⚠️ [OKX API] Order size ${roundedQuantity} exceeds available balance ${availAllowed}, adjusting...`);
           roundedQuantity = Math.floor(availAllowed);
-          
+
           if (roundedQuantity < 1) {
             throw new Error(`Insufficient available balance (available: ${availAllowed} contracts). Check account balance.`);
           }
@@ -918,7 +918,20 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       // For other validation errors, log but continue (order might still work)
       console.log(`⚠️ [OKX API] Pre-order validation warning: ${validationError.message}`);
     }
-    
+
+    // Set leverage to requested value BEFORE placing order (fix error 50016)
+    try {
+      const setLeverageResult = await setOkxLeverage(symbol, leverage, tdMode, apiKey, apiSecret, passphrase, baseUrl);
+      if (setLeverageResult.success) {
+        console.log(`✅ [OKX API] Leverage confirmed at ${leverage}x`);
+      } else if (setLeverageResult.warning) {
+        console.log(`ℹ️ [OKX API] Leverage warning: ${setLeverageResult.warning}`);
+      }
+    } catch (leverageSetError) {
+      // Non-critical error, log and continue
+      console.log(`⚠️ [OKX API] Could not set leverage (continuing anyway): ${leverageSetError.message}`);
+    }
+
     // Verify leverage (optional check)
     try {
       const leverageInfo = await getOkxLeverageInfo(symbol, tdMode, apiKey, apiSecret, passphrase, baseUrl);
@@ -932,7 +945,7 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       // Leverage check is optional, continue if it fails
       console.log(`⚠️ [OKX API] Could not verify leverage: ${leverageError.message}`);
     }
-    
+
     // Get trading fees for cost estimation
     let estimatedFee = 0;
     let feeInfo = null;
@@ -948,7 +961,7 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       // Fee check is optional, continue if it fails
       console.log(`⚠️ [OKX API] Could not get trading fees: ${feeError.message}`);
     }
-    
+
     // Risk validation: Check position risk before placing order
     // Get current price estimate for risk calculation (use a recent price or market price)
     try {
@@ -956,7 +969,7 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       // For now, we'll skip if we don't have a price estimate
       // In a real scenario, you'd get the current market price first
       const accountConfig = await getOkxAccountConfig(apiKey, apiSecret, passphrase, baseUrl);
-      
+
       // Only validate for Portfolio margin (4) and Multi-currency margin (3)
       if (accountConfig && (accountConfig.acctLv === '3' || accountConfig.acctLv === '4')) {
         // For risk validation, we'd need the current market price
@@ -968,11 +981,11 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       // Risk validation is optional, continue if it fails
       console.log(`⚠️ [OKX API] Could not perform risk validation: ${riskError.message}`);
     }
-    
+
     // For cross margin mode, posSide should match the side
     // 'buy' = long position, 'sell' = short position
     const posSide = side.toLowerCase() === 'buy' ? 'long' : 'short';
-    
+
     const body = {
       instId: symbol,
       tdMode: tdMode, // Cross margin for derivatives (allows leverage and shorting)
@@ -982,17 +995,17 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       sz: roundedQuantity.toString(), // Size (contract quantity, rounded to lot size)
       lever: leverage.toString() // Leverage (1-125, default 1x)
     };
-    
+
     // Log order details for debugging
     console.log(`🔵 [OKX API] Order body:`, JSON.stringify(body));
-    
+
     if (roundedQuantity !== quantity) {
       console.log(`⚠️ [OKX API] Quantity adjusted from ${quantity} to ${roundedQuantity} (validation or lot size requirement)`);
     }
-    
+
     console.log(`🔵 [OKX API] Sending derivatives order: ${side} ${roundedQuantity} ${symbol} (Market, Leverage: ${leverage}x)`);
     console.log(`🔵 [OKX API] API Key: ${apiKey.substring(0, 8)}... (verifying permissions)`);
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -1002,14 +1015,14 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       method: 'POST',
       body
     });
-    
+
     console.log(`🔵 [OKX API] Response data:`, JSON.stringify(response.data).substring(0, 500));
-    
+
     if (response.data && response.data.code === '0' && response.data.data && response.data.data.length > 0) {
       const order = response.data.data[0];
       const executedQty = parseFloat(order.accFillSz || roundedQuantity || 0);
       const executedPrice = parseFloat(order.avgPx || order.px || 0);
-      
+
       // Calculate estimated fee after execution (now we know the price)
       if (feeInfo && executedPrice > 0) {
         // For derivatives, order value = quantity * contract size * price
@@ -1017,12 +1030,12 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
         // Note: Actual contract size varies by instrument, but this gives a reasonable estimate
         const orderValue = executedQty * executedPrice; // Approximate notional value
         estimatedFee = calculateEstimatedFee('SWAP', orderValue, 'market', feeInfo);
-        
+
         if (estimatedFee > 0) {
           console.log(`💰 [OKX API] Estimated trading fee: $${estimatedFee.toFixed(4)} (${((estimatedFee / orderValue) * 100).toFixed(4)}% of order value)`);
         }
       }
-      
+
       console.log(`✅ [OKX API] Order executed successfully!`);
       console.log(`   Order ID: ${order.ordId}`);
       console.log(`   Symbol: ${order.instId}`);
@@ -1033,7 +1046,7 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
         console.log(`   Estimated Fee: $${estimatedFee.toFixed(4)}`);
       }
       console.log(`   Status: ${order.state}`);
-      
+
       return {
         success: true,
         orderId: order.ordId,
@@ -1057,7 +1070,7 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       const errorCode = response.data?.code || response.status || 0;
       const sCode = response.data?.data?.[0]?.sCode;
       const sMsg = response.data?.data?.[0]?.sMsg;
-      
+
       // Handle specific OKX error codes
       if (errorCode === '1' && sCode === '51000') {
         console.log(`❌ [OKX API] Order failed: Parameter error (Code: ${sCode})`);
@@ -1100,7 +1113,7 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
         }
         console.log(`   Full response:`, JSON.stringify(response.data).substring(0, 500));
       }
-      
+
       return {
         success: false,
         error: sMsg || errorMsg,
@@ -1113,7 +1126,7 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
     const errorCode = error.response?.data?.code || error.response?.status || 0;
     const sCode = error.response?.data?.data?.[0]?.sCode;
     const sMsg = error.response?.data?.data?.[0]?.sMsg;
-    
+
     // Handle specific error 51008 (insufficient margin)
     if (errorCode === '1' && sCode === '51008') {
       console.log(`❌ [OKX API] Order execution error: Insufficient margin (Code: ${sCode})`);
@@ -1128,7 +1141,7 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
     } else {
       console.log(`❌ [OKX API] Order execution error: ${errorMsg} (Code: ${errorCode})`);
     }
-    
+
     return {
       success: false,
       error: errorMsg,
@@ -1150,7 +1163,7 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
 async function getOkxBalance(asset, apiKey, apiSecret, passphrase, baseUrl) {
   try {
     const requestPath = '/api/v5/account/balance';
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -1159,7 +1172,7 @@ async function getOkxBalance(asset, apiKey, apiSecret, passphrase, baseUrl) {
       requestPath,
       method: 'GET'
     });
-    
+
     if (response.data && response.data.code === '0' && response.data.data && response.data.data.length > 0) {
       const balances = response.data.data[0].details || [];
       const assetBalance = balances.find(b => b.ccy === asset);
@@ -1184,7 +1197,7 @@ async function getOkxOpenPositions(apiKey, apiSecret, passphrase, baseUrl) {
   try {
     // Use positions endpoint for derivatives (not balance endpoint)
     const requestPath = '/api/v5/account/positions';
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -1193,10 +1206,10 @@ async function getOkxOpenPositions(apiKey, apiSecret, passphrase, baseUrl) {
       requestPath,
       method: 'GET'
     });
-    
+
     if (response.data && response.data.code === '0' && response.data.data && response.data.data.length > 0) {
       const positions = [];
-      
+
       // Filter for positions with non-zero size (open positions)
       response.data.data.forEach(position => {
         const pos = parseFloat(position.pos || 0);
@@ -1204,12 +1217,12 @@ async function getOkxOpenPositions(apiKey, apiSecret, passphrase, baseUrl) {
         const leverage = parseFloat(position.lever || 1);
         const side = pos > 0 ? 'long' : pos < 0 ? 'short' : null;
         const absPos = Math.abs(pos);
-        
+
         if (absPos > 0.00000001) {
           // Extract coin symbol from instId (e.g., 'BTC-USDT-SWAP' -> 'BTC')
           const instId = position.instId || '';
           const coin = instId.split('-')[0] || instId;
-          
+
           positions.push({
             coin: coin,
             symbol: coin,
@@ -1223,7 +1236,7 @@ async function getOkxOpenPositions(apiKey, apiSecret, passphrase, baseUrl) {
           });
         }
       });
-      
+
       if (positions.length > 0) {
         console.log(`✅ [OKX API] Found ${positions.length} open positions on OKX:`);
         positions.forEach(pos => {
@@ -1232,7 +1245,7 @@ async function getOkxOpenPositions(apiKey, apiSecret, passphrase, baseUrl) {
       } else {
         console.log(`✅ [OKX API] No open positions found on OKX (all positions closed)`);
       }
-      
+
       return positions;
     } else {
       const errorMsg = response.data?.msg || 'Unknown error';
@@ -1325,7 +1338,7 @@ async function getOkxMaxSize(instId, tdMode, apiKey, apiSecret, passphrase, base
     if (leverage) {
       requestPath += `&leverage=${leverage}`;
     }
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -1423,7 +1436,7 @@ async function getOkxTradeFee(instType, apiKey, apiSecret, passphrase, baseUrl, 
 
     if (response.data?.code === '0' && response.data?.data?.[0]) {
       const feeData = response.data.data[0];
-      
+
       // Update cache
       if (!feeCache.data) {
         feeCache.data = [];
@@ -1435,7 +1448,7 @@ async function getOkxTradeFee(instType, apiKey, apiSecret, passphrase, baseUrl, 
         feeCache.data.push(feeData);
       }
       feeCache.timestamp = now;
-      
+
       return feeData;
     }
     return null;
@@ -1461,7 +1474,7 @@ function calculateEstimatedFee(instType, orderValue, orderType, feeData) {
   // For SWAP/FUTURES derivatives, use takerU or makerU (USDT-margined)
   // For SPOT/MARGIN, use taker or maker
   let feeRate = 0;
-  
+
   if (instType === 'SWAP' || instType === 'FUTURES') {
     // Derivatives: use USDT-margined fees
     if (orderType === 'market') {
@@ -1481,7 +1494,7 @@ function calculateEstimatedFee(instType, orderValue, orderType, feeData) {
   // Fee rate is negative (commission) or positive (rebate)
   // Calculate absolute fee amount
   const feeAmount = Math.abs(orderValue * feeRate);
-  
+
   return feeAmount;
 }
 
@@ -1547,7 +1560,7 @@ async function getOkxPositionBuilder(options) {
     } = options;
 
     const requestPath = '/api/v5/account/position-builder';
-    
+
     const body = {
       inclRealPosAndEq,
       acctLv,
@@ -1622,7 +1635,7 @@ async function validatePositionRisk(symbol, quantity, price, side, leverage, api
     }
 
     const acctLv = accountConfig.acctLv;
-    
+
     // Position builder is mainly useful for Portfolio margin (4) and Multi-currency margin (3)
     // For Futures mode (2), we can still use it but it's less critical
     if (acctLv !== '3' && acctLv !== '4') {
@@ -1636,7 +1649,7 @@ async function validatePositionRisk(symbol, quantity, price, side, leverage, api
 
     // Determine position side and quantity
     const pos = side.toLowerCase() === 'buy' ? quantity.toString() : (-quantity).toString();
-    
+
     // Build simulated position
     const simPos = [{
       instId: symbol,
@@ -1785,7 +1798,7 @@ async function getOkxCollateralAssets(apiKey, apiSecret, passphrase, baseUrl, cc
     if (ccy) {
       requestPath += `?ccy=${ccy}`;
     }
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -1821,7 +1834,7 @@ async function setOkxSettleCurrency(settleCcy, apiKey, apiSecret, passphrase, ba
     const body = {
       settleCcy: settleCcy
     };
-    
+
     // executeOkxRequestWithFallback expects body as object (it will stringify internally)
     // Passing JSON.stringify(body) causes double stringification and invalid JSON
     const response = await executeOkxRequestWithFallback({
@@ -1868,7 +1881,7 @@ async function setOkxSettleCurrency(settleCcy, apiKey, apiSecret, passphrase, ba
 async function getOkxSettleCurrency(apiKey, apiSecret, passphrase, baseUrl) {
   try {
     const accountConfig = await getOkxAccountConfig(apiKey, apiSecret, passphrase, baseUrl);
-    
+
     if (accountConfig) {
       return {
         success: true,
@@ -1876,7 +1889,7 @@ async function getOkxSettleCurrency(apiKey, apiSecret, passphrase, baseUrl) {
         availableSettleCcyList: accountConfig.settleCcyList || []
       };
     }
-    
+
     return {
       success: false,
       error: 'Could not retrieve account config'
@@ -1906,13 +1919,13 @@ async function executeOkxBatchOrders(orders, apiKey, apiSecret, passphrase, base
     if (!Array.isArray(orders) || orders.length === 0) {
       throw new Error('Orders must be a non-empty array');
     }
-    
+
     if (orders.length > 20) {
       throw new Error('Maximum 20 orders per batch request');
     }
-    
+
     const requestPath = '/api/v5/trade/batch-orders';
-    
+
     // Prepare order bodies (ensure all required fields are present)
     const orderBodies = orders.map(order => {
       const body = {
@@ -1922,7 +1935,7 @@ async function executeOkxBatchOrders(orders, apiKey, apiSecret, passphrase, base
         ordType: order.ordType || 'market',
         sz: order.sz.toString()
       };
-      
+
       // Add optional fields
       if (order.px) body.px = order.px.toString();
       if (order.posSide) body.posSide = order.posSide;
@@ -1937,10 +1950,10 @@ async function executeOkxBatchOrders(orders, apiKey, apiSecret, passphrase, base
       if (order.tradeQuoteCcy) body.tradeQuoteCcy = order.tradeQuoteCcy;
       if (order.stpMode) body.stpMode = order.stpMode;
       if (order.attachAlgoOrds) body.attachAlgoOrds = order.attachAlgoOrds;
-      
+
       return body;
     });
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -1950,7 +1963,7 @@ async function executeOkxBatchOrders(orders, apiKey, apiSecret, passphrase, base
       method: 'POST',
       body: JSON.stringify(orderBodies)
     });
-    
+
     if (response.data?.code === '0' && response.data?.data) {
       console.log(`✅ [OKX API] Batch order placed: ${response.data.data.length} order(s)`);
       return {
@@ -1990,18 +2003,18 @@ async function cancelOkxOrder(instId, ordId, clOrdId, apiKey, apiSecret, passphr
     if (!ordId && !clOrdId) {
       throw new Error('Either ordId or clOrdId must be provided');
     }
-    
+
     const requestPath = '/api/v5/trade/cancel-order';
     const body = {
       instId: instId
     };
-    
+
     if (ordId) {
       body.ordId = ordId;
     } else if (clOrdId) {
       body.clOrdId = clOrdId;
     }
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -2011,7 +2024,7 @@ async function cancelOkxOrder(instId, ordId, clOrdId, apiKey, apiSecret, passphr
       method: 'POST',
       body: JSON.stringify(body)
     });
-    
+
     if (response.data?.code === '0' && response.data?.data?.[0]) {
       const orderData = response.data.data[0];
       console.log(`✅ [OKX API] Order canceled: ${orderData.ordId || orderData.clOrdId}`);
@@ -2067,17 +2080,17 @@ async function cancelOkxOrder(instId, ordId, clOrdId, apiKey, apiSecret, passphr
 async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl, retryCount = 0) {
   const MAX_RETRIES = 3;
   const RETRY_DELAY_MS = 1000; // 1 second
-  
+
   try {
     const requestPath = '/api/v5/trade/order-algo';
-    
+
     const body = {
       instId: params.instId,
       tdMode: params.tdMode || 'cross',
       side: params.side.toLowerCase(),
       ordType: params.ordType || 'conditional', // conditional, trigger, move_order_stop, twap, etc.
     };
-    
+
     // Required: either sz or closeFraction
     // OKX API expects closeFraction as a string (e.g., "1" for full position)
     if (params.closeFraction) {
@@ -2087,12 +2100,12 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
     } else {
       throw new Error('Either sz or closeFraction must be provided');
     }
-    
+
     // Position side (required for derivatives in long/short mode)
     if (params.posSide) {
       body.posSide = params.posSide;
     }
-    
+
     // Take Profit parameters (both TP and SL can be in same conditional order)
     if (params.tpTriggerPx) {
       body.tpTriggerPx = params.tpTriggerPx.toString();
@@ -2105,7 +2118,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
     if (params.tpOrdKind) {
       body.tpOrdKind = params.tpOrdKind;
     }
-    
+
     // Stop Loss parameters (both TP and SL can be in same conditional order)
     if (params.slTriggerPx) {
       body.slTriggerPx = params.slTriggerPx.toString();
@@ -2115,7 +2128,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
     if (params.slTriggerPxType) {
       body.slTriggerPxType = params.slTriggerPxType;
     }
-    
+
     // Optional parameters
     // OKX API accepts boolean values as actual booleans (true/false)
     if (params.reduceOnly !== undefined) {
@@ -2133,7 +2146,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
     if (params.ccy) {
       body.ccy = params.ccy;
     }
-    
+
     // Trigger order specific parameters
     if (params.ordType === 'trigger') {
       if (params.triggerPx) {
@@ -2149,7 +2162,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
         body.attachAlgoOrds = params.attachAlgoOrds;
       }
     }
-    
+
     // Trailing stop order specific parameters
     if (params.ordType === 'move_order_stop') {
       if (params.callbackRatio) {
@@ -2162,7 +2175,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
         body.activePx = params.activePx.toString();
       }
     }
-    
+
     // TWAP order specific parameters
     if (params.ordType === 'twap') {
       if (params.pxVar) {
@@ -2181,12 +2194,12 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
         body.timeInterval = params.timeInterval.toString();
       }
     }
-    
+
     // executeOkxRequestWithFallback expects body as object (it will stringify internally)
     // Passing JSON.stringify(body) causes double stringification and invalid JSON
     // Log the body for debugging
     console.log(`📋 [OKX API] Algo order body:`, JSON.stringify(body, null, 2));
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -2196,7 +2209,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
       method: 'POST',
       body: body // Pass as object, not stringified
     });
-    
+
     // OKX API response structure:
     // Success: code === '0', data[0] contains order info
     // Error: code === '1' or other, data[0] contains error info with sCode and sMsg
@@ -2208,7 +2221,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
         const errorMsg = algoData.sMsg || 'Unknown error';
         const errorCode = algoData.sCode;
         console.log(`❌ [OKX API] Algo order failed: ${errorMsg} (sCode: ${errorCode})`);
-        
+
         return {
           success: false,
           error: errorMsg,
@@ -2218,7 +2231,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
           fullResponse: JSON.stringify(response.data, null, 2)
         };
       }
-      
+
       console.log(`✅ [OKX API] Algo order placed: ${algoData.algoId || algoData.algoClOrdId}`);
       console.log(`   Response: ${JSON.stringify(algoData, null, 2)}`);
       return {
@@ -2235,22 +2248,22 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
       const errorMsg = responseData?.sMsg || response.data?.msg || 'Unknown error';
       const errorCode = responseData?.sCode || response.data?.code;
       const fullResponse = JSON.stringify(response.data, null, 2);
-      
+
       console.log(`❌ [OKX API] Algo order failed: ${errorMsg} (code: ${errorCode})`);
       console.log(`   Full response: ${fullResponse}`);
-      
+
       // Retry on transient errors (rate limits, temporary failures)
-      const isRetryableError = errorCode === '50013' || errorCode === '50014' || errorCode === '50015' || 
-                                errorMsg.includes('rate limit') || errorMsg.includes('temporary') ||
-                                errorMsg.includes('timeout') || errorMsg.includes('network');
-      
+      const isRetryableError = errorCode === '50013' || errorCode === '50014' || errorCode === '50015' ||
+        errorMsg.includes('rate limit') || errorMsg.includes('temporary') ||
+        errorMsg.includes('timeout') || errorMsg.includes('network');
+
       if (isRetryableError && retryCount < MAX_RETRIES) {
         const delay = RETRY_DELAY_MS * (retryCount + 1); // Exponential backoff
         console.log(`⚠️ [OKX API] Algo order failed (retryable): ${errorMsg}. Retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         return placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl, retryCount + 1);
       }
-      
+
       return {
         success: false,
         error: errorMsg,
@@ -2268,7 +2281,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
       await new Promise(resolve => setTimeout(resolve, delay));
       return placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl, retryCount + 1);
     }
-    
+
     console.log(`❌ [OKX API] Error placing algo order: ${error.message}`);
     throw error;
   }
@@ -2288,19 +2301,19 @@ async function cancelOkxAlgoOrders(orders, apiKey, apiSecret, passphrase, baseUr
     if (!Array.isArray(orders) || orders.length === 0) {
       throw new Error('Orders must be a non-empty array');
     }
-    
+
     if (orders.length > 10) {
       throw new Error('Maximum 10 algo orders per cancel request');
     }
-    
+
     const requestPath = '/api/v5/trade/cancel-algos';
-    
+
     // Prepare cancel order bodies
     const cancelBodies = orders.map(order => {
       const body = {
         instId: order.instId
       };
-      
+
       if (order.algoId) {
         body.algoId = order.algoId;
       } else if (order.algoClOrdId) {
@@ -2308,10 +2321,10 @@ async function cancelOkxAlgoOrders(orders, apiKey, apiSecret, passphrase, baseUr
       } else {
         throw new Error('Either algoId or algoClOrdId must be provided for each order');
       }
-      
+
       return body;
     });
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -2321,7 +2334,7 @@ async function cancelOkxAlgoOrders(orders, apiKey, apiSecret, passphrase, baseUr
       method: 'POST',
       body: JSON.stringify(cancelBodies)
     });
-    
+
     if (response.data?.code === '0' && response.data?.data) {
       console.log(`✅ [OKX API] Canceled ${response.data.data.length} algo order(s)`);
       return {
@@ -2356,18 +2369,18 @@ async function cancelOkxAlgoOrders(orders, apiKey, apiSecret, passphrase, baseUr
 async function getOkxAlgoOrders(instId, ordType, apiKey, apiSecret, passphrase, baseUrl) {
   try {
     const requestPath = '/api/v5/trade/orders-algo-pending';
-    
+
     const params = {
       instId: instId
     };
-    
+
     if (ordType) {
       params.ordType = ordType;
     }
-    
+
     const queryString = new URLSearchParams(params).toString();
     const fullPath = `${requestPath}?${queryString}`;
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -2376,7 +2389,7 @@ async function getOkxAlgoOrders(instId, ordType, apiKey, apiSecret, passphrase, 
       requestPath: fullPath,
       method: 'GET'
     });
-    
+
     if (response.data?.code === '0' && response.data?.data) {
       const orders = Array.isArray(response.data.data) ? response.data.data : [];
       return {
@@ -2416,14 +2429,14 @@ async function getOkxAlgoOrderDetails(algoId, algoClOrdId, apiKey, apiSecret, pa
     if (!algoId && !algoClOrdId) {
       throw new Error('Either algoId or algoClOrdId must be provided');
     }
-    
+
     let requestPath = '/api/v5/trade/order-algo?';
     if (algoId) {
       requestPath += `algoId=${algoId}`;
     } else {
       requestPath += `algoClOrdId=${algoClOrdId}`;
     }
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -2432,7 +2445,7 @@ async function getOkxAlgoOrderDetails(algoId, algoClOrdId, apiKey, apiSecret, pa
       requestPath,
       method: 'GET'
     });
-    
+
     if (response.data?.code === '0' && response.data?.data?.[0]) {
       return {
         success: true,
@@ -2465,13 +2478,13 @@ async function getOkxAlgoOrderDetails(algoId, algoClOrdId, apiKey, apiSecret, pa
 async function checkOkxAlgoOrderStatus(algoId, algoClOrdId, apiKey, apiSecret, passphrase, baseUrl) {
   try {
     const result = await getOkxAlgoOrderDetails(algoId, algoClOrdId, apiKey, apiSecret, passphrase, baseUrl);
-    
+
     if (result.success && result.order) {
       const order = result.order;
       // OKX algo order states: 'live', 'effective', 'canceled', 'partially_filled', 'filled', 'failed'
       const state = order.state || order.ordState || 'unknown';
       const isActive = state === 'live' || state === 'effective' || state === 'partially_filled';
-      
+
       return {
         success: true,
         isActive: isActive,
@@ -2479,7 +2492,7 @@ async function checkOkxAlgoOrderStatus(algoId, algoClOrdId, apiKey, apiSecret, p
         order: order
       };
     }
-    
+
     return {
       success: false,
       isActive: false,
@@ -2509,7 +2522,7 @@ async function checkOkxAlgoOrderStatus(algoId, algoClOrdId, apiKey, apiSecret, p
 async function validateOkxLeverage(instId, requestedLeverage, tdMode, apiKey, apiSecret, passphrase, baseUrl) {
   try {
     const leverageInfo = await getOkxLeverageInfo(instId, tdMode, apiKey, apiSecret, passphrase, baseUrl);
-    
+
     if (!leverageInfo) {
       console.warn(`⚠️ [OKX API] Could not fetch leverage info for ${instId}, allowing requested leverage ${requestedLeverage}x`);
       return {
@@ -2519,10 +2532,10 @@ async function validateOkxLeverage(instId, requestedLeverage, tdMode, apiKey, ap
         message: 'Leverage info unavailable, proceeding with requested leverage'
       };
     }
-    
+
     // OKX returns leverage info with maxLeverage field
     const maxLeverage = parseFloat(leverageInfo.lever || leverageInfo.maxLeverage || '125'); // Default to 125x for derivatives
-    
+
     if (requestedLeverage > maxLeverage) {
       console.warn(`⚠️ [OKX API] Requested leverage ${requestedLeverage}x exceeds max ${maxLeverage}x for ${instId}`);
       return {
@@ -2532,7 +2545,7 @@ async function validateOkxLeverage(instId, requestedLeverage, tdMode, apiKey, ap
         message: `Requested leverage ${requestedLeverage}x exceeds maximum ${maxLeverage}x`
       };
     }
-    
+
     return {
       valid: true,
       requestedLeverage: requestedLeverage,
@@ -2547,6 +2560,67 @@ async function validateOkxLeverage(instId, requestedLeverage, tdMode, apiKey, ap
       requestedLeverage: requestedLeverage,
       maxLeverage: null,
       message: `Leverage validation failed, proceeding with requested leverage: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Set leverage on OKX for an instrument
+ * @param {string} instId - Instrument ID (e.g., 'BTC-USDT-SWAP')
+ * @param {number} leverage - Desired leverage (1-125)
+ * @param {string} mgnMode - Margin mode ('cross' or 'isolated')
+ * @param {string} apiKey - OKX API key
+ * @param {string} apiSecret - OKX API secret
+ * @param {string} passphrase - OKX passphrase
+ * @param {string} baseUrl - OKX API base URL
+ * @returns {Promise<Object>} Result with success status
+ */
+async function setOkxLeverage(instId, leverage, mgnMode, apiKey, apiSecret, passphrase, baseUrl) {
+  try {
+    const requestPath = '/api/v5/account/set-leverage';
+    const body = {
+      instId: instId,
+      lever: leverage.toString(),
+      mgnMode: mgnMode,
+      posSide: 'net' // Use net position mode
+    };
+
+    console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId}...`);
+
+    const response = await executeOkxRequestWithFallback({
+      apiKey,
+      apiSecret,
+      passphrase,
+      baseUrl,
+      requestPath,
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+
+    if (response.data?.code === '0') {
+      console.log(`✅ [OKX API] Leverage set to ${leverage}x successfully`);
+      return {
+        success: true,
+        leverage: leverage
+      };
+    } else {
+      const errorMsg = response.data?.msg || 'Unknown error';
+      const errorCode = response.data?.code || 'N/A';
+      console.warn(`⚠️ [OKX API] Failed to set leverage (code: ${errorCode}): ${errorMsg}`);
+
+      // Return success anyway if error is not critical (leverage might already be set)
+      return {
+        success: errorCode === '59107', // Already set to same leverage
+        leverage: leverage,
+        warning: errorMsg
+      };
+    }
+  } catch (error) {
+    console.warn(`⚠️ [OKX API] Error setting leverage: ${error.message}`);
+    // Fail gracefully - order might still work
+    return {
+      success: false,
+      error: error.message
     };
   }
 }
@@ -2575,11 +2649,11 @@ async function validateOkxLeverage(instId, requestedLeverage, tdMode, apiKey, ap
 async function amendOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl) {
   try {
     const requestPath = '/api/v5/trade/amend-algos';
-    
+
     const body = {
       instId: params.instId
     };
-    
+
     if (params.algoId) {
       body.algoId = params.algoId;
     } else if (params.algoClOrdId) {
@@ -2587,7 +2661,7 @@ async function amendOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl)
     } else {
       throw new Error('Either algoId or algoClOrdId must be provided');
     }
-    
+
     // Amendment parameters
     if (params.newSz) {
       body.newSz = params.newSz.toString();
@@ -2628,7 +2702,7 @@ async function amendOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl)
     if (params.attachAlgoOrds) {
       body.attachAlgoOrds = params.attachAlgoOrds;
     }
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -2638,7 +2712,7 @@ async function amendOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl)
       method: 'POST',
       body: JSON.stringify(body)
     });
-    
+
     if (response.data?.code === '0' && response.data?.data?.[0]) {
       const algoData = response.data.data[0];
       console.log(`✅ [OKX API] Algo order amended: ${algoData.algoId || algoData.algoClOrdId}`);
@@ -2674,7 +2748,7 @@ async function amendOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl)
 async function getOkxTicker(instId, baseUrl) {
   try {
     const requestPath = `/api/v5/market/ticker?instId=${instId}`;
-    
+
     // Market data endpoints don't require authentication
     const response = await axios.get(`${baseUrl}${requestPath}`, {
       timeout: 10000,
@@ -2682,7 +2756,7 @@ async function getOkxTicker(instId, baseUrl) {
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (response.data?.code === '0' && response.data?.data?.[0]) {
       const ticker = response.data.data[0];
       return {
@@ -2726,14 +2800,14 @@ async function getOkxTickers(instType, instFamily, baseUrl) {
     if (instFamily) {
       requestPath += `&instFamily=${instFamily}`;
     }
-    
+
     const response = await axios.get(`${baseUrl}${requestPath}`, {
       timeout: 10000,
       headers: {
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (response.data?.code === '0' && response.data?.data) {
       return {
         success: true,
@@ -2784,14 +2858,14 @@ async function getOkxCandles(instId, bar, limit, after, before, baseUrl) {
     if (limit) requestPath += `&limit=${limit}`;
     if (after) requestPath += `&after=${after}`;
     if (before) requestPath += `&before=${before}`;
-    
+
     const response = await axios.get(`${baseUrl}${requestPath}`, {
       timeout: 10000,
       headers: {
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (response.data?.code === '0' && response.data?.data) {
       // Parse candlestick data: [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
       const candles = response.data.data.map(candle => ({
@@ -2805,7 +2879,7 @@ async function getOkxCandles(instId, bar, limit, after, before, baseUrl) {
         volumeCcyQuote: parseFloat(candle[7] || 0),
         confirm: parseInt(candle[8] || 0) === 1
       }));
-      
+
       return {
         success: true,
         candles: candles
@@ -2838,14 +2912,14 @@ async function getOkxOrderBook(instId, sz, baseUrl) {
   try {
     let requestPath = `/api/v5/market/books?instId=${instId}`;
     if (sz) requestPath += `&sz=${sz}`;
-    
+
     const response = await axios.get(`${baseUrl}${requestPath}`, {
       timeout: 10000,
       headers: {
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (response.data?.code === '0' && response.data?.data?.[0]) {
       const book = response.data.data[0];
       // Parse order book: asks/bids are arrays of [price, size, deprecated, orderCount]
@@ -2854,13 +2928,13 @@ async function getOkxOrderBook(instId, sz, baseUrl) {
         size: parseFloat(ask[1] || 0),
         orderCount: parseInt(ask[3] || 0)
       }));
-      
+
       const bids = (book.bids || []).map(bid => ({
         price: parseFloat(bid[0] || 0),
         size: parseFloat(bid[1] || 0),
         orderCount: parseInt(bid[3] || 0)
       }));
-      
+
       return {
         success: true,
         asks: asks,
@@ -2896,14 +2970,14 @@ async function getOkxTrades(instId, limit, baseUrl) {
   try {
     let requestPath = `/api/v5/market/trades?instId=${instId}`;
     if (limit) requestPath += `&limit=${limit}`;
-    
+
     const response = await axios.get(`${baseUrl}${requestPath}`, {
       timeout: 10000,
       headers: {
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (response.data?.code === '0' && response.data?.data) {
       const trades = response.data.data.map(trade => ({
         instId: trade.instId,
@@ -2913,7 +2987,7 @@ async function getOkxTrades(instId, limit, baseUrl) {
         side: trade.side,
         ts: parseInt(trade.ts || 0)
       }));
-      
+
       return {
         success: true,
         trades: trades
@@ -2948,19 +3022,19 @@ async function getOkxTrades(instId, limit, baseUrl) {
 async function verifyOkxAccountMode(apiKey, apiSecret, passphrase, baseUrl) {
   try {
     console.log('🔍 [OKX API] Verifying account mode and derivatives access...');
-    
+
     // 1. Get account configuration (direct account mode detection)
     const accountConfig = await getOkxAccountConfig(apiKey, apiSecret, passphrase, baseUrl);
-    
+
     let detectedMode = 'Unknown';
     let supportsDerivatives = false;
     let acctLv = null;
     let posMode = null;
-    
+
     if (accountConfig) {
       acctLv = accountConfig.acctLv;
       posMode = accountConfig.posMode;
-      
+
       // Map account level to mode name
       const modeMap = {
         '1': 'Spot mode (NOT SUPPORTED for derivatives)',
@@ -2968,10 +3042,10 @@ async function verifyOkxAccountMode(apiKey, apiSecret, passphrase, baseUrl) {
         '3': 'Multi-currency margin',
         '4': 'Portfolio margin'
       };
-      
+
       detectedMode = modeMap[acctLv] || 'Unknown mode';
       supportsDerivatives = acctLv === '2' || acctLv === '3' || acctLv === '4';
-      
+
       console.log(`📊 [OKX API] Account Level (acctLv): ${acctLv} - ${detectedMode}`);
       console.log(`📊 [OKX API] Position Mode: ${posMode || 'N/A'}`);
     } else {
@@ -2991,7 +3065,7 @@ async function verifyOkxAccountMode(apiKey, apiSecret, passphrase, baseUrl) {
         const accountData = balanceResponse.data?.data?.[0] || {};
         const hasNotionalUsdForSwap = accountData.notionalUsdForSwap !== undefined && accountData.notionalUsdForSwap !== '';
         const hasIsoEq = accountData.isoEq !== undefined && accountData.isoEq !== '';
-        
+
         if (hasNotionalUsdForSwap) {
           detectedMode = 'Multi-currency margin or Portfolio margin (detected via balance)';
           supportsDerivatives = true;
@@ -3038,21 +3112,21 @@ async function verifyOkxAccountMode(apiKey, apiSecret, passphrase, baseUrl) {
     // If account doesn't support derivatives, get detailed diagnostics via precheck
     let switchPrecheck = null;
     let actionableSteps = [];
-    
+
     if (!finalSupportsDerivatives && acctLv) {
       // Try to get precheck for switching to Futures mode (2) or Multi-currency margin (3)
       // Start with Futures mode as it's simpler
       try {
         switchPrecheck = await checkOkxAccountModeSwitchPrecheck('2', apiKey, apiSecret, passphrase, baseUrl);
-        
+
         if (!switchPrecheck || switchPrecheck.sCode === '51070') {
           // Try Multi-currency margin as alternative
           switchPrecheck = await checkOkxAccountModeSwitchPrecheck('3', apiKey, apiSecret, passphrase, baseUrl);
         }
-        
+
         if (switchPrecheck) {
           const sCode = switchPrecheck.sCode || '0';
-          
+
           // Build actionable steps based on precheck results
           if (sCode === '51070' || switchPrecheck.requiresWebApp) {
             actionableSteps.push('Complete Q&A on OKX website/app to enable account mode switching');
@@ -3071,7 +3145,7 @@ async function verifyOkxAccountMode(apiKey, apiSecret, passphrase, baseUrl) {
                 'asset_validation': 'Resolve asset validation issues',
                 'all_positions': 'Close all positions before switching'
               };
-              
+
               const step = typeMap[type] || `Resolve ${type.replace(/_/g, ' ')} issues`;
               if (info.totalAsset) {
                 actionableSteps.push(`${step} (Total assets: ${info.totalAsset})`);
@@ -3116,7 +3190,7 @@ async function verifyOkxAccountMode(apiKey, apiSecret, passphrase, baseUrl) {
       recommendation = '✅ Account mode supports derivatives trading. You can place SWAP orders.';
     } else {
       recommendation = '❌ Account mode does NOT support derivatives.';
-      
+
       if (actionableSteps.length > 0) {
         recommendation += '\n\n📋 Actionable Steps to Enable Derivatives:';
         actionableSteps.forEach((step, index) => {
@@ -3131,7 +3205,7 @@ async function verifyOkxAccountMode(apiKey, apiSecret, passphrase, baseUrl) {
     console.log(`📊 [OKX API] Account mode detected: ${detectedMode}`);
     console.log(`📊 [OKX API] Derivatives support: ${finalSupportsDerivatives ? '✅ Yes' : '❌ No'}`);
     console.log(`📊 [OKX API] SWAP instruments accessible: ${canAccessSwap ? `✅ Yes (${swapInstrumentsCount} instruments)` : '❌ No'}`);
-    
+
     if (switchPrecheck && !finalSupportsDerivatives) {
       console.log(`📊 [OKX API] Switch precheck status: ${switchPrecheck.sCode || 'N/A'}`);
       if (actionableSteps.length > 0) {
@@ -3191,7 +3265,7 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
   try {
     const timestamp = Date.now();
     const recvWindow = 5000; // 5 second receive window
-    
+
     // Bybit Spot API parameters (v5 format)
     const params = {
       category: 'spot',
@@ -3206,7 +3280,7 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
     // Use automatic fallback helper (ScrapeOps → ScraperAPI → Direct)
     console.log(`🔵 [BYBIT API] Sending order: ${side} ${quantity} ${symbol} (Market)`);
     console.log(`🔵 [BYBIT API] API Key: ${apiKey.substring(0, 8)}... (verifying permissions)`);
-    
+
     const response = await executeBybitRequestWithFallback({
       apiKey,
       apiSecret,
@@ -3220,7 +3294,7 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
     // Log full response for debugging
     console.log(`🔵 [BYBIT API] Response status: ${response.status}`);
     console.log(`🔵 [BYBIT API] Response data:`, JSON.stringify(response.data).substring(0, 500));
-    
+
     if (response.data && response.data.retCode === 0 && response.data.result) {
       const order = response.data.result;
       console.log(`✅ [BYBIT API] Order executed successfully!`);
@@ -3230,7 +3304,7 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
       console.log(`   Quantity: ${order.executedQty || order.qty}`);
       console.log(`   Price: ${order.avgPrice || order.price}`);
       console.log(`   Status: ${order.orderStatus}`);
-      
+
       return {
         success: true,
         orderId: order.orderId,
@@ -3246,10 +3320,10 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
       // Enhanced error handling
       const errorMsg = response.data?.retMsg || response.data?.message || 'Unknown error';
       const errorCode = response.data?.retCode || response.status || 0;
-      
+
       console.log(`❌ [BYBIT API] Order failed: ${errorMsg} (Code: ${errorCode})`);
       console.log(`   Full response:`, JSON.stringify(response.data).substring(0, 500));
-      
+
       // Check for common error patterns
       if (response.data && typeof response.data === 'string') {
         if (response.data.includes('<!DOCTYPE')) {
@@ -3267,11 +3341,11 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
           }
         }
       }
-      
+
       if (errorCode === 0 && !response.data) {
         console.log(`   ⚠️ Empty response - possible network issue or timeout`);
       }
-      
+
       return {
         success: false,
         error: errorMsg,
@@ -3284,7 +3358,7 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
     console.log(`❌ [BYBIT API] Order execution exception caught`);
     console.log(`   Error type: ${error.name || 'Unknown'}`);
     console.log(`   Error message: ${error.message}`);
-    
+
     if (error.response) {
       console.log(`   Response status: ${error.response.status}`);
       console.log(`   Response headers:`, JSON.stringify(error.response.headers).substring(0, 300));
@@ -3297,12 +3371,12 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
         timeout: error.config?.timeout
       }));
     }
-    
+
     const errorMsg = error.response?.data?.retMsg || error.response?.data?.message || error.message;
     const errorCode = error.response?.data?.retCode || error.response?.status || 0;
-    
+
     console.log(`❌ [BYBIT API] Order execution error: ${errorMsg} (Code: ${errorCode})`);
-    
+
     // Detailed diagnostics for common errors
     if (errorCode === 403 || error.response?.status === 403) {
       console.log(`   💡 403 Forbidden - Possible causes:`);
@@ -3325,12 +3399,12 @@ async function executeBybitMarketOrder(symbol, side, quantity, apiKey, apiSecret
     } else if (errorCode === 10004) {
       console.log(`   💡 10004 - Invalid request parameter`);
     }
-    
+
     if (error.response?.data) {
       const responseData = JSON.stringify(error.response.data);
       console.log(`   Full Response: ${responseData.substring(0, 400)}`);
     }
-    
+
     return {
       success: false,
       error: errorMsg,
@@ -3403,11 +3477,11 @@ async function executeMarketOrder(symbol, side, quantity, apiKey, apiSecret) {
  */
 async function getBalance(asset, apiKey, apiSecret) {
   const exchange = getPreferredExchange();
-  
+
   if (exchange.exchange === 'OKX' && exchange.baseUrl) {
     return await getOkxBalance(asset, apiKey, apiSecret, exchange.passphrase, exchange.baseUrl);
   }
-  
+
   // No exchange configured
   console.log(`⚠️ Failed to get balance for ${asset}: No exchange configured`);
   return 0;
@@ -3432,10 +3506,10 @@ function validatePrice(symbol, price) {
     'LINK': { min: 1, max: 100 },
     'DOT': { min: 0.1, max: 100 }
   };
-  
+
   const range = ranges[symbol];
   if (!range) return price > 0 && price < 1000000; // Generic validation
-  
+
   return price >= range.min && price <= range.max;
 }
 
@@ -3455,14 +3529,14 @@ function calculateQuantity(symbol, price, positionSizeUSD) {
     const portfolioValue = portfolio.currentBalance || portfolio.initialCapital || 5000;
     size = portfolioValue * 0.015; // 1.5% of portfolio (default)
   }
-  
+
   // Calculate quantity
   const quantity = size / price;
-  
+
   // Round to appropriate decimal places based on symbol
   // Most cryptos use 4-8 decimal places
   const decimals = symbol === 'BTC' ? 6 : symbol === 'ETH' ? 4 : 2;
-  
+
   return Math.floor(quantity * Math.pow(10, decimals)) / Math.pow(10, decimals);
 }
 
@@ -3473,7 +3547,7 @@ function calculateQuantity(symbol, price, positionSizeUSD) {
  */
 async function executeTakeProfit(trade) {
   const config = isExchangeTradingEnabled();
-  
+
   if (!config.enabled) {
     return {
       success: false,
@@ -3483,7 +3557,7 @@ async function executeTakeProfit(trade) {
   }
 
   const exchange = getPreferredExchange();
-  
+
   // Validate price before execution (prevent wrong coin data)
   if (!validatePrice(trade.symbol, trade.currentPrice)) {
     return {
@@ -3496,11 +3570,11 @@ async function executeTakeProfit(trade) {
   // For BUY positions: Sell to take profit
   // For SELL positions: Buy to cover (take profit)
   const side = trade.action === 'BUY' ? 'sell' : 'buy';
-  
+
   // Use trade quantity directly (already calculated based on portfolio size)
   // Fallback to portfolio-based calculation if quantity not available
   let quantity = trade.quantity || trade.executedQty || trade.okxExecutedQuantity;
-  
+
   if (!quantity || quantity <= 0) {
     // Fallback: Calculate from portfolio-based position size
     const { getPortfolio } = require('./portfolioService');
@@ -3524,11 +3598,11 @@ async function executeTakeProfit(trade) {
       error: `Symbol ${trade.symbol} not available on OKX`
     };
   }
-  
+
   const modeLabel = 'OKX_DEMO';
   const leverage = parseFloat(process.env.OKX_LEVERAGE || '1'); // Default 1x leverage
   console.log(`📈 Executing TAKE PROFIT (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)} (Leverage: ${leverage}x)`);
-  
+
   return await executeOkxMarketOrder(
     okxSymbol,
     side,
@@ -3548,7 +3622,7 @@ async function executeTakeProfit(trade) {
  */
 async function executeStopLoss(trade) {
   const config = isExchangeTradingEnabled();
-  
+
   if (!config.enabled) {
     return {
       success: false,
@@ -3558,7 +3632,7 @@ async function executeStopLoss(trade) {
   }
 
   const exchange = getPreferredExchange();
-  
+
   // Validate price before execution (prevent wrong coin data)
   if (!validatePrice(trade.symbol, trade.currentPrice)) {
     return {
@@ -3571,11 +3645,11 @@ async function executeStopLoss(trade) {
   // For BUY positions: Sell to stop loss
   // For SELL positions: Buy to cover (stop loss)
   const side = trade.action === 'BUY' ? 'sell' : 'buy';
-  
+
   // Use trade quantity directly (already calculated based on portfolio size)
   // Fallback to portfolio-based calculation if quantity not available
   let quantity = trade.quantity || trade.executedQty || trade.okxExecutedQuantity;
-  
+
   if (!quantity || quantity <= 0) {
     // Fallback: Calculate from portfolio-based position size
     const { getPortfolio } = require('./portfolioService');
@@ -3599,11 +3673,11 @@ async function executeStopLoss(trade) {
       error: `Symbol ${trade.symbol} not available on OKX`
     };
   }
-  
+
   const modeLabel = 'OKX_DEMO';
   const leverage = parseFloat(process.env.OKX_LEVERAGE || '1'); // Default 1x leverage
   console.log(`🛑 Executing STOP LOSS (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)} (Leverage: ${leverage}x)`);
-  
+
   return await executeOkxMarketOrder(
     okxSymbol,
     side,
@@ -3623,7 +3697,7 @@ async function executeStopLoss(trade) {
  */
 async function executeAddPosition(trade) {
   const config = isExchangeTradingEnabled();
-  
+
   if (!config.enabled) {
     return {
       success: false,
@@ -3633,7 +3707,7 @@ async function executeAddPosition(trade) {
   }
 
   const exchange = getPreferredExchange();
-  
+
   // Validate price before execution (prevent wrong coin data)
   if (!validatePrice(trade.symbol, trade.currentPrice)) {
     return {
@@ -3646,7 +3720,7 @@ async function executeAddPosition(trade) {
   // For BUY positions: Buy more (average down)
   // For SELL positions: Sell more (average up)
   const side = trade.action === 'BUY' ? 'buy' : 'sell';
-  
+
   // Calculate quantity for DCA using portfolio service (percentage-based)
   const { getDCASize, getPortfolio } = require('./portfolioService');
   const dcaCount = trade.dcaCount || 0; // Get current DCA count
@@ -3670,11 +3744,11 @@ async function executeAddPosition(trade) {
       error: `Symbol ${trade.symbol} not available on OKX`
     };
   }
-  
+
   const modeLabel = 'OKX_DEMO';
   const leverage = parseFloat(process.env.OKX_LEVERAGE || '1'); // Default 1x leverage
   console.log(`💰 Executing ADD POSITION (DCA) (${modeLabel}): ${side} ${quantity} ${trade.symbol} at $${trade.currentPrice.toFixed(2)} (Leverage: ${leverage}x)`);
-  
+
   return await executeOkxMarketOrder(
     okxSymbol,
     side,
@@ -3699,7 +3773,7 @@ async function getBybitBalance(asset, apiKey, apiSecret, baseUrl) {
   try {
     const timestamp = Date.now();
     const recvWindow = 5000;
-    
+
     const params = {
       accountType: 'SPOT',
       timestamp: timestamp.toString(),
@@ -3740,7 +3814,7 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
   try {
     const timestamp = Date.now();
     const recvWindow = 5000;
-    
+
     // Bybit v5 wallet-balance parameters
     const params = {
       accountType: 'SPOT',
@@ -3752,7 +3826,7 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
     console.log(`🔵 [BYBIT API] Fetching open positions from ${baseUrl}/v5/account/wallet-balance`);
     console.log(`🔵 [BYBIT API] Params: accountType=SPOT, timestamp=${timestamp}, recvWindow=${recvWindow}`);
     console.log(`🔵 [BYBIT API] API Key: ${apiKey.substring(0, 8)}... (checking permissions)`);
-    
+
     const response = await executeBybitRequestWithFallback({
       apiKey,
       apiSecret,
@@ -3765,13 +3839,13 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
     if (response.data && response.data.retCode === 0 && response.data.result) {
       const coins = response.data.result.list?.[0]?.coin || [];
       const positions = [];
-      
+
       // Filter for coins with non-zero balance (actual positions)
       coins.forEach(coin => {
         const free = parseFloat(coin.free || 0);
         const locked = parseFloat(coin.locked || 0);
         const total = free + locked;
-        
+
         // Only include coins with actual holdings (exclude USDT and zero balances)
         if (total > 0.00000001 && coin.coin !== 'USDT') {
           positions.push({
@@ -3785,7 +3859,7 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
           });
         }
       });
-      
+
       if (positions.length > 0) {
         console.log(`✅ [BYBIT API] Found ${positions.length} open positions on Bybit:`);
         positions.forEach(pos => {
@@ -3794,7 +3868,7 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
       } else {
         console.log(`✅ [BYBIT API] No open positions found on Bybit (all positions closed or zero balance)`);
       }
-      
+
       return positions;
     } else {
       const errorMsg = response.data?.retMsg || 'Unknown error';
@@ -3805,7 +3879,7 @@ async function getBybitOpenPositions(apiKey, apiSecret, baseUrl) {
     // Error already logged by fallback helper
     const errorMsg = error.response?.data?.retMsg || error.message;
     console.log(`❌ [BYBIT API] Error fetching positions: ${errorMsg}`);
-    
+
     // Return empty array on error - caller should handle gracefully
     // Don't mark trades as closed if we can't verify positions
     return [];
@@ -3823,7 +3897,7 @@ async function getBybitOpenOrders(apiKey, apiSecret, baseUrl) {
   try {
     const timestamp = Date.now();
     const recvWindow = 5000;
-    
+
     const params = {
       category: 'spot',
       timestamp: timestamp.toString(),
@@ -3842,8 +3916,8 @@ async function getBybitOpenOrders(apiKey, apiSecret, baseUrl) {
 
     if (response.data && response.data.retCode === 0 && response.data.result) {
       const orders = response.data.result.list || [];
-      return orders.filter(order => 
-        order.orderStatus === 'New' || 
+      return orders.filter(order =>
+        order.orderStatus === 'New' ||
         order.orderStatus === 'PartiallyFilled'
       );
     }
@@ -3867,14 +3941,14 @@ async function getBybitOpenOrders(apiKey, apiSecret, baseUrl) {
 async function getOkxPendingOrders(instId, apiKey, apiSecret, passphrase, baseUrl) {
   try {
     const requestPath = '/api/v5/trade/orders-pending';
-    
+
     const params = {
       instId: instId
     };
-    
+
     const queryString = new URLSearchParams(params).toString();
     const fullPath = `${requestPath}?${queryString}`;
-    
+
     const response = await executeOkxRequestWithFallback({
       apiKey,
       apiSecret,
@@ -3883,7 +3957,7 @@ async function getOkxPendingOrders(instId, apiKey, apiSecret, passphrase, baseUr
       requestPath: fullPath,
       method: 'GET'
     });
-    
+
     if (response.data?.code === '0' && response.data?.data) {
       const orders = Array.isArray(response.data.data) ? response.data.data : [];
       return {
@@ -3939,6 +4013,7 @@ module.exports = {
   checkOkxAlgoOrderStatus,
   getOkxPendingOrders,
   validateOkxLeverage,
+  setOkxLeverage,
   amendOkxAlgoOrder,
   getOkxTicker,
   getOkxTickers,
