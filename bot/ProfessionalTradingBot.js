@@ -3948,9 +3948,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       if (!algoResult.success) {
         const errorCode = algoResult.sCode || algoResult.code;
         const errorMsg = algoResult.error || algoResult.sMsg || '';
-        console.log(`⚠️ Combined TP/SL order failed (${errorCode || 'unknown'}), trying separate orders...`);
-        if (errorCode === '51088' || errorMsg.includes('only place 1 TP/SL')) {
-          console.log(`   OKX requires separate TP/SL orders when closing entire position`);
+        console.log(`⚠️ Combined TP/SL order failed (errorCode: ${errorCode}, sCode: ${algoResult.sCode}, code: ${algoResult.code}), trying separate orders...`);
+        console.log(`   Error message: ${errorMsg}`);
+        if (errorCode === '51088' || errorCode === 51088 || errorMsg.includes('only place 1 TP/SL')) {
+          console.log(`   ✅ Detected OKX error 51088 - OKX requires separate TP/SL orders when closing entire position`);
         }
         
         // Place TP order

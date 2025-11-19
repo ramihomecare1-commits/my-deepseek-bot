@@ -2148,7 +2148,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
         success: false,
         error: errorMsg,
         code: errorCode,
-        sCode: responseData?.sCode,
+        sCode: responseData?.sCode || errorCode, // Ensure sCode is set
         sMsg: responseData?.sMsg || errorMsg,
         fullResponse: fullResponse
       };
