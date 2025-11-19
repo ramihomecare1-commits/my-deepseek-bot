@@ -985,9 +985,8 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       console.log(`⚠️ [OKX API] Could not perform risk validation: ${riskError.message}`);
     }
 
-    // For cross margin mode, posSide should match the side
+    // For cross margin mode, posSide was already determined above (line 924)
     // 'buy' = long position, 'sell' = short position
-    const posSide = side.toLowerCase() === 'buy' ? 'long' : 'short';
 
     const body = {
       instId: symbol,
