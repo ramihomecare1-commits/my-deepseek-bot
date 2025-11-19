@@ -38,15 +38,95 @@ const { quickBacktest } = require('../services/backtestService');
 // const { loadTrades, saveTrades, loadClosedTrades, saveClosedTrades } = require('../services/tradePersistenceService');
 const { loadPortfolio, recalculateFromTrades, recalculateFromClosedTrades, getPortfolioStats, closeTrade, getDcaTriggerTimestamp, setDcaTriggerTimestamp } = require('../services/portfolioService');
 
+// Error notification cooldown to prevent spam
+// Structure: { 'errorMessageHash': timestamp }
+const errorNotificationCache = {};
+const ERROR_NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown per unique error
+
 // Helper function to add log entries
 // Note: We can't require routes/api here as it causes circular dependency
 // We'll use console.log only - routes/api can call this function if needed
 // but we won't call back to routes/api to avoid circular dependency
-function addLogEntry(message, level = 'info') {
+async function addLogEntry(message, level = 'info') {
   // Simply use console.log - no dependencies, no circular issues
   const levelUpper = level.toUpperCase();
   console.log(`[${levelUpper}] ${message}`);
+  
+  // Send Telegram notification for errors
+  if (level === 'error' || level === 'warning') {
+    try {
+      // Create a hash of the error message for rate limiting
+      const crypto = require('crypto');
+      const errorHash = crypto.createHash('md5').update(message).digest('hex').substring(0, 8);
+      const now = Date.now();
+      
+      // Check cooldown - only send if this error hasn't been sent recently
+      if (!errorNotificationCache[errorHash] || 
+          (now - errorNotificationCache[errorHash]) > ERROR_NOTIFICATION_COOLDOWN_MS) {
+        
+        // Import sendTelegramMessage (lazy import to avoid circular dependency)
+        const { sendTelegramMessage } = require('../services/notificationService');
+        
+        // Format message with date
+        const date = new Date();
+        const dateStr = date.toLocaleString('en-US', { 
+          timeZone: 'UTC',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+        
+        const emoji = level === 'error' ? '❌' : '⚠️';
+        const telegramMessage = `${emoji} <b>Bot ${levelUpper}</b>
+
+📅 <b>Date:</b> ${dateStr} UTC
+📝 <b>Error:</b> ${message}`;
+        
+        // Send asynchronously (don't block)
+        sendTelegramMessage(telegramMessage).catch(err => {
+          console.error(`Failed to send error notification to Telegram: ${err.message}`);
+        });
+        
+        // Update cache
+        errorNotificationCache[errorHash] = now;
+      }
+    } catch (err) {
+      // Don't let Telegram errors break the bot
+      console.error(`Error in addLogEntry Telegram notification: ${err.message}`);
+    }
+  }
 }
+
+// Intercept console.error to send Telegram notifications
+const originalConsoleError = console.error;
+console.error = function(...args) {
+  // Call original console.error
+  originalConsoleError.apply(console, args);
+  
+  // Send to Telegram if it's an error message
+  try {
+    const errorMessage = args.map(arg => {
+      if (arg instanceof Error) {
+        return arg.message || String(arg);
+      }
+      return String(arg);
+    }).join(' ');
+    
+    // Only send if it looks like a real error (not just warnings)
+    if (errorMessage && errorMessage.length > 0) {
+      // Use addLogEntry which handles Telegram notifications
+      addLogEntry(errorMessage, 'error').catch(err => {
+        // Silently fail - don't break console.error
+      });
+    }
+  } catch (err) {
+    // Don't let this break console.error
+  }
+};
 
 class ProfessionalTradingBot {
   constructor() {
