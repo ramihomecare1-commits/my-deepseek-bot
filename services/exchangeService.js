@@ -2585,6 +2585,8 @@ async function validateOkxLeverage(instId, requestedLeverage, tdMode, apiKey, ap
 async function setOkxLeverage(instId, leverage, mgnMode, posSide, apiKey, apiSecret, passphrase, baseUrl) {
   try {
     const requestPath = '/api/v5/account/set-leverage';
+
+    // Try setting leverage for the specified position side
     const body = {
       instId: instId,
       lever: leverage.toString(),
@@ -2606,7 +2608,7 @@ async function setOkxLeverage(instId, leverage, mgnMode, posSide, apiKey, apiSec
     });
 
     if (response.data?.code === '0') {
-      console.log(`✅ [OKX API] Leverage set to ${leverage}x successfully`);
+      console.log(`✅ [OKX API] Leverage set to ${leverage}x successfully for ${posSide}`);
       return {
         success: true,
         leverage: leverage
@@ -2614,8 +2616,48 @@ async function setOkxLeverage(instId, leverage, mgnMode, posSide, apiKey, apiSec
     } else {
       const errorMsg = response.data?.msg || 'Unknown error';
       const errorCode = response.data?.code || 'N/A';
-      console.warn(`⚠️ [OKX API] Failed to set leverage (code: ${errorCode}): ${errorMsg}`);
+      console.warn(`⚠️ [OKX API] Failed to set leverage for ${posSide} (code: ${errorCode}): ${errorMsg}`);
       console.warn(`📋 [OKX API] Request was:`, JSON.stringify(body));
+
+      // If error 50002 and we're in long/short mode, try setting for both sides
+      if (errorCode === '50002' && (posSide === 'long' || posSide === 'short')) {
+        console.log(`🔄 [OKX API] Trying to set leverage for both long and short sides...`);
+
+        const oppositeSide = posSide === 'long' ? 'short' : 'long';
+        const oppositeBody = { ...body, posSide: oppositeSide };
+
+        const oppositeResponse = await executeOkxRequestWithFallback({
+          apiKey,
+          apiSecret,
+          passphrase,
+          baseUrl,
+          requestPath,
+          method: 'POST',
+          body: JSON.stringify(oppositeBody)
+        });
+
+        if (oppositeResponse.data?.code === '0') {
+          console.log(`✅ [OKX API] Leverage set to ${leverage}x for ${oppositeSide}`);
+          // Now try original side again
+          const retryResponse = await executeOkxRequestWithFallback({
+            apiKey,
+            apiSecret,
+            passphrase,
+            baseUrl,
+            requestPath,
+            method: 'POST',
+            body: JSON.stringify(body)
+          });
+
+          if (retryResponse.data?.code === '0') {
+            console.log(`✅ [OKX API] Leverage set to ${leverage}x for ${posSide} after setting opposite side`);
+            return {
+              success: true,
+              leverage: leverage
+            };
+          }
+        }
+      }
 
       // Return success anyway if error is not critical (leverage might already be set)
       return {
