@@ -412,11 +412,18 @@ class ProfessionalTradingBot {
       
       if (this.activeTrades && this.activeTrades.length > 0) {
         console.log(`✅ Active trades loaded: ${this.activeTrades.length} trades`);
-        // Fix any trades missing TP, SL, or DCA levels
-        const fixedCount = await this.fixMissingTradeLevels();
-        if (fixedCount > 0) {
-          console.log(`🔧 Fixed ${fixedCount} existing trade(s) with missing TP, SL, or DCA levels`);
-        }
+        // Fix any trades missing TP, SL, or DCA levels (run in background to avoid blocking deployment)
+        // Don't await - run asynchronously after initialization completes
+        setTimeout(async () => {
+          try {
+            const fixedCount = await this.fixMissingTradeLevels();
+            if (fixedCount > 0) {
+              console.log(`🔧 Fixed ${fixedCount} existing trade(s) with missing TP, SL, or DCA levels`);
+            }
+          } catch (error) {
+            console.error(`❌ Error fixing missing trade levels: ${error.message}`);
+          }
+        }, 1000); // Start after 1 second
         
         // Place algo orders for trades that don't have them (after a short delay to ensure OKX is ready)
         setTimeout(async () => {
@@ -4887,14 +4894,23 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       try {
         const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
         if (okxSymbol) {
-          const algoOrders = await getOkxAlgoOrders(
-            okxSymbol,
-            'conditional', // Only check conditional orders (TP/SL)
-            exchange.apiKey,
-            exchange.apiSecret,
-            exchange.passphrase,
-            exchange.baseUrl
-          );
+          // Add timeout to prevent blocking deployment
+          const algoOrders = await Promise.race([
+            getOkxAlgoOrders(
+              okxSymbol,
+              'conditional', // Only check conditional orders (TP/SL)
+              exchange.apiKey,
+              exchange.apiSecret,
+              exchange.passphrase,
+              exchange.baseUrl
+            ),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('OKX API timeout (5s)')), 5000)
+            )
+          ]).catch(err => {
+            console.warn(`⚠️ ${trade.symbol}: Timeout checking algo orders: ${err.message}`);
+            return { success: false, error: err.message };
+          });
           
           if (algoOrders && algoOrders.success && algoOrders.orders && algoOrders.orders.length > 0) {
             // Filter to active orders only
@@ -5144,13 +5160,22 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       const dcaPrice = trade.addPosition || trade.dcaPrice;
       try {
         const { getOkxPendingOrders } = require('../services/exchangeService');
-        const pendingOrders = await getOkxPendingOrders(
-          okxSymbol,
-          exchange.apiKey,
-          exchange.apiSecret,
-          exchange.passphrase,
-          exchange.baseUrl
-        );
+        // Add timeout to prevent blocking deployment
+        const pendingOrders = await Promise.race([
+          getOkxPendingOrders(
+            okxSymbol,
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+          ),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('OKX API timeout (5s)')), 5000)
+          )
+        ]).catch(err => {
+          console.warn(`⚠️ ${trade.symbol}: Timeout checking pending orders: ${err.message}`);
+          return { success: false, error: err.message };
+        });
         
         if (pendingOrders && pendingOrders.success && pendingOrders.orders && pendingOrders.orders.length > 0) {
           // Filter to active limit orders only
