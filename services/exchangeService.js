@@ -634,7 +634,19 @@ async function executeOkxRequestWithFallback(options) {
           throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
         }
         
-        // For business logic errors (like 51088), return the response so caller can handle it
+        // Handle specific business logic errors with helpful messages
+        if (errorCode === '50002' || sCode === '50002') {
+          console.log(`\n⚠️ [OKX API] Business logic error detected (Code: 50002)`);
+          console.log(`   Error: ${sMsg || errorMsg}`);
+          console.log(`   💡 This error typically indicates:`);
+          console.log(`      1. Invalid order parameters (price, size, or type)`);
+          console.log(`      2. Order size below minimum requirement`);
+          console.log(`      3. Price precision issue (too many decimal places)`);
+          console.log(`      4. Invalid order type or combination of parameters`);
+          console.log(`   💡 The bot will attempt to handle this gracefully\n`);
+        }
+        
+        // For business logic errors (like 51088, 50002), return the response so caller can handle it
         // Don't try proxy fallback for these - they're valid API responses
         console.log(`⚠️ [OKX API] Business logic error (code: ${errorCode}, sCode: ${sCode}) - returning response to caller (no proxy fallback)`);
         return response;
@@ -715,6 +727,18 @@ async function executeOkxRequestWithFallback(options) {
         if (isAuthError) {
           throw new Error(`OKX API Error (${errorCode}): ${errorMsg}`);
         } else {
+          // Handle specific business logic errors with helpful messages
+          if (errorCode === '50002' || sCode === '50002') {
+            console.log(`\n⚠️ [OKX API] Business logic error detected (Code: 50002)`);
+            console.log(`   Error: ${sMsg || errorMsg}`);
+            console.log(`   💡 This error typically indicates:`);
+            console.log(`      1. Invalid order parameters (price, size, or type)`);
+            console.log(`      2. Order size below minimum requirement`);
+            console.log(`      3. Price precision issue (too many decimal places)`);
+            console.log(`      4. Invalid order type or combination of parameters`);
+            console.log(`   💡 The bot will attempt to handle this gracefully\n`);
+          }
+          
           // For business logic errors, return the error response so caller can handle it
           console.log(`⚠️ [OKX API] Business logic error in catch (code: ${errorCode}, sCode: ${sCode}) - returning response`);
           return error.response;
