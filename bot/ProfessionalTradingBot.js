@@ -4928,6 +4928,17 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     trade.okxTpAlgoClOrdId = order.algoClOrdId;
                     console.log(`   ✅ Found TP order on OKX, updated trade object (Algo ID: ${order.algoId || order.algoClOrdId})`);
                   }
+                  // IMPORTANT: Extract and sync the actual TP trigger price from OKX
+                  if (order.tpTriggerPx) {
+                    const okxTpPrice = parseFloat(order.tpTriggerPx);
+                    if (okxTpPrice > 0) {
+                      const currentTp = trade.takeProfit || 0;
+                      if (Math.abs(okxTpPrice - currentTp) > 0.01) { // Only update if significantly different
+                        console.log(`   🔄 Syncing TP price from OKX: $${currentTp.toFixed(2)} → $${okxTpPrice.toFixed(2)}`);
+                        trade.takeProfit = okxTpPrice;
+                      }
+                    }
+                  }
                 }
                 if (hasSlTrigger) {
                   hasSlOrderOnOkx = true;
@@ -4935,6 +4946,17 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     trade.okxSlAlgoId = order.algoId;
                     trade.okxSlAlgoClOrdId = order.algoClOrdId;
                     console.log(`   ✅ Found SL order on OKX, updated trade object (Algo ID: ${order.algoId || order.algoClOrdId})`);
+                  }
+                  // IMPORTANT: Extract and sync the actual SL trigger price from OKX
+                  if (order.slTriggerPx) {
+                    const okxSlPrice = parseFloat(order.slTriggerPx);
+                    if (okxSlPrice > 0) {
+                      const currentSl = trade.stopLoss || 0;
+                      if (Math.abs(okxSlPrice - currentSl) > 0.01) { // Only update if significantly different
+                        console.log(`   🔄 Syncing SL price from OKX: $${currentSl.toFixed(2)} → $${okxSlPrice.toFixed(2)}`);
+                        trade.stopLoss = okxSlPrice;
+                      }
+                    }
                   }
                 }
                 // If order has both TP and SL, it's a combined order
@@ -4946,6 +4968,27 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     trade.okxAlgoClOrdId = order.algoClOrdId;
                     trade.tpSlAutoPlaced = true;
                     console.log(`   ✅ Found combined TP/SL order on OKX, updated trade object (Algo ID: ${order.algoId || order.algoClOrdId})`);
+                  }
+                  // Sync both TP and SL prices from combined order
+                  if (order.tpTriggerPx) {
+                    const okxTpPrice = parseFloat(order.tpTriggerPx);
+                    if (okxTpPrice > 0) {
+                      const currentTp = trade.takeProfit || 0;
+                      if (Math.abs(okxTpPrice - currentTp) > 0.01) {
+                        console.log(`   🔄 Syncing TP price from OKX combined order: $${currentTp.toFixed(2)} → $${okxTpPrice.toFixed(2)}`);
+                        trade.takeProfit = okxTpPrice;
+                      }
+                    }
+                  }
+                  if (order.slTriggerPx) {
+                    const okxSlPrice = parseFloat(order.slTriggerPx);
+                    if (okxSlPrice > 0) {
+                      const currentSl = trade.stopLoss || 0;
+                      if (Math.abs(okxSlPrice - currentSl) > 0.01) {
+                        console.log(`   🔄 Syncing SL price from OKX combined order: $${currentSl.toFixed(2)} → $${okxSlPrice.toFixed(2)}`);
+                        trade.stopLoss = okxSlPrice;
+                      }
+                    }
                   }
                 }
               }
