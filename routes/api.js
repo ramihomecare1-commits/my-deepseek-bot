@@ -832,19 +832,6 @@ router.post('/backtest', async (req, res) => {
     });
   }
 });
-    if (triggers.length > 0) {
-      console.log(`🎯 Triggers: ${triggers.length} coins with active signals`);
-    }
-    res.json({
-      success: true,
-      triggers,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('❌ Error fetching active triggers:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 // API endpoint to get trigger settings
 router.get('/trigger-settings', (req, res) => {
