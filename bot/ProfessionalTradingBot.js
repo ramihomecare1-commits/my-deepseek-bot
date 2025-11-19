@@ -4185,19 +4185,25 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     }
 
     try {
-      const { cancelOkxAlgoOrders, getPreferredExchange } = require('../services/exchangeService');
+      const { cancelOkxAlgoOrders, getPreferredExchange, OKX_SYMBOL_MAP } = require('../services/exchangeService');
       const exchange = getPreferredExchange();
 
       if (!exchange || exchange.exchange !== 'OKX') {
         return; // OKX not configured
       }
 
+      const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+      if (!okxSymbol) {
+        console.warn(`⚠️ No OKX symbol mapping for ${trade.symbol}`);
+        return;
+      }
+
       const cancelParams = [];
       if (trade.okxAlgoId) {
-        cancelParams.push({ algoId: trade.okxAlgoId });
+        cancelParams.push({ instId: okxSymbol, algoId: trade.okxAlgoId });
       }
       if (trade.okxAlgoClOrdId) {
-        cancelParams.push({ algoClOrdId: trade.okxAlgoClOrdId });
+        cancelParams.push({ instId: okxSymbol, algoClOrdId: trade.okxAlgoClOrdId });
       }
 
       if (cancelParams.length > 0) {

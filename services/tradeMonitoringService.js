@@ -360,6 +360,8 @@ Respond ONLY with valid JSON.`;
       const aiResponse = response.data.choices[0].message.content;
 
       // Helper function to clean and parse JSON
+      // WARNING: This function uses regex to fix malformed JSON, which can be fragile.
+      // Ideally, the AI model should be prompted to return valid JSON to avoid this.
       const cleanAndParseJSON = (jsonString) => {
         try {
           // First, try direct parsing
@@ -614,6 +616,9 @@ Respond ONLY with valid JSON.`;
             if (cancelResult.success) {
               console.log(`   ✅ Old DCA limit order cancelled`);
               activeTrade.okxDcaOrderId = null;
+            } else {
+              console.error(`❌ Failed to cancel old DCA order (ID: ${activeTrade.okxDcaOrderId}). Aborting new order placement to prevent duplicates.`);
+              return false;
             }
           }
 

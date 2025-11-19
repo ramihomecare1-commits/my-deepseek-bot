@@ -2366,13 +2366,17 @@ async function cancelOkxAlgoOrders(orders, apiKey, apiSecret, passphrase, baseUr
  * @param {string} baseUrl - OKX API base URL
  * @returns {Promise<Object>} Algo orders list
  */
-async function getOkxAlgoOrders(instId, ordType, apiKey, apiSecret, passphrase, baseUrl) {
+async function getOkxAlgoOrders(instId, ordType, apiKey, apiSecret, passphrase, baseUrl, instType = 'SWAP') {
   try {
     const requestPath = '/api/v5/trade/orders-algo-pending';
 
-    const params = {
-      instId: instId
-    };
+    const params = {};
+    if (instId) {
+      params.instId = instId;
+      params.instType = instType;
+    } else {
+      params.instType = instType; // Fetch all for this type
+    }
 
     if (ordType) {
       params.ordType = ordType;
@@ -3938,13 +3942,17 @@ async function getBybitOpenOrders(apiKey, apiSecret, baseUrl) {
  * @param {string} baseUrl - OKX API base URL
  * @returns {Promise<Object>} Pending orders list
  */
-async function getOkxPendingOrders(instId, apiKey, apiSecret, passphrase, baseUrl) {
+async function getOkxPendingOrders(instId, apiKey, apiSecret, passphrase, baseUrl, instType = 'SWAP') {
   try {
     const requestPath = '/api/v5/trade/orders-pending';
 
-    const params = {
-      instId: instId
-    };
+    const params = {};
+    if (instId) {
+      params.instId = instId;
+      params.instType = instType; // OKX often requires instType even with instId
+    } else {
+      params.instType = instType; // Fetch all for this type (e.g. SWAP)
+    }
 
     const queryString = new URLSearchParams(params).toString();
     const fullPath = `${requestPath}?${queryString}`;
