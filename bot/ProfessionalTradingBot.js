@@ -4025,7 +4025,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       // We need to fetch all algo orders for this instrument and cancel them all
       console.log(`🔄 ${trade.symbol}: Checking for existing TP/SL algo orders to cancel...`);
       try {
-        const { getOkxAlgoOrders, cancelOkxAlgoOrders, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+        const { getOkxAlgoOrders, cancelOkxAlgoOrders } = require('../services/exchangeService');
         
         // First, try to cancel orders we know about from trade object
         if (trade.okxAlgoId || trade.okxAlgoClOrdId) {
