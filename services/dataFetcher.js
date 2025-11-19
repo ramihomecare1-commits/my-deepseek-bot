@@ -504,7 +504,58 @@ async function fetchCryptoCompare(symbol, limit, aggregate = 1) {
   }
 }
 
-// Historical data fetching with MEXC (direct) → Gate.io (direct) → Binance (with scraper) → CryptoCompare
+// Historical data fetching with OKX (primary) → MEXC (direct) → Gate.io (direct) → Binance (with scraper) → CryptoCompare
+/**
+ * Fetch OKX candlesticks and convert to expected format
+ * @param {string} symbol - Coin symbol (e.g., 'BTC')
+ * @param {string} bar - Bar size (e.g., '1m', '5m', '1H', '1D')
+ * @param {number} limit - Number of candles (max 300)
+ * @returns {Promise<Array>} Array of price data points in format { timestamp, price }
+ */
+async function fetchOkxCandlesForHistorical(symbol, bar, limit) {
+  try {
+    const { getOkxCandles, OKX_SYMBOL_MAP, getPreferredExchange } = require('./exchangeService');
+    const exchange = getPreferredExchange();
+    
+    // Only try OKX if it's the preferred exchange
+    if (!exchange || exchange.exchange !== 'OKX') {
+      throw new Error('OKX not configured');
+    }
+    
+    // Map symbol to OKX format (e.g., 'BTC' -> 'BTC-USDT-SWAP')
+    const okxSymbol = OKX_SYMBOL_MAP[symbol] || `${symbol}-USDT-SWAP`;
+    const okxBaseUrl = exchange.baseUrl || 'https://www.okx.com';
+    
+    // Ensure limit doesn't exceed OKX maximum
+    const okxLimit = Math.min(limit, 300);
+    
+    const result = await getOkxCandles(okxSymbol, bar, okxLimit.toString(), null, null, okxBaseUrl);
+    
+    if (result.success && result.candles && result.candles.length > 0) {
+      // Convert OKX format to expected format: { timestamp, price }
+      // OKX returns candles in reverse chronological order (newest first), so we reverse them
+      const candles = result.candles
+        .filter(c => c.close > 0 && c.ts > 0)
+        .map(candle => ({
+          timestamp: new Date(candle.ts),
+          price: candle.close, // Use close price (matches other exchanges)
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          volume: candle.volume
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp); // Sort oldest first
+      
+      return candles;
+    }
+    
+    throw new Error('OKX returned empty data');
+  } catch (error) {
+    // Silently fail - will fallback to external APIs
+    throw error;
+  }
+}
+
 async function fetchHistoricalData(coinId, coin, stats, config, currentPrice = null) {
   let usedMock = false;
 
@@ -523,7 +574,35 @@ async function fetchHistoricalData(coinId, coin, stats, config, currentPrice = n
       throw new Error(`Symbol is undefined for coin: ${JSON.stringify(coin)}`);
     }
     
-    // 1. Try MEXC FIRST (FREE, direct API, 2000 klines per request, no scraper needed!)
+    // 0. Try OKX FIRST (primary source for derivatives trading - matches execution prices!)
+    try {
+      let okxBar, okxLimit;
+      if (days === 1) {
+        // For 1 day, use 5m candles (288 candles = 24 hours) to stay within OKX 300 limit
+        // This gives us good granularity while respecting OKX limits
+        okxBar = '5m';
+        okxLimit = 288; // 24 hours of 5-minute data
+      } else if (days === 7) {
+        okxBar = '1H'; // 1-hour candles
+        okxLimit = 168; // 7 days of hourly data
+      } else {
+        okxBar = '1D'; // Daily candles
+        okxLimit = Math.min(days, 300); // OKX max is 300 candles
+      }
+      
+      const allData = await fetchOkxCandlesForHistorical(symbol, okxBar, okxLimit);
+      
+      if (allData.length > 0) {
+        currentPrice = currentPrice || allData[allData.length - 1].price;
+        console.log(`✅ ${symbol}: Fetched ${allData.length} candles from OKX (${okxBar})`);
+        return allData;
+      }
+    } catch (okxError) {
+      // Silently continue to external APIs - OKX might not have this coin or failed
+      console.log(`⚠️ ${symbol}: OKX candlesticks unavailable, trying external APIs: ${okxError.message}`);
+    }
+    
+    // 1. Try MEXC (FREE, direct API, 2000 klines per request, no scraper needed!)
     if (symbol && EXCHANGE_SYMBOL_MAP[symbol]) {
       try {
         let mexcInterval, mexcLimit;

@@ -3344,9 +3344,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               //   TP = sell at takeProfit (higher price = profit)
               //   SL = sell at stopLoss (lower price = loss)
               // For SELL (short) positions:
-              //   TP = buy at stopLoss (lower price = profit when price goes down)
-              //   SL = buy at takeProfit (higher price = loss when price goes up)
-              // Note: For shorts, takeProfit is actually a lower price, stopLoss is a higher price
+              //   TP = buy at takeProfit (lower price = profit when price goes down)
+              //   SL = buy at stopLoss (higher price = loss when price goes up)
               let tpTriggerPrice, slTriggerPrice, tpOrderSide;
               
               if (newTrade.action === 'BUY') {
@@ -3354,6 +3353,16 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 tpTriggerPrice = takeProfit; // Higher price = profit
                 slTriggerPrice = stopLoss; // Lower price = loss
                 tpOrderSide = 'sell'; // Sell to close long position
+                
+                // Validate TP is above entry and SL is below entry
+                if (tpTriggerPrice <= entryPrice) {
+                  console.warn(`⚠️ ${newTrade.symbol}: TP ($${tpTriggerPrice.toFixed(2)}) must be above entry ($${entryPrice.toFixed(2)}) for BUY position`);
+                  tpTriggerPrice = entryPrice * 1.05; // Default 5% above entry
+                }
+                if (slTriggerPrice >= entryPrice) {
+                  console.warn(`⚠️ ${newTrade.symbol}: SL ($${slTriggerPrice.toFixed(2)}) must be below entry ($${entryPrice.toFixed(2)}) for BUY position`);
+                  slTriggerPrice = entryPrice * 0.95; // Default 5% below entry
+                }
               } else {
                 // Short position (SELL)
                 // For shorts: profit when price goes DOWN, loss when price goes UP
@@ -3361,6 +3370,16 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 tpTriggerPrice = takeProfit; // Lower price = profit for short
                 slTriggerPrice = stopLoss; // Higher price = loss for short
                 tpOrderSide = 'buy'; // Buy to close short position
+                
+                // Validate TP is below entry and SL is above entry
+                if (tpTriggerPrice >= entryPrice) {
+                  console.warn(`⚠️ ${newTrade.symbol}: TP ($${tpTriggerPrice.toFixed(2)}) must be below entry ($${entryPrice.toFixed(2)}) for SELL position`);
+                  tpTriggerPrice = entryPrice * 0.95; // Default 5% below entry
+                }
+                if (slTriggerPrice <= entryPrice) {
+                  console.warn(`⚠️ ${newTrade.symbol}: SL ($${slTriggerPrice.toFixed(2)}) must be above entry ($${entryPrice.toFixed(2)}) for SELL position`);
+                  slTriggerPrice = entryPrice * 1.05; // Default 5% above entry
+                }
               }
               
               // Use closeFraction = "1" to close full position automatically
@@ -3371,20 +3390,19 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 posSide: posSide,
                 ordType: 'conditional',
                 closeFraction: '1', // Close full position when triggered
-                tpTriggerPx: tpTriggerPrice.toFixed(2),
+                tpTriggerPx: tpTriggerPrice.toFixed(8), // Use more precision for OKX
                 tpOrdPx: '-1', // Market order for TP
-                slTriggerPx: slTriggerPrice.toFixed(2),
+                slTriggerPx: slTriggerPrice.toFixed(8), // Use more precision for OKX
                 slOrdPx: '-1', // Market order for SL
                 tpTriggerPxType: 'last', // Use last price as trigger
                 slTriggerPxType: 'last',
                 reduceOnly: true, // Only reduce position
                 cxlOnClosePos: true // Cancel TP/SL when position is closed
                 // Note: algoClOrdId is optional - OKX will generate one if not provided
-                // If you want to set it, use format: SYMBOL-timestamp (max 32 chars, alphanumeric/hyphens only)
-                // algoClOrdId: `${newTrade.symbol.toUpperCase()}-${Date.now().toString().slice(-8)}`
               };
               
               console.log(`📊 Placing TP/SL algo orders on OKX for ${newTrade.symbol}...`);
+              console.log(`   Entry: $${entryPrice.toFixed(2)}, Current: $${currentPrice.toFixed(2)}`);
               console.log(`   TP: $${tpTriggerPrice.toFixed(2)} (${tpOrderSide}), SL: $${slTriggerPrice.toFixed(2)}`);
               
               const algoResult = await placeOkxAlgoOrder(
@@ -3786,20 +3804,48 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       const posSide = side === 'buy' ? 'long' : 'short';
       
       // Calculate TP/SL trigger prices
+      // Get current price for validation
+      const currentPrice = trade.currentPrice || trade.entryPrice;
       let tpTriggerPrice, slTriggerPrice, tpOrderSide;
       
       if (trade.action === 'BUY') {
-        // Long position
+        // Long position: TP above entry, SL below entry
         tpTriggerPrice = trade.takeProfit; // Higher price = profit
         slTriggerPrice = trade.stopLoss; // Lower price = loss
         tpOrderSide = 'sell'; // Sell to close long position
+        
+        // Validate TP is above entry and SL is below entry
+        if (tpTriggerPrice <= trade.entryPrice) {
+          console.warn(`⚠️ ${trade.symbol}: TP ($${tpTriggerPrice.toFixed(2)}) must be above entry ($${trade.entryPrice.toFixed(2)}) for BUY position`);
+          tpTriggerPrice = trade.entryPrice * 1.05; // Default 5% above entry
+          console.log(`   Using default TP: $${tpTriggerPrice.toFixed(2)}`);
+        }
+        if (slTriggerPrice >= trade.entryPrice) {
+          console.warn(`⚠️ ${trade.symbol}: SL ($${slTriggerPrice.toFixed(2)}) must be below entry ($${trade.entryPrice.toFixed(2)}) for BUY position`);
+          slTriggerPrice = trade.entryPrice * 0.95; // Default 5% below entry
+          console.log(`   Using default SL: $${slTriggerPrice.toFixed(2)}`);
+        }
       } else {
-        // Short position
+        // Short position: TP below entry, SL above entry
         tpTriggerPrice = trade.takeProfit; // Lower price = profit for short
         slTriggerPrice = trade.stopLoss; // Higher price = loss for short
         tpOrderSide = 'buy'; // Buy to close short position
+        
+        // Validate TP is below entry and SL is above entry
+        if (tpTriggerPrice >= trade.entryPrice) {
+          console.warn(`⚠️ ${trade.symbol}: TP ($${tpTriggerPrice.toFixed(2)}) must be below entry ($${trade.entryPrice.toFixed(2)}) for SELL position`);
+          tpTriggerPrice = trade.entryPrice * 0.95; // Default 5% below entry
+          console.log(`   Using default TP: $${tpTriggerPrice.toFixed(2)}`);
+        }
+        if (slTriggerPrice <= trade.entryPrice) {
+          console.warn(`⚠️ ${trade.symbol}: SL ($${slTriggerPrice.toFixed(2)}) must be above entry ($${trade.entryPrice.toFixed(2)}) for SELL position`);
+          slTriggerPrice = trade.entryPrice * 1.05; // Default 5% above entry
+          console.log(`   Using default SL: $${slTriggerPrice.toFixed(2)}`);
+        }
       }
       
+      // Try placing both TP and SL in a single conditional order first
+      // If that fails, we'll try separate orders
       const algoOrderParams = {
         instId: okxSymbol,
         tdMode: 'cross',
@@ -3807,29 +3853,98 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         posSide: posSide,
         ordType: 'conditional',
         closeFraction: '1', // Close full position when triggered
-        tpTriggerPx: tpTriggerPrice.toFixed(2),
+        tpTriggerPx: tpTriggerPrice.toFixed(8), // Use more precision for OKX
         tpOrdPx: '-1', // Market order for TP
-        slTriggerPx: slTriggerPrice.toFixed(2),
+        slTriggerPx: slTriggerPrice.toFixed(8), // Use more precision for OKX
         slOrdPx: '-1', // Market order for SL
         tpTriggerPxType: 'last', // Use last price as trigger
         slTriggerPxType: 'last',
         reduceOnly: true, // Only reduce position
         cxlOnClosePos: true // Cancel TP/SL when position is closed
-        // Note: algoClOrdId is optional - OKX will generate one if not provided
-        // If you want to set it, use format: SYMBOL-timestamp (max 32 chars, alphanumeric/hyphens only)
-        // algoClOrdId: `${trade.symbol.toUpperCase()}-${Date.now().toString().slice(-8)}`
       };
       
       console.log(`📊 Placing TP/SL algo orders on OKX for ${trade.symbol}...`);
+      console.log(`   Entry: $${trade.entryPrice.toFixed(2)}, Current: $${currentPrice.toFixed(2)}`);
       console.log(`   TP: $${tpTriggerPrice.toFixed(2)} (${tpOrderSide}), SL: $${slTriggerPrice.toFixed(2)}`);
       
-      const algoResult = await placeOkxAlgoOrder(
+      let algoResult = await placeOkxAlgoOrder(
         algoOrderParams,
         exchange.apiKey,
         exchange.apiSecret,
         exchange.passphrase,
         exchange.baseUrl
       );
+      
+      // If combined order fails, try placing TP and SL as separate orders
+      if (!algoResult.success && algoResult.code !== '0') {
+        console.log(`⚠️ Combined TP/SL order failed, trying separate orders...`);
+        
+        // Place TP order
+        const tpOrderParams = {
+          instId: okxSymbol,
+          tdMode: 'cross',
+          side: tpOrderSide,
+          posSide: posSide,
+          ordType: 'conditional',
+          closeFraction: '1',
+          tpTriggerPx: tpTriggerPrice.toFixed(8),
+          tpOrdPx: '-1',
+          tpTriggerPxType: 'last',
+          reduceOnly: true,
+          cxlOnClosePos: true
+        };
+        
+        const tpResult = await placeOkxAlgoOrder(
+          tpOrderParams,
+          exchange.apiKey,
+          exchange.apiSecret,
+          exchange.passphrase,
+          exchange.baseUrl
+        );
+        
+        // Small delay between orders
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Place SL order
+        const slOrderParams = {
+          instId: okxSymbol,
+          tdMode: 'cross',
+          side: tpOrderSide, // Same side to close position
+          posSide: posSide,
+          ordType: 'conditional',
+          closeFraction: '1',
+          slTriggerPx: slTriggerPrice.toFixed(8),
+          slOrdPx: '-1',
+          slTriggerPxType: 'last',
+          reduceOnly: true,
+          cxlOnClosePos: true
+        };
+        
+        const slResult = await placeOkxAlgoOrder(
+          slOrderParams,
+          exchange.apiKey,
+          exchange.apiSecret,
+          exchange.passphrase,
+          exchange.baseUrl
+        );
+        
+        if (tpResult.success && slResult.success) {
+          console.log(`✅ TP and SL algo orders placed separately for ${trade.symbol}!`);
+          console.log(`   TP Algo ID: ${tpResult.algoId || tpResult.algoClOrdId}`);
+          console.log(`   SL Algo ID: ${slResult.algoId || slResult.algoClOrdId}`);
+          trade.okxAlgoId = tpResult.algoId || slResult.algoId; // Store one as primary
+          trade.okxAlgoClOrdId = tpResult.algoClOrdId || slResult.algoClOrdId;
+          trade.tpSlAutoPlaced = true;
+          addLogEntry(`TP/SL algo orders placed separately on OKX for ${trade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
+          return true;
+        } else {
+          console.log(`⚠️ Failed to place separate TP/SL orders for ${trade.symbol}`);
+          if (!tpResult.success) console.log(`   TP error: ${tpResult.error}`);
+          if (!slResult.success) console.log(`   SL error: ${slResult.error}`);
+          trade.tpSlAutoPlaced = false;
+          return false;
+        }
+      }
       
       if (algoResult.success) {
         console.log(`✅ TP/SL algo orders placed successfully for ${trade.symbol}! Algo ID: ${algoResult.algoId || algoResult.algoClOrdId}`);
@@ -3840,6 +3955,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         return true;
       } else {
         console.log(`⚠️ Failed to place TP/SL algo orders for ${trade.symbol}: ${algoResult.error}`);
+        if (algoResult.fullResponse) {
+          console.log(`   Full error response: ${algoResult.fullResponse}`);
+        }
         trade.tpSlAutoPlaced = false;
         return false;
       }

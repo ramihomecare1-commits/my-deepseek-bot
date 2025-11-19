@@ -1954,12 +1954,11 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
       body.posSide = params.posSide;
     }
     
-    // Take Profit parameters
+    // Take Profit parameters (both TP and SL can be in same conditional order)
     if (params.tpTriggerPx) {
       body.tpTriggerPx = params.tpTriggerPx.toString();
-    }
-    if (params.tpOrdPx) {
-      body.tpOrdPx = params.tpOrdPx.toString();
+      // tpOrdPx is required if tpTriggerPx is set
+      body.tpOrdPx = params.tpOrdPx ? params.tpOrdPx.toString() : '-1';
     }
     if (params.tpTriggerPxType) {
       body.tpTriggerPxType = params.tpTriggerPxType;
@@ -1968,12 +1967,11 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
       body.tpOrdKind = params.tpOrdKind;
     }
     
-    // Stop Loss parameters
+    // Stop Loss parameters (both TP and SL can be in same conditional order)
     if (params.slTriggerPx) {
       body.slTriggerPx = params.slTriggerPx.toString();
-    }
-    if (params.slOrdPx) {
-      body.slOrdPx = params.slOrdPx.toString();
+      // slOrdPx is required if slTriggerPx is set
+      body.slOrdPx = params.slOrdPx ? params.slOrdPx.toString() : '-1';
     }
     if (params.slTriggerPxType) {
       body.slTriggerPxType = params.slTriggerPxType;
@@ -2063,6 +2061,7 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
     if (response.data?.code === '0' && response.data?.data?.[0]) {
       const algoData = response.data.data[0];
       console.log(`✅ [OKX API] Algo order placed: ${algoData.algoId || algoData.algoClOrdId}`);
+      console.log(`   Response: ${JSON.stringify(algoData, null, 2)}`);
       return {
         success: true,
         algoId: algoData.algoId,
@@ -2074,6 +2073,10 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
     } else {
       const errorMsg = response.data?.msg || 'Unknown error';
       const errorCode = response.data?.code;
+      const fullResponse = JSON.stringify(response.data, null, 2);
+      
+      console.log(`❌ [OKX API] Algo order failed: ${errorMsg} (code: ${errorCode})`);
+      console.log(`   Full response: ${fullResponse}`);
       
       // Retry on transient errors (rate limits, temporary failures)
       const isRetryableError = errorCode === '50013' || errorCode === '50014' || errorCode === '50015' || 
@@ -2087,11 +2090,11 @@ async function placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl,
         return placeOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl, retryCount + 1);
       }
       
-      console.log(`❌ [OKX API] Algo order failed: ${errorMsg}`);
       return {
         success: false,
         error: errorMsg,
-        code: errorCode
+        code: errorCode,
+        fullResponse: fullResponse
       };
     }
   } catch (error) {

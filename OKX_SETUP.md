@@ -116,3 +116,5 @@ Once you've added the 3 environment variables and restarted the bot, you're all 
 3. Execute all trades on OKX Demo account
 4. Sync positions from OKX (source of truth)
 
+
+
