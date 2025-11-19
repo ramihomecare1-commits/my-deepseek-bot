@@ -920,8 +920,11 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
     }
 
     // Set leverage to requested value BEFORE placing order (fix error 50016)
+    // Determine position side based on order side
+    const posSide = side.toLowerCase() === 'buy' ? 'long' : 'short';
+
     try {
-      const setLeverageResult = await setOkxLeverage(symbol, leverage, tdMode, apiKey, apiSecret, passphrase, baseUrl);
+      const setLeverageResult = await setOkxLeverage(symbol, leverage, tdMode, posSide, apiKey, apiSecret, passphrase, baseUrl);
       if (setLeverageResult.success) {
         console.log(`✅ [OKX API] Leverage confirmed at ${leverage}x`);
       } else if (setLeverageResult.warning) {
@@ -2569,27 +2572,28 @@ async function validateOkxLeverage(instId, requestedLeverage, tdMode, apiKey, ap
 }
 
 /**
- * Set leverage on OKX for an instrument
+ * Set leverage for an instrument on OKX
  * @param {string} instId - Instrument ID (e.g., 'BTC-USDT-SWAP')
- * @param {number} leverage - Desired leverage (1-125)
+ * @param {number} leverage - Leverage (1-125)
  * @param {string} mgnMode - Margin mode ('cross' or 'isolated')
+ * @param {string} posSide - Position side ('long', 'short', or 'net')
  * @param {string} apiKey - OKX API key
  * @param {string} apiSecret - OKX API secret
  * @param {string} passphrase - OKX passphrase
  * @param {string} baseUrl - OKX API base URL
  * @returns {Promise<Object>} Result with success status
  */
-async function setOkxLeverage(instId, leverage, mgnMode, apiKey, apiSecret, passphrase, baseUrl) {
+async function setOkxLeverage(instId, leverage, mgnMode, posSide, apiKey, apiSecret, passphrase, baseUrl) {
   try {
     const requestPath = '/api/v5/account/set-leverage';
     const body = {
       instId: instId,
       lever: leverage.toString(),
       mgnMode: mgnMode,
-      posSide: 'net' // Use net position mode
+      posSide: posSide // Use provided position side (long/short/net)
     };
 
-    console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId}...`);
+    console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${posSide})...`);
 
     const response = await executeOkxRequestWithFallback({
       apiKey,
