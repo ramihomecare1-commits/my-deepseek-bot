@@ -421,8 +421,9 @@ class ProfessionalTradingBot {
         setTimeout(async () => {
           try {
             await this.placeMissingAlgoOrders();
+            await this.placeMissingDcaOrders();
           } catch (error) {
-            console.error(`❌ Error placing missing algo orders on startup: ${error.message}`);
+            console.error(`❌ Error placing missing orders on startup: ${error.message}`);
           }
         }, 5000); // Wait 5 seconds after initialization
         
