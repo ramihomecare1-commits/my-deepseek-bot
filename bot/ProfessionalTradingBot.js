@@ -4491,6 +4491,18 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       return false;
     }
 
+    // CRITICAL FIX: Add cooldown to prevent rapid order replacements
+    // This prevents race conditions between AI updates and placeMissingAlgoOrders()
+    const now = Date.now();
+    const lastPlacement = trade.lastAlgoOrderPlacement || 0;
+    const cooldownMs = 60000; // 60 seconds
+
+    if (now - lastPlacement < cooldownMs) {
+      const remainingSeconds = Math.ceil((cooldownMs - (now - lastPlacement)) / 1000);
+      console.log(`⏱️ ${trade.symbol}: Algo order placement on cooldown (${remainingSeconds}s remaining to prevent duplicates)`);
+      return true; // Return true to indicate we're handling it (not an error)
+    }
+
     try {
       const { isExchangeTradingEnabled, getPreferredExchange, placeOkxAlgoOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
       const exchangeConfig = isExchangeTradingEnabled();
@@ -4870,6 +4882,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         trade.okxAlgoId = algoResult.algoId;
         trade.okxAlgoClOrdId = algoResult.algoClOrdId;
         trade.tpSlAutoPlaced = true;
+
+        // Set timestamp to enable cooldown protection
+        trade.lastAlgoOrderPlacement = Date.now();
+
         addLogEntry(`TP/SL algo orders placed on OKX for ${trade.symbol} (TP: $${tpTriggerPrice.toFixed(2)}, SL: $${slTriggerPrice.toFixed(2)})`, 'info');
         return true;
       } else {
