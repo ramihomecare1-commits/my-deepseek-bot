@@ -2593,6 +2593,7 @@ async function setOkxLeverage(instId, leverage, mgnMode, posSide, apiKey, apiSec
     };
 
     console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${posSide})...`);
+    console.log(`📋 [OKX API] Leverage request body:`, JSON.stringify(body));
 
     const response = await executeOkxRequestWithFallback({
       apiKey,
@@ -2614,12 +2615,14 @@ async function setOkxLeverage(instId, leverage, mgnMode, posSide, apiKey, apiSec
       const errorMsg = response.data?.msg || 'Unknown error';
       const errorCode = response.data?.code || 'N/A';
       console.warn(`⚠️ [OKX API] Failed to set leverage (code: ${errorCode}): ${errorMsg}`);
+      console.warn(`📋 [OKX API] Request was:`, JSON.stringify(body));
 
       // Return success anyway if error is not critical (leverage might already be set)
       return {
         success: errorCode === '59107', // Already set to same leverage
         leverage: leverage,
-        warning: errorMsg
+        warning: errorMsg,
+        errorCode: errorCode
       };
     }
   } catch (error) {
