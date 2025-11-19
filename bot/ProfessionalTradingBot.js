@@ -4977,23 +4977,35 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     let skippedCount = 0;
     
     for (const trade of this.activeTrades) {
+      console.log(`🔍 Checking DCA order for ${trade.symbol} (status: ${trade.status})...`);
+      
       // Only place for OPEN trades
       if (trade.status !== 'OPEN') {
+        console.log(`   ⏭️ ${trade.symbol}: Skipping - status is '${trade.status}', not 'OPEN'`);
         continue;
       }
       
       // Check if trade has DCA order ID
       const hasDcaOrder = trade.okxDcaOrderId;
+      console.log(`   📋 ${trade.symbol}: okxDcaOrderId=${hasDcaOrder || 'none'}`);
       
       // Check if trade has required fields
-      if (!trade.addPosition || !trade.entryPrice || !trade.quantity) {
-        console.warn(`⚠️ ${trade.symbol}: Cannot place DCA order - missing addPosition, entryPrice, or quantity`);
+      const hasAddPosition = trade.addPosition || trade.dcaPrice;
+      const hasEntryPrice = trade.entryPrice;
+      const hasQuantity = trade.quantity;
+      
+      console.log(`   📋 ${trade.symbol}: addPosition=${trade.addPosition || trade.dcaPrice || 'none'}, entryPrice=${trade.entryPrice || 'none'}, quantity=${trade.quantity || 'none'}`);
+      
+      if (!hasAddPosition || !hasEntryPrice || !hasQuantity) {
+        console.warn(`⚠️ ${trade.symbol}: Cannot place DCA order - missing required fields`);
+        console.warn(`   Missing: ${!hasAddPosition ? 'addPosition/dcaPrice ' : ''}${!hasEntryPrice ? 'entryPrice ' : ''}${!hasQuantity ? 'quantity' : ''}`);
         failedCount++;
         continue;
       }
       
       // If DCA order already exists, skip
       if (hasDcaOrder) {
+        console.log(`   ⏭️ ${trade.symbol}: Skipping - already has DCA order (ID: ${hasDcaOrder})`);
         skippedCount++;
         continue;
       }
@@ -5001,37 +5013,47 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
       if (!okxSymbol) {
         console.warn(`⚠️ ${trade.symbol}: No OKX symbol mapping found`);
+        console.warn(`   Available symbols: ${Object.keys(OKX_SYMBOL_MAP).slice(0, 10).join(', ')}...`);
         failedCount++;
         continue;
       }
+      console.log(`   ✅ OKX symbol mapping: ${trade.symbol} -> ${okxSymbol}`);
       
       // Validate DCA price direction
       const dcaPrice = trade.addPosition || trade.dcaPrice;
       const entryPrice = trade.entryPrice;
       let shouldPlaceDCA = false;
       
+      console.log(`   🔍 ${trade.symbol}: Validating DCA price - dcaPrice=$${dcaPrice.toFixed(2)}, entryPrice=$${entryPrice.toFixed(2)}, action=${trade.action}`);
+      
       if (trade.action === 'BUY') {
         // For BUY: DCA should be below entry (to buy more at lower price)
         shouldPlaceDCA = dcaPrice < entryPrice && dcaPrice > 0;
         if (!shouldPlaceDCA) {
           console.log(`⚠️ ${trade.symbol}: DCA price ($${dcaPrice.toFixed(2)}) must be below entry ($${entryPrice.toFixed(2)}) for BUY position`);
+          console.log(`   ❌ Validation failed: dcaPrice < entryPrice = ${dcaPrice < entryPrice}, dcaPrice > 0 = ${dcaPrice > 0}`);
           failedCount++;
           continue;
         }
+        console.log(`   ✅ DCA price validation passed for BUY position`);
       } else {
         // For SELL: DCA should be above entry (to sell more at higher price)
         shouldPlaceDCA = dcaPrice > entryPrice && dcaPrice > 0;
         if (!shouldPlaceDCA) {
           console.log(`⚠️ ${trade.symbol}: DCA price ($${dcaPrice.toFixed(2)}) must be above entry ($${entryPrice.toFixed(2)}) for SELL position`);
+          console.log(`   ❌ Validation failed: dcaPrice > entryPrice = ${dcaPrice > entryPrice}, dcaPrice > 0 = ${dcaPrice > 0}`);
           failedCount++;
           continue;
         }
+        console.log(`   ✅ DCA price validation passed for SELL position`);
       }
       
       // Calculate DCA quantity (50% of initial position size)
       const dcaQuantity = Math.floor(parseFloat(trade.quantity) * 0.5);
+      console.log(`   📊 ${trade.symbol}: DCA quantity calculation - trade.quantity=${trade.quantity}, dcaQuantity=${dcaQuantity}`);
       if (dcaQuantity <= 0) {
         console.warn(`⚠️ ${trade.symbol}: DCA quantity is 0, skipping DCA limit order`);
+        console.warn(`   Trade quantity: ${trade.quantity}, Calculated DCA quantity: ${dcaQuantity}`);
         failedCount++;
         continue;
       }
