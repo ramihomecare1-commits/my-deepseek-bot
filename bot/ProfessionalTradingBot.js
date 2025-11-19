@@ -7592,7 +7592,7 @@ Return JSON array format:
                     // Cancel existing DCA order if it exists
                     if (trade.okxDcaOrderId) {
                       try {
-                        const { isExchangeTradingEnabled, getPreferredExchange, cancelOkxOrder } = require('../services/exchangeService');
+                        const { isExchangeTradingEnabled, getPreferredExchange, cancelOkxOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
                         const exchangeConfig = isExchangeTradingEnabled();
 
                         if (exchangeConfig.enabled) {
