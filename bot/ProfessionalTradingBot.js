@@ -3419,8 +3419,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     // Use dynamic position sizing if enabled
     // Use dynamic position sizing if enabled
     if (this.tradingRules.positionSizing?.enabled) {
-      // Use 5% of portfolio for each position (as shown in logs: "5.00% of portfolio")
-      const positionPercent = 0.05; // 5% of portfolio
+      // Use 2.5% of portfolio for each position to conserve margin for DCA orders
+      const positionPercent = 0.025; // 2.5% of portfolio
       positionSizeUSD = portfolioValue * positionPercent;
 
       // Cap at maximum position size (10% of portfolio)
@@ -3439,8 +3439,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
       addLogEntry(`💰 Position sizing: $${positionSizeUSD.toFixed(2)} (${((positionSizeUSD / portfolioValue) * 100).toFixed(2)}% of portfolio, Risk: ${(this.tradingRules.positionSizing.riskPerTrade * 100).toFixed(1)}%, SL: ${stopLossPercent.toFixed(2)}%)`, 'info');
     } else {
-      // Fallback: Use 5% of portfolio for initial position
-      positionSizeUSD = portfolioValue * 0.05; // 5% of portfolio
+      // Fallback: Use 2.5% of portfolio for initial position
+      positionSizeUSD = portfolioValue * 0.025; // 2.5% of portfolio
       initialQuantity = calculateQuantity(opportunity.symbol, entryPrice, positionSizeUSD);
     }
 
