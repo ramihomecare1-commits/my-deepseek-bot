@@ -872,9 +872,9 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
     const requestPath = '/api/v5/trade/order';
     const tdMode = 'isolated'; // Isolated margin for derivatives (matches OKX account config)
 
-    // OKX perpetual swaps require quantity to be a multiple of lot size (usually 1 contract)
-    // Round to nearest integer (minimum 1 contract)
-    let roundedQuantity = Math.max(1, Math.round(quantity));
+    // OKX perpetual swaps accept fractional contracts (e.g., 0.1089 contracts for BTC)
+    // The quantity passed here should already be in contracts from the contract conversion logic
+    let roundedQuantity = quantity;
 
     // Pre-order validation: Check max order size and available balance
     try {
