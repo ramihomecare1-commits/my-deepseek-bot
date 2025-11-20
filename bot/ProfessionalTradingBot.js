@@ -3659,7 +3659,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 // Place TP order with actual position size
                 const tpOrderParams = {
                   instId: okxSymbol,
-                  tdMode: 'cross',
+                  tdMode: 'isolated', // Match account margin mode
                   side: tpOrderSide,
                   posSide: posSide,
                   ordType: 'conditional',
@@ -3685,7 +3685,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 // Place SL order with actual position size
                 const slOrderParams = {
                   instId: okxSymbol,
-                  tdMode: 'cross',
+                  tdMode: 'isolated', // Match account margin mode
                   side: tpOrderSide,
                   posSide: posSide,
                   ordType: 'conditional',
