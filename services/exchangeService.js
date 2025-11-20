@@ -872,9 +872,39 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
     const requestPath = '/api/v5/trade/order';
     const tdMode = 'isolated'; // Isolated margin for derivatives (matches OKX account config)
 
-    // OKX perpetual swaps accept fractional contracts (e.g., 0.1089 contracts for BTC)
-    // The quantity passed here should already be in contracts from the contract conversion logic
-    let roundedQuantity = quantity;
+    // OKX lot size (minimum order increment) - quantity must be a multiple of this
+    // For most perpetual swaps, lot size is 0.01 contracts
+    // BTC: 1 contract = 0.01 BTC, lot size = 0.01 contracts = 0.0001 BTC
+    const lotSizeMap = {
+      'BTC-USDT-SWAP': 0.01,   // 0.01 contracts = 0.0001 BTC
+      'ETH-USDT-SWAP': 0.01,   // 0.01 contracts = 0.001 ETH
+      'SOL-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 SOL
+      'XRP-USDT-SWAP': 1,      // 1 contract = 10 XRP
+      'DOGE-USDT-SWAP': 10,    // 10 contracts = 1000 DOGE
+      'ADA-USDT-SWAP': 1,      // 1 contract = 10 ADA
+      'MATIC-USDT-SWAP': 1,    // 1 contract = 10 MATIC
+      'DOT-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 DOT
+      'AVAX-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 AVAX
+      'LINK-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 LINK
+    };
+
+    const lotSize = lotSizeMap[symbol] || 1; // Default to 1 if symbol not found
+
+    // Round quantity to nearest lot size multiple
+    // Example: 0.1089 contracts with lot size 0.01 → 0.11 contracts (11 lots)
+    let roundedQuantity = Math.round(quantity / lotSize) * lotSize;
+
+    // Ensure minimum 1 lot
+    if (roundedQuantity < lotSize) {
+      roundedQuantity = lotSize;
+    }
+
+    // Round to avoid floating point precision issues (e.g., 0.10999999 → 0.11)
+    roundedQuantity = parseFloat(roundedQuantity.toFixed(8));
+
+    if (roundedQuantity !== quantity) {
+      console.log(`⚠️ [OKX API] Quantity adjusted from ${quantity} to ${roundedQuantity} (lot size: ${lotSize})`);
+    }
 
     // Pre-order validation: Check max order size and available balance
     try {
