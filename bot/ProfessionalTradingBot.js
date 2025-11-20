@@ -3408,46 +3408,38 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       console.log(`⚠️ ${opportunity.symbol}: Missing or invalid DCA level, using default 5% from entry (toward TP)`);
     }
 
-    // Calculate position size using risk management
+    // Calculate position size using FIXED dollar amounts per position
     const { calculateQuantity } = require('../services/exchangeService');
     const { recordTrade, getPositionSize } = require('../services/portfolioService');
-    const { calculatePositionSizeWithRR } = require('../services/positionSizingService');
 
     let positionSizeUSD = 0;
     let initialQuantity = 0;
 
-    // Get portfolio value for position sizing
-    const { getPortfolio } = require('../services/portfolioService');
-    const portfolio = getPortfolio();
-    const portfolioValue = portfolio.currentBalance || portfolio.initialCapital || 5000;
+    // Count existing positions for this symbol to determine position size
+    const existingPositions = this.activeTrades.filter(t =>
+      t.symbol === opportunity.symbol &&
+      (t.status === 'OPEN' || t.status === 'DCA_HIT' || t.status === 'PENDING')
+    ).length;
 
-    // Use dynamic position sizing if enabled
-    // Use dynamic position sizing if enabled
-    if (this.tradingRules.positionSizing?.enabled) {
-      // Use 2.5% of portfolio for each position to conserve margin for DCA orders
-      const positionPercent = 0.025; // 2.5% of portfolio
-      positionSizeUSD = portfolioValue * positionPercent;
+    // Fixed position sizing based on symbol and position number
+    // BTC: $100, $100, $200, $400, $800
+    // Others: $50, $50, $100, $200, $400
+    const isBTC = opportunity.symbol === 'BTC';
+    const positionSizes = isBTC
+      ? [100, 100, 200, 400, 800]  // BTC position sizes
+      : [50, 50, 100, 200, 400];   // Other coins position sizes
 
-      // Cap at maximum position size (10% of portfolio)
-      const maxPositionUSD = portfolioValue * (this.tradingRules.positionSizing.maxPositionSize || 0.10);
-      positionSizeUSD = Math.min(positionSizeUSD, maxPositionUSD);
+    // Get position size based on position number (0-indexed, max 5 positions)
+    const positionIndex = Math.min(existingPositions, positionSizes.length - 1);
+    positionSizeUSD = positionSizes[positionIndex];
 
-      // Apply minimum position size
-      const minPositionUSD = this.tradingRules.positionSizing.minPositionSize || 50;
-      positionSizeUSD = Math.max(positionSizeUSD, minPositionUSD);
+    initialQuantity = positionSizeUSD / entryPrice;
 
-      initialQuantity = positionSizeUSD / entryPrice;
+    // Calculate stop loss percentage for logging
+    const stopLossDistance = Math.abs(entryPrice - stopLoss);
+    const stopLossPercent = (stopLossDistance / entryPrice) * 100;
 
-      // Calculate stop loss percentage for logging
-      const stopLossDistance = Math.abs(entryPrice - stopLoss);
-      const stopLossPercent = (stopLossDistance / entryPrice) * 100;
-
-      addLogEntry(`💰 Position sizing: $${positionSizeUSD.toFixed(2)} (${((positionSizeUSD / portfolioValue) * 100).toFixed(2)}% of portfolio, Risk: ${(this.tradingRules.positionSizing.riskPerTrade * 100).toFixed(1)}%, SL: ${stopLossPercent.toFixed(2)}%)`, 'info');
-    } else {
-      // Fallback: Use 2.5% of portfolio for initial position
-      positionSizeUSD = portfolioValue * 0.025; // 2.5% of portfolio
-      initialQuantity = calculateQuantity(opportunity.symbol, entryPrice, positionSizeUSD);
-    }
+    addLogEntry(`💰 Position sizing: $${positionSizeUSD.toFixed(2)} (Position #${existingPositions + 1}, ${isBTC ? 'BTC' : 'ALT'} tier, SL: ${stopLossPercent.toFixed(2)}%)`, 'info');
 
 
     // Store coin data for proper price fetching
