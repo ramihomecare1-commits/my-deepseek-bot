@@ -3409,7 +3409,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     }
 
     // Calculate position size using FIXED dollar amounts per position
-    const { calculateQuantity } = require('../services/exchangeService');
+    // Import exchange services early for contract conversion
+    const { calculateQuantity, OKX_SYMBOL_MAP } = require('../services/exchangeService');
     const { recordTrade, getPositionSize } = require('../services/portfolioService');
 
     let positionSizeUSD = 0;
@@ -3457,7 +3458,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     // IMPORTANT: OKX uses contracts for perpetual swaps, but minimum order size is much smaller than 1 contract
     // Contract size: Used for position value calculation
     // Minimum order: Smallest tradeable amount (e.g., BTC: 0.0001 BTC = ~$9)
-    const { OKX_SYMBOL_MAP } = require('../services/exchangeService');
+    // Note: OKX_SYMBOL_MAP is imported later on line 3556
     const okxSymbol = OKX_SYMBOL_MAP[opportunity.symbol];
 
     if (okxSymbol) {
@@ -3553,7 +3554,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     console.log(`📝 Added ${newTrade.symbol} to activeTrades with PENDING status (prevents duplicate race condition)`);
 
     // EXECUTE ORDER ON OKX FIRST (source of truth)
-    const { isExchangeTradingEnabled, getPreferredExchange, executeOkxMarketOrder, executeOkxBatchOrders, placeOkxAlgoOrder, validateOkxLeverage, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+    const { isExchangeTradingEnabled, getPreferredExchange, executeOkxMarketOrder, executeOkxBatchOrders, placeOkxAlgoOrder, validateOkxLeverage } = require('../services/exchangeService');
+
     const exchangeConfig = isExchangeTradingEnabled();
 
     if (exchangeConfig.enabled) {
