@@ -21,7 +21,7 @@ function calculateATR(prices, period = 14) {
     const high = prices[i].high || prices[i].price || prices[i];
     const low = prices[i].low || prices[i].price || prices[i];
     const prevClose = prices[i - 1].close || prices[i - 1].price || prices[i - 1];
-    
+
     const tr = Math.max(
       high - low,
       Math.abs(high - prevClose),
@@ -66,17 +66,20 @@ function calculatePositionSize(params) {
 
   const portfolio = getPortfolio();
   const accountBalance = portfolio.currentBalance || portfolio.initialCapital || 5000;
-  
+
   // Calculate risk amount (2% of account balance by default)
   const riskAmount = accountBalance * riskPerTrade;
-  
-  // Calculate stop loss distance
+
+  // Calculate stop loss distance in dollars
   const stopLossDistance = Math.abs(entryPrice - stopLoss);
   const stopLossPercent = (stopLossDistance / entryPrice) * 100;
-  
-  // Base position size calculation: Risk Amount / Stop Loss Distance
-  let positionSizeUSD = riskAmount / (stopLossPercent / 100);
-  
+
+  // CORRECT position size calculation:
+  // Quantity = Risk Amount / Stop Loss Distance (per unit)
+  // Position Size USD = Quantity * Entry Price
+  const quantity = riskAmount / stopLossDistance;
+  let positionSizeUSD = quantity * entryPrice;
+
   // Adjust for volatility if enabled
   if (useVolatility && volatility && currentPrice) {
     const volatilityPercent = (volatility / currentPrice) * 100;
@@ -86,17 +89,17 @@ function calculatePositionSize(params) {
       positionSizeUSD *= volatilityMultiplier;
     }
   }
-  
+
   // Apply maximum position size limit
   const maxPositionUSD = accountBalance * maxPositionSize;
   positionSizeUSD = Math.min(positionSizeUSD, maxPositionUSD);
-  
+
   // Apply minimum position size
   positionSizeUSD = Math.max(positionSizeUSD, minPositionSize);
-  
+
   // Calculate quantity
   const quantity = positionSizeUSD / entryPrice;
-  
+
   return {
     positionSizeUSD: Math.round(positionSizeUSD * 100) / 100,
     quantity: Math.round(quantity * 1000000) / 1000000, // Round to 6 decimals
@@ -115,20 +118,20 @@ function calculatePositionSize(params) {
  */
 function calculatePositionSizeWithRR(params) {
   const result = calculatePositionSize(params);
-  
+
   if (params.takeProfit) {
     const entryPrice = params.entryPrice;
     const stopLoss = params.stopLoss;
     const takeProfit = params.takeProfit;
-    
+
     const risk = Math.abs(entryPrice - stopLoss);
     const reward = Math.abs(takeProfit - entryPrice);
-    
+
     if (risk > 0) {
       result.riskRewardRatio = Math.round((reward / risk) * 100) / 100;
     }
   }
-  
+
   return result;
 }
 
