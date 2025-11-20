@@ -97,12 +97,12 @@ function calculatePositionSize(params) {
   // Apply minimum position size
   positionSizeUSD = Math.max(positionSizeUSD, minPositionSize);
 
-  // Calculate quantity
-  const quantity = positionSizeUSD / entryPrice;
+  // Recalculate final quantity based on adjusted position size
+  const finalQuantity = positionSizeUSD / entryPrice;
 
   return {
     positionSizeUSD: Math.round(positionSizeUSD * 100) / 100,
-    quantity: Math.round(quantity * 1000000) / 1000000, // Round to 6 decimals
+    quantity: Math.round(finalQuantity * 1000000) / 1000000, // Round to 6 decimals
     riskAmount: Math.round(riskAmount * 100) / 100,
     stopLossPercent: Math.round(stopLossPercent * 100) / 100,
     riskRewardRatio: null, // Will be calculated if takeProfit is provided
