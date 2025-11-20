@@ -802,15 +802,44 @@ async function executeOkxRequestWithFallback(options) {
 async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSecret, passphrase, baseUrl, leverage = 1) {
   try {
     const requestPath = '/api/v5/trade/order';
-    const tdMode = 'isolated'; // Isolated margin for derivatives (matches OKX account config)
-    const posSide = side.toLowerCase() === 'buy' ? 'long' : 'short';
+    const tdMode = 'isolated'; // Isolated margin for derivatives
 
-    // Round quantity to lot size (usually 1 for perpetual swaps)
-    const roundedQuantity = Math.floor(quantity);
+    // Apply same lot size rounding as market orders
+    const lotSizeMap = {
+      'BTC-USDT-SWAP': 0.01,   // 0.01 contracts = 0.0001 BTC
+      'ETH-USDT-SWAP': 0.01,   // 0.01 contracts = 0.001 ETH
+      'SOL-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 SOL
+      'XRP-USDT-SWAP': 1,      // 1 contract = 10 XRP
+      'DOGE-USDT-SWAP': 10,    // 10 contracts = 1000 DOGE
+      'ADA-USDT-SWAP': 0.1,    // 0.1 contracts = 1 ADA
+      'MATIC-USDT-SWAP': 1,    // 1 contract = 10 MATIC
+      'DOT-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 DOT
+      'AVAX-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 AVAX
+      'LINK-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 LINK
+    };
+
+    const lotSize = lotSizeMap[symbol] || 1;
+
+    // Round quantity to nearest lot size multiple
+    let roundedQuantity = Math.round(quantity / lotSize) * lotSize;
+
+    // Ensure minimum 1 lot
+    if (roundedQuantity < lotSize) {
+      roundedQuantity = lotSize;
+    }
+
+    // Round to avoid floating point precision issues
+    roundedQuantity = parseFloat(roundedQuantity.toFixed(8));
+
+    if (roundedQuantity !== quantity) {
+      console.log(`⚠️ [OKX API] DCA quantity adjusted from ${quantity} to ${roundedQuantity} (lot size: ${lotSize})`);
+    }
 
     if (roundedQuantity <= 0) {
       throw new Error('Invalid quantity: must be greater than 0');
     }
+
+    const posSide = side.toLowerCase() === 'buy' ? 'long' : 'short';
 
     const body = {
       instId: symbol,
