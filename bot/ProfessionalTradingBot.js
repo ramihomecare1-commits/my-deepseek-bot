@@ -193,6 +193,7 @@ class ProfessionalTradingBot {
     this.botStartTime = Date.now(); // track when bot started (prevents re-eval during startup)
     this.dcaTriggerStartupDelayMs = 3 * 60 * 1000; // 3 minutes startup delay (prevents timeout during deployment)
     this.lastBtcMissingWarning = 0; // timestamp of last BTC missing warning (throttles logging)
+    this.dcaPlacementLocks = new Set(); // Mutex locks to prevent race conditions during DCA placement
     this.selectedIntervalKey = '1h';
     this.scanIntervalMs = config.SCAN_INTERVAL_OPTIONS[this.selectedIntervalKey];
     this.nextScanTime = null; // Track when next scan is scheduled (prevents reset on page refresh)
@@ -7598,9 +7599,11 @@ Return JSON array format:
                   // FIX: Check if newDcaValue exists and is valid before using
                   if (newDcaValue && typeof newDcaValue === 'number' && newDcaValue > 0) {
                     // Cancel existing DCA order if it exists
+                    let cancellationSucceeded = false;
+
                     if (trade.okxDcaOrderId) {
                       try {
-                        const { isExchangeTradingEnabled, getPreferredExchange, cancelOkxOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+                        const { isExchangeTradingEnabled, getPreferredExchange, cancelOkxOrder, OKX_SYMBOL_MAP, addLogEntry } = require('../services/exchangeService');
                         const exchangeConfig = isExchangeTradingEnabled();
 
                         if (exchangeConfig.enabled) {
@@ -7608,22 +7611,50 @@ Return JSON array format:
                           const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
 
                           if (okxSymbol && exchange) {
-                            await cancelOkxOrder(
+                            const cancelResult = await cancelOkxOrder(
                               okxSymbol,
                               trade.okxDcaOrderId,
                               null, // clOrdId
                               exchange.apiKey,
                               exchange.apiSecret,
                               exchange.passphrase,
-                              exchange.baseUrl
+                              exchange.baseUrl,
+                              'isolated' // tdMode for isolated margin
                             );
 
-                            console.log(`🗑️ ${symbol}: Canceled old DCA order on OKX`);
+                            // Verify cancellation succeeded
+                            if (cancelResult && cancelResult.success) {
+                              console.log(`🗑️ ${symbol}: Canceled old DCA order on OKX (ID: ${trade.okxDcaOrderId})`);
+                              cancellationSucceeded = true;
+                              trade.okxDcaOrderId = null; // Clear old order ID
+                            } else {
+                              const errorMsg = `DCA order cancellation failed for ${symbol}: ${cancelResult?.error || 'Unknown error'}`;
+                              console.error(`❌ ${errorMsg}`);
+
+                              // Send Telegram notification for DCA cancellation failure
+                              addLogEntry(errorMsg, 'error');
+                            }
                           }
                         }
                       } catch (cancelError) {
-                        console.warn(`⚠️ ${symbol}: Could not cancel old DCA order: ${cancelError.message}`);
+                        const errorMsg = `DCA order cancellation error for ${symbol}: ${cancelError.message}`;
+                        console.error(`❌ ${errorMsg}`);
+
+                        // Send Telegram notification for DCA cancellation error
+                        const { addLogEntry } = require('../services/exchangeService');
+                        addLogEntry(errorMsg, 'error');
                       }
+                    } else {
+                      // No existing DCA order, safe to place new one
+                      cancellationSucceeded = true;
+                    }
+
+                    // Only place new DCA order if cancellation succeeded (or no old order existed)
+                    if (!cancellationSucceeded) {
+                      console.warn(`⚠️ ${symbol}: Skipping new DCA order placement - old order still exists on OKX`);
+                      const { addLogEntry } = require('../services/exchangeService');
+                      addLogEntry(`⚠️ ${symbol}: Skipped new DCA - old order cancellation failed. Manual cleanup required!`, 'warning');
+                      continue; // Skip to next recommendation
                     }
 
                     // Place new DCA limit order

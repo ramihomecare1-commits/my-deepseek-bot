@@ -1998,9 +1998,10 @@ async function executeOkxBatchOrders(orders, apiKey, apiSecret, passphrase, base
  * @param {string} apiSecret - OKX API secret
  * @param {string} passphrase - OKX passphrase
  * @param {string} baseUrl - OKX API base URL
+ * @param {string} tdMode - Trade mode ('isolated' or 'cross') - required for isolated margin
  * @returns {Promise<Object>} Cancel order result
  */
-async function cancelOkxOrder(instId, ordId, clOrdId, apiKey, apiSecret, passphrase, baseUrl) {
+async function cancelOkxOrder(instId, ordId, clOrdId, apiKey, apiSecret, passphrase, baseUrl, tdMode = null) {
   try {
     if (!ordId && !clOrdId) {
       throw new Error('Either ordId or clOrdId must be provided');
@@ -2010,6 +2011,11 @@ async function cancelOkxOrder(instId, ordId, clOrdId, apiKey, apiSecret, passphr
     const body = {
       instId: instId
     };
+
+    // Add tdMode if provided (required for isolated margin mode)
+    if (tdMode) {
+      body.tdMode = tdMode;
+    }
 
     if (ordId) {
       body.ordId = ordId;
