@@ -249,6 +249,100 @@ class TradeMonitoringService {
   }
 
   /**
+   * Sync trade levels (DCA, TP, SL) with actual orders on OKX
+   * This ensures the AI has the absolute latest data
+   */
+  async syncTradeLevelsWithOkx(trade) {
+    const {
+      isExchangeTradingEnabled,
+      getPreferredExchange,
+      getOkxPendingOrders,
+      getOkxAlgoOrders,
+      OKX_SYMBOL_MAP
+    } = require('./exchangeService');
+
+    const exchangeConfig = isExchangeTradingEnabled();
+    if (!exchangeConfig.enabled) return;
+
+    const exchange = getPreferredExchange();
+    const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+
+    if (!okxSymbol || !exchange) return;
+
+    // 1. Fetch Pending Limit Orders (for DCA)
+    try {
+      const pendingOrders = await getOkxPendingOrders(
+        okxSymbol,
+        exchange.apiKey,
+        exchange.apiSecret,
+        exchange.passphrase,
+        exchange.baseUrl
+      );
+
+      if (pendingOrders.success && pendingOrders.orders) {
+        // Find DCA order (limit order in opposite direction of close, or same direction as entry)
+        // For Long: Buy Limit below current price
+        // For Short: Sell Limit above current price
+        const dcaOrder = pendingOrders.orders.find(o => {
+          const isBuy = trade.action === 'BUY';
+          return o.ordType === 'limit' && (isBuy ? o.side === 'buy' : o.side === 'sell');
+        });
+
+        if (dcaOrder) {
+          trade.dcaPrice = parseFloat(dcaOrder.px);
+          trade.okxDcaOrderId = dcaOrder.ordId;
+        } else {
+          // If no DCA order found on OKX, clear it from memory
+          // But only if we're sure (API call succeeded)
+          // trade.dcaPrice = null; // Commented out to be safe, maybe user canceled manually
+        }
+      }
+    } catch (e) {
+      console.warn(`⚠️ Failed to fetch pending orders for ${trade.symbol}: ${e.message}`);
+    }
+
+    // 2. Fetch Algo Orders (for TP/SL)
+    try {
+      const algoOrders = await getOkxAlgoOrders(
+        okxSymbol,
+        'conditional', // TP/SL are usually conditional
+        exchange.apiKey,
+        exchange.apiSecret,
+        exchange.passphrase,
+        exchange.baseUrl
+      );
+
+      if (algoOrders.success && algoOrders.orders) {
+        // Find TP and SL orders
+        const activeAlgos = algoOrders.orders.filter(o =>
+          o.state === 'live' || o.state === 'effective' || o.state === 'partially_filled'
+        );
+
+        let tpOrder = null;
+        let slOrder = null;
+
+        for (const order of activeAlgos) {
+          // Check for TP
+          if (order.tpTriggerPx) {
+            tpOrder = order;
+            trade.takeProfit = parseFloat(order.tpTriggerPx);
+            trade.okxTpAlgoId = order.algoId;
+          }
+
+          // Check for SL
+          if (order.slTriggerPx) {
+            slOrder = order;
+            trade.stopLoss = parseFloat(order.slTriggerPx);
+            trade.okxSlAlgoId = order.algoId;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`⚠️ Failed to fetch algo orders for ${trade.symbol}: ${e.message}`);
+    }
+  }
+
+  /**
    * Evaluate trade with Premium AI (DeepSeek R1)
    */
   async evaluateTradeWithPremiumAI(trade, triggeredLevel, priceData) {
@@ -262,6 +356,17 @@ class TradeMonitoringService {
 
     const currentPrice = priceData.price;
     const pnlPercent = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
+
+    // SYNC WITH OKX: Ensure AI knows about current Limit (DCA), TP, and SL orders
+    // This prevents the AI from suggesting moves that conflict with existing orders
+    // or acting on stale data
+    try {
+      await this.syncTradeLevelsWithOkx(trade);
+      console.log(`🔄 ${trade.symbol}: Synced trade levels with OKX before AI evaluation`);
+      console.log(`   DCA: $${trade.dcaPrice || 'None'}, TP: $${trade.takeProfit || 'None'}, SL: $${trade.stopLoss || 'None'}`);
+    } catch (syncError) {
+      console.warn(`⚠️ ${trade.symbol}: Failed to sync levels with OKX, using memory values: ${syncError.message}`);
+    }
 
     const prompt = `You are a professional crypto trading advisor. Analyze this OPEN TRADE and provide actionable recommendations.
 
