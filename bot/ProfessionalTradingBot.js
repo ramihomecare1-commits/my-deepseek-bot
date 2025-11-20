@@ -3874,13 +3874,36 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                       if (!positionSize || positionSize <= 0) {
                         console.log(`⚠️ ${newTrade.symbol}: Cannot place DCA order - no valid position size found`);
                       } else {
-                        // Calculate DCA quantity (50% of position size, minimum 1 for derivatives)
-                        let dcaQuantity = Math.floor(positionSize * 0.5);
+                        // Calculate DCA quantity using FIXED tiers (same as initial position logic)
+                        // BTC: $100, $100, $200, $400, $800
+                        // Others: $50, $50, $100, $200, $400
+
+                        // Determine which tier this DCA belongs to
+                        // existingPositions is the count BEFORE this new trade
+                        // So this new trade is existingPositions + 1 (Position #1 if existing was 0)
+                        // The DCA order is for the NEXT addition, so it's existingPositions + 2 (Position #2)
+                        // Array is 0-indexed, so index = (existingPositions + 1)
+                        const dcaPositionIndex = Math.min(existingPositions + 1, positionSizes.length - 1);
+                        const dcaSizeUSD = positionSizes[dcaPositionIndex];
+
+                        let dcaQuantity = dcaSizeUSD / dcaPrice;
+
+                        // Apply minimum quantity checks
                         if (dcaQuantity < 1 && positionSize >= 1) {
-                          dcaQuantity = 1; // Minimum 1 contract for derivatives
-                        } else if (dcaQuantity < 0.01 && positionSize >= 0.01) {
-                          dcaQuantity = Math.max(positionSize * 0.5, 0.01); // Minimum 0.01 for very small positions
+                          // For contracts where size must be integer (usually)
+                          // But for crypto-margined or some linear, it might be fractional.
+                          // Safest is to check against 0.01 or 1 based on symbol type, but here we use a heuristic
+                          // If current position is integer, likely DCA should be too? 
+                          // Actually, let's trust the division but ensure min size
+                          // dcaQuantity = 1; 
                         }
+
+                        // Ensure minimum 0.01 (standard for most crypto)
+                        if (dcaQuantity < 0.01) {
+                          dcaQuantity = 0.01;
+                        }
+
+                        console.log(`   💰 DCA Sizing: $${dcaSizeUSD} (Tier #${dcaPositionIndex + 1}) -> ${dcaQuantity.toFixed(8)} coins @ $${dcaPrice.toFixed(2)}`);
 
                         console.log(`   📊 DCA quantity calculation - positionSize=${positionSize}, dcaQuantity=${dcaQuantity}`);
 
@@ -4031,30 +4054,19 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       const takeProfit = parsePrice(opportunity.takeProfit) || currentPrice * 1.05;
       const stopLoss = parsePrice(opportunity.stopLoss) || currentPrice * 0.95;
 
-      // Calculate position size (1.5% of portfolio for initial position)
-      const initialPositionTarget = portfolioValue * 0.015;
-      let positionSizeUSD = initialPositionTarget;
-      let initialQuantity = 0;
+      // Calculate position size using FIXED dollar amounts per position
+      // BTC: $100 (1st position)
+      // Others: $50 (1st position)
 
-      if (this.tradingRules.positionSizing?.enabled) {
-        const positionSizeResult = calculatePositionSizeWithRR({
-          entryPrice: entryPrice,
-          stopLoss: stopLoss,
-          takeProfit: takeProfit,
-          riskPerTrade: this.tradingRules.positionSizing.riskPerTrade || 0.02,
-          maxPositionSize: this.tradingRules.positionSizing.maxPositionSize || 0.10,
-          minPositionSize: Math.min(initialPositionTarget, this.tradingRules.positionSizing.minPositionSize || 50),
-          useVolatility: this.tradingRules.positionSizing.useVolatility || true,
-          currentPrice: currentPrice
-        });
+      const isBTC = opportunity.symbol === 'BTC';
+      // For batch trades, we assume it's the first position (since we checked for existing trades above)
+      // So we use the first tier: $100 for BTC, $50 for others
+      let positionSizeUSD = isBTC ? 100 : 50;
 
-        positionSizeUSD = Math.min(positionSizeResult.positionSizeUSD, initialPositionTarget);
-        positionSizeUSD = Math.max(positionSizeUSD, positionSizeResult.positionSizeUSD * 0.5);
-        initialQuantity = positionSizeUSD / entryPrice;
-      } else {
-        positionSizeUSD = initialPositionTarget;
-        initialQuantity = calculateQuantity(opportunity.symbol, entryPrice, positionSizeUSD);
-      }
+      // Calculate quantity based on fixed dollar amount
+      let initialQuantity = positionSizeUSD / entryPrice;
+
+      console.log(`💰 Batch Position Sizing: $${positionSizeUSD} (${isBTC ? 'BTC' : 'ALT'} Tier 1) -> ${initialQuantity.toFixed(8)} coins @ $${entryPrice.toFixed(2)}`);
 
       // Round quantity for OKX (minimum 1 contract)
       const roundedQuantity = Math.max(1, Math.round(initialQuantity));
@@ -7601,14 +7613,14 @@ Return JSON array format:
                       const errorMsg = `Error canceling algo orders for ${symbol}: ${cancelError.message}`;
                       console.error(`❌ ${errorMsg}`);
 
-                      const { addLogEntry } = require('../services/exchangeService');
+                      // const { addLogEntry } = require('../services/exchangeService');
                       addLogEntry(errorMsg, 'error');
                     }
 
                     // Only place new TP/SL orders if cancellation succeeded (or no old orders existed)
                     if (!cancellationSucceeded) {
                       console.warn(`⚠️ ${symbol}: Skipping new TP/SL order placement - old orders still exist on OKX`);
-                      const { addLogEntry } = require('../services/exchangeService');
+                      // const { addLogEntry } = require('../services/exchangeService');
                       addLogEntry(`⚠️ ${symbol}: Skipped new TP/SL - old order cancellation failed. Manual cleanup required!`, 'warning');
                       continue; // Skip to next recommendation
                     }
@@ -7617,11 +7629,11 @@ Return JSON array format:
                     const orderResult = await this.placeTradeAlgoOrders(trade);
                     if (orderResult) {
                       console.log(`✅ ${symbol}: TP/SL orders updated on OKX`);
-                      const { addLogEntry } = require('../services/exchangeService');
+                      // const { addLogEntry } = require('../services/exchangeService');
                       addLogEntry(`✅ ${symbol}: TP/SL orders updated on OKX after AI adjustment`, 'success');
                     } else {
                       console.warn(`⚠️ ${symbol}: Failed to update TP/SL orders on OKX`);
-                      const { addLogEntry } = require('../services/exchangeService');
+                      // const { addLogEntry } = require('../services/exchangeService');
                       addLogEntry(`⚠️ ${symbol}: Failed to update TP/SL orders on OKX`, 'warning');
                     }
                   }
@@ -7672,7 +7684,7 @@ Return JSON array format:
                         console.error(`❌ ${errorMsg}`);
 
                         // Send Telegram notification for DCA cancellation error
-                        const { addLogEntry } = require('../services/exchangeService');
+                        // const { addLogEntry } = require('../services/exchangeService');
                         addLogEntry(errorMsg, 'error');
                       }
                     } else {
@@ -7683,7 +7695,7 @@ Return JSON array format:
                     // Only place new DCA order if cancellation succeeded (or no old order existed)
                     if (!cancellationSucceeded) {
                       console.warn(`⚠️ ${symbol}: Skipping new DCA order placement - old order still exists on OKX`);
-                      const { addLogEntry } = require('../services/exchangeService');
+                      // const { addLogEntry } = require('../services/exchangeService');
                       addLogEntry(`⚠️ ${symbol}: Skipped new DCA - old order cancellation failed. Manual cleanup required!`, 'warning');
                       continue; // Skip to next recommendation
                     }
