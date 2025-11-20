@@ -7508,16 +7508,10 @@ Return JSON array format:
 
                       if (exchangeConfig.enabled) {
                         const exchange = getPreferredExchange();
-                        const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+                        const okxSymbol = OKX_SYMBOL_MAP[symbol];
 
                         if (okxSymbol && exchange) {
-                          // Cancel orders we know about from trade object
-                          if (trade.okxTpAlgoId || trade.okxTpAlgoClOrdId || trade.okxSlAlgoId || trade.okxSlAlgoClOrdId || trade.okxAlgoId || trade.okxAlgoClOrdId) {
-                            await this.cancelTradeAlgoOrders(trade);
-                            console.log(`🗑️ ${symbol}: Canceled existing TP/SL algo orders from trade object`);
-                          }
-
-                          // Also fetch and cancel all pending algo orders from OKX (catches any we don't know about)
+                          // Fetch existing algo orders from OKX
                           try {
                             const algoOrders = await Promise.race([
                               getOkxAlgoOrders(
@@ -7566,31 +7560,69 @@ Return JSON array format:
                                     exchange.baseUrl
                                   );
 
-                                  if (cancelResult.success) {
+                                  // Verify cancellation succeeded
+                                  if (cancelResult && cancelResult.success) {
                                     console.log(`✅ ${symbol}: Canceled ${ordersToCancel.length} existing algo order(s) from OKX`);
+                                    cancellationSucceeded = true;
+
+                                    // Clear old algo IDs from trade object
+                                    trade.okxTpAlgoId = null;
+                                    trade.okxSlAlgoId = null;
                                   } else {
-                                    console.warn(`⚠️ ${symbol}: Failed to cancel some algo orders: ${cancelResult.error || 'Unknown error'}`);
+                                    const errorMsg = `TP/SL algo order cancellation failed for ${symbol}: ${cancelResult?.error || 'Unknown error'}`;
+                                    console.error(`❌ ${errorMsg}`);
+
+                                    // Send Telegram notification
+                                    addLogEntry(errorMsg, 'error');
                                   }
                                 }
+                              } else {
+                                // No active orders to cancel, safe to proceed
+                                cancellationSucceeded = true;
+                              }
+                            } else {
+                              // No orders found or fetch failed
+                              if (algoOrders && !algoOrders.success) {
+                                const errorMsg = `Failed to fetch algo orders for ${symbol}: ${algoOrders.error}`;
+                                console.error(`❌ ${errorMsg}`);
+                                addLogEntry(errorMsg, 'error');
+                              } else {
+                                // No existing orders, safe to proceed
+                                cancellationSucceeded = true;
                               }
                             }
                           } catch (fetchError) {
-                            console.warn(`⚠️ ${symbol}: Could not fetch algo orders from OKX: ${fetchError.message}`);
+                            const errorMsg = `Could not fetch algo orders for ${symbol}: ${fetchError.message}`;
+                            console.error(`❌ ${errorMsg}`);
+                            addLogEntry(errorMsg, 'error');
                           }
                         }
                       }
                     } catch (cancelError) {
-                      console.warn(`⚠️ ${symbol}: Error canceling existing algo orders: ${cancelError.message}`);
-                      // Continue anyway - try to place new orders
+                      const errorMsg = `Error canceling algo orders for ${symbol}: ${cancelError.message}`;
+                      console.error(`❌ ${errorMsg}`);
+
+                      const { addLogEntry } = require('../services/exchangeService');
+                      addLogEntry(errorMsg, 'error');
+                    }
+
+                    // Only place new TP/SL orders if cancellation succeeded (or no old orders existed)
+                    if (!cancellationSucceeded) {
+                      console.warn(`⚠️ ${symbol}: Skipping new TP/SL order placement - old orders still exist on OKX`);
+                      const { addLogEntry } = require('../services/exchangeService');
+                      addLogEntry(`⚠️ ${symbol}: Skipped new TP/SL - old order cancellation failed. Manual cleanup required!`, 'warning');
+                      continue; // Skip to next recommendation
                     }
 
                     // Now place new TP/SL orders with updated prices
                     const orderResult = await this.placeTradeAlgoOrders(trade);
                     if (orderResult) {
                       console.log(`✅ ${symbol}: TP/SL orders updated on OKX`);
+                      const { addLogEntry } = require('../services/exchangeService');
                       addLogEntry(`✅ ${symbol}: TP/SL orders updated on OKX after AI adjustment`, 'success');
                     } else {
                       console.warn(`⚠️ ${symbol}: Failed to update TP/SL orders on OKX`);
+                      const { addLogEntry } = require('../services/exchangeService');
                       addLogEntry(`⚠️ ${symbol}: Failed to update TP/SL orders on OKX`, 'warning');
                     }
                   }
