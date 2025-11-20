@@ -3963,6 +3963,33 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
                         console.log(`   💰 DCA Sizing: $${dcaSizeUSD} (Tier #${dcaPositionIndex + 1}) -> ${dcaQuantity.toFixed(8)} coins @ $${dcaPrice.toFixed(2)}`);
 
+                        // Convert to OKX contracts for DCA order (same as initial trade)
+                        const contractSpecs = {
+                          'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },
+                          'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },
+                          'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+                          'XRP-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+                          'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },
+                          'ADA-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+                          'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+                          'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+                          'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+                          'LINK-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+                        };
+
+                        const dcaSpec = contractSpecs[okxSymbol] || { contractSize: 1, minOrder: 0.01 };
+                        const dcaCoinQuantity = dcaQuantity;
+                        const dcaContracts = dcaCoinQuantity / dcaSpec.contractSize;
+
+                        if (dcaCoinQuantity >= dcaSpec.minOrder) {
+                          dcaQuantity = dcaContracts; // Use fractional contracts
+                          console.log(`   ✅ DCA contracts: ${dcaContracts.toFixed(4)} (meets minimum)`);
+                        } else {
+                          // Below minimum, adjust to minimum
+                          dcaQuantity = dcaSpec.minOrder / dcaSpec.contractSize;
+                          console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${newTrade.symbol} = ${dcaQuantity.toFixed(4)} contracts`);
+                        }
+
                         console.log(`   📊 DCA quantity calculation - positionSize=${positionSize}, dcaQuantity=${dcaQuantity}`);
 
                         if (dcaQuantity > 0) {
@@ -5807,6 +5834,34 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       }
 
       console.log(`   📊 ${trade.symbol}: DCA quantity calculation - positionSize=${positionSize}, dcaQuantity=${dcaQuantity}`);
+
+      // Convert to OKX contracts for DCA order
+      const contractSpecs = {
+        'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },
+        'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },
+        'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+        'XRP-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+        'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },
+        'ADA-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+        'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+        'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+        'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+        'LINK-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+      };
+
+      const dcaSpec = contractSpecs[okxSymbol] || { contractSize: 1, minOrder: 0.01 };
+      const dcaCoinQuantity = dcaQuantity;
+      const dcaContracts = dcaCoinQuantity / dcaSpec.contractSize;
+
+      if (dcaCoinQuantity >= dcaSpec.minOrder) {
+        dcaQuantity = dcaContracts; // Use fractional contracts
+        console.log(`   ✅ DCA contracts: ${dcaContracts.toFixed(4)} (meets minimum)`);
+      } else {
+        // Below minimum, adjust to minimum
+        dcaQuantity = dcaSpec.minOrder / dcaSpec.contractSize;
+        console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${trade.symbol} = ${dcaQuantity.toFixed(4)} contracts`);
+      }
+
 
       if (dcaQuantity <= 0) {
         console.warn(`⚠️ ${trade.symbol}: DCA quantity is 0, skipping DCA limit order`);
@@ -7787,6 +7842,34 @@ Return JSON array format:
                           positionSize >= 1 ? 1 : 0.01 // Minimum 1 contract or 0.01 for very small positions
                         );
 
+                        // Convert to OKX contracts for DCA order
+                        const contractSpecs = {
+                          'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },
+                          'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },
+                          'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+                          'XRP-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+                          'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },
+                          'ADA-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+                          'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+                          'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+                          'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+                          'LINK-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+                        };
+
+                        const dcaSpec = contractSpecs[okxSymbol] || { contractSize: 1, minOrder: 0.01 };
+                        const dcaCoinQuantity = dcaQuantity;
+                        const dcaContracts = dcaCoinQuantity / dcaSpec.contractSize;
+
+                        let finalDcaQuantity = dcaQuantity;
+                        if (dcaCoinQuantity >= dcaSpec.minOrder) {
+                          finalDcaQuantity = dcaContracts; // Use fractional contracts
+                          console.log(`   ✅ DCA contracts: ${dcaContracts.toFixed(4)} (meets minimum)`);
+                        } else {
+                          // Below minimum, adjust to minimum
+                          finalDcaQuantity = dcaSpec.minOrder / dcaSpec.contractSize;
+                          console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${symbol} = ${finalDcaQuantity.toFixed(4)} contracts`);
+                        }
+
                         if (dcaQuantity > 0) {
                           const dcaSide = trade.action === 'BUY' ? 'buy' : 'sell';
                           const leverage = trade.leverage || 1;
@@ -7794,7 +7877,7 @@ Return JSON array format:
                           const dcaResult = await executeOkxLimitOrder(
                             okxSymbol,
                             dcaSide,
-                            dcaQuantity,
+                            finalDcaQuantity, // Use contract-converted quantity
                             newDcaValue,
                             exchange.apiKey,
                             exchange.apiSecret,
