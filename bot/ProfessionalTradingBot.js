@@ -3396,11 +3396,15 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     // Validate and set defaults for DCA (addPosition)
     if (!addPosition || addPosition <= 0 || addPosition === entryPrice) {
       if (opportunity.action === 'BUY') {
-        addPosition = entryPrice * 0.90; // 10% below entry for BUY (DCA on dip)
+        // For BUY: DCA should be ABOVE entry (add more as price rises toward TP)
+        // This allows averaging UP into a winning position
+        addPosition = entryPrice * 1.05; // 5% above entry for BUY
       } else {
-        addPosition = entryPrice * 1.10; // 10% above entry for SELL (DCA on rally)
+        // For SELL: DCA should be BELOW entry (add more as price falls toward TP)
+        // This allows averaging DOWN into a winning position
+        addPosition = entryPrice * 0.95; // 5% below entry for SELL
       }
-      console.log(`⚠️ ${opportunity.symbol}: Missing or invalid DCA level, using default 10% from entry`);
+      console.log(`⚠️ ${opportunity.symbol}: Missing or invalid DCA level, using default 5% from entry (toward TP)`);
     }
 
     // Calculate position size using risk management
@@ -3778,19 +3782,25 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     const currentSL = newTrade.stopLoss;
                     if (currentSL && currentSL > 0) {
                       if (newTrade.action === 'BUY') {
-                        // For BUY: DCA must be below SL
-                        if (dcaPrice >= currentSL) {
-                          const adjustedDca = currentSL * 0.99; // 1% below SL
-                          console.log(`   🔄 ${newTrade.symbol}: DCA price $${dcaPrice.toFixed(2)} is at/above SL $${currentSL.toFixed(2)} - adjusting to $${adjustedDca.toFixed(2)}`);
+                        // For BUY: DCA must be ABOVE SL but BELOW entry
+                        // Order: SL < DCA < Entry
+                        if (dcaPrice <= currentSL) {
+                          // DCA is at or below SL - adjust to be 40% between SL and entry
+                          const distance = entryPrice - currentSL;
+                          const adjustedDca = currentSL + (distance * 0.4); // 40% above SL toward entry
+                          console.log(`   🔄 ${newTrade.symbol}: DCA price $${dcaPrice.toFixed(2)} is at/below SL $${currentSL.toFixed(2)} - adjusting to $${adjustedDca.toFixed(2)} (40% between SL and entry)`);
                           dcaPrice = adjustedDca;
                           newTrade.addPosition = adjustedDca;
                           newTrade.dcaPrice = adjustedDca;
                         }
                       } else if (newTrade.action === 'SELL') {
-                        // For SELL: DCA must be above SL
-                        if (dcaPrice <= currentSL) {
-                          const adjustedDca = currentSL * 1.01; // 1% above SL
-                          console.log(`   🔄 ${newTrade.symbol}: DCA price $${dcaPrice.toFixed(2)} is at/below SL $${currentSL.toFixed(2)} - adjusting to $${adjustedDca.toFixed(2)}`);
+                        // For SELL: DCA must be BELOW SL but ABOVE entry
+                        // Order: Entry < DCA < SL
+                        if (dcaPrice >= currentSL) {
+                          // DCA is at or above SL - adjust to be 40% between entry and SL
+                          const distance = currentSL - entryPrice;
+                          const adjustedDca = currentSL - (distance * 0.4); // 40% below SL toward entry
+                          console.log(`   🔄 ${newTrade.symbol}: DCA price $${dcaPrice.toFixed(2)} is at/above SL $${currentSL.toFixed(2)} - adjusting to $${adjustedDca.toFixed(2)} (40% between entry and SL)`);
                           dcaPrice = adjustedDca;
                           newTrade.addPosition = adjustedDca;
                           newTrade.dcaPrice = adjustedDca;
