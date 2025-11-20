@@ -3605,7 +3605,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               const executedQty = orderResult.executedQty || initialQuantity;
               const algoOrderParams = {
                 instId: okxSymbol,
-                tdMode: 'cross',
+                tdMode: 'isolated',
                 side: tpOrderSide, // Opposite side to close position
                 posSide: posSide,
                 ordType: 'conditional',
@@ -4102,7 +4102,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       // Prepare batch order
       batchOrders.push({
         instId: okxSymbol,
-        tdMode: 'cross',
+        tdMode: 'isolated',
         side: side,
         posSide: posSide,
         ordType: 'market',
@@ -4413,7 +4413,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       console.log(`   📊 Placing TP order for ${trade.symbol} at $${tpTriggerPrice.toFixed(2)}...`);
       const tpOrderParams = {
         instId: okxSymbol,
-        tdMode: 'cross',
+        tdMode: 'isolated',
         side: tpOrderSide,
         posSide: posSide,
         ordType: 'conditional',
@@ -4446,7 +4446,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       console.log(`   📊 Placing SL order for ${trade.symbol} at $${slTriggerPrice.toFixed(2)}...`);
       const slOrderParams = {
         instId: okxSymbol,
-        tdMode: 'cross',
+        tdMode: 'isolated',
         side: tpOrderSide,
         posSide: posSide,
         ordType: 'conditional',
@@ -4685,7 +4685,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       // If that fails, we'll try separate orders
       const algoOrderParams = {
         instId: okxSymbol,
-        tdMode: 'cross',
+        tdMode: 'isolated',
         side: tpOrderSide,
         posSide: posSide,
         ordType: 'conditional',
@@ -4775,7 +4775,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           console.log(`   📊 Placing TP order for ${trade.symbol} at $${tpTriggerPrice.toFixed(2)}...`);
           const tpOrderParams = {
             instId: okxSymbol,
-            tdMode: 'cross',
+            tdMode: 'isolated',
             side: tpOrderSide,
             posSide: posSide,
             ordType: 'conditional',
@@ -4807,7 +4807,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           console.log(`   📊 Placing SL order for ${trade.symbol} at $${slTriggerPrice.toFixed(2)}...`);
           const slOrderParams = {
             instId: okxSymbol,
-            tdMode: 'cross',
+            tdMode: 'isolated',
             side: tpOrderSide, // Same side to close position
             posSide: posSide,
             ordType: 'conditional',
