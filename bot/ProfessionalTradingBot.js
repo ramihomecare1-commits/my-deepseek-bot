@@ -7879,13 +7879,30 @@ Return JSON array format:
                         const okxPos = okxPositions.find(p => p.coin === trade.symbol);
                         const positionSize = okxPos?.quantity || trade.quantity || 0;
 
-                        // Calculate DCA quantity (same as initial position or 50% of current position)
-                        const dcaQuantity = Math.max(
-                          Math.floor(positionSize * 0.5), // 50% of current position
-                          positionSize >= 1 ? 1 : 0.01 // Minimum 1 contract or 0.01 for very small positions
-                        );
+                        // Calculate DCA quantity using FIXED USD tiers (same as initial position logic)
+                        // BTC: $100, $100, $200, $400, $800
+                        // Others: $50, $50, $100, $200, $400
 
-                        // Convert to OKX contracts for DCA order
+                        const isBTC = trade.symbol === 'BTC';
+                        const positionSizes = isBTC
+                          ? [100, 100, 200, 400, 800]  // BTC position sizes
+                          : [50, 50, 100, 200, 400];   // Other coins position sizes
+
+                        // Count existing positions for this symbol to determine DCA tier
+                        const existingPositions = this.activeTrades.filter(t =>
+                          t.symbol === trade.symbol &&
+                          (t.status === 'OPEN' || t.status === 'DCA_HIT' || t.status === 'PENDING')
+                        ).length;
+
+                        // DCA is for the next position, array is 0-indexed
+                        const dcaPositionIndex = Math.min(existingPositions, positionSizes.length - 1);
+                        const dcaSizeUSD = positionSizes[dcaPositionIndex];
+
+                        // Calculate DCA quantity in coins
+                        let dcaQuantity = dcaSizeUSD / newDcaValue;
+
+                        console.log(`   💰 AI DCA Sizing: Tier #${dcaPositionIndex + 1}: $${dcaSizeUSD} → ${dcaQuantity.toFixed(8)} coins @ $${newDcaValue.toFixed(2)}`);
+
                         const contractSpecs = {
                           'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },
                           'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },
