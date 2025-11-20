@@ -1538,6 +1538,9 @@ class ProfessionalTradingBot {
       if (escalations.length > 0) {
         console.log(`\n🚨 Batch escalating ${escalations.length} coins to Premium AI in one API call...`);
 
+        // TEMPORARILY DISABLED: Batch escalation causing duplicate orders
+        // TODO: Re-enable after fixing duplicate order issue
+        /*
         // Pass current active trades count to AI so it knows position limits
         const activeTradesCount = this.activeTrades ? this.activeTrades.length : 0;
         const batchEscalationResults = await monitoringService.batchEscalateToR1(escalations, activeTradesCount);
@@ -1660,6 +1663,9 @@ class ProfessionalTradingBot {
 
         // Send Telegram notifications (one per coin with both free and premium insights)
         await monitoringService.notifyR1DecisionBatch(batchEscalationResults);
+        */
+        console.log('⚠️ Batch escalation temporarily disabled to prevent duplicate orders');
+
       } else {
         console.log('✅ No coins need escalation to premium AI');
       }
