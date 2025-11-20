@@ -3417,34 +3417,33 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     const portfolioValue = portfolio.currentBalance || portfolio.initialCapital || 5000;
 
     // Use dynamic position sizing if enabled
+    // Use dynamic position sizing if enabled
     if (this.tradingRules.positionSizing?.enabled) {
-      // Initial position should be 1.5% of portfolio ($75 from $5000)
-      const initialPositionTarget = portfolioValue * 0.015; // 1.5% of portfolio
+      // Use 5% of portfolio for each position (as shown in logs: "5.00% of portfolio")
+      const positionPercent = 0.05; // 5% of portfolio
+      positionSizeUSD = portfolioValue * positionPercent;
 
-      const positionSizeResult = calculatePositionSizeWithRR({
-        entryPrice: entryPrice,
-        stopLoss: stopLoss,
-        takeProfit: takeProfit,
-        riskPerTrade: this.tradingRules.positionSizing.riskPerTrade || 0.02,
-        maxPositionSize: this.tradingRules.positionSizing.maxPositionSize || 0.10,
-        minPositionSize: Math.min(initialPositionTarget, this.tradingRules.positionSizing.minPositionSize || 50),
-        useVolatility: this.tradingRules.positionSizing.useVolatility || true,
-        currentPrice: currentPrice
-      });
+      // Cap at maximum position size (10% of portfolio)
+      const maxPositionUSD = portfolioValue * (this.tradingRules.positionSizing.maxPositionSize || 0.10);
+      positionSizeUSD = Math.min(positionSizeUSD, maxPositionUSD);
 
-      // Cap initial position at 1.5% of portfolio (but respect risk management minimum)
-      positionSizeUSD = Math.min(positionSizeResult.positionSizeUSD, initialPositionTarget);
-      // Ensure we don't go below the risk-based minimum if it's higher
-      positionSizeUSD = Math.max(positionSizeUSD, positionSizeResult.positionSizeUSD * 0.5); // At least 50% of risk-based size
+      // Apply minimum position size
+      const minPositionUSD = this.tradingRules.positionSizing.minPositionSize || 50;
+      positionSizeUSD = Math.max(positionSizeUSD, minPositionUSD);
 
       initialQuantity = positionSizeUSD / entryPrice;
 
-      addLogEntry(`💰 Position sizing: $${positionSizeUSD.toFixed(2)} (${((positionSizeUSD / portfolioValue) * 100).toFixed(2)}% of portfolio, Risk: ${(this.tradingRules.positionSizing.riskPerTrade * 100).toFixed(1)}%, SL: ${positionSizeResult.stopLossPercent.toFixed(2)}%)`, 'info');
+      // Calculate stop loss percentage for logging
+      const stopLossDistance = Math.abs(entryPrice - stopLoss);
+      const stopLossPercent = (stopLossDistance / entryPrice) * 100;
+
+      addLogEntry(`💰 Position sizing: $${positionSizeUSD.toFixed(2)} (${((positionSizeUSD / portfolioValue) * 100).toFixed(2)}% of portfolio, Risk: ${(this.tradingRules.positionSizing.riskPerTrade * 100).toFixed(1)}%, SL: ${stopLossPercent.toFixed(2)}%)`, 'info');
     } else {
-      // Fallback: Use 1.5% of portfolio for initial position
-      positionSizeUSD = portfolioValue * 0.015; // 1.5% of portfolio
+      // Fallback: Use 5% of portfolio for initial position
+      positionSizeUSD = portfolioValue * 0.05; // 5% of portfolio
       initialQuantity = calculateQuantity(opportunity.symbol, entryPrice, positionSizeUSD);
     }
+
 
     // Store coin data for proper price fetching
     const coinData = {
