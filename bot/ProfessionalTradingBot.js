@@ -5874,9 +5874,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       const dcaSizeUSD = positionSizes[dcaPositionIndex];
 
       // Calculate DCA quantity in coins
-      let dcaQuantity = dcaSizeUSD / dcaPrice;
+      let dcaQuantity = dcaSizeUSD / dcaPriceValue;
 
-      console.log(`   📊 ${trade.symbol}: DCA sizing - Tier #${dcaPositionIndex + 1}: $${dcaSizeUSD} → ${dcaQuantity.toFixed(8)} coins @ $${dcaPrice.toFixed(2)}`);
+      console.log(`   📊 ${trade.symbol}: DCA sizing - Tier #${dcaPositionIndex + 1}: $${dcaSizeUSD} → ${dcaQuantity.toFixed(8)} coins @ $${dcaPriceValue.toFixed(2)}`);
 
       // Convert to OKX contracts for DCA order
       const contractSpecs = {
