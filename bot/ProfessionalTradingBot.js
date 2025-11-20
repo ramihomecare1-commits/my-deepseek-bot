@@ -7452,20 +7452,22 @@ Return JSON array format:
 
                 if (currentSL && currentSL > 0) {
                   if (trade.action === 'BUY') {
-                    // For BUY: DCA must be below SL (so DCA triggers before SL closes position)
-                    if (newDcaValue >= currentSL) {
-                      finalDcaValue = currentSL * 0.99; // 1% below SL
-                      dcaAdjusted = true;
-                      console.log(`   🔄 ${symbol}: DCA value $${newDcaValue.toFixed(2)} is at/above SL $${currentSL.toFixed(2)} - adjusting to $${finalDcaValue.toFixed(2)}`);
-                      addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(2)} to $${finalDcaValue.toFixed(2)} (must be below SL: $${currentSL.toFixed(2)})`, 'warning');
-                    }
-                  } else if (trade.action === 'SELL') {
-                    // For SELL (short): DCA must be above SL (so DCA triggers before SL closes position)
+                    // For BUY (Long): Entry > DCA > SL
+                    // DCA must be ABOVE SL (so DCA triggers before SL closes position)
                     if (newDcaValue <= currentSL) {
-                      finalDcaValue = currentSL * 1.01; // 1% above SL
+                      finalDcaValue = currentSL * 1.01; // 1% ABOVE SL
                       dcaAdjusted = true;
                       console.log(`   🔄 ${symbol}: DCA value $${newDcaValue.toFixed(2)} is at/below SL $${currentSL.toFixed(2)} - adjusting to $${finalDcaValue.toFixed(2)}`);
                       addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(2)} to $${finalDcaValue.toFixed(2)} (must be above SL: $${currentSL.toFixed(2)})`, 'warning');
+                    }
+                  } else if (trade.action === 'SELL') {
+                    // For SELL (Short): Entry < DCA < SL
+                    // DCA must be BELOW SL (so DCA triggers before SL closes position)
+                    if (newDcaValue >= currentSL) {
+                      finalDcaValue = currentSL * 0.99; // 1% BELOW SL
+                      dcaAdjusted = true;
+                      console.log(`   🔄 ${symbol}: DCA value $${newDcaValue.toFixed(2)} is at/above SL $${currentSL.toFixed(2)} - adjusting to $${finalDcaValue.toFixed(2)}`);
+                      addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(2)} to $${finalDcaValue.toFixed(2)} (must be below SL: $${currentSL.toFixed(2)})`, 'warning');
                     }
                   }
                 }
@@ -7493,6 +7495,9 @@ Return JSON array format:
                   // If TP or SL was adjusted, cancel old orders and place new ones on OKX
                   if (rec.newTakeProfit || rec.newStopLoss) {
                     // Cancel existing TP/SL algo orders first
+                    // CRITICAL: Must verify cancellation succeeds to prevent duplicates
+                    let cancellationSucceeded = false;
+
                     try {
                       const { getOkxAlgoOrders, cancelOkxAlgoOrders } = require('../services/exchangeService');
                       const { isExchangeTradingEnabled, getPreferredExchange, OKX_SYMBOL_MAP } = require('../services/exchangeService');
@@ -7531,13 +7536,15 @@ Return JSON array format:
                               if (activeOrders.length > 0) {
                                 const ordersToCancel = activeOrders
                                   .map(order => {
-                                    const cancelOrder = { instId: okxSymbol, tdMode: 'isolated' };
+                                    const cancelOrder = { instId: okxSymbol };
                                     // Only include ONE of algoId or algoClOrdId, not both
                                     if (order.algoId) {
                                       cancelOrder.algoId = order.algoId;
                                     } else if (order.algoClOrdId) {
                                       cancelOrder.algoClOrdId = order.algoClOrdId;
                                     }
+                                    // NOTE: Removed tdMode here as it might be causing 'Incorrect json data format'
+                                    // OKX cancel-algos endpoint usually just needs algoId and instId
                                     return cancelOrder;
                                   })
                                   .filter(order => order.algoId || order.algoClOrdId);
