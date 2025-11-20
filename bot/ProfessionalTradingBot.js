@@ -3442,38 +3442,85 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     addLogEntry(`💰 Position sizing: $${positionSizeUSD.toFixed(2)} (Position #${existingPositions + 1}, ${isBTC ? 'BTC' : 'ALT'} tier, SL: ${stopLossPercent.toFixed(2)}%)`, 'info');
 
 
+
     // Store coin data for proper price fetching
     const coinData = {
       symbol: opportunity.symbol,
       name: opportunity.name,
       id: opportunity.id || opportunity.name?.toLowerCase(),
       coinmarketcap_id: opportunity.coinmarketcap_id,
-      coinpaprika_id: opportunity.coinpaprika_id
+      coinpaprika_id: opportunity.coinpaprika_id,
+      currentPrice: entryPrice
     };
 
+    // Convert to OKX contracts if trading on OKX
+    // This is CRITICAL: OKX uses contracts, not coins
+    // BTC-USDT-SWAP: 1 contract = 0.01 BTC
+    // ETH-USDT-SWAP: 1 contract = 0.1 ETH
+    const { OKX_SYMBOL_MAP } = require('../services/exchangeService');
+    const okxSymbol = OKX_SYMBOL_MAP[opportunity.symbol];
+
+    if (okxSymbol) {
+      // OKX contract specifications
+      const contractSpecs = {
+        'BTC-USDT-SWAP': 0.01,   // 1 contract = 0.01 BTC
+        'ETH-USDT-SWAP': 0.1,    // 1 contract = 0.1 ETH
+        'SOL-USDT-SWAP': 1,      // 1 contract = 1 SOL
+        'XRP-USDT-SWAP': 10,     // 1 contract = 10 XRP
+        'DOGE-USDT-SWAP': 100,   // 1 contract = 100 DOGE
+        'ADA-USDT-SWAP': 10,     // 1 contract = 10 ADA
+        'MATIC-USDT-SWAP': 10,   // 1 contract = 10 MATIC
+        'DOT-USDT-SWAP': 1,      // 1 contract = 1 DOT
+        'AVAX-USDT-SWAP': 1,     // 1 contract = 1 AVAX
+        'LINK-USDT-SWAP': 1,     // 1 contract = 1 LINK
+      };
+
+      const contractSize = contractSpecs[okxSymbol] || 1;
+      const coinQuantity = initialQuantity; // This is in coins (e.g., 0.00105 BTC)
+
+      // Convert coins to contracts and ensure minimum 1 contract
+      const contractQuantity = Math.max(1, Math.floor(coinQuantity / contractSize));
+
+      // Recalculate actual position size based on contracts
+      const actualCoinQuantity = contractQuantity * contractSize;
+      const actualPositionSizeUSD = actualCoinQuantity * entryPrice;
+
+      console.log(`🔍 OKX Contract Conversion:`);
+      console.log(`   Requested: $${positionSizeUSD.toFixed(2)} → ${coinQuantity.toFixed(8)} ${opportunity.symbol}`);
+      console.log(`   Contract Size: ${contractSize} ${opportunity.symbol}/contract`);
+      console.log(`   Contracts: ${contractQuantity} (minimum 1)`);
+      console.log(`   Actual: ${actualCoinQuantity.toFixed(8)} ${opportunity.symbol} = $${actualPositionSizeUSD.toFixed(2)}`);
+
+      // Update quantity to contracts for OKX
+      initialQuantity = contractQuantity;
+
+      // Update position size to actual (for portfolio tracking)
+      positionSizeUSD = actualPositionSizeUSD;
+    }
+
+    // Create new trade object
     const newTrade = {
-      id: tradeId, // DynamoDB primary key
-      tradeId: tradeId, // Legacy field for compatibility
+      id: `${opportunity.symbol}-${Date.now()}`,
+      tradeId: `${opportunity.symbol}-${Date.now()}`,
       symbol: opportunity.symbol,
       name: opportunity.name,
       action: opportunity.action,
       entryPrice: entryPrice,
+      currentPrice: entryPrice,
       takeProfit: takeProfit,
       stopLoss: stopLoss,
       addPosition: addPosition,
-      expectedGainPercent: opportunity.expectedGainPercent || 5,
+      dcaPrice: addPosition,
+      quantity: initialQuantity,
+      positionValueUSD: positionSizeUSD, // Track actual position value
+      leverage: 1,
+      confidence: opportunity.confidence,
+      status: 'PENDING',
       entryTime: new Date(),
-      status: 'OPEN', // OPEN, TP_HIT, SL_HIT, DCA_HIT, CLOSED (manually)
-      currentPrice: currentPrice,
-      quantity: initialQuantity, // Track position size
-      pnl: 0,
-      pnlPercent: 0,
-      dcaCount: 0, // Track number of DCA additions (max 5)
-      averageEntryPrice: entryPrice, // Track average entry price after DCAs
+      coinData: coinData,
       insights: opportunity.insights || [],
       reason: opportunity.reason || '',
       dataSource: opportunity.dataSource || 'unknown',
-      coinData: coinData, // Store full coin data for price fetching
       coinId: coinData.id,
       coinmarketcap_id: coinData.coinmarketcap_id,
       coinpaprika_id: coinData.coinpaprika_id,
@@ -5355,7 +5402,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
    * Runs every 5 minutes
    */
   async cleanupOrphanedOrders() {
-    const { isExchangeTradingEnabled, getPreferredExchange, getOkxAlgoOrders, getOkxPendingOrders, cancelOkxAlgoOrders, cancelOkxOrders, OKX_SYMBOL_MAP, addLogEntry } = require('../services/exchangeService');
+    const { isExchangeTradingEnabled, getPreferredExchange, getOkxAlgoOrders, getOkxPendingOrders, cancelOkxAlgoOrders, cancelOkxOrders, OKX_SYMBOL_MAP } = require('../services/exchangeService');
     const exchangeConfig = isExchangeTradingEnabled();
 
     if (!exchangeConfig.enabled) {
@@ -7646,7 +7693,7 @@ Return JSON array format:
 
                     if (trade.okxDcaOrderId) {
                       try {
-                        const { isExchangeTradingEnabled, getPreferredExchange, cancelOkxOrder, OKX_SYMBOL_MAP, addLogEntry } = require('../services/exchangeService');
+                        const { isExchangeTradingEnabled, getPreferredExchange, cancelOkxOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
                         const exchangeConfig = isExchangeTradingEnabled();
 
                         if (exchangeConfig.enabled) {
