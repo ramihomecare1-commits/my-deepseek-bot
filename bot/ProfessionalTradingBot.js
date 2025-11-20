@@ -5842,18 +5842,41 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         continue;
       }
 
-      // Calculate DCA quantity (50% of position size, minimum 1 for derivatives)
-      // For derivatives, we need at least 1 contract
-      let dcaQuantity = Math.floor(positionSize * 0.5);
-      if (dcaQuantity < 1 && positionSize >= 1) {
-        // If position is >= 1 but 50% rounds to 0, use 1 (minimum)
-        dcaQuantity = 1;
-      } else if (dcaQuantity < 0.01 && positionSize >= 0.01) {
-        // For very small positions, use 50% but ensure minimum 0.01
-        dcaQuantity = Math.max(positionSize * 0.5, 0.01);
+      // Get DCA price from trade
+      const dcaPriceValue = parseFloat(trade.addPosition) || 0;
+
+      if (!dcaPriceValue || dcaPriceValue <= 0) {
+        console.log(`   ⚠️ ${trade.symbol}: Invalid DCA price, skipping`);
+        failedCount++;
+        continue;
       }
 
-      console.log(`   📊 ${trade.symbol}: DCA quantity calculation - positionSize=${positionSize}, dcaQuantity=${dcaQuantity}`);
+      // Calculate DCA quantity using FIXED USD tiers (same as initial position logic)
+      // BTC: $100, $100, $200, $400, $800
+      // Others: $50, $50, $100, $200, $400
+
+      // Determine which tier this DCA belongs to
+      // The trade object stores which position number this is
+      // DCA is for the NEXT position, so we need to find the next tier
+      const isBTC = trade.symbol === 'BTC';
+      const positionSizes = isBTC
+        ? [100, 100, 200, 400, 800]  // BTC position sizes
+        : [50, 50, 100, 200, 400];   // Other coins position sizes
+
+      // Count existing positions for this symbol to determine DCA tier
+      const existingPositions = this.activeTrades.filter(t =>
+        t.symbol === trade.symbol &&
+        (t.status === 'OPEN' || t.status === 'DCA_HIT' || t.status === 'PENDING')
+      ).length;
+
+      // DCA is for the next position (existingPositions + 1), array is 0-indexed
+      const dcaPositionIndex = Math.min(existingPositions, positionSizes.length - 1);
+      const dcaSizeUSD = positionSizes[dcaPositionIndex];
+
+      // Calculate DCA quantity in coins
+      let dcaQuantity = dcaSizeUSD / dcaPrice;
+
+      console.log(`   📊 ${trade.symbol}: DCA sizing - Tier #${dcaPositionIndex + 1}: $${dcaSizeUSD} → ${dcaQuantity.toFixed(8)} coins @ $${dcaPrice.toFixed(2)}`);
 
       // Convert to OKX contracts for DCA order
       const contractSpecs = {
