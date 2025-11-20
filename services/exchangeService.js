@@ -805,21 +805,20 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
     const tdMode = 'isolated'; // Isolated margin for derivatives
 
     // Apply same lot size rounding as market orders
-    // IMPORTANT: Since we now send sz in COINS (not contracts), lot sizes are in COINS
     const lotSizeMap = {
-      'BTC-USDT-SWAP': 0.0001,   // 0.01 contracts = 0.0001 BTC
-      'ETH-USDT-SWAP': 0.001,    // 0.01 contracts = 0.001 ETH
-      'SOL-USDT-SWAP': 0.1,      // 0.1 contracts = 0.1 SOL
-      'XRP-USDT-SWAP': 10,       // 1 contract = 10 XRP, lot size = 10 XRP
-      'DOGE-USDT-SWAP': 1000,    // 10 contracts = 1000 DOGE, lot size = 1000 DOGE
-      'ADA-USDT-SWAP': 1,        // 0.1 contracts = 1 ADA, lot size = 1 ADA
-      'MATIC-USDT-SWAP': 10,     // 1 contract = 10 MATIC, lot size = 10 MATIC
-      'DOT-USDT-SWAP': 0.1,      // 0.1 contracts = 0.1 DOT
-      'AVAX-USDT-SWAP': 0.1,     // 0.1 contracts = 0.1 AVAX
-      'LINK-USDT-SWAP': 0.1,     // 0.1 contracts = 0.1 LINK
+      'BTC-USDT-SWAP': 0.01,   // 0.01 contracts = 0.0001 BTC
+      'ETH-USDT-SWAP': 0.01,   // 0.01 contracts = 0.001 ETH
+      'SOL-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 SOL
+      'XRP-USDT-SWAP': 1,      // 1 contract = 10 XRP
+      'DOGE-USDT-SWAP': 10,    // 10 contracts = 1000 DOGE
+      'ADA-USDT-SWAP': 0.1,    // 0.1 contracts = 1 ADA
+      'MATIC-USDT-SWAP': 1,    // 1 contract = 10 MATIC
+      'DOT-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 DOT
+      'AVAX-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 AVAX
+      'LINK-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 LINK
     };
 
-    const lotSize = lotSizeMap[symbol] || 0.01;
+    const lotSize = lotSizeMap[symbol] || 1;
 
     // Round quantity to nearest lot size multiple
     let roundedQuantity = Math.round(quantity / lotSize) * lotSize;
@@ -903,25 +902,25 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
     const tdMode = 'isolated'; // Isolated margin for derivatives (matches OKX account config)
 
     // OKX lot size (minimum order increment) - quantity must be a multiple of this
-    // IMPORTANT: Since we now send sz in COINS (not contracts), lot sizes are in COINS
+    // For most perpetual swaps, lot size is 0.01 contracts
     // BTC: 1 contract = 0.01 BTC, lot size = 0.01 contracts = 0.0001 BTC
     const lotSizeMap = {
-      'BTC-USDT-SWAP': 0.0001,   // 0.01 contracts = 0.0001 BTC
-      'ETH-USDT-SWAP': 0.001,    // 0.01 contracts = 0.001 ETH
-      'SOL-USDT-SWAP': 0.1,      // 0.1 contracts = 0.1 SOL
-      'XRP-USDT-SWAP': 10,       // 1 contract = 10 XRP, lot size = 10 XRP
-      'DOGE-USDT-SWAP': 1000,    // 10 contracts = 1000 DOGE, lot size = 1000 DOGE
-      'ADA-USDT-SWAP': 1,        // 0.1 contracts = 1 ADA, lot size = 1 ADA
-      'MATIC-USDT-SWAP': 10,     // 1 contract = 10 MATIC, lot size = 10 MATIC
-      'DOT-USDT-SWAP': 0.1,      // 0.1 contracts = 0.1 DOT
-      'AVAX-USDT-SWAP': 0.1,     // 0.1 contracts = 0.1 AVAX
-      'LINK-USDT-SWAP': 0.1,     // 0.1 contracts = 0.1 LINK
+      'BTC-USDT-SWAP': 0.01,   // 0.01 contracts = 0.0001 BTC
+      'ETH-USDT-SWAP': 0.01,   // 0.01 contracts = 0.001 ETH
+      'SOL-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 SOL
+      'XRP-USDT-SWAP': 1,      // 1 contract = 10 XRP
+      'DOGE-USDT-SWAP': 10,    // 10 contracts = 1000 DOGE
+      'ADA-USDT-SWAP': 0.1,    // 0.1 contracts = 1 ADA (step size per OKX)
+      'MATIC-USDT-SWAP': 1,    // 1 contract = 10 MATIC
+      'DOT-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 DOT
+      'AVAX-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 AVAX
+      'LINK-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 LINK
     };
 
-    const lotSize = lotSizeMap[symbol] || 0.01; // Default to 0.01 if symbol not found
+    const lotSize = lotSizeMap[symbol] || 1; // Default to 1 if symbol not found
 
     // Round quantity to nearest lot size multiple
-    // Example: 115.7 ADA with lot size 1 ADA → 116 ADA
+    // Example: 0.1089 contracts with lot size 0.01 → 0.11 contracts (11 lots)
     let roundedQuantity = Math.round(quantity / lotSize) * lotSize;
 
     // Ensure minimum 1 lot
