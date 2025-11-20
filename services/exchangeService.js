@@ -881,7 +881,7 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       'SOL-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 SOL
       'XRP-USDT-SWAP': 1,      // 1 contract = 10 XRP
       'DOGE-USDT-SWAP': 10,    // 10 contracts = 1000 DOGE
-      'ADA-USDT-SWAP': 1,      // 1 contract = 10 ADA
+      'ADA-USDT-SWAP': 0.1,    // 0.1 contracts = 1 ADA (step size per OKX)
       'MATIC-USDT-SWAP': 1,    // 1 contract = 10 MATIC
       'DOT-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 DOT
       'AVAX-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 AVAX
