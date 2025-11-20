@@ -3514,17 +3514,19 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         console.log(`   Below minimum: ${spec.minOrder} ${opportunity.symbol} (${(spec.minOrder * entryPrice).toFixed(2)} USD)`);
         console.log(`   Adjusted to: ${adjustedCoinQuantity.toFixed(8)} ${opportunity.symbol} = $${adjustedPositionSizeUSD.toFixed(2)}`);
 
-        initialQuantity = adjustedContracts;
+        // OKX expects sz in COINS for perpetual swaps, not contracts
+        initialQuantity = adjustedCoinQuantity;
         positionSizeUSD = adjustedPositionSizeUSD;
       } else {
-        // Meets minimum, use requested amount (OKX accepts fractional contracts)
+        // Meets minimum, use requested amount
         console.log(`✅ OKX Order Size:`);
         console.log(`   Requested: $${positionSizeUSD.toFixed(2)} → ${coinQuantity.toFixed(8)} ${opportunity.symbol}`);
         console.log(`   Contracts: ${contracts.toFixed(4)} (${contracts >= 1 ? Math.floor(contracts) + ' full + ' + ((contracts % 1) * 100).toFixed(1) + '%' : 'fractional'})`);
         console.log(`   Meets minimum: ${spec.minOrder} ${opportunity.symbol} ✓`);
 
-        // Keep the original coin quantity, but convert to contracts for OKX API
-        initialQuantity = contracts;
+        // CRITICAL FIX: OKX expects sz in COINS for perpetual swaps, not contracts
+        // For ADA (contractSize=10): send 116 coins, not 11.6 contracts
+        initialQuantity = coinQuantity;
       }
     }
 
@@ -4002,12 +4004,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                         const dcaContracts = dcaCoinQuantity / dcaSpec.contractSize;
 
                         if (dcaCoinQuantity >= dcaSpec.minOrder) {
-                          dcaQuantity = dcaContracts; // Use fractional contracts
+                          // OKX expects sz in COINS, not contracts
+                          dcaQuantity = dcaCoinQuantity;
                           console.log(`   ✅ DCA contracts: ${dcaContracts.toFixed(4)} (meets minimum)`);
                         } else {
                           // Below minimum, adjust to minimum
-                          dcaQuantity = dcaSpec.minOrder / dcaSpec.contractSize;
-                          console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${newTrade.symbol} = ${dcaQuantity.toFixed(4)} contracts`);
+                          dcaQuantity = dcaSpec.minOrder;
+                          console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${newTrade.symbol}`);
                         }
 
                         console.log(`   📊 DCA quantity calculation - positionSize=${positionSize}, dcaQuantity=${dcaQuantity}`);
@@ -5906,12 +5909,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       const dcaContracts = dcaCoinQuantity / dcaSpec.contractSize;
 
       if (dcaCoinQuantity >= dcaSpec.minOrder) {
-        dcaQuantity = dcaContracts; // Use fractional contracts
+        // OKX expects sz in COINS, not contracts
+        dcaQuantity = dcaCoinQuantity;
         console.log(`   ✅ DCA contracts: ${dcaContracts.toFixed(4)} (meets minimum)`);
       } else {
         // Below minimum, adjust to minimum
-        dcaQuantity = dcaSpec.minOrder / dcaSpec.contractSize;
-        console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${trade.symbol} = ${dcaQuantity.toFixed(4)} contracts`);
+        dcaQuantity = dcaSpec.minOrder;
+        console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${trade.symbol}`);
       }
 
 
@@ -7931,12 +7935,13 @@ Return JSON array format:
 
                         let finalDcaQuantity = dcaQuantity;
                         if (dcaCoinQuantity >= dcaSpec.minOrder) {
-                          finalDcaQuantity = dcaContracts; // Use fractional contracts
+                          // OKX expects sz in COINS, not contracts
+                          finalDcaQuantity = dcaCoinQuantity;
                           console.log(`   ✅ DCA contracts: ${dcaContracts.toFixed(4)} (meets minimum)`);
                         } else {
                           // Below minimum, adjust to minimum
-                          finalDcaQuantity = dcaSpec.minOrder / dcaSpec.contractSize;
-                          console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${symbol} = ${finalDcaQuantity.toFixed(4)} contracts`);
+                          finalDcaQuantity = dcaSpec.minOrder;
+                          console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${symbol}`);
                         }
 
                         if (dcaQuantity > 0) {
