@@ -4178,11 +4178,22 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       }
 
       const cancelParams = [];
-      if (trade.okxAlgoId) {
-        cancelParams.push({ instId: okxSymbol, algoId: trade.okxAlgoId });
+      if (trade.okxTpAlgoId) {
+        cancelParams.push({ instId: okxSymbol, algoId: trade.okxTpAlgoId, tdMode: 'isolated' });
+      } else if (trade.okxTpAlgoClOrdId) {
+        cancelParams.push({ instId: okxSymbol, algoClOrdId: trade.okxTpAlgoClOrdId, tdMode: 'isolated' });
       }
-      if (trade.okxAlgoClOrdId) {
-        cancelParams.push({ instId: okxSymbol, algoClOrdId: trade.okxAlgoClOrdId });
+      if (trade.okxSlAlgoId) {
+        cancelParams.push({ instId: okxSymbol, algoId: trade.okxSlAlgoId, tdMode: 'isolated' });
+      } else if (trade.okxSlAlgoClOrdId) {
+        cancelParams.push({ instId: okxSymbol, algoClOrdId: trade.okxSlAlgoClOrdId, tdMode: 'isolated' });
+      }
+      // Fallback for older trades that might only have a single okxAlgoId
+      if (trade.okxAlgoId && !trade.okxTpAlgoId && !trade.okxSlAlgoId) {
+        cancelParams.push({ instId: okxSymbol, algoId: trade.okxAlgoId, tdMode: 'isolated' });
+      }
+      if (trade.okxAlgoClOrdId && !trade.okxTpAlgoClOrdId && !trade.okxSlAlgoClOrdId) {
+        cancelParams.push({ instId: okxSymbol, algoClOrdId: trade.okxAlgoClOrdId, tdMode: 'isolated' });
       }
 
       if (cancelParams.length > 0) {
@@ -4532,7 +4543,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         const { getOkxAlgoOrders, cancelOkxAlgoOrders } = require('../services/exchangeService');
 
         // First, try to cancel orders we know about from trade object
-        if (trade.okxAlgoId || trade.okxAlgoClOrdId) {
+        if (trade.okxAlgoId || trade.okxAlgoClOrdId || trade.okxTpAlgoId || trade.okxSlAlgoId) {
           await this.cancelTradeAlgoOrders(trade);
         }
 
@@ -4552,37 +4563,41 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             console.log(`   📋 Found ${algoOrders.orders.length} existing algo order(s) for ${trade.symbol}`);
 
             // Cancel all found algo orders
-            const ordersToCancel = algoOrders.orders
+            const activeOrders = algoOrders.orders
               .filter(order => {
                 const state = order.state || order.ordState || '';
                 return state === 'live' || state === 'effective' || state === 'partially_filled';
-              })
-              .map(order => {
-                const cancelOrder = { instId: okxSymbol };
-                // Only include ONE of algoId or algoClOrdId, not both
-                if (order.algoId) {
-                  cancelOrder.algoId = order.algoId;
-                } else if (order.algoClOrdId) {
-                  cancelOrder.algoClOrdId = order.algoClOrdId;
+              });
+
+            if (activeOrders.length > 0) {
+              console.log(`   🗑️ Canceling ${activeOrders.length} active algo order(s)...`);
+              const ordersToCancel = activeOrders
+                .map(order => {
+                  const cancelOrder = { instId: okxSymbol, tdMode: 'isolated' };
+                  // Only include ONE of algoId or algoClOrdId, not both
+                  if (order.algoId) {
+                    cancelOrder.algoId = order.algoId;
+                  } else if (order.algoClOrdId) {
+                    cancelOrder.algoClOrdId = order.algoClOrdId;
+                  }
+                  return cancelOrder;
+                })
+                .filter(order => order.algoId || order.algoClOrdId);
+
+              if (ordersToCancel.length > 0) {
+                const cancelResult = await cancelOkxAlgoOrders(
+                  ordersToCancel,
+                  exchange.apiKey,
+                  exchange.apiSecret,
+                  exchange.passphrase,
+                  exchange.baseUrl
+                );
+
+                if (cancelResult.success) {
+                  console.log(`✅ ${trade.symbol}: Canceled ${ordersToCancel.length} existing algo order(s)`);
+                } else {
+                  console.warn(`⚠️ ${trade.symbol}: Failed to cancel some algo orders: ${cancelResult.error || 'Unknown error'}`);
                 }
-                return cancelOrder;
-              })
-              .filter(order => order.algoId || order.algoClOrdId);
-
-            if (ordersToCancel.length > 0) {
-              console.log(`   🗑️ Canceling ${ordersToCancel.length} active algo order(s)...`);
-              const cancelResult = await cancelOkxAlgoOrders(
-                ordersToCancel,
-                exchange.apiKey,
-                exchange.apiSecret,
-                exchange.passphrase,
-                exchange.baseUrl
-              );
-
-              if (cancelResult.success) {
-                console.log(`✅ ${trade.symbol}: Canceled ${ordersToCancel.length} existing algo order(s)`);
-              } else {
-                console.warn(`⚠️ ${trade.symbol}: Failed to cancel some algo orders: ${cancelResult.error || 'Unknown error'}`);
               }
             }
           }
@@ -4594,6 +4609,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         // Clear the algo IDs so we know they're canceled
         trade.okxAlgoId = null;
         trade.okxAlgoClOrdId = null;
+        trade.okxTpAlgoId = null;
+        trade.okxTpAlgoClOrdId = null;
+        trade.okxSlAlgoId = null;
+        trade.okxSlAlgoClOrdId = null;
       } catch (cancelError) {
         console.warn(`⚠️ ${trade.symbol}: Error canceling existing algo orders: ${cancelError.message}`);
         // Continue anyway - OKX might have already canceled them or they might not exist
@@ -5379,7 +5398,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               console.log(`   🗑️ Found ${activeAlgoOrders.length} orphaned algo order(s) for ${okxSymbol}`);
 
               const ordersToCancel = activeAlgoOrders.map(order => {
-                const cancelOrder = { instId: okxSymbol };
+                const cancelOrder = { instId: okxSymbol, tdMode: 'isolated' };
                 // Only include ONE of algoId or algoClOrdId, not both
                 if (order.algoId) {
                   cancelOrder.algoId = order.algoId;
@@ -7515,7 +7534,7 @@ Return JSON array format:
                               if (activeOrders.length > 0) {
                                 const ordersToCancel = activeOrders
                                   .map(order => {
-                                    const cancelOrder = { instId: okxSymbol };
+                                    const cancelOrder = { instId: okxSymbol, tdMode: 'isolated' };
                                     // Only include ONE of algoId or algoClOrdId, not both
                                     if (order.algoId) {
                                       cancelOrder.algoId = order.algoId;
