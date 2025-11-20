@@ -2586,15 +2586,25 @@ async function setOkxLeverage(instId, leverage, mgnMode, posSide, apiKey, apiSec
   try {
     const requestPath = '/api/v5/account/set-leverage';
 
-    // Try setting leverage for the specified position side
+    // Build request body according to OKX API documentation
+    // For SWAP instruments:
+    // - Scenario #9: cross-margin mode - NO posSide parameter
+    // - Scenario #11: isolated-margin mode with long/short - REQUIRES posSide parameter
     const body = {
       instId: instId,
       lever: leverage.toString(),
-      mgnMode: mgnMode,
-      posSide: posSide // Use provided position side (long/short/net)
+      mgnMode: mgnMode
     };
 
-    console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${posSide})...`);
+    // Only include posSide for isolated margin mode in long/short position mode
+    // Per OKX API docs: "posSide is only required when margin mode is isolated in long/short position mode"
+    if (mgnMode === 'isolated' && posSide && posSide !== 'net') {
+      body.posSide = posSide;
+      console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${mgnMode} mode, ${posSide} side)...`);
+    } else {
+      console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${mgnMode} mode)...`);
+    }
+
     console.log(`📋 [OKX API] Leverage request body:`, JSON.stringify(body));
 
     const response = await executeOkxRequestWithFallback({
