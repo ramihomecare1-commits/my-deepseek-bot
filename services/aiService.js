@@ -768,47 +768,48 @@ function generateBatchAnalysis(allCoinsData) {
 }
 
 /**
- * Call free AI (Gemini Flash) for simple tasks like news filtering
+ * Call free AI (OpenRouter free tier) for simple tasks like news filtering
  * This saves premium AI costs for non-critical operations
+ * Uses the same API_KEY but with a free tier model
  * @param {string} prompt - The prompt to send to free AI
- * @param {string} model - Model to use (default: gemini-1.5-flash)
+ * @param {string} model - Model to use (default: google/gemini-flash-1.5)
  * @returns {Promise<string>} AI response
  */
-async function callFreeAI(prompt, model = 'gemini-1.5-flash') {
-  const apiKey = process.env.GEMINI_API_KEY;
+async function callFreeAI(prompt, model = 'google/gemini-flash-1.5') {
+  const apiKey = config.AI_API_KEY; // Same API key as premium AI
 
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY not configured');
+    throw new Error('AI_API_KEY not configured');
   }
 
   try {
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      'https://openrouter.ai/api/v1/chat/completions',
       {
-        contents: [{
-          parts: [{ text: prompt }]
-        }],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 500
-        }
+        model: model, // Free tier model
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 500,
+        temperature: 0.3
       },
       {
         headers: {
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
+          'X-Title': 'News Filter Bot'
         },
         timeout: 30000
       }
     );
 
-    if (!response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-      throw new Error('Invalid response format from Gemini API');
+    if (!response.data?.choices?.[0]?.message?.content) {
+      throw new Error('Invalid response format from OpenRouter free tier API');
     }
 
-    return response.data.candidates[0].content.parts[0].text;
+    return response.data.choices[0].message.content;
 
   } catch (error) {
-    console.error('❌ Free AI (Gemini) error:', error.message);
+    console.error('❌ Free AI (OpenRouter) error:', error.message);
     throw error;
   }
 }
