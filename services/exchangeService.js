@@ -802,7 +802,7 @@ async function executeOkxRequestWithFallback(options) {
 async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSecret, passphrase, baseUrl, leverage = 1) {
   try {
     const requestPath = '/api/v5/trade/order';
-    const tdMode = 'cross'; // Cross margin for derivatives
+    const tdMode = 'isolated'; // Isolated margin for derivatives (matches OKX account config)
     const posSide = side.toLowerCase() === 'buy' ? 'long' : 'short';
 
     // Round quantity to lot size (usually 1 for perpetual swaps)
@@ -870,7 +870,7 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
 async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, passphrase, baseUrl, leverage = 1) {
   try {
     const requestPath = '/api/v5/trade/order';
-    const tdMode = 'cross'; // Cross margin for derivatives
+    const tdMode = 'isolated'; // Isolated margin for derivatives (matches OKX account config)
 
     // OKX perpetual swaps require quantity to be a multiple of lot size (usually 1 contract)
     // Round to nearest integer (minimum 1 contract)
