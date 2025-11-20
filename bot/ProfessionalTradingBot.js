@@ -3454,48 +3454,59 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     };
 
     // Convert to OKX contracts if trading on OKX
-    // This is CRITICAL: OKX uses contracts, not coins
-    // BTC-USDT-SWAP: 1 contract = 0.01 BTC
-    // ETH-USDT-SWAP: 1 contract = 0.1 ETH
+    // IMPORTANT: OKX uses contracts for perpetual swaps, but minimum order size is much smaller than 1 contract
+    // Contract size: Used for position value calculation
+    // Minimum order: Smallest tradeable amount (e.g., BTC: 0.0001 BTC = ~$9)
     const { OKX_SYMBOL_MAP } = require('../services/exchangeService');
     const okxSymbol = OKX_SYMBOL_MAP[opportunity.symbol];
 
     if (okxSymbol) {
       // OKX contract specifications
+      // Format: { contractSize, minOrder }
       const contractSpecs = {
-        'BTC-USDT-SWAP': 0.01,   // 1 contract = 0.01 BTC
-        'ETH-USDT-SWAP': 0.1,    // 1 contract = 0.1 ETH
-        'SOL-USDT-SWAP': 1,      // 1 contract = 1 SOL
-        'XRP-USDT-SWAP': 10,     // 1 contract = 10 XRP
-        'DOGE-USDT-SWAP': 100,   // 1 contract = 100 DOGE
-        'ADA-USDT-SWAP': 10,     // 1 contract = 10 ADA
-        'MATIC-USDT-SWAP': 10,   // 1 contract = 10 MATIC
-        'DOT-USDT-SWAP': 1,      // 1 contract = 1 DOT
-        'AVAX-USDT-SWAP': 1,     // 1 contract = 1 AVAX
-        'LINK-USDT-SWAP': 1,     // 1 contract = 1 LINK
+        'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },   // 1 contract = 0.01 BTC, min = 0.0001 BTC (~$9)
+        'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },     // 1 contract = 0.1 ETH, min = 0.001 ETH (~$3.50)
+        'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },         // 1 contract = 1 SOL, min = 0.1 SOL
+        'XRP-USDT-SWAP': { contractSize: 10, minOrder: 1 },          // 1 contract = 10 XRP, min = 1 XRP
+        'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },       // 1 contract = 100 DOGE, min = 10 DOGE
+        'ADA-USDT-SWAP': { contractSize: 10, minOrder: 1 },          // 1 contract = 10 ADA, min = 1 ADA
+        'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },        // 1 contract = 10 MATIC, min = 1 MATIC
+        'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },         // 1 contract = 1 DOT, min = 0.1 DOT
+        'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },        // 1 contract = 1 AVAX, min = 0.1 AVAX
+        'LINK-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },        // 1 contract = 1 LINK, min = 0.1 LINK
       };
 
-      const contractSize = contractSpecs[okxSymbol] || 1;
+      const spec = contractSpecs[okxSymbol] || { contractSize: 1, minOrder: 0.01 };
       const coinQuantity = initialQuantity; // This is in coins (e.g., 0.00105 BTC)
 
-      // Convert coins to contracts and ensure minimum 1 contract
-      const contractQuantity = Math.max(1, Math.floor(coinQuantity / contractSize));
+      // OKX accepts fractional contracts (e.g., 0.105 contracts for BTC)
+      // We just need to ensure we meet the minimum order size
+      const contracts = coinQuantity / spec.contractSize;
+      const meetsMinimum = coinQuantity >= spec.minOrder;
 
-      // Recalculate actual position size based on contracts
-      const actualCoinQuantity = contractQuantity * contractSize;
-      const actualPositionSizeUSD = actualCoinQuantity * entryPrice;
+      if (!meetsMinimum) {
+        // If below minimum, use minimum order size
+        const adjustedCoinQuantity = spec.minOrder;
+        const adjustedContracts = adjustedCoinQuantity / spec.contractSize;
+        const adjustedPositionSizeUSD = adjustedCoinQuantity * entryPrice;
 
-      console.log(`🔍 OKX Contract Conversion:`);
-      console.log(`   Requested: $${positionSizeUSD.toFixed(2)} → ${coinQuantity.toFixed(8)} ${opportunity.symbol}`);
-      console.log(`   Contract Size: ${contractSize} ${opportunity.symbol}/contract`);
-      console.log(`   Contracts: ${contractQuantity} (minimum 1)`);
-      console.log(`   Actual: ${actualCoinQuantity.toFixed(8)} ${opportunity.symbol} = $${actualPositionSizeUSD.toFixed(2)}`);
+        console.log(`⚠️ OKX Order Adjustment:`);
+        console.log(`   Requested: $${positionSizeUSD.toFixed(2)} → ${coinQuantity.toFixed(8)} ${opportunity.symbol}`);
+        console.log(`   Below minimum: ${spec.minOrder} ${opportunity.symbol} (${(spec.minOrder * entryPrice).toFixed(2)} USD)`);
+        console.log(`   Adjusted to: ${adjustedCoinQuantity.toFixed(8)} ${opportunity.symbol} = $${adjustedPositionSizeUSD.toFixed(2)}`);
 
-      // Update quantity to contracts for OKX
-      initialQuantity = contractQuantity;
+        initialQuantity = adjustedContracts;
+        positionSizeUSD = adjustedPositionSizeUSD;
+      } else {
+        // Meets minimum, use requested amount (OKX accepts fractional contracts)
+        console.log(`✅ OKX Order Size:`);
+        console.log(`   Requested: $${positionSizeUSD.toFixed(2)} → ${coinQuantity.toFixed(8)} ${opportunity.symbol}`);
+        console.log(`   Contracts: ${contracts.toFixed(4)} (${contracts >= 1 ? Math.floor(contracts) + ' full + ' + ((contracts % 1) * 100).toFixed(1) + '%' : 'fractional'})`);
+        console.log(`   Meets minimum: ${spec.minOrder} ${opportunity.symbol} ✓`);
 
-      // Update position size to actual (for portfolio tracking)
-      positionSizeUSD = actualPositionSizeUSD;
+        // Keep the original coin quantity, but convert to contracts for OKX API
+        initialQuantity = contracts;
+      }
     }
 
     // Create new trade object
