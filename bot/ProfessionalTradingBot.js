@@ -4362,11 +4362,20 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       );
 
       if (okxPositions.length === 0) {
-        // No positions on OKX - but don't mark as closed if API call failed
-        // Only log warning, don't update quantities if we can't verify
+        // No positions on OKX - mark all active trades as closed
         if (this.activeTrades.length > 0) {
-          console.log(`⚠️ No positions found on OKX - trades may be closed or API call failed`);
-          console.log(`   Keeping existing trade data until successful sync`);
+          console.log(`⚠️ No positions found on OKX - marking ${this.activeTrades.length} trade(s) as CLOSED`);
+
+          this.activeTrades.forEach(trade => {
+            if (trade.status === 'OPEN' || trade.status === 'DCA_HIT') {
+              console.log(`   🔄 ${trade.symbol}: Marking as CLOSED (manually closed on OKX)`);
+              trade.status = 'CLOSED';
+              trade.closedAt = new Date();
+              trade.note = (trade.note || '') + ' | Manually closed on OKX';
+            }
+          });
+
+          addLogEntry(`Marked ${this.activeTrades.length} trade(s) as CLOSED (no positions on OKX)`, 'info');
         }
         return;
       }
