@@ -1107,6 +1107,15 @@ class ProfessionalTradingBot {
     this.isRunning = true;
     console.log('🚀 Starting automated technical analysis scan');
 
+    // Start background news filter job (saves premium AI costs)
+    try {
+      const newsFilterJob = require('../jobs/newsFilterJob');
+      await newsFilterJob.start();
+    } catch (error) {
+      console.error('⚠️ Failed to start news filter job:', error.message);
+      console.error('   Bot will continue without background news filtering');
+    }
+
     await this.performTechnicalScan();
     this.scheduleNextScan();
 
@@ -1119,10 +1128,19 @@ class ProfessionalTradingBot {
   }
 
   stopAutoScan() {
+    console.log('🛑 Stopping auto-scan...');
     this.isRunning = false;
     this.stopTradesUpdateTimer();
     this.stopMonitoringTimer();
     this.stopCleanupTimer(); // Stop cleanup timer
+
+    // Stop background news filter job
+    try {
+      const newsFilterJob = require('../jobs/newsFilterJob');
+      newsFilterJob.stop();
+    } catch (error) {
+      console.error('⚠️ Failed to stop news filter job:', error.message);
+    }
 
     if (this.scanTimer) {
       clearTimeout(this.scanTimer);
