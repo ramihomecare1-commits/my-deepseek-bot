@@ -68,11 +68,11 @@ function createTechnicalAnalysisPrompt(technicalData, options = {}) {
     : 'Preferred pattern: balanced';
   const indicatorPrefs = options.indicators
     ? Object.entries(options.indicators)
-        .filter(([, enabled]) => enabled)
-        .map(([key]) => key.toUpperCase())
-        .join(', ')
+      .filter(([, enabled]) => enabled)
+      .map(([key]) => key.toUpperCase())
+      .join(', ')
     : 'All indicators';
-  
+
   // Add global metrics to prompt
   let globalMetricsText = '';
   if (technicalData.globalMetrics) {
@@ -237,16 +237,16 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
   }
 
   // Retrieve historical data for all coins (async, don't block)
-  const historicalDataPromises = allCoinsData.map(coin => 
+  const historicalDataPromises = allCoinsData.map(coin =>
     retrieveRelatedData({ symbol: coin.symbol, days: 30, limit: 10 })
       .catch(err => {
         console.error(`⚠️ Failed to retrieve historical data for ${coin.symbol}:`, err.message);
         return { evaluations: [], news: [] };
       })
   );
-  
+
   const historicalDataArray = await Promise.all(historicalDataPromises);
-  
+
   // Attach historical data to coins
   allCoinsData.forEach((coin, idx) => {
     coin.historicalData = historicalDataArray[idx] || { evaluations: [], news: [] };
@@ -278,115 +278,115 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
         const maxTokens = batch.length <= 5 ? 8000 : 16000; // More tokens for smaller final batches
         const estimatedTokens = Math.min(baseTokens, maxTokens);
         console.log(`📊 Requesting ${estimatedTokens} max tokens for ${batch.length} coins (R1 reasoning model)`);
-      
-      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model: config.AI_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: estimatedTokens, // Dynamic based on coin count
-        temperature: 0.1,
-      }, {
-        headers: {
-          Authorization: `Bearer ${config.AI_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
-          'X-Title': 'Technical Analysis Bot',
-        },
-        timeout: 45000,
-      });
+
+        const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+          model: config.AI_MODEL,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: estimatedTokens, // Dynamic based on coin count
+          temperature: 0.1,
+        }, {
+          headers: {
+            Authorization: `Bearer ${config.AI_API_KEY}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
+            'X-Title': 'Technical Analysis Bot',
+          },
+          timeout: 45000,
+        });
 
         console.log(`✅ OpenRouter batch status: ${response.status} (batch ${batchIndex})`);
-      if (!response.data) throw new Error('AI API failed - no response data');
-      if (!response.data.choices || !response.data.choices[0]) {
-        throw new Error('AI API failed - no choices in response');
-      }
-      
-      const choice = response.data.choices[0];
-      const finishReason = choice.finish_reason;
-      
-      // Check for content, but also check reasoning field if content is empty (R1 model sometimes puts JSON in reasoning)
-      let content = choice.message?.content || '';
-      
-      // If content is empty but we have reasoning, try to extract JSON from reasoning
-      if ((!content || content.trim().length === 0) && choice.message?.reasoning) {
-        console.log('⚠️ AI response content is empty, checking reasoning field for JSON (batch', batchIndex, ')');
-        const reasoning = choice.message.reasoning || '';
-        // Try to extract JSON array from reasoning
-        const jsonMatch = reasoning.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          console.log('✅ Found JSON in reasoning field, extracting...');
-          content = jsonMatch[0];
-        } else {
-          console.log('⚠️ No JSON found in reasoning field either');
-          console.log('📄 Full response structure:', JSON.stringify(response.data, null, 2).substring(0, 2000));
-          // Don't throw - let parseBatchAIResponse handle it by generating fallback for this batch
+        if (!response.data) throw new Error('AI API failed - no response data');
+        if (!response.data.choices || !response.data.choices[0]) {
+          throw new Error('AI API failed - no choices in response');
+        }
+
+        const choice = response.data.choices[0];
+        const finishReason = choice.finish_reason;
+
+        // Check for content, but also check reasoning field if content is empty (R1 model sometimes puts JSON in reasoning)
+        let content = choice.message?.content || '';
+
+        // If content is empty but we have reasoning, try to extract JSON from reasoning
+        if ((!content || content.trim().length === 0) && choice.message?.reasoning) {
+          console.log('⚠️ AI response content is empty, checking reasoning field for JSON (batch', batchIndex, ')');
+          const reasoning = choice.message.reasoning || '';
+          // Try to extract JSON array from reasoning
+          const jsonMatch = reasoning.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            console.log('✅ Found JSON in reasoning field, extracting...');
+            content = jsonMatch[0];
+          } else {
+            console.log('⚠️ No JSON found in reasoning field either');
+            console.log('📄 Full response structure:', JSON.stringify(response.data, null, 2).substring(0, 2000));
+            // Don't throw - let parseBatchAIResponse handle it by generating fallback for this batch
+            content = ''; // Empty content will trigger fallback in parseBatchAIResponse
+          }
+        }
+
+        if (!content || content.trim().length === 0) {
+          console.log('⚠️ AI response content is empty (batch', batchIndex, ')');
+          console.log('📄 Full response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
+          console.log('💡 Using fallback analysis for this batch...');
+          // Don't throw - let parseBatchAIResponse handle it by generating fallback
           content = ''; // Empty content will trigger fallback in parseBatchAIResponse
         }
-      }
-      
-      if (!content || content.trim().length === 0) {
-        console.log('⚠️ AI response content is empty (batch', batchIndex, ')');
-        console.log('📄 Full response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
-        console.log('💡 Using fallback analysis for this batch...');
-        // Don't throw - let parseBatchAIResponse handle it by generating fallback
-        content = ''; // Empty content will trigger fallback in parseBatchAIResponse
-      }
-      
-      if (finishReason === 'length') {
+
+        if (finishReason === 'length') {
           console.log('⚠️ AI response was truncated (hit token limit). Response may be incomplete for batch', batchIndex);
           console.log('💡 Attempting to parse partial JSON from truncated response...');
-      }
-      
-      try {
-        const parsed = parseBatchAIResponse(content, batch);
-        const parsedCount = Object.keys(parsed).length;
-        console.log(`✅ Successfully parsed batch AI response for ${parsedCount} coins (batch ${batchIndex})`);
-
-        // If we got some results but not all, log a warning but continue
-        if (parsedCount < batch.length) {
-          const missing = batch.filter(c => !parsed[c.symbol]).map(c => c.symbol);
-          console.log(`⚠️ Only parsed ${parsedCount}/${batch.length} coins for batch ${batchIndex}. Missing: ${missing.join(', ')}`);
-          console.log(`   Using fallback analysis for missing coins...`);
         }
 
-        Object.assign(combinedResults, parsed);
-      } catch (parseError) {
-        console.error(`❌ Error parsing batch AI response (batch ${batchIndex}):`, parseError.message);
-        console.error(`   Response content (first 1000 chars):`, content.substring(0, 1000));
-        
-        // If it's a truncated response, try to extract what we can
-        if (finishReason === 'length') {
-          console.log(`   ⚠️ Response was truncated. Attempting to extract partial results...`);
-          try {
-            // Try to extract any complete JSON objects from the content
-            const partialParsed = parseBatchAIResponse(content, batch);
-            if (Object.keys(partialParsed).length > 0) {
-              console.log(`   ✅ Extracted ${Object.keys(partialParsed).length} partial results, using fallback for rest`);
-              Object.assign(combinedResults, partialParsed);
-              // Don't throw - continue with partial results
-            } else {
-              throw parseError; // Re-throw if we got nothing
+        try {
+          const parsed = parseBatchAIResponse(content, batch);
+          const parsedCount = Object.keys(parsed).length;
+          console.log(`✅ Successfully parsed batch AI response for ${parsedCount} coins (batch ${batchIndex})`);
+
+          // If we got some results but not all, log a warning but continue
+          if (parsedCount < batch.length) {
+            const missing = batch.filter(c => !parsed[c.symbol]).map(c => c.symbol);
+            console.log(`⚠️ Only parsed ${parsedCount}/${batch.length} coins for batch ${batchIndex}. Missing: ${missing.join(', ')}`);
+            console.log(`   Using fallback analysis for missing coins...`);
+          }
+
+          Object.assign(combinedResults, parsed);
+        } catch (parseError) {
+          console.error(`❌ Error parsing batch AI response (batch ${batchIndex}):`, parseError.message);
+          console.error(`   Response content (first 1000 chars):`, content.substring(0, 1000));
+
+          // If it's a truncated response, try to extract what we can
+          if (finishReason === 'length') {
+            console.log(`   ⚠️ Response was truncated. Attempting to extract partial results...`);
+            try {
+              // Try to extract any complete JSON objects from the content
+              const partialParsed = parseBatchAIResponse(content, batch);
+              if (Object.keys(partialParsed).length > 0) {
+                console.log(`   ✅ Extracted ${Object.keys(partialParsed).length} partial results, using fallback for rest`);
+                Object.assign(combinedResults, partialParsed);
+                // Don't throw - continue with partial results
+              } else {
+                throw parseError; // Re-throw if we got nothing
+              }
+            } catch (retryError) {
+              // If partial parsing also failed, throw original error
+              throw parseError;
             }
-          } catch (retryError) {
-            // If partial parsing also failed, throw original error
+          } else {
+            // For non-truncation errors, re-throw
             throw parseError;
           }
-        } else {
-          // For non-truncation errors, re-throw
-          throw parseError;
         }
-      }
       }
 
       return combinedResults;
-      
+
     } catch (error) {
       lastError = error;
-      
+
       if (error.response) {
         const status = error.response.status;
         console.log(`⚠️ Batch AI error (attempt ${attempt}/${maxRetries}): ${status} ${error.response.statusText}`);
         console.log('Details:', JSON.stringify(error.response.data).slice(0, 500));
-        
+
         // Handle rate limiting (429)
         if (status === 429 && attempt < maxRetries) {
           const waitTime = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
@@ -394,7 +394,7 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
           await new Promise(resolve => setTimeout(resolve, waitTime));
           continue; // Retry
         }
-        
+
         // For other errors, don't retry
         if (status !== 429) {
           break;
@@ -405,7 +405,7 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
       }
     }
   }
-  
+
   // All retries failed
   console.log('❌ All AI API attempts failed. Falling back to deterministic analysis.');
   if (lastError?.response?.status === 429) {
@@ -433,7 +433,7 @@ function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
     const frames = coin.frames || {};
     const frame1d = frames['1d'] || {};
     const frame1h = frames['1h'] || {};
-    
+
     // Include current news if available
     let newsText = '';
     if (coin.news && coin.news.articles && coin.news.articles.length > 0) {
@@ -442,11 +442,11 @@ function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
     } else {
       newsText = '\n   Recent News: No significant news found';
     }
-    
+
     // Include historical context
     let historicalText = '';
     const historical = coin.historicalData || { evaluations: [], news: [] };
-    
+
     if (historical.evaluations && historical.evaluations.length > 0) {
       const recentEvals = historical.evaluations
         .filter(evaluation => evaluation && evaluation.data) // Filter out invalid evaluations
@@ -461,7 +461,7 @@ function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
         historicalText += `\n   Historical Evaluations:\n${recentEvals}`;
       }
     }
-    
+
     if (historical.news && historical.news.length > 0) {
       const historicalNews = historical.news
         .filter(n => n && n.title && n.publishedAt) // Filter out invalid news items
@@ -475,11 +475,11 @@ function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
         historicalText += `\n   Historical News:\n${historicalNews}`;
       }
     }
-    
+
     if (!historicalText) {
       historicalText = '\n   Historical Context: No previous evaluations or news found';
     }
-    
+
     return `${idx + 1}. ${coin.symbol} (${coin.name}) - Price: $${coin.currentPrice}
    Daily: RSI ${frame1d.rsi || 'N/A'}, Trend ${frame1d.trend || 'N/A'}, BB ${frame1d.bollingerPosition || 'N/A'}
    Hourly: RSI ${frame1h.rsi || 'N/A'}, Trend ${frame1h.trend || 'N/A'}, Momentum ${frame1h.momentum || 'N/A'}${newsText}${historicalText}`;
@@ -539,13 +539,13 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
       console.log('⚠️ AI response is empty, using fallback analysis');
       return generateBatchAnalysis(allCoinsData);
     }
-    
+
     console.log(`📝 AI Response preview: ${aiResponse.substring(0, 500)}...`);
     console.log(`📏 AI Response length: ${aiResponse.length} chars`);
-    
+
     // Try to extract JSON array
     let jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
-    
+
     if (!jsonMatch) {
       console.log('⚠️ No JSON array found in response, trying to find partial JSON...');
       // Sometimes the response is just the array without markdown
@@ -553,22 +553,22 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
         jsonMatch = [aiResponse.trim()];
       }
     }
-    
+
     if (jsonMatch) {
       let jsonStr = jsonMatch[0];
-      
+
       // Try to fix common JSON issues
       // 1. Remove trailing commas before ] or }
       jsonStr = jsonStr.replace(/,(\s*[\]}])/g, '$1');
-      
+
       // 2. If JSON is incomplete, try to extract complete objects first
       const openBrackets = (jsonStr.match(/\[/g) || []).length;
       const closeBrackets = (jsonStr.match(/\]/g) || []).length;
       const openBraces = (jsonStr.match(/\{/g) || []).length;
       const closeBraces = (jsonStr.match(/\}/g) || []).length;
-      
+
       let parsed;
-      
+
       // First, try to parse as-is
       try {
         parsed = JSON.parse(jsonStr);
@@ -576,15 +576,15 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
         // If parsing fails, try to fix incomplete JSON
         if (openBrackets > closeBrackets || openBraces > closeBraces) {
           console.log(`⚠️ Incomplete JSON detected (${openBrackets} [ vs ${closeBrackets} ], ${openBraces} { vs ${closeBraces} }). Attempting to fix...`);
-          
+
           // Try to extract complete objects manually (more reliable than fixing brackets)
           const objects = [];
-          
+
           // Find all object start positions (look for "symbol" key)
           const symbolPattern = /"symbol"\s*:\s*"([^"]+)"/g;
           const objectStarts = [];
           let symbolMatch;
-          
+
           while ((symbolMatch = symbolPattern.exec(jsonStr)) !== null) {
             // Find the opening brace before this symbol
             let startIndex = symbolMatch.index;
@@ -595,7 +595,7 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
               objectStarts.push({ start: startIndex, symbol: symbolMatch[1] });
             }
           }
-          
+
           // For each object start, try to extract the complete object
           for (const objInfo of objectStarts) {
             try {
@@ -603,27 +603,27 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
               let inString = false;
               let escapeNext = false;
               let objStr = '';
-              
+
               // Extract the complete object by tracking braces
               for (let i = objInfo.start; i < jsonStr.length; i++) {
                 const char = jsonStr[i];
                 objStr += char;
-                
+
                 if (escapeNext) {
                   escapeNext = false;
                   continue;
                 }
-                
+
                 if (char === '\\') {
                   escapeNext = true;
                   continue;
                 }
-                
+
                 if (char === '"') {
                   inString = !inString;
                   continue;
                 }
-                
+
                 if (!inString) {
                   if (char === '{') braceCount++;
                   if (char === '}') {
@@ -635,14 +635,14 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
                   }
                 }
               }
-              
+
               // If object is incomplete, try to close it
               if (braceCount > 0) {
                 for (let i = 0; i < braceCount; i++) {
                   objStr += '}';
                 }
               }
-              
+
               const obj = JSON.parse(objStr);
               if (obj.symbol) {
                 objects.push(obj);
@@ -651,7 +651,7 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
               // Skip invalid objects, continue with next
             }
           }
-          
+
           // If we extracted objects, use them
           if (objects.length > 0) {
             console.log(`✅ Extracted ${objects.length} valid objects from incomplete JSON`);
@@ -681,17 +681,17 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
           throw parseError;
         }
       }
-      
+
       const results = {};
-      
+
       // Validate that parsed is an array
       if (!Array.isArray(parsed)) {
         console.error(`❌ Parsed result is not an array:`, typeof parsed, parsed);
         throw new Error('AI response is not a valid JSON array');
       }
-      
+
       console.log(`📊 Parsed array contains ${parsed.length} items`);
-      
+
       // Filter out any null/undefined items
       const validItems = parsed.filter((item, index) => {
         if (!item || typeof item !== 'object') {
@@ -700,21 +700,21 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
         }
         return true;
       });
-      
+
       console.log(`✅ Filtered to ${validItems.length} valid items (removed ${parsed.length - validItems.length} invalid)`);
-      
+
       // Log first few items for debugging
       if (validItems.length > 0) {
         console.log(`📋 First item sample:`, JSON.stringify(validItems[0], null, 2).substring(0, 500));
       }
-      
+
       validItems.forEach((item, index) => {
         // Validate item has symbol property (item is already validated as object by filter)
         if (!item.symbol || typeof item.symbol !== 'string') {
           console.warn(`⚠️ Skipping item at index ${index} - missing or invalid symbol:`, item);
           return;
         }
-        
+
         // Safely access item properties with defaults
         const action = item.action || 'HOLD';
         results[item.symbol] = {
@@ -726,9 +726,9 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
           aiEvaluated: true,
         };
       });
-      
+
       console.log(`✅ Successfully parsed ${Object.keys(results).length} AI evaluations`);
-      
+
       // Fill in missing coins with HOLD
       const missingCoins = [];
       allCoinsData.forEach((coin) => {
@@ -744,11 +744,11 @@ function parseBatchAIResponse(aiResponse, allCoinsData) {
           };
         }
       });
-      
+
       if (missingCoins.length > 0) {
         console.log(`⚠️ ${missingCoins.length} coins missing from AI response: ${missingCoins.join(', ')}. Using fallback analysis.`);
       }
-      
+
       return results;
     }
     throw new Error('Invalid AI response format - no JSON array found');
@@ -767,10 +767,57 @@ function generateBatchAnalysis(allCoinsData) {
   return results;
 }
 
+/**
+ * Call free AI (Gemini Flash) for simple tasks like news filtering
+ * This saves premium AI costs for non-critical operations
+ * @param {string} prompt - The prompt to send to free AI
+ * @param {string} model - Model to use (default: gemini-1.5-flash)
+ * @returns {Promise<string>} AI response
+ */
+async function callFreeAI(prompt, model = 'gemini-1.5-flash') {
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
+
+  try {
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 500
+        }
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      }
+    );
+
+    if (!response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+      throw new Error('Invalid response format from Gemini API');
+    }
+
+    return response.data.candidates[0].content.parts[0].text;
+
+  } catch (error) {
+    console.error('❌ Free AI (Gemini) error:', error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   getAITechnicalAnalysis,
   getBatchAIAnalysis,
   createTechnicalAnalysisPrompt,
   parseTechnicalAIResponse,
-  generateTechnicalAnalysis
+  generateTechnicalAnalysis,
+  callFreeAI
 };
