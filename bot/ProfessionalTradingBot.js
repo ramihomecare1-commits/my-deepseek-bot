@@ -5918,13 +5918,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       const dcaSide = trade.action === 'BUY' ? 'buy' : 'sell';
 
       try {
-        console.log(`📊 Placing DCA limit order for ${trade.symbol} at $${dcaPrice.toFixed(2)} (${dcaSide}, qty: ${dcaQuantity})...`);
+        console.log(`📊 Placing DCA limit order for ${trade.symbol} at $${dcaPriceValue.toFixed(2)} (${dcaSide}, qty: ${dcaQuantity})...`);
 
         const dcaOrderResult = await executeOkxLimitOrder(
           okxSymbol,
           dcaSide,
           dcaQuantity,
-          dcaPrice, // Limit price
+          dcaPriceValue, // Limit price - FIXED: was using wrong dcaPrice variable
           exchange.apiKey,
           exchange.apiSecret,
           exchange.passphrase,
