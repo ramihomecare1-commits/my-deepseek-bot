@@ -5517,8 +5517,12 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       );
 
       console.log(`   📊 Active positions on OKX: ${activeSymbols.size}`);
+      if (activeSymbols.size > 0) {
+        console.log(`   📍 Position symbols: ${Array.from(activeSymbols).join(', ')}`);
+      }
 
       // Get ALL pending limit orders from OKX
+      console.log(`   🔍 Fetching ALL pending orders from OKX...`);
       const allOrders = await getOkxPendingOrders(
         '', // Empty instId = all symbols
         exchange.apiKey,
@@ -5528,9 +5532,11 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       );
 
       if (!allOrders.success || !allOrders.orders) {
-        console.log('   ⚠️ Could not fetch pending orders');
+        console.log(`   ⚠️ Could not fetch pending orders: ${allOrders.error || 'Unknown error'}`);
         return;
       }
+
+      console.log(`   📦 Total pending orders: ${allOrders.orders.length}`);
 
       // Filter for active limit orders only
       const activeLimitOrders = allOrders.orders.filter(order => {
@@ -5538,6 +5544,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         const ordType = order.ordType || '';
         return (state === 'live' || state === 'partially_filled') && ordType === 'limit';
       });
+
+      console.log(`   📋 Active limit orders: ${activeLimitOrders.length}`);
 
       // Find orphaned limit orders (orders without matching positions)
       const orphanedOrders = activeLimitOrders.filter(order =>
