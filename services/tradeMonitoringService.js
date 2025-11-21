@@ -399,6 +399,16 @@ Current position is at Tier ${Math.min((trade.dcaCount || 0) + 1, 5)} of 5.
 Each DCA execution increases position size and moves to next tier.
 DCA orders are placed as LIMIT ORDERS that auto-execute when price hits the level.
 
+**DCA PRICE GUIDELINES:**
+When recommending DCA prices, follow these distance rules from entry/average price:
+- **BTC LONG positions**: DCA should be 10-15% BELOW entry/average price
+- **Altcoin LONG positions**: DCA should be 15-25% BELOW entry/average price
+- **BTC SHORT positions**: DCA should be 10-20% ABOVE entry/average price
+- **Altcoin SHORT positions**: DCA should be 15-25% ABOVE entry/average price
+
+Example: If BTC entry is $87,000 (LONG), DCA should be around $73,950-$78,300 (10-15% below).
+Example: If ADA entry is $0.43 (LONG), DCA should be around $0.32-$0.37 (15-25% below).
+
 **STOP LOSS BEHAVIOR:**
 - SL is set as an ALGO ORDER on OKX that will AUTO-CLOSE the position when triggered
 - You should NEVER recommend "CLOSE" action when SL is hit - it will close automatically
