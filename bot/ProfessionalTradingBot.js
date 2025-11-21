@@ -7820,7 +7820,7 @@ Return JSON array format:
                               exchange.apiSecret,
                               exchange.passphrase,
                               exchange.baseUrl,
-                              'isolated' // tdMode for isolated margin
+                              null // DON'T pass tdMode for limit orders
                             );
 
                             // Verify cancellation succeeded
