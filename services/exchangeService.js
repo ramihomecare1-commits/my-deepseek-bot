@@ -2381,11 +2381,6 @@ async function cancelOkxAlgoOrders(orders, apiKey, apiSecret, passphrase, baseUr
         instId: order.instId
       };
 
-      // Add tdMode if provided (required for isolated margin mode)
-      if (order.tdMode) {
-        body.tdMode = order.tdMode;
-      }
-
       if (order.algoId) {
         body.algoId = order.algoId;
       } else if (order.algoClOrdId) {
@@ -2404,7 +2399,7 @@ async function cancelOkxAlgoOrders(orders, apiKey, apiSecret, passphrase, baseUr
       baseUrl,
       requestPath,
       method: 'POST',
-      body: JSON.stringify(cancelBodies)
+      body: cancelBodies
     });
 
     if (response.data?.code === '0' && response.data?.data) {

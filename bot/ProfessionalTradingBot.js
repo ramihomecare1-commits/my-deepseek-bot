@@ -4305,21 +4305,21 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
       const cancelParams = [];
       if (trade.okxTpAlgoId) {
-        cancelParams.push({ instId: okxSymbol, algoId: trade.okxTpAlgoId, tdMode: 'isolated' });
+        cancelParams.push({ instId: okxSymbol, algoId: trade.okxTpAlgoId });
       } else if (trade.okxTpAlgoClOrdId) {
-        cancelParams.push({ instId: okxSymbol, algoClOrdId: trade.okxTpAlgoClOrdId, tdMode: 'isolated' });
+        cancelParams.push({ instId: okxSymbol, algoClOrdId: trade.okxTpAlgoClOrdId });
       }
       if (trade.okxSlAlgoId) {
-        cancelParams.push({ instId: okxSymbol, algoId: trade.okxSlAlgoId, tdMode: 'isolated' });
+        cancelParams.push({ instId: okxSymbol, algoId: trade.okxSlAlgoId });
       } else if (trade.okxSlAlgoClOrdId) {
-        cancelParams.push({ instId: okxSymbol, algoClOrdId: trade.okxSlAlgoClOrdId, tdMode: 'isolated' });
+        cancelParams.push({ instId: okxSymbol, algoClOrdId: trade.okxSlAlgoClOrdId });
       }
       // Fallback for older trades that might only have a single okxAlgoId
       if (trade.okxAlgoId && !trade.okxTpAlgoId && !trade.okxSlAlgoId) {
-        cancelParams.push({ instId: okxSymbol, algoId: trade.okxAlgoId, tdMode: 'isolated' });
+        cancelParams.push({ instId: okxSymbol, algoId: trade.okxAlgoId });
       }
       if (trade.okxAlgoClOrdId && !trade.okxTpAlgoClOrdId && !trade.okxSlAlgoClOrdId) {
-        cancelParams.push({ instId: okxSymbol, algoClOrdId: trade.okxAlgoClOrdId, tdMode: 'isolated' });
+        cancelParams.push({ instId: okxSymbol, algoClOrdId: trade.okxAlgoClOrdId });
       }
 
       if (cancelParams.length > 0) {
@@ -4708,7 +4708,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               console.log(`   🗑️ Canceling ${activeOrders.length} active algo order(s)...`);
               const ordersToCancel = activeOrders
                 .map(order => {
-                  const cancelOrder = { instId: okxSymbol, tdMode: 'isolated' };
+                  const cancelOrder = { instId: okxSymbol };
                   // Only include ONE of algoId or algoClOrdId, not both
                   if (order.algoId) {
                     cancelOrder.algoId = order.algoId;
@@ -5533,7 +5533,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               console.log(`   🗑️ Found ${activeAlgoOrders.length} orphaned algo order(s) for ${okxSymbol}`);
 
               const ordersToCancel = activeAlgoOrders.map(order => {
-                const cancelOrder = { instId: okxSymbol, tdMode: 'isolated' };
+                const cancelOrder = { instId: okxSymbol };
                 // Only include ONE of algoId or algoClOrdId, not both
                 if (order.algoId) {
                   cancelOrder.algoId = order.algoId;
@@ -7641,7 +7641,7 @@ Return JSON array format:
                       finalDcaValue = currentSL * 1.01; // 1% ABOVE SL
                       dcaAdjusted = true;
                       console.log(`   🔄 ${symbol}: DCA value $${newDcaValue.toFixed(2)} is at/below SL $${currentSL.toFixed(2)} - adjusting to $${finalDcaValue.toFixed(2)}`);
-                      addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(2)} to $${finalDcaValue.toFixed(2)} (must be above SL: $${currentSL.toFixed(2)})`, 'warning');
+                      addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(4)} to $${finalDcaValue.toFixed(4)} (must be above SL: $${currentSL.toFixed(2)})`, 'warning');
                     }
                   } else if (trade.action === 'SELL') {
                     // For SELL (Short): Entry < DCA < SL
@@ -7650,7 +7650,7 @@ Return JSON array format:
                       finalDcaValue = currentSL * 0.99; // 1% BELOW SL
                       dcaAdjusted = true;
                       console.log(`   🔄 ${symbol}: DCA value $${newDcaValue.toFixed(2)} is at/above SL $${currentSL.toFixed(2)} - adjusting to $${finalDcaValue.toFixed(2)}`);
-                      addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(2)} to $${finalDcaValue.toFixed(2)} (must be below SL: $${currentSL.toFixed(2)})`, 'warning');
+                      addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(4)} to $${finalDcaValue.toFixed(4)} (must be below SL: $${currentSL.toFixed(2)})`, 'warning');
                     }
                   }
                 }
