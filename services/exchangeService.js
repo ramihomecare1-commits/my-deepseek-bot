@@ -2086,7 +2086,7 @@ async function cancelOkxOrder(instId, ordId, clOrdId, apiKey, apiSecret, passphr
       baseUrl,
       requestPath,
       method: 'POST',
-      body: JSON.stringify(body)
+      body: body  // Pass object, not stringified JSON (executeOkxRequestWithFallback will stringify)
     });
 
     if (response.data?.code === '0' && response.data?.data?.[0]) {
