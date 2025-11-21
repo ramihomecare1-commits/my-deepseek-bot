@@ -50,22 +50,45 @@ class NewsFilterJob {
         for (const symbol of this.trackedCoins) {
             try {
                 // Fetch latest news
-                const newArticles = await fetchCryptoNews(symbol, 5);
+                const newsResponse = await fetchCryptoNews(symbol, 5);
+
+                // Ensure we have an array
+                const newArticles = Array.isArray(newsResponse) ? newsResponse : [];
 
                 if (!newArticles || newArticles.length === 0) {
                     console.log(`   📰 ${symbol}: No new articles found`);
                     continue;
                 }
 
-                // Get stored news for comparison
-                const storedNews = await getStoredNews(symbol, 30);
+                // Get stored news for comparison (with error handling)
+                let storedNews = [];
+                try {
+                    storedNews = await getStoredNews(symbol, 30);
+                    if (!Array.isArray(storedNews)) {
+                        storedNews = [];
+                    }
+                } catch (dbError) {
+                    // DynamoDB not configured or table doesn't exist - use in-memory only
+                    console.log(`   ℹ️ ${symbol}: DynamoDB not available, skipping duplicate check`);
+                    storedNews = [];
+                }
 
                 if (storedNews.length === 0) {
-                    // No stored news, save all
+                    // No stored news, try to save all (but don't fail if DynamoDB unavailable)
+                    let savedCount = 0;
                     for (const article of newArticles) {
-                        await storeNewsArticle(symbol, article);
+                        try {
+                            await storeNewsArticle(symbol, article);
+                            savedCount++;
+                        } catch (storeError) {
+                            // Silently skip storage errors
+                        }
                     }
-                    console.log(`   ✅ ${symbol}: Stored ${newArticles.length} articles (first run)`);
+                    if (savedCount > 0) {
+                        console.log(`   ✅ ${symbol}: Stored ${savedCount} articles (first run)`);
+                    } else {
+                        console.log(`   ✅ ${symbol}: Found ${newArticles.length} articles (storage unavailable)`);
+                    }
                     totalUnique += newArticles.length;
                     continue;
                 }
@@ -77,9 +100,15 @@ class NewsFilterJob {
                     storedNews
                 );
 
-                // Store unique articles
+                // Store unique articles (with error handling)
+                let savedCount = 0;
                 for (const article of uniqueArticles) {
-                    await storeNewsArticle(symbol, article);
+                    try {
+                        await storeNewsArticle(symbol, article);
+                        savedCount++;
+                    } catch (storeError) {
+                        // Silently skip storage errors
+                    }
                 }
 
                 const duplicateCount = newArticles.length - uniqueArticles.length;
