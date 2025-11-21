@@ -110,12 +110,21 @@ Indicators selected: ${indicatorPrefs}
 RECENT NEWS:
 ${newsLines}
 
+IMPORTANT: Provide risk management levels for BUY/SELL signals.
+- For BUY: stopLoss < entryPrice < takeProfit, addPosition below entry
+- For SELL: takeProfit < entryPrice < stopLoss, addPosition above entry
+
 Respond with JSON:
 {
   "action": "BUY|SELL|HOLD",
   "confidence": 0.75,
   "reason": "...",
-  "insights": ["...", "...", "..."]
+  "insights": ["...", "...", "..."],
+  "entryPrice": ${technicalData.currentPrice},
+  "takeProfit": 0,
+  "stopLoss": 0,
+  "addPosition": 0,
+  "expectedGainPercent": 0
 }`;
 }
 
