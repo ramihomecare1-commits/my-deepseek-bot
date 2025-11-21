@@ -496,7 +496,7 @@ class ProfessionalTradingBot {
       addLogEntry(`Bot initialized with ${this.activeTrades.length} active trades`, 'success');
 
       // Start orphan order cleanup timer (runs every 5 minutes)
-      this.startOrphanCleanupTimer();
+      this.startCleanupTimer();
 
       if (this.activeTrades && this.activeTrades.length > 0) {
         console.log(`✅ Active trades loaded: ${this.activeTrades.length} trades`);
