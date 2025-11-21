@@ -2163,8 +2163,26 @@ Reason: ${newReason?.substring(0, 200)}`);
       };
 
       const BATCH_SIZE = 5; // Reduced from 10 to 5 to limit memory usage
-      for (let i = 0; i < this.trackedCoins.length; i += BATCH_SIZE) {
-        const batch = this.trackedCoins.slice(i, i + BATCH_SIZE);
+
+      // Filter out coins with open trades (they're re-evaluated separately by monitoring)
+      const openTradeSymbols = new Set(
+        this.activeTrades
+          .filter(t => t.status === 'OPEN' || t.status === 'DCA_HIT' || t.status === 'PENDING')
+          .map(t => t.symbol)
+      );
+
+      const coinsToScan = this.trackedCoins.filter(coin => !openTradeSymbols.has(coin.symbol));
+
+      if (openTradeSymbols.size > 0) {
+        console.log(`⏭️ Skipping ${openTradeSymbols.size} coin(s) with open trades: ${Array.from(openTradeSymbols).join(', ')}`);
+        addLogEntry(`Skipping ${openTradeSymbols.size} coin(s) with open trades (will be re-evaluated separately)`, 'info');
+      }
+
+      // Update scan progress total
+      this.scanProgress.total = coinsToScan.length;
+
+      for (let i = 0; i < coinsToScan.length; i += BATCH_SIZE) {
+        const batch = coinsToScan.slice(i, i + BATCH_SIZE);
         console.log(`📦 Processing batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} coins)...`);
 
         // Process all coins in batch in parallel
