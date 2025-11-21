@@ -3492,9 +3492,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },   // 1 contract = 0.01 BTC, min = 0.0001 BTC (~$9)
         'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },     // 1 contract = 0.1 ETH, min = 0.001 ETH (~$3.50)
         'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },         // 1 contract = 1 SOL, min = 0.1 SOL
-        'XRP-USDT-SWAP': { contractSize: 10, minOrder: 1 },          // 1 contract = 10 XRP, min = 1 XRP
+        'XRP-USDT-SWAP': { contractSize: 100, minOrder: 1 },        // 1 contract = 100 XRP, min = 1 XRP
         'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },       // 1 contract = 100 DOGE, min = 10 DOGE
-        'ADA-USDT-SWAP': { contractSize: 10, minOrder: 1 },          // 1 contract = 10 ADA, min = 1 ADA
+        'ADA-USDT-SWAP': { contractSize: 100, minOrder: 1 },         // 1 contract = 100 ADA, min = 1 ADA
         'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },        // 1 contract = 10 MATIC, min = 1 MATIC
         'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },         // 1 contract = 1 DOT, min = 0.1 DOT
         'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },        // 1 contract = 1 AVAX, min = 0.1 AVAX
@@ -3994,9 +3994,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                           'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },
                           'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },
                           'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                          'XRP-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+                          'XRP-USDT-SWAP': { contractSize: 100, minOrder: 1 },
                           'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },
-                          'ADA-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+                          'ADA-USDT-SWAP': { contractSize: 100, minOrder: 1 },
                           'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },
                           'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
                           'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
@@ -5898,9 +5898,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },
         'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },
         'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-        'XRP-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+        'XRP-USDT-SWAP': { contractSize: 100, minOrder: 1 },
         'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },
-        'ADA-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+        'ADA-USDT-SWAP': { contractSize: 100, minOrder: 1 },
         'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },
         'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
         'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
@@ -7922,9 +7922,9 @@ Return JSON array format:
                           'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },
                           'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },
                           'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                          'XRP-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+                          'XRP-USDT-SWAP': { contractSize: 100, minOrder: 1 },
                           'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },
-                          'ADA-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+                          'ADA-USDT-SWAP': { contractSize: 100, minOrder: 1 },
                           'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },
                           'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
                           'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
