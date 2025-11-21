@@ -955,8 +955,8 @@ Respond ONLY with valid JSON.`;
     const currentTrade = this.bot.activeTrades[tradeIndex];
     const entryPrice = currentTrade.entryPrice || 0;
 
-    // VALIDATION: Enforce minimum stop loss distance (3% minimum)
-    const MIN_SL_PERCENT = 3.0;
+    // VALIDATION: Enforce minimum stop loss distance (10% minimum for proper risk management)
+    const MIN_SL_PERCENT = 10.0;
     let validatedSL = recommendations.newStopLoss;
 
     if (entryPrice > 0) {
@@ -1040,8 +1040,8 @@ Respond ONLY with valid JSON.`;
     const currentTrade = this.bot.activeTrades[tradeIndex];
     const entryPrice = currentTrade.entryPrice || 0;
 
-    // VALIDATION: Enforce minimum take profit distance (3% minimum)
-    const MIN_TP_PERCENT = 3.0;
+    // VALIDATION: Enforce minimum take profit distance (10% minimum for proper risk/reward)
+    const MIN_TP_PERCENT = 10.0;
     let validatedTP = recommendations.newTakeProfit;
 
     if (entryPrice > 0) {
