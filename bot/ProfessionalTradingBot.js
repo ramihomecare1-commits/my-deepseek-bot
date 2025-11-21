@@ -5981,6 +5981,19 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
   }
 
   async updateActiveTrades() {
+    // Remove CLOSED trades from activeTrades array (cleanup)
+    const beforeCount = this.activeTrades.length;
+    this.activeTrades = this.activeTrades.filter(t =>
+      t.status !== 'CLOSED' && t.status !== 'TP_HIT' && t.status !== 'SL_HIT'
+    );
+
+    const removedCount = beforeCount - this.activeTrades.length;
+    if (removedCount > 0) {
+      console.log(`🗑️ Removed ${removedCount} closed trade(s) from activeTrades`);
+      const { saveTrades } = require('../services/tradePersistenceService');
+      await saveTrades(this.activeTrades); // Persist changes
+    }
+
     if (this.activeTrades.length === 0) {
       return;
     }
