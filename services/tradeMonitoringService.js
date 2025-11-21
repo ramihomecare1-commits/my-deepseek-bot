@@ -376,6 +376,7 @@ class TradeMonitoringService {
 - Current Price: $${currentPrice.toFixed(6)}
 - Position Size: ${trade.amount} ${trade.symbol}
 - P/L: ${pnlPercent > 0 ? '+' : ''}${pnlPercent.toFixed(2)}%
+- DCA Count: ${trade.dcaCount || 0} / 5 (multi-tier strategy)
 
 **CURRENT TRADE LEVELS:**
 - Entry Price: $${trade.entryPrice.toFixed(2)}
@@ -385,6 +386,23 @@ class TradeMonitoringService {
 - DCA Price: $${trade.dcaPrice ? trade.dcaPrice.toFixed(2) : 'Not set'}
 - Position Size: ${trade.quantity || 'Unknown'}
 - Unrealized P/L: ${pnlPercent.toFixed(2)}%
+
+**DCA STRATEGY (5-TIER SYSTEM):**
+This bot uses a 5-tier Dollar Cost Averaging strategy:
+- Tier 1 (Initial): $10 for BTC, $5 for altcoins
+- Tier 2 (DCA 1): $15 for BTC, $7.50 for altcoins
+- Tier 3 (DCA 2): $25 for BTC, $12.50 for altcoins
+- Tier 4 (DCA 3): $50 for BTC, $25 for altcoins
+- Tier 5 (DCA 4): $100 for BTC, $50 for altcoins
+
+Current position is at Tier ${Math.min((trade.dcaCount || 0) + 1, 5)} of 5.
+Each DCA execution increases position size and moves to next tier.
+DCA orders are placed as LIMIT ORDERS that auto-execute when price hits the level.
+
+**STOP LOSS BEHAVIOR:**
+- SL is set as an ALGO ORDER on OKX that will AUTO-CLOSE the position when triggered
+- You should NEVER recommend "CLOSE" action when SL is hit - it will close automatically
+- If SL is triggered, recommend "KEEP" and explain that SL will handle the exit
 
 **IMPORTANT**: You can see ALL 3 levels (TP, SL, DCA). When updating DCA, ensure it stays between SL and entry price:
 - For BUY: stopLoss < dcaPrice < entryPrice < takeProfit
@@ -406,7 +424,7 @@ If you want to move DCA but it would violate this rule, you should ALSO adjust S
 Provide a JSON response with your recommendations:
 
 {
-  "action": "KEEP" | "DCA" | "ADJUST_SL" | "ADJUST_TP" | "CLOSE" | "MODIFY",
+  "action": "KEEP" | "DCA" | "ADJUST_SL" | "ADJUST_TP" | "MODIFY",
   "reasoning": "Brief explanation of why",
   "recommendations": {
     "newStopLoss": <number or null>,  // New SL % if adjusting
@@ -425,6 +443,7 @@ IMPORTANT RULES:
   * dcaPrice is a DOLLAR AMOUNT (price level), NOT a percentage
 - If action is "ADJUST_SL" or "ADJUST_TP": Provide newStopLoss or newTakeProfit as percentages
 - If action is "MODIFY": Can adjust multiple parameters at once
+- NEVER use "CLOSE" action - SL/TP algo orders will auto-execute when triggered
 
 Consider:
 1. Current market momentum
@@ -432,6 +451,7 @@ Consider:
 3. Position P/L
 4. Proximity to key level
 5. Market volatility
+6. Current DCA tier and remaining capacity
 
 Respond ONLY with valid JSON.`;
 
@@ -645,7 +665,17 @@ Respond ONLY with valid JSON.`;
           return await this.modifyTrade(trade, recommendations);
 
         case 'CLOSE':
-          return await this.closeTrade(trade, aiEvaluation.reasoning);
+          // SL/TP algo orders will auto-close the position - no manual intervention needed
+          if (triggeredLevel && triggeredLevel.type === 'STOP_LOSS') {
+            console.log(`ℹ️ AI recommended CLOSE for SL trigger, but SL algo order will auto-execute. No action needed.`);
+            return true;
+          }
+          if (triggeredLevel && triggeredLevel.type === 'TAKE_PROFIT') {
+            console.log(`ℹ️ AI recommended CLOSE for TP trigger, but TP algo order will auto-execute. No action needed.`);
+            return true;
+          }
+          console.log(`⚠️ AI recommended CLOSE, but manual close not implemented. Use SL/TP algo orders instead.`);
+          return false;
 
         case 'KEEP':
           console.log(`✅ AI recommends KEEP - no action needed for ${trade.symbol}`);
