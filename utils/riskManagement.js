@@ -239,6 +239,33 @@ function calculateCorrelation(priceHistory1, priceHistory2) {
 function validateDcaPrice(trade, proposedDcaPrice) {
   const { action, entryPrice, stopLoss } = trade;
 
+  // Calculate actual SL price (handle both percentage and absolute price formats)
+  // stopLoss can be:
+  // - Decimal percentage: 0.05 (5%)
+  // - Whole percentage: 5 (5%)
+  // - Absolute price: 95.50 ($95.50)
+  let actualSlPrice;
+
+  if (!stopLoss || stopLoss === 0) {
+    // No SL set, skip validation
+    return { valid: true, adjustedPrice: proposedDcaPrice, warning: null };
+  }
+
+  if (stopLoss < 1) {
+    // Decimal percentage (e.g., 0.05 = 5%)
+    actualSlPrice = action === 'BUY'
+      ? entryPrice * (1 - stopLoss)
+      : entryPrice * (1 + stopLoss);
+  } else if (stopLoss < 100) {
+    // Whole percentage (e.g., 5 = 5%)
+    actualSlPrice = action === 'BUY'
+      ? entryPrice * (1 - stopLoss / 100)
+      : entryPrice * (1 + stopLoss / 100);
+  } else {
+    // Absolute price (e.g., 95.50)
+    actualSlPrice = stopLoss;
+  }
+
   if (action === 'BUY') {
     // For BUY trades: DCA should be below entry but ABOVE stopLoss
     // Required order: stopLoss < dcaPrice < entryPrice
@@ -251,15 +278,15 @@ function validateDcaPrice(trade, proposedDcaPrice) {
       };
     }
 
-    if (proposedDcaPrice <= stopLoss) {
+    if (proposedDcaPrice <= actualSlPrice) {
       // DCA below SL means buying AFTER stop loss hits
-      const safeDistance = (entryPrice - stopLoss) * 0.4; // 40% between SL and entry
-      const adjustedPrice = stopLoss + safeDistance;
+      const safeDistance = (entryPrice - actualSlPrice) * 0.4; // 40% between SL and entry
+      const adjustedPrice = actualSlPrice + safeDistance;
 
       return {
         valid: false,
         adjustedPrice: adjustedPrice,
-        warning: `DCA price $${proposedDcaPrice.toFixed(2)} is below SL $${stopLoss.toFixed(2)}. Adjusted to $${adjustedPrice.toFixed(2)} (40% between SL and entry).`
+        warning: `DCA price $${proposedDcaPrice.toFixed(2)} is below SL $${actualSlPrice.toFixed(2)}. Adjusted to $${adjustedPrice.toFixed(2)} (40% between SL and entry).`
       };
     }
 
@@ -277,15 +304,15 @@ function validateDcaPrice(trade, proposedDcaPrice) {
       };
     }
 
-    if (proposedDcaPrice >= stopLoss) {
+    if (proposedDcaPrice >= actualSlPrice) {
       // DCA above SL means selling AFTER stop loss hits
-      const safeDistance = (stopLoss - entryPrice) * 0.4; // 40% between entry and SL
-      const adjustedPrice = stopLoss - safeDistance;
+      const safeDistance = (actualSlPrice - entryPrice) * 0.4; // 40% between entry and SL
+      const adjustedPrice = actualSlPrice - safeDistance;
 
       return {
         valid: false,
         adjustedPrice: adjustedPrice,
-        warning: `DCA price $${proposedDcaPrice.toFixed(2)} is above SL $${stopLoss.toFixed(2)}. Adjusted to $${adjustedPrice.toFixed(2)} (40% between entry and SL).`
+        warning: `DCA price $${proposedDcaPrice.toFixed(2)} is above SL $${actualSlPrice.toFixed(2)}. Adjusted to $${adjustedPrice.toFixed(2)} (40% between entry and SL).`
       };
     }
 
