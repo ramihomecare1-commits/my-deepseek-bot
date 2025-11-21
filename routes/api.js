@@ -15,14 +15,14 @@ function addLogEntry(message, level = 'info') {
     message: message,
     level: level
   };
-  
+
   activityLogs.push(logEntry);
-  
+
   // Keep only last MAX_LOGS entries
   if (activityLogs.length > MAX_LOGS) {
     activityLogs = activityLogs.slice(-MAX_LOGS);
   }
-  
+
   return logEntry;
 }
 
@@ -34,8 +34,8 @@ const { getMonitoringData, addMonitoringActivity, setMonitoringActive } = requir
 
 // Health check endpoint (for Render deployment)
 router.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'ok', 
+  res.status(200).json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
@@ -44,7 +44,7 @@ router.get('/health', (req, res) => {
 // Diagnostics endpoint
 router.get('/diagnostics', async (req, res) => {
   const config = require('../config/config');
-  
+
   const diagnostics = {
     timestamp: new Date().toISOString(),
     environment: {
@@ -64,7 +64,7 @@ router.get('/diagnostics', async (req, res) => {
     },
     tests: {}
   };
-  
+
   // Test AI API
   if (config.AI_API_KEY) {
     try {
@@ -82,7 +82,7 @@ router.get('/diagnostics', async (req, res) => {
         },
         timeout: 10000,
       });
-      
+
       diagnostics.tests.ai = {
         status: 'success',
         responseStatus: aiResponse.status,
@@ -102,13 +102,13 @@ router.get('/diagnostics', async (req, res) => {
       message: 'AI_API_KEY not configured'
     };
   }
-  
+
   // Test Telegram
   if (config.TELEGRAM_ENABLED) {
     try {
       const telegramUrl = `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/getMe`;
       const telegramResponse = await axios.get(telegramUrl, { timeout: 5000 });
-      
+
       diagnostics.tests.telegram = {
         status: 'success',
         botUsername: telegramResponse.data.result?.username,
@@ -127,7 +127,7 @@ router.get('/diagnostics', async (req, res) => {
       message: 'Telegram credentials not configured'
     };
   }
-  
+
   res.json(diagnostics);
 });
 
@@ -167,7 +167,7 @@ router.post('/test-telegram', async (req, res) => {
   try {
     const { tradingBot } = req.app.locals;
     const config = require('../config/config');
-    
+
     // Check if Telegram is configured
     if (!config.TELEGRAM_ENABLED) {
       return res.json({
@@ -192,6 +192,38 @@ router.post('/test-telegram', async (req, res) => {
   }
 });
 
+// Trigger news filter job manually
+router.post('/trigger-news-filter', async (req, res) => {
+  try {
+    const newsFilterJob = require('../jobs/newsFilterJob');
+
+    // Check if feature is enabled
+    if (process.env.NEWS_FILTER_ENABLED !== 'true') {
+      return res.json({
+        success: false,
+        message: 'News filter is disabled. Set NEWS_FILTER_ENABLED=true to enable.',
+        enabled: false
+      });
+    }
+
+    // Trigger the filter job
+    console.log('🔄 Manual news filter trigger requested via API');
+    await newsFilterJob.filterNews();
+
+    res.json({
+      success: true,
+      message: 'News filter job completed successfully. Check logs for details.',
+      enabled: true
+    });
+  } catch (error) {
+    console.error('News filter error:', error);
+    res.status(500).json({
+      success: false,
+      message: `Error running news filter: ${error.message}`,
+    });
+  }
+});
+
 // Add a new endpoint to check Telegram configuration
 router.get('/telegram-status', (req, res) => {
   const config = require('../config/config');
@@ -199,7 +231,7 @@ router.get('/telegram-status', (req, res) => {
     telegramEnabled: config.TELEGRAM_ENABLED,
     hasBotToken: Boolean(config.TELEGRAM_BOT_TOKEN),
     hasChatId: Boolean(config.TELEGRAM_CHAT_ID),
-    botTokenPreview: config.TELEGRAM_BOT_TOKEN ? 
+    botTokenPreview: config.TELEGRAM_BOT_TOKEN ?
       `${config.TELEGRAM_BOT_TOKEN.substring(0, 10)}...` : 'Not set',
     chatId: config.TELEGRAM_CHAT_ID || 'Not set',
     environment: process.env.NODE_ENV || 'development'
@@ -234,7 +266,7 @@ router.post('/auto-scan-settings', (req, res) => {
   try {
     const { tradingBot } = req.app.locals;
     const { interval } = req.body || {};
-    
+
     if (!interval) {
       return res.status(400).json({
         success: false,
@@ -280,7 +312,7 @@ router.get('/bot-status', (req, res) => {
   try {
     const { tradingBot } = req.app.locals;
     const config = require('../config/config');
-    
+
     // Use the actual scheduled next scan time if available (prevents reset on page refresh)
     let nextScan = null;
     if (tradingBot.isRunning) {
@@ -302,7 +334,7 @@ router.get('/bot-status', (req, res) => {
         }
       }
     }
-    
+
     res.json({
       running: tradingBot.isRunning,
       coinsTracked: tradingBot.trackedCoins.length,
@@ -448,12 +480,12 @@ router.post('/trade-monitoring/proximity', (req, res) => {
     if (!threshold || isNaN(threshold)) {
       return res.status(400).json({ error: 'Invalid threshold value' });
     }
-    
+
     // Lazy load to avoid startup issues
     const tradeMonitoringService = require('../services/tradeMonitoringService');
     const newThreshold = tradeMonitoringService.updateProximityThreshold(parseFloat(threshold));
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       proximityThreshold: newThreshold,
       message: `Proximity threshold updated to ${newThreshold}%`
     });
@@ -469,7 +501,7 @@ router.get('/exchange-status', (req, res) => {
     const { isExchangeTradingEnabled, getPreferredExchange } = require('../services/exchangeService');
     const status = isExchangeTradingEnabled();
     const exchange = getPreferredExchange();
-    
+
     let message = '';
     if (status.mode === 'BYBIT_DEMO') {
       message = `✅ Bybit Demo Trading ENABLED - Orders execute on Bybit testnet (risk-free demo funds)`;
@@ -478,7 +510,7 @@ router.get('/exchange-status', (req, res) => {
     } else {
       message = `❌ Trading DISABLED - Configure BYBIT_API_KEY and BYBIT_API_SECRET for demo trading`;
     }
-    
+
     res.json({
       ...status,
       exchange: exchange.exchange,
@@ -496,7 +528,7 @@ router.get('/test-okx-connection', async (req, res) => {
   try {
     const { isExchangeTradingEnabled, getPreferredExchange, getOkxBalance, getOkxOpenPositions } = require('../services/exchangeService');
     const status = isExchangeTradingEnabled();
-    
+
     if (!status.enabled) {
       return res.json({
         success: false,
@@ -504,7 +536,7 @@ router.get('/test-okx-connection', async (req, res) => {
         message: 'Please set OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE in your environment variables'
       });
     }
-    
+
     const exchange = getPreferredExchange();
     const results = {
       success: true,
@@ -517,7 +549,7 @@ router.get('/test-okx-connection', async (req, res) => {
       },
       tests: {}
     };
-    
+
     // Test 1: Balance retrieval
     try {
       const balance = await getOkxBalance('USDT', exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
@@ -533,7 +565,7 @@ router.get('/test-okx-connection', async (req, res) => {
         details: error.response?.data || null
       };
     }
-    
+
     // Test 2: Positions retrieval
     try {
       const positions = await getOkxOpenPositions(exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
@@ -550,14 +582,14 @@ router.get('/test-okx-connection', async (req, res) => {
         details: error.response?.data || null
       };
     }
-    
+
     // Overall success if config is enabled (balance/positions may fail due to API issues)
     results.overallSuccess = status.enabled && (
-      results.tests.balance.success || 
+      results.tests.balance.success ||
       results.tests.positions.success ||
       (results.tests.balance.error && !results.tests.balance.error.includes('403'))
     );
-    
+
     res.json(results);
   } catch (error) {
     res.status(500).json({
@@ -573,22 +605,22 @@ router.get('/test-okx-account-mode', async (req, res) => {
   try {
     const { getPreferredExchange, verifyOkxAccountMode } = require('../services/exchangeService');
     const exchange = getPreferredExchange();
-    
+
     if (exchange.exchange !== 'OKX') {
-      return res.json({ 
+      return res.json({
         success: false,
         error: 'OKX is not configured',
         message: 'Please set OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE in your environment variables'
       });
     }
-    
+
     const result = await verifyOkxAccountMode(
       exchange.apiKey,
       exchange.apiSecret,
       exchange.passphrase,
       exchange.baseUrl
     );
-    
+
     res.json({
       ...result,
       config: {
@@ -598,9 +630,9 @@ router.get('/test-okx-account-mode', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -609,19 +641,19 @@ router.get('/test-okx-account-mode', async (req, res) => {
 router.post('/evaluate-trades', async (req, res) => {
   try {
     const { tradingBot } = req.app.locals;
-    
+
     if (!tradingBot) {
-      return res.status(500).json({ 
-        success: false, 
-        error: 'Trading bot not initialized' 
+      return res.status(500).json({
+        success: false,
+        error: 'Trading bot not initialized'
       });
     }
 
     const openTrades = tradingBot.getActiveTrades();
-    
+
     if (!openTrades || openTrades.length === 0) {
-      return res.json({ 
-        success: false, 
+      return res.json({
+        success: false,
         error: 'No open trades to evaluate',
         message: 'No active trades found'
       });
@@ -629,17 +661,17 @@ router.post('/evaluate-trades', async (req, res) => {
 
     // Trigger AI re-evaluation (this will send to Telegram)
     const recommendations = await tradingBot.reevaluateOpenTradesWithAI();
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: `Re-evaluated ${openTrades.length} trade(s). Results sent to Telegram.`,
       recommendations: recommendations || []
     });
   } catch (error) {
     console.error('Evaluation error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message || 'Failed to evaluate trades' 
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to evaluate trades'
     });
   }
 });
@@ -649,14 +681,14 @@ router.get('/analytics', (req, res) => {
   try {
     const { tradingBot } = req.app.locals;
     const { getPerformanceAnalytics } = require('../services/analyticsService');
-    
+
     if (!tradingBot) {
       return res.status(500).json({ error: 'Trading bot not initialized' });
     }
-    
+
     const closedTrades = tradingBot.getClosedTrades() || [];
     const activeTrades = tradingBot.activeTrades || [];
-    
+
     const analytics = getPerformanceAnalytics(closedTrades, activeTrades);
     res.json(analytics);
   } catch (error) {
@@ -669,20 +701,20 @@ router.get('/market-regime', async (req, res) => {
   try {
     const { tradingBot } = req.app.locals;
     const { detectMarketRegime } = require('../services/marketRegimeService');
-    
+
     if (!tradingBot) {
       return res.status(500).json({ error: 'Trading bot not initialized' });
     }
-    
+
     // Get current coin data from last scan
     const lastScan = tradingBot.analysisHistory?.[0];
     if (!lastScan || !lastScan.details) {
       return res.json({ regimes: {}, message: 'No recent scan data available' });
     }
-    
+
     // Simplified - would need full price data for accurate detection
-    res.json({ 
-      regimes: {}, 
+    res.json({
+      regimes: {},
       message: 'Market regime detection requires price data from recent scan',
       note: 'This feature will be enhanced with real-time price data'
     });
@@ -696,21 +728,21 @@ router.get('/rebalancing', (req, res) => {
   try {
     const { tradingBot } = req.app.locals;
     const { getRebalancingStrategy } = require('../services/rebalancingService');
-    
+
     if (!tradingBot) {
       return res.status(500).json({ error: 'Trading bot not initialized' });
     }
-    
+
     const activeTrades = tradingBot.activeTrades || [];
     const targetAllocation = req.query.targets ? JSON.parse(req.query.targets) : {};
     const deviationThreshold = parseFloat(req.query.deviation || '5');
-    
+
     const strategy = getRebalancingStrategy(activeTrades, targetAllocation, {
       deviationThreshold,
       maxPositions: 10,
       minPositionSize: 50
     });
-    
+
     res.json(strategy);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -722,20 +754,20 @@ router.post('/rebalancing/execute', async (req, res) => {
     const { tradingBot } = req.app.locals;
     const { getRebalancingStrategy } = require('../services/rebalancingService');
     const { executeMarketOrder } = require('../services/exchangeService');
-    
+
     if (!tradingBot) {
       return res.status(500).json({ error: 'Trading bot not initialized' });
     }
-    
+
     const { targetAllocation, deviationThreshold = 5, dryRun = false } = req.body;
     const activeTrades = tradingBot.activeTrades || [];
-    
+
     const strategy = getRebalancingStrategy(activeTrades, targetAllocation || {}, {
       deviationThreshold,
       maxPositions: 10,
       minPositionSize: 50
     });
-    
+
     if (!strategy.needsRebalancing) {
       return res.json({
         success: true,
@@ -743,7 +775,7 @@ router.post('/rebalancing/execute', async (req, res) => {
         actions: []
       });
     }
-    
+
     if (dryRun) {
       return res.json({
         success: true,
@@ -752,7 +784,7 @@ router.post('/rebalancing/execute', async (req, res) => {
         message: 'Dry run - no trades executed'
       });
     }
-    
+
     // Execute rebalancing actions
     const executedActions = [];
     for (const action of strategy.actions) {
@@ -771,7 +803,7 @@ router.post('/rebalancing/execute', async (req, res) => {
         });
       }
     }
-    
+
     res.json({
       success: true,
       actions: executedActions,
@@ -812,23 +844,23 @@ router.post('/backtest', async (req, res) => {
   try {
     const { coin, strategy } = req.body;
     const { quickBacktest } = require('../services/backtestService');
-    
+
     if (!coin || !strategy) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Missing required parameters: coin and strategy' 
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameters: coin and strategy'
       });
     }
 
     // Run quick backtest (5 years, sampled)
     const result = await quickBacktest(coin, strategy);
-    
+
     res.json(result);
   } catch (error) {
     console.error('Backtest error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
@@ -863,15 +895,15 @@ router.get('/performance-report', async (req, res) => {
     const { generatePerformanceReport, calculatePerformanceScore, getImprovementRecommendations } = require('../services/performanceAnalyticsService');
     const { loadClosedTrades } = require('../services/tradePersistenceService');
     const { getPortfolioStats } = require('../services/portfolioService');
-    
+
     const closedTrades = await loadClosedTrades();
     const portfolio = await getPortfolioStats();
     const accountBalance = portfolio.totalValue || 1000;
-    
+
     const report = generatePerformanceReport(closedTrades, accountBalance);
     const score = calculatePerformanceScore(report.overview);
     const recommendations = getImprovementRecommendations(report.overview);
-    
+
     res.json({
       ...report,
       performanceScore: score,
@@ -888,15 +920,15 @@ router.get('/market-regime', async (req, res) => {
   try {
     const { detectMarketRegime } = require('../services/marketRegimeService');
     const { fetchHistoricalData, fetchGlobalMetrics } = require('../services/dataFetcher');
-    
+
     const symbol = req.query.symbol || 'BTC';
     const coin = { symbol: symbol, id: 'bitcoin', name: 'Bitcoin' };
-    
+
     const priceHistory = await fetchHistoricalData(coin, 30);
     const globalMetrics = await fetchGlobalMetrics();
-    
+
     const regime = detectMarketRegime(priceHistory, globalMetrics);
-    
+
     res.json(regime);
   } catch (error) {
     console.error('Error detecting market regime:', error);
@@ -909,11 +941,11 @@ router.post('/sentiment-analysis', async (req, res) => {
   try {
     const { analyzeNewsSentiment } = require('../services/sentimentService');
     const { articles } = req.body;
-    
+
     if (!articles || !Array.isArray(articles)) {
       return res.status(400).json({ error: 'Articles array required' });
     }
-    
+
     const sentiment = analyzeNewsSentiment(articles);
     res.json(sentiment);
   } catch (error) {
@@ -938,16 +970,16 @@ router.post('/strategies/set-active', (req, res) => {
   try {
     const strategyManager = require('../strategies/strategyManager');
     const { strategyId } = req.body;
-    
+
     if (!strategyId) {
       return res.status(400).json({ error: 'Strategy ID required' });
     }
-    
+
     const success = strategyManager.setActiveStrategy(strategyId);
-    
+
     if (success) {
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: `Active strategy set to ${strategyId}`,
         activeStrategy: strategyManager.getActiveStrategy().name
       });
@@ -964,16 +996,16 @@ router.post('/strategies/toggle', (req, res) => {
   try {
     const strategyManager = require('../strategies/strategyManager');
     const { strategyId, enabled } = req.body;
-    
+
     if (!strategyId) {
       return res.status(400).json({ error: 'Strategy ID required' });
     }
-    
+
     const success = strategyManager.setStrategyEnabled(strategyId, enabled);
-    
+
     if (success) {
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: `Strategy ${strategyId} ${enabled ? 'enabled' : 'disabled'}`
       });
     } else {
@@ -990,12 +1022,12 @@ router.post('/validate-trade', (req, res) => {
   try {
     const { validateTradeSetup, calculateOptimalPositionSize } = require('../utils/riskManagement');
     const { getPortfolioStats } = require('../services/portfolioService');
-    
+
     const trade = req.body;
-    
+
     // Validate trade setup
     const validation = validateTradeSetup(trade);
-    
+
     // Calculate optimal position size
     const portfolio = getPortfolioStats();
     const positionSizing = calculateOptimalPositionSize({
@@ -1006,7 +1038,7 @@ router.post('/validate-trade', (req, res) => {
       openTradesCount: portfolio.openTradesCount || 0,
       totalExposure: portfolio.exposure || 0
     });
-    
+
     res.json({
       validation: validation,
       positionSizing: positionSizing

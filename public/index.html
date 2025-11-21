@@ -1129,6 +1129,7 @@
               <h4>Tools & Monitoring</h4>
               <div class="button-group">
                 <button class="btn-telegram" onclick="handleTestTelegram(event)">📱 Telegram Test</button>
+                <button class="btn-secondary" onclick="handleTriggerNewsFilter(event)" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; font-weight: 600;">📰 Test News Filter (Free AI)</button>
                 <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
                 <button class="btn-secondary" onclick="openTriggerSettings()"
                   style="background: linear-gradient(135deg, #22c55e, #10b981); color: white; font-weight: 600;">🎯
@@ -1904,6 +1905,54 @@
         if (button) {
           button.disabled = false;
           button.textContent = '📱 Test Telegram';
+        }
+      }
+    }
+
+    async function handleTriggerNewsFilter(evt) {
+      const button = evt?.target || event?.target;
+      const originalText = button ? button.textContent : '📰 Test News Filter (Free AI)';
+      
+      try {
+        if (button) {
+          button.disabled = true;
+          button.textContent = '⏳ Running...';
+        }
+
+        const response = await fetch(API_BASE + '/trigger-news-filter', { method: 'POST' });
+        const result = await response.json();
+
+        if (result.success) {
+          const msg = '✅ ' + result.message;
+          if (typeof showToast === 'function') {
+            showToast(msg, 'success');
+          } else {
+            alert(msg);
+          }
+          console.log('📰 News filter completed successfully');
+        } else {
+          const msg = '❌ ' + (result.message || 'Failed to run news filter');
+          if (typeof showToast === 'function') {
+            showToast(msg, 'error');
+          } else {
+            alert(msg);
+          }
+          if (!result.enabled) {
+            console.log('ℹ️ News filter is disabled. Set NEWS_FILTER_ENABLED=true to enable.');
+          }
+        }
+      } catch (error) {
+        const msg = '❌ Error running news filter: ' + error.message;
+        if (typeof showToast === 'function') {
+          showToast(msg, 'error');
+        } else {
+          alert(msg);
+        }
+        console.error('News filter error:', error);
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = originalText;
         }
       }
     }
