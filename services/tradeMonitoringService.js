@@ -952,14 +952,42 @@ Respond ONLY with valid JSON.`;
       return false;
     }
 
-    // Update stop loss
-    this.bot.activeTrades[tradeIndex].stopLoss = recommendations.newStopLoss;
+    const currentTrade = this.bot.activeTrades[tradeIndex];
+    const entryPrice = currentTrade.entryPrice || 0;
+
+    // VALIDATION: Enforce minimum stop loss distance (3% minimum)
+    const MIN_SL_PERCENT = 3.0;
+    let validatedSL = recommendations.newStopLoss;
+
+    if (entryPrice > 0) {
+      // Calculate distance between entry and new SL
+      const slDistance = Math.abs(entryPrice - validatedSL);
+      const slDistancePercent = (slDistance / entryPrice) * 100;
+
+      if (slDistancePercent < MIN_SL_PERCENT) {
+        console.warn(`⚠️ AI recommended SL too tight: ${slDistancePercent.toFixed(2)}% (minimum: ${MIN_SL_PERCENT}%)`);
+
+        // Adjust SL to meet minimum distance
+        if (currentTrade.action === 'BUY') {
+          validatedSL = entryPrice * (1 - MIN_SL_PERCENT / 100);
+        } else {
+          validatedSL = entryPrice * (1 + MIN_SL_PERCENT / 100);
+        }
+
+        console.log(`   🛡️ Adjusted SL to minimum distance: $${validatedSL.toFixed(2)} (${MIN_SL_PERCENT}% from entry)`);
+      }
+    }
+
+    // Update stop loss with validated value
+    this.bot.activeTrades[tradeIndex].stopLoss = validatedSL;
     this.bot.activeTrades[tradeIndex].slAdjustments = this.bot.activeTrades[tradeIndex].slAdjustments || [];
     this.bot.activeTrades[tradeIndex].slAdjustments.push({
       oldSL: trade.stopLoss,
-      newSL: recommendations.newStopLoss,
+      newSL: validatedSL,
+      aiRecommended: recommendations.newStopLoss,
+      wasAdjusted: validatedSL !== recommendations.newStopLoss,
       timestamp: new Date(),
-      reasoning: 'AI adjustment'
+      reasoning: 'AI adjustment (validated)'
     });
 
     // Cancel old algo orders and place new ones with updated SL
@@ -1009,14 +1037,42 @@ Respond ONLY with valid JSON.`;
       return false;
     }
 
-    // Update take profit
-    this.bot.activeTrades[tradeIndex].takeProfit = recommendations.newTakeProfit;
+    const currentTrade = this.bot.activeTrades[tradeIndex];
+    const entryPrice = currentTrade.entryPrice || 0;
+
+    // VALIDATION: Enforce minimum take profit distance (3% minimum)
+    const MIN_TP_PERCENT = 3.0;
+    let validatedTP = recommendations.newTakeProfit;
+
+    if (entryPrice > 0) {
+      // Calculate distance between entry and new TP
+      const tpDistance = Math.abs(validatedTP - entryPrice);
+      const tpDistancePercent = (tpDistance / entryPrice) * 100;
+
+      if (tpDistancePercent < MIN_TP_PERCENT) {
+        console.warn(`⚠️ AI recommended TP too close: ${tpDistancePercent.toFixed(2)}% (minimum: ${MIN_TP_PERCENT}%)`);
+
+        // Adjust TP to meet minimum distance
+        if (currentTrade.action === 'BUY') {
+          validatedTP = entryPrice * (1 + MIN_TP_PERCENT / 100);
+        } else {
+          validatedTP = entryPrice * (1 - MIN_TP_PERCENT / 100);
+        }
+
+        console.log(`   🎯 Adjusted TP to minimum distance: $${validatedTP.toFixed(2)} (${MIN_TP_PERCENT}% from entry)`);
+      }
+    }
+
+    // Update take profit with validated value
+    this.bot.activeTrades[tradeIndex].takeProfit = validatedTP;
     this.bot.activeTrades[tradeIndex].tpAdjustments = this.bot.activeTrades[tradeIndex].tpAdjustments || [];
     this.bot.activeTrades[tradeIndex].tpAdjustments.push({
       oldTP: trade.takeProfit,
-      newTP: recommendations.newTakeProfit,
+      newTP: validatedTP,
+      aiRecommended: recommendations.newTakeProfit,
+      wasAdjusted: validatedTP !== recommendations.newTakeProfit,
       timestamp: new Date(),
-      reasoning: 'AI adjustment'
+      reasoning: 'AI adjustment (validated)'
     });
 
     // Cancel old algo orders and place new ones with updated TP

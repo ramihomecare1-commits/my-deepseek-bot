@@ -4397,7 +4397,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       const defaultSLPercent = this.tradingRules?.defaultStopLoss || 5.0;
 
       for (const okxPos of okxPositions) {
-        const existingTrade = this.activeTrades.find(t => t.symbol === okxPos.coin);
+        // Check if we already have this position in activeTrades
+        // CRITICAL: Also check PENDING status to prevent race condition duplicates
+        // (scanner may create PENDING trade while sync is running)
+        const existingTrade = this.activeTrades.find(t =>
+          t.symbol === okxPos.coin &&
+          (t.status === 'OPEN' || t.status === 'DCA_HIT' || t.status === 'PENDING')
+        );
 
         if (!existingTrade) {
           // NEW position found on OKX that we don't have in memory
