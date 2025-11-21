@@ -5481,7 +5481,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
    * Runs every 5 minutes
    */
   async cleanupOrphanedOrders() {
-    const { isExchangeTradingEnabled, getPreferredExchange, getOkxAlgoOrders, getOkxPendingOrders, cancelOkxAlgoOrders, cancelOkxOrders, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+    const { isExchangeTradingEnabled, getPreferredExchange, getOkxOpenPositions, getOkxPendingOrders, cancelOkxOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
     const exchangeConfig = isExchangeTradingEnabled();
 
     if (!exchangeConfig.enabled) {
@@ -5496,124 +5496,92 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     console.log('🧹 Starting orphan order cleanup...');
 
     try {
-      // Get all active trade symbols
-      const activeSymbols = this.activeTrades
-        .filter(t => t.status === 'OPEN' || t.status === 'DCA_HIT')
-        .map(t => OKX_SYMBOL_MAP[t.symbol] || t.symbol);
+      // Get ALL open positions from OKX (source of truth)
+      const okxPositions = await getOkxOpenPositions(
+        exchange.apiKey,
+        exchange.apiSecret,
+        exchange.passphrase,
+        exchange.baseUrl
+      );
 
-      console.log(`   📊 Active trades: ${activeSymbols.length}`);
+      if (!okxPositions.success || !okxPositions.positions) {
+        console.log('   ⚠️ Could not fetch OKX positions');
+        return;
+      }
 
-      let canceledAlgoCount = 0;
-      let canceledLimitCount = 0;
+      // Build set of symbols with active positions
+      const activeSymbols = new Set(
+        okxPositions.positions
+          .filter(p => parseFloat(p.pos || p.availPos || 0) !== 0)
+          .map(p => p.instId)
+      );
 
-      // Check all symbols that have been traded
-      const allTradedSymbols = [...new Set(this.activeTrades.map(t => OKX_SYMBOL_MAP[t.symbol] || t.symbol))];
+      console.log(`   📊 Active positions on OKX: ${activeSymbols.size}`);
 
-      for (const okxSymbol of allTradedSymbols) {
-        const isActive = activeSymbols.includes(okxSymbol);
+      // Get ALL pending limit orders from OKX
+      const allOrders = await getOkxPendingOrders(
+        '', // Empty instId = all symbols
+        exchange.apiKey,
+        exchange.apiSecret,
+        exchange.passphrase,
+        exchange.baseUrl
+      );
 
-        if (isActive) {
-          // Skip - this symbol has active trade
-          continue;
-        }
+      if (!allOrders.success || !allOrders.orders) {
+        console.log('   ⚠️ Could not fetch pending orders');
+        return;
+      }
 
-        // No active trade for this symbol - check for orphaned orders
+      // Filter for active limit orders only
+      const activeLimitOrders = allOrders.orders.filter(order => {
+        const state = order.state || order.ordState || '';
+        const ordType = order.ordType || '';
+        return (state === 'live' || state === 'partially_filled') && ordType === 'limit';
+      });
+
+      // Find orphaned limit orders (orders without matching positions)
+      const orphanedOrders = activeLimitOrders.filter(order =>
+        !activeSymbols.has(order.instId)
+      );
+
+      if (orphanedOrders.length === 0) {
+        console.log('✅ Cleanup complete: No orphaned orders found');
+        return;
+      }
+
+      console.log(`   🗑️ Found ${orphanedOrders.length} orphaned limit order(s)`);
+
+      // Cancel each orphaned order
+      let successCount = 0;
+      for (const order of orphanedOrders) {
         try {
-          // Check algo orders (TP/SL)
-          const algoOrders = await getOkxAlgoOrders(
-            okxSymbol,
-            'conditional',
+          const result = await cancelOkxOrder(
+            order.instId,
+            order.ordId,
+            order.clOrdId,
             exchange.apiKey,
             exchange.apiSecret,
             exchange.passphrase,
-            exchange.baseUrl
+            exchange.baseUrl,
+            null // Don't pass tdMode for limit orders
           );
 
-          if (algoOrders && algoOrders.success && algoOrders.orders && algoOrders.orders.length > 0) {
-            const activeAlgoOrders = algoOrders.orders.filter(order => {
-              const state = order.state || order.ordState || '';
-              return state === 'live' || state === 'effective';
-            });
-
-            if (activeAlgoOrders.length > 0) {
-              console.log(`   🗑️ Found ${activeAlgoOrders.length} orphaned algo order(s) for ${okxSymbol}`);
-
-              const ordersToCancel = activeAlgoOrders.map(order => {
-                const cancelOrder = { instId: okxSymbol };
-                // Only include ONE of algoId or algoClOrdId, not both
-                if (order.algoId) {
-                  cancelOrder.algoId = order.algoId;
-                } else if (order.algoClOrdId) {
-                  cancelOrder.algoClOrdId = order.algoClOrdId;
-                }
-                return cancelOrder;
-              });
-
-              const cancelResult = await cancelOkxAlgoOrders(
-                ordersToCancel,
-                exchange.apiKey,
-                exchange.apiSecret,
-                exchange.passphrase,
-                exchange.baseUrl
-              );
-
-              if (cancelResult.success) {
-                canceledAlgoCount += activeAlgoOrders.length;
-                console.log(`   ✅ Canceled ${activeAlgoOrders.length} orphaned algo order(s)`);
-              }
-            }
-          }
-
-          // Check pending limit orders (DCA orders)
-          const pendingOrders = await getOkxPendingOrders(
-            okxSymbol,
-            exchange.apiKey,
-            exchange.apiSecret,
-            exchange.passphrase,
-            exchange.baseUrl
-          );
-
-          if (pendingOrders && pendingOrders.success && pendingOrders.orders && pendingOrders.orders.length > 0) {
-            const activeLimitOrders = pendingOrders.orders.filter(order => {
-              const state = order.state || order.ordState || '';
-              const ordType = order.ordType || '';
-              return (state === 'live' || state === 'partially_filled') && ordType === 'limit';
-            });
-
-            if (activeLimitOrders.length > 0) {
-              console.log(`   🗑️ Found ${activeLimitOrders.length} orphaned limit order(s)`);
-
-              const orderIds = activeLimitOrders.map(order => ({
-                instId: okxSymbol,
-                ordId: order.ordId,
-                clOrdId: order.clOrdId
-              }));
-
-              const cancelResult = await cancelOkxOrders(
-                orderIds,
-                exchange.apiKey,
-                exchange.apiSecret,
-                exchange.passphrase,
-                exchange.baseUrl
-              );
-
-              if (cancelResult.success) {
-                canceledLimitCount += activeLimitOrders.length;
-                console.log(`   ✅ Canceled ${activeLimitOrders.length} orphaned limit orders`);
-              }
-            }
+          if (result.success) {
+            successCount++;
+            console.log(`   ✅ Canceled orphaned order: ${order.instId} (${order.ordId})`);
+          } else {
+            console.log(`   ⚠️ Failed to cancel ${order.instId}: ${result.error}`);
           }
         } catch (error) {
-          console.warn(`⚠️ Error checking orders for ${okxSymbol}: ${error.message}`);
+          console.error(`   ❌ Error canceling ${order.instId}: ${error.message}`);
         }
       }
 
-      if (canceledAlgoCount > 0 || canceledLimitCount > 0) {
-        console.log(`✅ Cleanup complete: ${canceledAlgoCount} algo + ${canceledLimitCount} limit orders`);
-        addLogEntry(`Orphan cleanup: Canceled ${canceledAlgoCount} TP/SL + ${canceledLimitCount} limit orders`, 'info');
-      } else {
-        console.log('✅ Cleanup complete: No orphaned orders found');
+      console.log(`✅ Cleanup complete: Canceled ${successCount}/${orphanedOrders.length} orphaned orders`);
+      if (successCount > 0) {
+        addLogEntry(`Orphan cleanup: Canceled ${successCount} orphaned limit orders`, 'info');
       }
+
     } catch (error) {
       console.error(`❌ Orphan cleanup error: ${error.message}`);
     }

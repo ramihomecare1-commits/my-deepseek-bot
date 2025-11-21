@@ -1,0 +1,20 @@
+{
+  "initialCapital": 5000,
+  "currentBalance": 5000,
+  "totalInvested": 0,
+  "totalRealized": 0,
+  "totalUnrealized": 0,
+  "totalPnl": 0,
+  "totalPnlPercent": 0,
+  "totalTrades": 0,
+  "winningTrades": 0,
+  "losingTrades": 0,
+  "winRate": 0,
+  "averageWin": 0,
+  "averageLoss": 0,
+  "largestWin": 0,
+  "largestLoss": 0,
+  "openPositions": 0,
+  "closedPositions": 0,
+  "lastUpdated": "2025-11-21T11:00:21.033Z"
+}
