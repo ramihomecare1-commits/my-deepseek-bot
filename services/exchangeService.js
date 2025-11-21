@@ -2119,6 +2119,73 @@ async function cancelOkxOrder(instId, ordId, clOrdId, apiKey, apiSecret, passphr
 }
 
 /**
+ * Cancel multiple orders on OKX (batch wrapper for cancelOkxOrder)
+ * @param {Array<Object>} orders - Array of {instId, ordId, clOrdId}
+ * @param {string} apiKey - OKX API key
+ * @param {string} apiSecret - OKX API secret
+ * @param {string} passphrase - OKX passphrase
+ * @param {string} baseUrl - OKX API base URL
+ * @returns {Promise<Object>} Cancel orders result
+ */
+async function cancelOkxOrders(orders, apiKey, apiSecret, passphrase, baseUrl) {
+  try {
+    if (!Array.isArray(orders) || orders.length === 0) {
+      return {
+        success: false,
+        error: 'Orders must be a non-empty array'
+      };
+    }
+
+    const results = [];
+    let successCount = 0;
+    let failCount = 0;
+
+    // Cancel each order individually (don't pass tdMode for limit orders)
+    for (const order of orders) {
+      try {
+        const result = await cancelOkxOrder(
+          order.instId,
+          order.ordId,
+          order.clOrdId,
+          apiKey,
+          apiSecret,
+          passphrase,
+          baseUrl,
+          null  // Don't pass tdMode for limit orders
+        );
+
+        results.push(result);
+        if (result.success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch (error) {
+        failCount++;
+        results.push({
+          success: false,
+          error: error.message,
+          ordId: order.ordId
+        });
+      }
+    }
+
+    return {
+      success: successCount > 0,
+      successCount: successCount,
+      failCount: failCount,
+      results: results
+    };
+  } catch (error) {
+    console.log(`❌ [OKX API] Error canceling orders: ${error.message}`);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
  * Place a Take Profit / Stop Loss algo order on OKX
  * Algo orders don't freeze margin and execute automatically when trigger price is hit
  * @param {Object} params - Order parameters
@@ -4137,6 +4204,7 @@ module.exports = {
   getOkxSettleCurrency,
   executeOkxBatchOrders,
   cancelOkxOrder,
+  cancelOkxOrders,
   placeOkxAlgoOrder,
   cancelOkxAlgoOrders,
   getOkxAlgoOrders,

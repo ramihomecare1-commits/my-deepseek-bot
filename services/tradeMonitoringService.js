@@ -739,7 +739,7 @@ Respond ONLY with valid JSON.`;
 
       // Cancel old DCA limit order and place new one (like SL/TP updates)
       try {
-        const { isExchangeTradingEnabled, getPreferredExchange, getOkxPendingOrders, cancelOkxOrders, executeOkxLimitOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+        const { isExchangeTradingEnabled, getPreferredExchange, getOkxPendingOrders, cancelOkxOrder, executeOkxLimitOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
         const exchangeConfig = isExchangeTradingEnabled();
 
         if (exchangeConfig.enabled && this.bot.cancelTradeAlgoOrders) {
@@ -747,14 +747,17 @@ Respond ONLY with valid JSON.`;
           const okxSymbol = OKX_SYMBOL_MAP[activeTrade.symbol];
 
           if (exchange && okxSymbol && activeTrade.okxDcaOrderId) {
-            // Cancel old DCA limit order
+            // Cancel old DCA limit order (DON'T pass tdMode for limit orders)
             console.log(`🔄 Cancelling old DCA limit order...`);
-            const cancelResult = await cancelOkxOrders(
-              [{ instId: okxSymbol, ordId: activeTrade.okxDcaOrderId }],
+            const cancelResult = await cancelOkxOrder(
+              okxSymbol,
+              activeTrade.okxDcaOrderId,
+              null, // clOrdId
               exchange.apiKey,
               exchange.apiSecret,
               exchange.passphrase,
-              exchange.baseUrl
+              exchange.baseUrl,
+              null  // tdMode - DON'T pass for limit orders (causes "Incorrect json data format" error)
             );
 
             if (cancelResult.success) {
@@ -770,7 +773,22 @@ Respond ONLY with valid JSON.`;
           if (exchange && okxSymbol) {
             console.log(`📝 Placing new DCA limit order at $${newDcaPrice.toFixed(2)}...`);
             const dcaSide = activeTrade.action === 'BUY' ? 'buy' : 'sell';
-            const dcaQuantity = activeTrade.quantity * 0.5; // Add 50% more to position
+
+            // Calculate DCA quantity based on tier and coin type
+            const isBTC = activeTrade.symbol.includes('BTC');
+            const dcaTier = (activeTrade.dcaCount || 0) + 1; // Next tier (1-5)
+
+            // Tier amounts in USD (matches bot's 5-tier DCA strategy)
+            const tierAmounts = {
+              BTC: [10, 15, 25, 50, 100],
+              ALT: [5, 7.5, 12.5, 25, 50]
+            };
+
+            const tierIndex = Math.min(dcaTier - 1, 4); // 0-4
+            const dcaAmountUSD = isBTC ? tierAmounts.BTC[tierIndex] : tierAmounts.ALT[tierIndex];
+            const dcaQuantity = dcaAmountUSD / newDcaPrice; // Convert USD to quantity
+
+            console.log(`   💰 DCA Tier ${dcaTier}: $${dcaAmountUSD} (${dcaQuantity.toFixed(4)} ${activeTrade.symbol})`);
 
             const dcaResult = await executeOkxLimitOrder(
               okxSymbol,
