@@ -492,6 +492,12 @@ class ProfessionalTradingBot {
         this.activeTrades = [];
       }
 
+      console.log(`✅ Bot initialization complete - ${this.activeTrades.length} active trades loaded`);
+      addLogEntry(`Bot initialized with ${this.activeTrades.length} active trades`, 'success');
+
+      // Start orphan order cleanup timer (runs every 5 minutes)
+      this.startOrphanCleanupTimer();
+
       if (this.activeTrades && this.activeTrades.length > 0) {
         console.log(`✅ Active trades loaded: ${this.activeTrades.length} trades`);
         // Fix any trades missing TP, SL, or DCA levels (run in background to avoid blocking deployment)
