@@ -450,7 +450,7 @@ function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
     if (historical.evaluations && historical.evaluations.length > 0) {
       const recentEvals = historical.evaluations
         .filter(evaluation => evaluation && evaluation.data) // Filter out invalid evaluations
-        .slice(0, 3)
+        .slice(0, 4) // Limit to last 4 evaluations to prevent old data from affecting decisions
         .map(evaluation => {
           const date = new Date(evaluation.timestamp).toLocaleDateString();
           const data = evaluation.data || {};
