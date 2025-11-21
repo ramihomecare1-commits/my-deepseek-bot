@@ -5497,6 +5497,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
     try {
       // Get ALL open positions from OKX (source of truth)
+      // Note: getOkxOpenPositions returns an array directly, not {success, positions}
       const okxPositions = await getOkxOpenPositions(
         exchange.apiKey,
         exchange.apiSecret,
@@ -5504,19 +5505,22 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         exchange.baseUrl
       );
 
-      console.log(`   🔍 OKX positions result: success=${okxPositions.success}, positions=${okxPositions.positions ? okxPositions.positions.length : 'null'}`);
+      console.log(`   🔍 OKX positions result: ${Array.isArray(okxPositions) ? okxPositions.length : 'not an array'} positions`);
 
-      if (!okxPositions.success || !okxPositions.positions) {
-        console.log(`   ⚠️ Could not fetch OKX positions: ${okxPositions.error || 'Unknown error'}`);
-        console.log(`   📊 Result object:`, JSON.stringify(okxPositions).substring(0, 200));
+      if (!Array.isArray(okxPositions)) {
+        console.log(`   ⚠️ Could not fetch OKX positions: Invalid response format`);
         return;
       }
 
       // Build set of symbols with active positions
       const activeSymbols = new Set(
-        okxPositions.positions
-          .filter(p => parseFloat(p.pos || p.availPos || 0) !== 0)
-          .map(p => p.instId)
+        okxPositions
+          .filter(p => parseFloat(p.quantity || 0) > 0)
+          .map(p => {
+            // Map coin symbol back to instId format (e.g., 'ETH' -> 'ETH-USDT-SWAP')
+            const coin = p.coin || p.symbol;
+            return OKX_SYMBOL_MAP[coin] || `${coin}-USDT-SWAP`;
+          })
       );
 
       console.log(`   📊 Active positions on OKX: ${activeSymbols.size}`);
