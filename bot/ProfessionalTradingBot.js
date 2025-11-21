@@ -163,7 +163,7 @@ class ProfessionalTradingBot {
 
     this.tradeAutomationRules = {
       partialTakeProfit: {
-        enabled: true,
+        enabled: false,  // DISABLED: Not reflecting correctly on trades
         steps: [
           { triggerPercent: 2, takePercent: 25 },
           { triggerPercent: 4, takePercent: 25 },
