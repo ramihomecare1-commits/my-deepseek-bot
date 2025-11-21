@@ -5504,8 +5504,11 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         exchange.baseUrl
       );
 
+      console.log(`   🔍 OKX positions result: success=${okxPositions.success}, positions=${okxPositions.positions ? okxPositions.positions.length : 'null'}`);
+
       if (!okxPositions.success || !okxPositions.positions) {
-        console.log('   ⚠️ Could not fetch OKX positions');
+        console.log(`   ⚠️ Could not fetch OKX positions: ${okxPositions.error || 'Unknown error'}`);
+        console.log(`   📊 Result object:`, JSON.stringify(okxPositions).substring(0, 200));
         return;
       }
 
