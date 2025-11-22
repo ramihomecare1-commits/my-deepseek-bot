@@ -1,5 +1,6 @@
 const axios = require('axios');
 const config = require('../config/config');
+const { validateDcaPrice, RiskManager, AISafetyWrapper, TradeValidator } = require('../utils/riskManagement');
 const { sleep, getTop100Coins } = require('../utils/helpers');
 const {
   calculateRSI,
@@ -3399,6 +3400,11 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       return;
     }
 
+    // ENFORCE FIXED TP/SL/DCA RULES (10%/20%/15%)
+    // This OVERRIDES any AI suggestions with our fixed percentages
+    const safeOpportunity = AISafetyWrapper.analyzeWithFixedRules(opportunity);
+    console.log(`✅ Rules enforced for ${safeOpportunity.symbol}: TP=${safeOpportunity.takeProfit}, SL=${safeOpportunity.stopLoss}, DCA=${safeOpportunity.dcaPrice}`);
+
     const tradeId = `${opportunity.symbol}-${Date.now()}`; // Unique ID for the trade
 
     // Parse prices correctly (handle both string and number formats)
@@ -3410,13 +3416,14 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       return 0;
     };
 
-    const currentPrice = parsePrice(opportunity.price);
-    const entryPrice = parsePrice(opportunity.entryPrice) || currentPrice;
+    const entryPrice = parsePrice(safeOpportunity.entryPrice);
+    const takeProfit = parsePrice(safeOpportunity.takeProfit);
+    const stopLoss = parsePrice(safeOpportunity.stopLoss);
+    const addPosition = parsePrice(safeOpportunity.addPosition || safeOpportunity.dcaPrice);
 
     // Ensure TP, SL, and DCA levels are always set with proper defaults
-    // Default: 5% TP, 5% SL, DCA at 10% below entry for BUY (or 10% above for SELL)
-    const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 10.0; // 10% default
-    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 20.0; // 20% default (wider than 15% DCA)
+    const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 10.0; // Default to 10%
+    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 20.0; // Default to 20% default (wider than 15% DCA)
 
     let takeProfit = parsePrice(opportunity.takeProfit);
     let stopLoss = parsePrice(opportunity.stopLoss);
@@ -5215,7 +5222,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
       // Fix missing or invalid DCA level (addPosition)
       if (!trade.addPosition || trade.addPosition <= 0 || trade.addPosition === entryPrice) {
-        const { validateDcaPrice } = require('../utils/riskManagement');
+        const { validateDcaPrice, RiskManager, AISafetyWrapper, TradeValidator } = require('../utils/riskManagement');
 
         let proposedDca;
         if (trade.action === 'BUY') {

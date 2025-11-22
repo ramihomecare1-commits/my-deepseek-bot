@@ -379,6 +379,146 @@ function checkTradeCorrelation(newTrade, existingTrades, priceHistories) {
   };
 }
 
+/**
+ * ========================================
+ * CENTRALIZED RISK MANAGEMENT SYSTEM
+ * Enforces fixed TP/SL/DCA rules (10%/20%/15%)
+ * ========================================
+ */
+
+class RiskManager {
+  /**
+   * Get fixed risk management rules - SINGLE SOURCE OF TRUTH
+   */
+  static getFixedRules() {
+    return {
+      VERSION: '1.0',
+      TAKE_PROFIT_PERCENT: 0.10,    // 10% from entry
+      STOP_LOSS_PERCENT: 0.20,       // 20% from entry (wider than DCA)
+      DCA_PERCENT: 0.15,             // 15% from entry (between SL and entry)
+      MAX_POSITION_SIZE_USD: {
+        'BTC': 100,
+        'DEFAULT': 50
+      }
+    };
+  }
+
+  /**
+   * Calculate TP/SL/DCA levels based on FIXED percentages
+   * @param {number} entryPrice - Entry price
+   * @param {string} action - 'BUY' or 'SELL'
+   * @param {string} symbol - Trading symbol
+   * @returns {Object} {takeProfit, stopLoss, dcaPrice, positionSizeUSD}
+   */
+  static calculateLevels(entryPrice, action, symbol) {
+    const rules = this.getFixedRules();
+
+    let takeProfit, stopLoss, dcaPrice;
+
+    if (action === 'BUY') {
+      takeProfit = entryPrice * (1 + rules.TAKE_PROFIT_PERCENT);
+      stopLoss = entryPrice * (1 - rules.STOP_LOSS_PERCENT);
+      dcaPrice = entryPrice * (1 - rules.DCA_PERCENT);
+    } else { // SELL
+      takeProfit = entryPrice * (1 - rules.TAKE_PROFIT_PERCENT);
+      stopLoss = entryPrice * (1 + rules.STOP_LOSS_PERCENT);
+      dcaPrice = entryPrice * (1 + rules.DCA_PERCENT);
+    }
+
+    return {
+      takeProfit: Number(takeProfit.toFixed(6)),
+      stopLoss: Number(stopLoss.toFixed(6)),
+      dcaPrice: Number(dcaPrice.toFixed(6)),
+      positionSizeUSD: rules.MAX_POSITION_SIZE_USD[symbol] || rules.MAX_POSITION_SIZE_USD.DEFAULT
+    };
+  }
+}
+
+class AISafetyWrapper {
+  /**
+   * Analyze opportunity with AI, then OVERRIDE with fixed rules
+   * @param {Object} opportunity - Trading opportunity
+   * @returns {Object} Opportunity with enforced fixed rules
+   */
+  static analyzeWithFixedRules(opportunity) {
+    // Store original AI suggestions
+    const originalAI = {
+      takeProfit: opportunity.takeProfit,
+      stopLoss: opportunity.stopLoss,
+      dcaPrice: opportunity.addPosition || opportunity.dcaPrice
+    };
+
+    // Calculate fixed levels (ALWAYS override AI)
+    const fixedLevels = RiskManager.calculateLevels(
+      opportunity.entryPrice,
+      opportunity.action,
+      opportunity.symbol
+    );
+
+    // Log if AI suggested different values
+    if (originalAI.takeProfit && Math.abs(originalAI.takeProfit - fixedLevels.takeProfit) > 0.01) {
+      console.log(`📊 AI wanted TP: ${originalAI.takeProfit}, enforcing: ${fixedLevels.takeProfit}`);
+    }
+    if (originalAI.stopLoss && Math.abs(originalAI.stopLoss - fixedLevels.stopLoss) > 0.01) {
+      console.log(`📊 AI wanted SL: ${originalAI.stopLoss}, enforcing: ${fixedLevels.stopLoss}`);
+    }
+    if (originalAI.dcaPrice && Math.abs(originalAI.dcaPrice - fixedLevels.dcaPrice) > 0.01) {
+      console.log(`📊 AI wanted DCA: ${originalAI.dcaPrice}, enforcing: ${fixedLevels.dcaPrice}`);
+    }
+
+    // Return with ENFORCED rules
+    return {
+      ...opportunity,
+      takeProfit: fixedLevels.takeProfit,
+      stopLoss: fixedLevels.stopLoss,
+      addPosition: fixedLevels.dcaPrice,
+      dcaPrice: fixedLevels.dcaPrice,
+      positionSizeUSD: fixedLevels.positionSizeUSD,
+      enforcedRules: true,
+      rulesVersion: RiskManager.getFixedRules().VERSION,
+      originalAI: originalAI
+    };
+  }
+}
+
+class TradeValidator {
+  /**
+   * Validate trade levels match expected fixed rules
+   * @param {Object} trade - Trade to validate
+   * @throws {Error} If violations found
+   */
+  static validateTradeLevels(trade) {
+    const expected = RiskManager.calculateLevels(trade.entryPrice, trade.action, trade.symbol);
+    const tolerance = 0.001; // 0.1% tolerance
+    const violations = [];
+
+    const tpDiff = Math.abs(trade.takeProfit - expected.takeProfit) / trade.entryPrice;
+    if (tpDiff > tolerance) {
+      violations.push(`TP: ${trade.takeProfit} vs ${expected.takeProfit}`);
+    }
+
+    const slDiff = Math.abs(trade.stopLoss - expected.stopLoss) / trade.entryPrice;
+    if (slDiff > tolerance) {
+      violations.push(`SL: ${trade.stopLoss} vs ${expected.stopLoss}`);
+    }
+
+    const dcaPrice = trade.dcaPrice || trade.addPosition;
+    if (dcaPrice) {
+      const dcaDiff = Math.abs(dcaPrice - expected.dcaPrice) / trade.entryPrice;
+      if (dcaDiff > tolerance) {
+        violations.push(`DCA: ${dcaPrice} vs ${expected.dcaPrice}`);
+      }
+    }
+
+    if (violations.length > 0) {
+      throw new Error(`Risk rule violations: ${violations.join(', ')}`);
+    }
+
+    console.log(`✅ Trade levels validated: TP=${trade.takeProfit}, SL=${trade.stopLoss}, DCA=${dcaPrice}`);
+    return true;
+  }
+}
+
 module.exports = {
   RISK_CONFIG,
   calculateOptimalPositionSize,
@@ -386,6 +526,8 @@ module.exports = {
   validateDcaPrice,
   calculateCorrelation,
   checkTradeCorrelation,
-  getPositionSizeRecommendation
+  getPositionSizeRecommendation,
+  RiskManager,
+  AISafetyWrapper,
+  TradeValidator
 };
-
