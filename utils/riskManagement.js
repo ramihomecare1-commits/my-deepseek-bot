@@ -412,6 +412,7 @@ class RiskManager {
    */
   static calculateLevels(entryPrice, action, symbol) {
     const rules = this.getFixedRules();
+    const { DCAValidator } = require('./enhancedValidators');
 
     let takeProfit, stopLoss, dcaPrice;
 
@@ -423,6 +424,19 @@ class RiskManager {
       takeProfit = entryPrice * (1 - rules.TAKE_PROFIT_PERCENT);
       stopLoss = entryPrice * (1 + rules.STOP_LOSS_PERCENT);
       dcaPrice = entryPrice * (1 + rules.DCA_PERCENT);
+    }
+
+    // Validate and potentially adjust DCA with safety margins
+    try {
+      dcaPrice = DCAValidator.validateDCAPlacement(entryPrice, dcaPrice, stopLoss, action);
+    } catch (error) {
+      console.error(`❌ DCA validation failed: ${error.message}`);
+      // Fallback: Use 70% of the way to SL (safer position)
+      const safeDCAPercent = rules.STOP_LOSS_PERCENT * 0.7;
+      dcaPrice = action === 'BUY' ?
+        entryPrice * (1 - safeDCAPercent) :
+        entryPrice * (1 + safeDCAPercent);
+      console.log(`🔄 Using safe DCA: ${dcaPrice.toFixed(6)}`);
     }
 
     return {
@@ -488,6 +502,16 @@ class TradeValidator {
    * @throws {Error} If violations found
    */
   static validateTradeLevels(trade) {
+    // Enhanced debug logging
+    console.log(`📐 Validating trade levels for ${trade.symbol} (${trade.action}):`);
+    console.log(`   - Entry: ${trade.entryPrice}`);
+    console.log(`   - TP: ${trade.takeProfit} (${((trade.takeProfit / trade.entryPrice - 1) * 100).toFixed(1)}%)`);
+    console.log(`   - SL: ${trade.stopLoss} (${((trade.stopLoss / trade.entryPrice - 1) * 100).toFixed(1)}%)`);
+    const dcaPrice = trade.dcaPrice || trade.addPosition;
+    if (dcaPrice) {
+      console.log(`   - DCA: ${dcaPrice} (${((dcaPrice / trade.entryPrice - 1) * 100).toFixed(1)}%)`);
+    }
+
     const expected = RiskManager.calculateLevels(trade.entryPrice, trade.action, trade.symbol);
     const tolerance = 0.001; // 0.1% tolerance
     const violations = [];
