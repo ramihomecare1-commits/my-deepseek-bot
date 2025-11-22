@@ -3544,7 +3544,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         console.log(`   Below minimum: ${spec.minOrder} ${opportunity.symbol} (${(spec.minOrder * entryPrice).toFixed(2)} USD)`);
         console.log(`   Adjusted to: ${adjustedCoinQuantity.toFixed(8)} ${opportunity.symbol} = $${adjustedPositionSizeUSD.toFixed(2)}`);
 
-        initialQuantity = adjustedContracts;
+        initialQuantity = adjustedCoinQuantity;  // Keep in COINS, not contracts
         positionSizeUSD = adjustedPositionSizeUSD;
       } else {
         // Meets minimum, use requested amount (OKX accepts fractional contracts)
@@ -3553,8 +3553,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         console.log(`   Contracts: ${contracts.toFixed(4)} (${contracts >= 1 ? Math.floor(contracts) + ' full + ' + ((contracts % 1) * 100).toFixed(1) + '%' : 'fractional'})`);
         console.log(`   Meets minimum: ${spec.minOrder} ${opportunity.symbol} ✓`);
 
-        // Keep the original coin quantity, but convert to contracts for OKX API
-        initialQuantity = contracts;
+        // Keep the original coin quantity (executeOkxMarketOrder will convert to contracts)
+        initialQuantity = coinQuantity;  // Keep in COINS, not contracts
       }
     }
 
