@@ -2,6 +2,12 @@ const axios = require('axios');
 const crypto = require('crypto');
 const config = require('../config/config');
 
+// Global cache for OKX contract specifications
+// Structure: Map<symbol, {ctVal, minSz, lotSz, ctMult, ctValCcy}>
+let contractSpecsCache = new Map();
+let contractSpecsLastFetch = null;
+const SPECS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
 /**
  * Exchange Service
  * Handles order execution via OKX Demo Trading API (primary) or Bybit Demo Trading API
@@ -899,10 +905,11 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
 async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, passphrase, baseUrl, leverage = 1, reduceOnly = false) {
   try {
     const requestPath = '/api/v5/trade/order';
-    const tdMode = 'isolated'; // Isolated margin for derivatives (matches OKX account config)
+    const tdMode = 'isolated'; // Isolated margin for derivatives
 
-    // OKX Contract Sizes (Coins per Contract)
-    // MUST MATCH OKX SPECS EXACTLY
+    // OKX Contract Sizes (FALLBACK ONLY - prefer API specs)
+    // These are used only if API fetch fails
+    // ctVal = Contract Value (coins per contract)
     const CONTRACT_SIZES = {
       'BTC-USDT-SWAP': 0.01,    // 1 contract = 0.01 BTC
       'ETH-USDT-SWAP': 0.1,     // 1 contract = 0.1 ETH
@@ -916,31 +923,49 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       'LINK-USDT-SWAP': 1,      // 1 contract = 1 LINK
     };
 
-    const contractSize = CONTRACT_SIZES[symbol] || 1; // Default to 1 if unknown (dangerous, but fallback)
+    const contractSize = CONTRACT_SIZES[symbol] || 1; // Fallback only
 
-    // Convert Coins to Contracts
-    // Example: 100 ADA / 10 (size) = 10 Contracts
-    let contractQuantity = quantity / contractSize;
+    // Try to get real contract specs from API
+    let ctVal = contractSize; // Default to fallback
+    let minSz = 1; // Default minimum
+    let lotSz = 1; // Default lot size
 
-    // OKX lot size (minimum order increment in CONTRACTS)
-    // Usually 1 contract, but some are 0.1 or 0.01
+    try {
+      const specs = await getContractSpecs(symbol, baseUrl);
+      if (specs) {
+        ctVal = specs.ctVal;
+        minSz = specs.minSz;
+        lotSz = specs.lotSz;
+        console.log(`📋 [OKX API] Using real specs for ${symbol}: ctVal=${ctVal}, minSz=${minSz}, lotSz=${lotSz}`);
+      } else {
+        console.log(`⚠️ [OKX API] Using fallback specs for ${symbol}: ctVal=${ctVal}`);
+      }
+    } catch (error) {
+      console.log(`⚠️ [OKX API] Failed to get specs, using fallback: ${error.message}`);
+    }
+
+    // Convert coin quantity to contracts using real ctVal
+    const contractQuantity = quantity / ctVal;
+    console.log(`🔄 [OKX API] Converting: ${quantity} coins / ${ctVal} ctVal = ${contractQuantity.toFixed(4)} contracts`);
+
+    // Lot size map (for rounding)
     const lotSizeMap = {
-      'BTC-USDT-SWAP': 1,   // Min 1 contract
-      'ETH-USDT-SWAP': 1,   // Min 1 contract
-      'SOL-USDT-SWAP': 1,
-      'XRP-USDT-SWAP': 1,
-      'DOGE-USDT-SWAP': 1,
-      'ADA-USDT-SWAP': 1,   // Fixed: was 0.1, should be 1
-      'MATIC-USDT-SWAP': 1,
-      'DOT-USDT-SWAP': 1,
-      'AVAX-USDT-SWAP': 1,
-      'LINK-USDT-SWAP': 1,
+      'BTC-USDT-SWAP': lotSz,
+      'ETH-USDT-SWAP': lotSz,
+      'SOL-USDT-SWAP': lotSz,
+      'XRP-USDT-SWAP': lotSz,
+      'DOGE-USDT-SWAP': lotSz,
+      'ADA-USDT-SWAP': lotSz,
+      'MATIC-USDT-SWAP': lotSz,
+      'DOT-USDT-SWAP': lotSz,
+      'AVAX-USDT-SWAP': lotSz,
+      'LINK-USDT-SWAP': lotSz,
     };
 
-    const lotSize = lotSizeMap[symbol] || 1;
+    const effectiveLotSize = lotSizeMap[symbol] || lotSz;
 
     // Round to lot size (OKX requires orders to be multiples of lot size)
-    let roundedContracts = Math.round(contractQuantity / lotSize) * lotSize;
+    let roundedContracts = Math.round(contractQuantity / effectiveLotSize) * effectiveLotSize;
 
     // If rounding resulted in 0 but we have a valid quantity, keep the fractional amount
     // This allows very small orders (< 1 lot) to go through as fractional contracts
@@ -949,16 +974,22 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       roundedContracts = contractQuantity;
     }
 
+    // Enforce minimum order size from API
+    if (roundedContracts < minSz && contractQuantity > 0) {
+      console.log(`⚠️ [OKX API] Order below minimum ${minSz} contracts, using minimum`);
+      roundedContracts = minSz;
+    }
+
     // Round to avoid floating point issues
     roundedContracts = parseFloat(roundedContracts.toFixed(8));
 
     // Define roundedQuantity (in coins) for logging and return values
-    const roundedQuantity = roundedContracts * contractSize;
+    const roundedQuantity = roundedContracts * ctVal;
 
-    console.log(`📏 [OKX API] Sizing: ${quantity} ${symbol} → ${contractQuantity.toFixed(4)} Contracts (Size: ${contractSize}) → Rounded: ${roundedContracts}`);
+    console.log(`📏 [OKX API] Sizing: ${quantity} ${symbol} → ${contractQuantity.toFixed(4)} Contracts (ctVal: ${ctVal}) → Rounded: ${roundedContracts} (minSz: ${minSz})`);
 
     if (roundedContracts <= 0) {
-      throw new Error(`Calculated contract size is 0. Quantity ${quantity} too small for ${symbol} (Min: ${contractSize * lotSize})`);
+      throw new Error(`Calculated contract size is 0. Quantity ${quantity} too small for ${symbol} (Min: ${ctVal * minSz})`);
     }
 
     // Pre-order validation: Check max order size and available balance
@@ -1248,6 +1279,86 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
  * @param {string} passphrase - OKX passphrase
  * @param {string} baseUrl - OKX API base URL
  * @returns {Promise<number>} Available balance
+ */
+/**
+ * Fetch OKX contract specifications from API
+ * Gets ctVal (contract value), minSz (minimum size), lotSz (lot size) for each symbol
+ * @param {Array<string>} symbols - Array of OKX symbols (e.g., ['BTC-USDT-SWAP', 'ETH-USDT-SWAP'])
+ * @param {string} baseUrl - OKX API base URL
+ * @returns {Promise<Map>} Map of symbol -> {ctVal, minSz, lotSz}
+ */
+async function fetchOkxContractSpecs(symbols, baseUrl = OKX_BASE_URL) {
+  try {
+    console.log(`📋 Fetching OKX contract specs for ${symbols.length} symbols...`);
+
+    const specs = new Map();
+
+    // Fetch specs for each symbol
+    for (const symbol of symbols) {
+      try {
+        const endpoint = `/api/v5/public/instruments?instType=SWAP&instId=${symbol}`;
+        const url = `${baseUrl}${endpoint}`;
+
+        const response = await axios.get(url, {
+          timeout: 10000,
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.data && response.data.code === '0' && response.data.data && response.data.data.length > 0) {
+          const instrument = response.data.data[0];
+          specs.set(symbol, {
+            ctVal: parseFloat(instrument.ctVal),      // Contract value (coins per contract)
+            minSz: parseFloat(instrument.minSz),      // Minimum order size (contracts)
+            lotSz: parseFloat(instrument.lotSz),      // Lot size (contract step)
+            ctMult: parseFloat(instrument.ctMult || 1), // Contract multiplier
+            ctValCcy: instrument.ctValCcy             // Contract value currency
+          });
+          console.log(`  ✅ ${symbol}: ctVal=${instrument.ctVal}, minSz=${instrument.minSz}, lotSz=${instrument.lotSz}`);
+        } else {
+          console.log(`  ⚠️ ${symbol}: No data returned from API`);
+        }
+      } catch (error) {
+        console.log(`  ❌ ${symbol}: Failed to fetch specs - ${error.message}`);
+      }
+    }
+
+    // Update cache
+    contractSpecsCache = specs;
+    contractSpecsLastFetch = Date.now();
+
+    console.log(`✅ Fetched specs for ${specs.size}/${symbols.length} symbols`);
+    return specs;
+
+  } catch (error) {
+    console.error('❌ Failed to fetch OKX contract specs:', error.message);
+    return new Map();
+  }
+}
+
+/**
+ * Get contract specs for a symbol (from cache or fetch if needed)
+ * @param {string} symbol - OKX symbol (e.g., 'BTC-USDT-SWAP')
+ * @param {string} baseUrl - OKX API base URL
+ * @returns {Promise<Object|null>} Contract specs or null if not available
+ */
+async function getContractSpecs(symbol, baseUrl = OKX_BASE_URL) {
+  // Check cache first
+  if (contractSpecsCache.has(symbol)) {
+    const cacheAge = Date.now() - (contractSpecsLastFetch || 0);
+    if (cacheAge < SPECS_CACHE_TTL) {
+      return contractSpecsCache.get(symbol);
+    }
+  }
+
+  // Fetch if not in cache or cache expired
+  await fetchOkxContractSpecs([symbol], baseUrl);
+  return contractSpecsCache.get(symbol) || null;
+}
+
+/**
+ * Get OKX account balance for a specific asset
  */
 async function getOkxBalance(asset, apiKey, apiSecret, passphrase, baseUrl) {
   try {
