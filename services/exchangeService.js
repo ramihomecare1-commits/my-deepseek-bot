@@ -939,13 +939,13 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
 
     const lotSize = lotSizeMap[symbol] || 1;
 
-    // Round to lot size
+    // Round to lot size (OKX requires orders to be multiples of lot size)
     let roundedContracts = Math.round(contractQuantity / lotSize) * lotSize;
 
-    // OKX accepts fractional contracts, so DON'T enforce minimum 1 lot
-    // Only check if the result is 0 (order too small)
-    if (roundedContracts <= 0) {
-      // If rounding resulted in 0, use the original fractional amount
+    // If rounding resulted in 0 but we have a valid quantity, keep the fractional amount
+    // This allows very small orders (< 1 lot) to go through as fractional contracts
+    if (roundedContracts === 0 && contractQuantity > 0) {
+      // For very small orders, use the original quantity (fractional)
       roundedContracts = contractQuantity;
     }
 
