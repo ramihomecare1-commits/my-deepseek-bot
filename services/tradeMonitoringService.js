@@ -742,37 +742,92 @@ Respond ONLY with valid JSON.`;
         const { isExchangeTradingEnabled, getPreferredExchange, getOkxPendingOrders, cancelOkxOrder, executeOkxLimitOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
         const exchangeConfig = isExchangeTradingEnabled();
 
-        if (exchangeConfig.enabled && this.bot.cancelTradeAlgoOrders) {
+        if (exchangeConfig.enabled) {
           const exchange = getPreferredExchange();
           const okxSymbol = OKX_SYMBOL_MAP[activeTrade.symbol];
 
-          if (exchange && okxSymbol && activeTrade.okxDcaOrderId) {
-            // Cancel old DCA limit order (DON'T pass tdMode for limit orders)
-            console.log(`🔄 Cancelling old DCA limit order...`);
-            const cancelResult = await cancelOkxOrder(
+          if (exchange && okxSymbol) {
+            // STEP 1: Fetch existing DCA orders from OKX (robust approach - works even if okxDcaOrderId is missing)
+            console.log(`🔍 Checking for existing DCA orders on OKX...`);
+            const pendingOrders = await getOkxPendingOrders(
               okxSymbol,
-              activeTrade.okxDcaOrderId,
-              null, // clOrdId
               exchange.apiKey,
               exchange.apiSecret,
               exchange.passphrase,
-              exchange.baseUrl,
-              null  // tdMode - DON'T pass for limit orders (causes "Incorrect json data format" error)
+              exchange.baseUrl
             );
 
-            if (cancelResult.success) {
-              console.log(`   ✅ Old DCA limit order cancelled`);
-              activeTrade.okxDcaOrderId = null;
-            } else {
-              console.error(`❌ Failed to cancel old DCA order (ID: ${activeTrade.okxDcaOrderId}). Aborting new order placement to prevent duplicates.`);
-              return false;
-            }
-          }
-
-          // Place new DCA limit order at new price
-          if (exchange && okxSymbol) {
-            console.log(`📝 Placing new DCA limit order at $${newDcaPrice.toFixed(2)}...`);
+            // STEP 2: Find DCA orders (limit orders matching our side and price)
             const dcaSide = activeTrade.action === 'BUY' ? 'buy' : 'sell';
+            const oldDcaPrice = activeTrade.dcaPrice || activeTrade.addPosition || 0;
+
+            const dcaOrders = [];
+            if (pendingOrders.success && pendingOrders.orders) {
+              for (const order of pendingOrders.orders) {
+                const state = order.state || order.ordState || '';
+                const ordType = order.ordType || '';
+                const side = order.side || '';
+                const orderPrice = parseFloat(order.px || order.price || 0);
+
+                // Match: active limit order, correct side
+                if ((state === 'live' || state === 'partially_filled') &&
+                  ordType === 'limit' &&
+                  side === dcaSide) {
+                  // If we have old DCA price, check if order price matches (within 5%)
+                  if (oldDcaPrice > 0) {
+                    const priceDiff = Math.abs(orderPrice - oldDcaPrice) / oldDcaPrice;
+                    if (priceDiff < 0.05) {
+                      dcaOrders.push(order);
+                      console.log(`   📍 Found DCA order: ${order.ordId} @ $${orderPrice.toFixed(2)} (matches old DCA: $${oldDcaPrice.toFixed(2)})`);
+                    }
+                  } else {
+                    // No old DCA price - assume any limit order on this side is a DCA order
+                    // This is safe because we're about to place a new DCA order anyway
+                    dcaOrders.push(order);
+                    console.log(`   📍 Found limit order: ${order.ordId} @ $${orderPrice.toFixed(2)} (no old DCA price to compare)`);
+                  }
+                }
+              }
+            }
+
+            // STEP 3: Cancel all found DCA orders
+            if (dcaOrders.length > 0) {
+              console.log(`🔄 Cancelling ${dcaOrders.length} existing DCA order(s)...`);
+              let cancelledCount = 0;
+              for (const order of dcaOrders) {
+                const cancelResult = await cancelOkxOrder(
+                  okxSymbol,
+                  order.ordId,
+                  order.clOrdId,
+                  exchange.apiKey,
+                  exchange.apiSecret,
+                  exchange.passphrase,
+                  exchange.baseUrl,
+                  null  // tdMode - DON'T pass for limit orders
+                );
+
+                if (cancelResult.success) {
+                  cancelledCount++;
+                  console.log(`   ✅ Cancelled DCA order: ${order.ordId} @ $${parseFloat(order.px || 0).toFixed(2)}`);
+                } else {
+                  console.warn(`   ⚠️ Failed to cancel DCA order ${order.ordId}: ${cancelResult.error}`);
+                }
+              }
+
+              if (cancelledCount === 0) {
+                console.error(`❌ Failed to cancel any DCA orders. Aborting new order placement to prevent duplicates.`);
+                return false;
+              }
+
+              console.log(`   ✅ Cancelled ${cancelledCount}/${dcaOrders.length} DCA order(s)`);
+              activeTrade.okxDcaOrderId = null; // Clear old order ID
+            } else {
+              console.log(`   ℹ️ No existing DCA orders found on OKX`);
+            }
+
+            // STEP 4: Place new DCA limit order at new price
+            console.log(`📝 Placing new DCA limit order at $${newDcaPrice.toFixed(2)}...`);
+            // dcaSide already declared above in STEP 2
 
             // Calculate DCA quantity based on tier and coin type
             const isBTC = activeTrade.symbol.includes('BTC');
