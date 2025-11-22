@@ -8723,10 +8723,10 @@ CRITICAL: Provide UPDATED levels based on the NEW average entry of $${newAverage
 
 Rules:
 - Take Profit: Minimum 10% from new average entry
-- Stop Loss: Minimum 10% from new average entry
+- Stop Loss: Minimum 20% from new average entry (WIDER than DCA)
 - New DCA: 15% from new average entry (below average for BUY, above for SELL)
-- For BUY: SL < DCA < Average < TP
-- For SELL: TP < Average < DCA < SL
+- For BUY: SL (20% below) < DCA (15% below) < Average < TP (10% above)
+- For SELL: TP (10% below) < Average < DCA (15% above) < SL (20% above)
 
 Respond with JSON only:
 {
@@ -8750,7 +8750,7 @@ Respond with JSON only:
 
       // Validate levels
       const MIN_TP_PERCENT = 10.0;
-      const MIN_SL_PERCENT = 10.0;
+      const MIN_SL_PERCENT = 20.0;  // WIDER stop loss (20% vs 15% DCA)
       const DCA_PERCENT = 15.0;
 
       let validatedTP = newLevels.takeProfit;
