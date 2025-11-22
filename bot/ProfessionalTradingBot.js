@@ -5321,6 +5321,12 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           console.error(`❌ Error placing ${needsTp ? 'TP' : 'SL'} order for ${trade.symbol}: ${error.message}`);
         }
       } else {
+        // DISABLED: TP/SL already placed via attachAlgoOrds during initial order
+        // Monitoring should not re-place them as it creates duplicates
+        console.log(`✅ ${trade.symbol}: TP/SL were attached to main order via attachAlgoOrds - skipping separate placement`);
+        skippedCount++;
+
+        /* DISABLED: Creates duplicate TP/SL orders
         // Need both orders - use the full placement function (which will cancel existing ones first)
         console.log(`📊 ${trade.symbol}: No orders found, placing both TP and SL orders...`);
         console.log(`   Trade details: Entry=$${trade.entryPrice?.toFixed(2)}, TP=$${trade.takeProfit?.toFixed(2)}, SL=$${trade.stopLoss?.toFixed(2)}`);
@@ -5339,6 +5345,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           console.error(`❌ Error placing TP/SL orders for ${trade.symbol}: ${error.message}`);
           console.error(`   Stack: ${error.stack}`);
         }
+        */
       }
 
       // Small delay between orders to avoid rate limits
@@ -7653,6 +7660,14 @@ Return JSON array format:
 
                   // If TP or SL was adjusted, use robust recovery manager to update orders
                   if (validated.newTakeProfit || validated.newStopLoss) {
+                    // DISABLED: TP/SL updates via TP_SL_Recovery create duplicate orders
+                    // TODO: Implement proper update mechanism for attachAlgoOrds
+                    console.log(`⚠️ ${symbol}: AI adjusted TP/SL but automatic update is disabled`);
+                    console.log(`   Manual intervention required to update TP/SL on OKX`);
+                    console.log(`   New TP: $${validated.newTakeProfit || trade.takeProfit}, New SL: $${validated.newStopLoss || trade.stopLoss}`);
+                    addLogEntry(`⚠️ ${symbol}: AI adjusted TP/SL - manual update needed`, 'warning');
+
+                    /* DISABLED: Creates duplicate TP/SL orders with wrong ordType
                     console.log(`🔄 ${symbol}: Using TP_SL_Recovery to safely update orders...`);
 
                     // Use the robust retry logic which handles cancellation and placement safely
@@ -7671,6 +7686,7 @@ Return JSON array format:
                       trade.okxSlAlgoId = updateResult.slOrder?.ordId;
                       trade.okxAlgoId = updateResult.tpOrder?.ordId; // Primary ID
                     }
+                    */
                   }
 
                   // If DCA was adjusted, cancel old DCA order and place new one
