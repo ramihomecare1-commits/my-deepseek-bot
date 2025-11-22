@@ -1,23 +1,32 @@
-const { okxAPI } = require('../services/exchangeService');
+const { placeOkxAlgoOrder, isExchangeTradingEnabled, getPreferredExchange, OKX_SYMBOL_MAP } = require('../services/exchangeService');
 
 /**
- * TP/SL Manager
- * Handles placement of Take Profit and Stop Loss orders
- * Ensures currentPrice is available and validates inputs
+ * TP/SL Manager - Handles placement of Take Profit and Stop Loss orders
+ * Uses exchangeService functions directly instead of dependency injection
  */
 class TP_SL_Manager {
     /**
-     * Place both TP and SL orders
-     * @param {Object} trade - Trade object
-     * @param {number} [currentPrice=null] - Current market price
-     * @returns {Object} { tpOrder, slOrder }
+     * Place TP/SL orders for a trade
+     * @param {Object} trade - Trade object with TP/SL prices
+     * @param {number} currentPrice - Current market price (optional, will fetch if not provided)
+     * @returns {Promise<Object>} { tpOrder, slOrder }
      */
     static async placeTP_SL_Orders(trade, currentPrice = null) {
         try {
             // If currentPrice not provided, fetch it from OKX
             if (!currentPrice) {
                 console.log(`📊 Fetching current price for ${trade.symbol} for TP/SL placement...`);
-                const ticker = await okxAPI.getTicker(trade.symbol);
+                const { getTicker } = require('../services/exchangeService');
+
+                const exchangeConfig = isExchangeTradingEnabled();
+                if (!exchangeConfig.enabled) {
+                    throw new Error('Exchange trading not enabled');
+                }
+
+                const exchange = getPreferredExchange();
+                const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+
+                const ticker = await getTicker(okxSymbol, exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
                 currentPrice = parseFloat(ticker.data[0].last);
                 console.log(`✅ Current price for ${trade.symbol}: $${currentPrice}`);
             }
@@ -32,12 +41,28 @@ class TP_SL_Manager {
             console.log(`   - TP: $${trade.takeProfit} (${((trade.takeProfit / currentPrice - 1) * 100).toFixed(2)}%)`);
             console.log(`   - SL: $${trade.stopLoss} (${((trade.stopLoss / currentPrice - 1) * 100).toFixed(2)}%)`);
 
+            // Get exchange config
+            const exchangeConfig = isExchangeTradingEnabled();
+            if (!exchangeConfig.enabled) {
+                throw new Error('Exchange trading not enabled');
+            }
+
+            const exchange = getPreferredExchange();
+            if (!exchange) {
+                throw new Error('No exchange configured');
+            }
+
+            const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+            if (!okxSymbol) {
+                throw new Error(`Symbol ${trade.symbol} not available on OKX`);
+            }
+
             // Place Take Profit Order (Limit Order)
-            const tpOrder = await this.placeTakeProfitOrder(trade, currentPrice);
+            const tpOrder = await this.placeTakeProfitOrder(trade, currentPrice, exchange, okxSymbol);
             console.log(`✅ Take Profit order placed: ${tpOrder.ordId}`);
 
             // Place Stop Loss Order (Stop Market Order)
-            const slOrder = await this.placeStopLossOrder(trade, currentPrice);
+            const slOrder = await this.placeStopLossOrder(trade, currentPrice, exchange, okxSymbol);
             console.log(`✅ Stop Loss order placed: ${slOrder.ordId}`);
 
             return { tpOrder, slOrder };
@@ -48,114 +73,144 @@ class TP_SL_Manager {
         }
     }
 
-    static async placeTakeProfitOrder(trade, currentPrice) {
+    static async placeTakeProfitOrder(trade, currentPrice, exchange, okxSymbol) {
         const tpBody = {
-            instId: trade.symbol,
+            instId: okxSymbol,
             tdMode: 'isolated',
-            side: trade.action === 'BUY' ? 'sell' : 'buy', // Opposite side for TP
-            ordType: 'limit', // Limit order for TP
-            px: trade.takeProfit.toFixed(6), // TP price
-            sz: trade.quantity.toString(), // Full position size
+            side: trade.action === 'BUY' ? 'sell' : 'buy',
+            ordType: 'limit',
+            px: trade.takeProfit.toFixed(6),
+            sz: trade.quantity.toString(),
             posSide: trade.action === 'BUY' ? 'long' : 'short'
         };
 
         console.log(`📋 TP Order Body:`, JSON.stringify(tpBody));
-        return await okxAPI.placeOrder(tpBody);
+
+        const result = await placeOkxAlgoOrder(
+            tpBody,
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+        );
+
+        if (!result.success) {
+            throw new Error(`TP order failed: ${result.error}`);
+        }
+
+        return result.data;
     }
 
-    static async placeStopLossOrder(trade, currentPrice) {
+    static async placeStopLossOrder(trade, currentPrice, exchange, okxSymbol) {
         const slBody = {
-            instId: trade.symbol,
+            instId: okxSymbol,
             tdMode: 'isolated',
-            side: trade.action === 'BUY' ? 'sell' : 'buy', // Opposite side for SL
-            ordType: 'market', // Market order for SL
-            slTriggerPx: trade.stopLoss.toFixed(6), // SL trigger price
+            side: trade.action === 'BUY' ? 'sell' : 'buy',
+            ordType: 'conditional',
+            slTriggerPx: trade.stopLoss.toFixed(6),
             slOrdPx: '-1', // Market price when triggered
-            sz: trade.quantity.toString(), // Full position size
+            sz: trade.quantity.toString(),
             posSide: trade.action === 'BUY' ? 'long' : 'short'
         };
 
         console.log(`📋 SL Order Body:`, JSON.stringify(slBody));
-        return await okxAPI.placeAlgoOrder(slBody);
+
+        const result = await placeOkxAlgoOrder(
+            slBody,
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+        );
+
+        if (!result.success) {
+            throw new Error(`SL order failed: ${result.error}`);
+        }
+
+        return result.data;
     }
 }
 
 /**
- * TP/SL Recovery
- * Handles retries and fallback strategies for TP/SL placement
+ * TP/SL Recovery - Handles retries and fallbacks for TP/SL placement
  */
 class TP_SL_Recovery {
+    /**
+     * Retry TP/SL placement with fallback strategy
+     * @param {Object} trade - Trade object
+     * @param {number} maxRetries - Maximum retry attempts (default: 3)
+     * @returns {Promise<Object>} Result with tpOrder, slOrder, and fallback flag
+     */
     static async retryTP_SL_Placement(trade, maxRetries = 3) {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 console.log(`🔄 TP/SL placement attempt ${attempt}/${maxRetries} for ${trade.symbol}`);
 
-                const ticker = await okxAPI.getTicker(trade.symbol);
+                // Fetch current price
+                const { getTicker } = require('../services/exchangeService');
+                const exchangeConfig = isExchangeTradingEnabled();
+                const exchange = getPreferredExchange();
+                const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+
+                const ticker = await getTicker(okxSymbol, exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
                 const currentPrice = parseFloat(ticker.data[0].last);
 
                 const result = await TP_SL_Manager.placeTP_SL_Orders(trade, currentPrice);
                 console.log(`✅ TP/SL placement successful on attempt ${attempt}`);
-                return result;
+                return { ...result, fallback: false };
 
             } catch (error) {
                 console.log(`❌ TP/SL attempt ${attempt} failed:`, error.message);
 
                 if (attempt === maxRetries) {
                     console.log(`💡 Last attempt failed. Implementing fallback TP/SL strategy...`);
-                    await this.placeFallbackTP_SL(trade);
-                    return { fallback: true };
+                    const fallbackResult = await this.placeFallbackTP_SL(trade);
+                    return { ...fallbackResult, fallback: true };
                 }
 
-                // Wait before retry
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                // Wait before retry (exponential backoff)
+                await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
             }
         }
     }
 
+    /**
+     * Fallback strategy: Use OKX's built-in TP/SL on position
+     * @param {Object} trade - Trade object
+     * @returns {Promise<Object>} Fallback result
+     */
     static async placeFallbackTP_SL(trade) {
-        // Fallback: Use OKX's built-in TP/SL if algo orders fail
         try {
             console.log(`🔄 Using fallback TP/SL strategy for ${trade.symbol}`);
 
-            const fallbackOrder = {
-                instId: trade.symbol,
-                tdMode: 'isolated',
-                side: trade.action === 'BUY' ? 'sell' : 'buy',
-                ordType: 'conditional',
-                sz: trade.quantity.toString(),
-                posSide: trade.action === 'BUY' ? 'long' : 'short'
-            };
-
-            // Add TP condition
-            if (trade.action === 'BUY') {
-                fallbackOrder.tpTriggerPx = trade.takeProfit.toFixed(6);
-                fallbackOrder.tpOrdPx = trade.takeProfit.toFixed(6);
-            } else {
-                fallbackOrder.tpTriggerPx = trade.takeProfit.toFixed(6);
-                fallbackOrder.tpOrdPx = trade.takeProfit.toFixed(6);
+            const exchangeConfig = isExchangeTradingEnabled();
+            if (!exchangeConfig.enabled) {
+                throw new Error('Exchange trading not enabled');
             }
 
-            // Add SL condition  
-            if (trade.action === 'BUY') {
-                fallbackOrder.slTriggerPx = trade.stopLoss.toFixed(6);
-                fallbackOrder.slOrdPx = '-1'; // Market order
-            } else {
-                fallbackOrder.slTriggerPx = trade.stopLoss.toFixed(6);
-                fallbackOrder.slOrdPx = '-1';
-            }
+            const exchange = getPreferredExchange();
+            const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
 
-            const result = await okxAPI.placeAlgoOrder(fallbackOrder);
-            console.log(`✅ Fallback TP/SL order placed: ${result.ordId}`);
-            return result;
+            // Fetch current price
+            const { getTicker } = require('../services/exchangeService');
+            const ticker = await getTicker(okxSymbol, exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
+            const currentPrice = parseFloat(ticker.data[0].last);
+
+            // Try placing orders individually
+            const tpOrder = await TP_SL_Manager.placeTakeProfitOrder(trade, currentPrice, exchange, okxSymbol);
+            console.log(`✅ Fallback TP order placed: ${tpOrder.ordId}`);
+
+            const slOrder = await TP_SL_Manager.placeStopLossOrder(trade, currentPrice, exchange, okxSymbol);
+            console.log(`✅ Fallback SL order placed: ${slOrder.ordId}`);
+
+            return { tpOrder, slOrder };
 
         } catch (fallbackError) {
             console.error(`❌ Fallback TP/SL also failed:`, fallbackError.message);
+            console.log(`⚠️ Trade ${trade.symbol} will require manual TP/SL monitoring`);
             throw fallbackError;
         }
     }
 }
 
-module.exports = {
-    TP_SL_Manager,
-    TP_SL_Recovery
-};
+module.exports = { TP_SL_Manager, TP_SL_Recovery };
