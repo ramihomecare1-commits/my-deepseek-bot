@@ -13,23 +13,10 @@ class TP_SL_Manager {
      */
     static async placeTP_SL_Orders(trade, currentPrice = null) {
         try {
-            // If currentPrice not provided, fetch it from OKX
+            // If currentPrice not provided, use entry price (TP/SL are based on entry price anyway)
             if (!currentPrice) {
-                console.log(`📊 Fetching current price for ${trade.symbol} for TP/SL placement...`);
-
-                // Get exchange config directly (same way monitoring does) - avoids circular dependency
-                const exchangeService = require('../services/exchangeService');
-                const exchangeConfig = exchangeService.isExchangeTradingEnabled();
-                if (!exchangeConfig.enabled) {
-                    throw new Error('Exchange trading not enabled');
-                }
-
-                const exchange = exchangeService.getPreferredExchange();
-                const okxSymbol = exchangeService.OKX_SYMBOL_MAP[trade.symbol];
-
-                const ticker = await exchangeService.getTicker(okxSymbol, exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
-                currentPrice = parseFloat(ticker.data[0].last);
-                console.log(`✅ Current price for ${trade.symbol}: $${currentPrice}`);
+                console.log(`📊 Using entry price for TP/SL placement: $${trade.entryPrice}`);
+                currentPrice = trade.entryPrice;
             }
 
             // Validate we have all required prices
@@ -147,14 +134,8 @@ class TP_SL_Recovery {
             try {
                 console.log(`🔄 TP/SL placement attempt ${attempt}/${maxRetries} for ${trade.symbol}`);
 
-                // Fetch current price - use exchangeService directly to avoid circular dependency
-                const exchangeService = require('../services/exchangeService');
-                const exchangeConfig = exchangeService.isExchangeTradingEnabled();
-                const exchange = exchangeService.getPreferredExchange();
-                const okxSymbol = exchangeService.OKX_SYMBOL_MAP[trade.symbol];
-
-                const ticker = await exchangeService.getTicker(okxSymbol, exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
-                const currentPrice = parseFloat(ticker.data[0].last);
+                // Use entry price for TP/SL (no need to fetch current price)
+                const currentPrice = trade.entryPrice;
 
                 const result = await TP_SL_Manager.placeTP_SL_Orders(trade, currentPrice);
                 console.log(`✅ TP/SL placement successful on attempt ${attempt}`);
@@ -184,19 +165,16 @@ class TP_SL_Recovery {
         try {
             console.log(`🔄 Using fallback TP/SL strategy for ${trade.symbol}`);
 
-            // Use exchangeService directly to avoid circular dependency
-            const exchangeService = require('../services/exchangeService');
-            const exchangeConfig = exchangeService.isExchangeTradingEnabled();
+            const exchangeConfig = isExchangeTradingEnabled();
             if (!exchangeConfig.enabled) {
                 throw new Error('Exchange trading not enabled');
             }
 
-            const exchange = exchangeService.getPreferredExchange();
-            const okxSymbol = exchangeService.OKX_SYMBOL_MAP[trade.symbol];
+            const exchange = getPreferredExchange();
+            const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
 
-            // Fetch current price
-            const ticker = await exchangeService.getTicker(okxSymbol, exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
-            const currentPrice = parseFloat(ticker.data[0].last);
+            // Use entry price for TP/SL (no need to fetch current price)
+            const currentPrice = trade.entryPrice;
 
             // Try placing orders individually
             const tpOrder = await TP_SL_Manager.placeTakeProfitOrder(trade, currentPrice, exchange, okxSymbol);
