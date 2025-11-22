@@ -507,7 +507,7 @@ class TradeValidator {
     console.log(`   - Entry: ${trade.entryPrice}`);
     console.log(`   - TP: ${trade.takeProfit} (${((trade.takeProfit / trade.entryPrice - 1) * 100).toFixed(1)}%)`);
     console.log(`   - SL: ${trade.stopLoss} (${((trade.stopLoss / trade.entryPrice - 1) * 100).toFixed(1)}%)`);
-    const dcaPrice = trade.dcaPrice || trade.addPosition;
+    let dcaPrice = trade.dcaPrice || trade.addPosition;
     if (dcaPrice) {
       console.log(`   - DCA: ${dcaPrice} (${((dcaPrice / trade.entryPrice - 1) * 100).toFixed(1)}%)`);
     }
