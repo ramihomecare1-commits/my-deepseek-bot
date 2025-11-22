@@ -2887,33 +2887,8 @@ async function setOkxLeverage(instId, leverage, mgnMode, posSide, apiKey, apiSec
       return { success: false, error: response.data?.msg };
     }
   } catch (error) {
-    console.log(`⚠️ [OKX API] Leverage setting non-critical error: ${error.message}`);
-    console.log(`📝 Continuing with OKX account default leverage...`);
-    return { success: false, error: error.message, warning: 'Using account default leverage' };
-  }
-}
-try {
-  const requestPath = '/api/v5/account/set-leverage';
-
-  // Get account configuration to check position mode
-  let accountConfig = null;
-  let posMode = 'net_mode'; // Default to net_mode
-  try {
-    accountConfig = await getOkxAccountConfig(apiKey, apiSecret, passphrase, baseUrl);
-    posMode = accountConfig?.posMode || 'net_mode';
-    console.log(`🔍 [OKX API] Account position mode: ${posMode}`);
-  } catch (configError) {
-    console.log(`⚠️ [OKX API] Could not get account config, assuming net_mode: ${configError.message}`);
-  }
-
-  // Build request body according to OKX API documentation
-  // For SWAP instruments:
-  // - Net Mode (net_mode): NO posSide parameter
-  // - Hedge Mode (long_short_mode): REQUIRES posSide parameter for isolated margin
-  const body = {
-    instId: instId,
     lever: leverage.toString(),
-    mgnMode: mgnMode
+      mgnMode: mgnMode
   };
 
   // Only include posSide for Hedge Mode (long_short_mode) with isolated margin
