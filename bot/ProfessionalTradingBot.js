@@ -6902,152 +6902,212 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     }
   }
 
+}
+    }
+  }
+
+/**
+ * Validate AI adjustment against fixed risk rules
+ * Enforces that AI cannot increase risk significantly beyond fixed rules
+ * @param {Object} trade - Current trade object
+ * @param {Object} rec - AI recommendation
+ * @returns {Object} Validated adjustment values { newTakeProfit, newStopLoss }
+ */
+validateAIAdjustment(trade, rec) {
+  let newTakeProfit = rec.newTakeProfit;
+  let newStopLoss = rec.newStopLoss;
+  const symbol = trade.symbol;
+  const entryPrice = trade.entryPrice;
+
+  // 1. Validate Stop Loss (CRITICAL)
+  if (newStopLoss && typeof newStopLoss === 'number' && newStopLoss > 0) {
+    // Calculate fixed rule SL (20% from entry)
+    let fixedSL;
+    if (trade.action === 'BUY') {
+      fixedSL = entryPrice * 0.8; // 20% below entry
+    } else {
+      fixedSL = entryPrice * 1.2; // 20% above entry
+    }
+
+    // Calculate risk of AI SL vs Fixed SL
+    // For BUY: Lower SL = More Risk. If AI SL < Fixed SL (by > 5%), reject.
+    // For SELL: Higher SL = More Risk. If AI SL > Fixed SL (by > 5%), reject.
+
+    const tolerance = 0.05; // 5% tolerance
+
+    if (trade.action === 'BUY') {
+      const riskThreshold = fixedSL * (1 - tolerance); // Allow slightly looser than fixed
+
+      if (newStopLoss < riskThreshold) {
+        console.warn(`🛑 ${symbol}: AI SL ($${newStopLoss}) is too loose compared to fixed rule ($${fixedSL}). Rejecting.`);
+        addLogEntry(`🛑 ${symbol}: AI SL rejected - exceeds max risk (Fixed: $${fixedSL.toFixed(2)})`, 'warning');
+        newStopLoss = null; // Reject
+      } else if (newStopLoss > trade.stopLoss) {
+        console.log(`✅ ${symbol}: AI tightening SL from $${trade.stopLoss} to $${newStopLoss} (reducing risk)`);
+      }
+    } else {
+      // SELL
+      const riskThreshold = fixedSL * (1 + tolerance); // Allow slightly looser than fixed
+
+      if (newStopLoss > riskThreshold) {
+        console.warn(`🛑 ${symbol}: AI SL ($${newStopLoss}) is too loose compared to fixed rule ($${fixedSL}). Rejecting.`);
+        addLogEntry(`🛑 ${symbol}: AI SL rejected - exceeds max risk (Fixed: $${fixedSL.toFixed(2)})`, 'warning');
+        newStopLoss = null; // Reject
+      } else if (newStopLoss < trade.stopLoss) {
+        console.log(`✅ ${symbol}: AI tightening SL from $${trade.stopLoss} to $${newStopLoss} (reducing risk)`);
+      }
+    }
+  }
+
+  return { newTakeProfit, newStopLoss };
+}
+
   async reevaluateOpenTradesWithAI() {
-    const now = Date.now();
-    const lastEval = this.lastOpenTradesReevalAt || 0;
-    const elapsed = now - lastEval;
+  const now = Date.now();
+  const lastEval = this.lastOpenTradesReevalAt || 0;
+  const elapsed = now - lastEval;
 
-    // Global cooldown to avoid calling Premium AI too often (saves cost)
-    if (elapsed < this.openTradesReevalCooldownMs) {
-      console.log(
-        `⏱️ Skipping AI re-evaluation of open trades (cooldown ${this.openTradesReevalCooldownMs / 60000
-        }min, elapsed ${(elapsed / 1000).toFixed(1)}s)`
-      );
-      addLogEntry(
-        '⏱️ Skipped AI re-evaluation of open trades due to cooldown',
-        'info'
-      );
-      return [];
-    }
+  // Global cooldown to avoid calling Premium AI too often (saves cost)
+  if (elapsed < this.openTradesReevalCooldownMs) {
+    console.log(
+      `⏱️ Skipping AI re-evaluation of open trades (cooldown ${this.openTradesReevalCooldownMs / 60000
+      }min, elapsed ${(elapsed / 1000).toFixed(1)}s)`
+    );
+    addLogEntry(
+      '⏱️ Skipped AI re-evaluation of open trades due to cooldown',
+      'info'
+    );
+    return [];
+  }
 
-    // Update last evaluation timestamp BEFORE making AI calls
-    this.lastOpenTradesReevalAt = now;
+  // Update last evaluation timestamp BEFORE making AI calls
+  this.lastOpenTradesReevalAt = now;
 
-    const openTrades = this.activeTrades.filter(t => t.status === 'OPEN' || t.status === 'DCA_HIT');
+  const openTrades = this.activeTrades.filter(t => t.status === 'OPEN' || t.status === 'DCA_HIT');
 
-    console.log(`\n🤖 Starting AI re-evaluation for ${openTrades.length} open trades...`);
-    addLogEntry(`🤖 Re-evaluating ${openTrades.length} open trades with AI...`, 'info');
+  console.log(`\n🤖 Starting AI re-evaluation for ${openTrades.length} open trades...`);
+  addLogEntry(`🤖 Re-evaluating ${openTrades.length} open trades with AI...`, 'info');
 
-    if (openTrades.length === 0) {
-      console.log('⚠️ No open trades to evaluate');
-      addLogEntry('⚠️ No open trades to evaluate', 'warning');
-      return [];
-    }
+  if (openTrades.length === 0) {
+    console.log('⚠️ No open trades to evaluate');
+    addLogEntry('⚠️ No open trades to evaluate', 'warning');
+    return [];
+  }
 
-    // Check for API key (force using main AI key to avoid 401 auth issues)
-    const apiKey = config.AI_API_KEY;
-    if (!apiKey) {
-      console.log('⚠️ AI API key not configured - cannot re-evaluate');
-      addLogEntry('⚠️ AI API key not configured', 'warning');
-      return [];
-    }
+  // Check for API key (force using main AI key to avoid 401 auth issues)
+  const apiKey = config.AI_API_KEY;
+  if (!apiKey) {
+    console.log('⚠️ AI API key not configured - cannot re-evaluate');
+    addLogEntry('⚠️ AI API key not configured', 'warning');
+    return [];
+  }
 
-    console.log(`✅ Using API key for re-evaluation: ${apiKey.substring(0, 15)}...`);
+  console.log(`✅ Using API key for re-evaluation: ${apiKey.substring(0, 15)}...`);
 
-    try {
-      console.log(`📊 Preparing trade data for ${openTrades.length} trades...`);
-      // Prepare trade data for AI analysis
-      const tradesForAI = await Promise.all(openTrades.map(async (trade) => {
-        const coinData = trade.coinData || {
-          symbol: trade.symbol,
-          name: trade.name,
-          id: trade.coinId,
-          coinmarketcap_id: trade.coinmarketcap_id,
-          coinpaprika_id: trade.coinpaprika_id
-        };
+  try {
+    console.log(`📊 Preparing trade data for ${openTrades.length} trades...`);
+    // Prepare trade data for AI analysis
+    const tradesForAI = await Promise.all(openTrades.map(async (trade) => {
+      const coinData = trade.coinData || {
+        symbol: trade.symbol,
+        name: trade.name,
+        id: trade.coinId,
+        coinmarketcap_id: trade.coinmarketcap_id,
+        coinpaprika_id: trade.coinpaprika_id
+      };
 
-        // Fetch current price and data
-        const priceResult = await fetchEnhancedPriceData(coinData, this.priceCache, this.stats, config);
-        const currentPrice = priceResult?.data?.price || trade.currentPrice;
+      // Fetch current price and data
+      const priceResult = await fetchEnhancedPriceData(coinData, this.priceCache, this.stats, config);
+      const currentPrice = priceResult?.data?.price || trade.currentPrice;
 
-        // Calculate fresh P&L based on current price
-        let pnl = 0;
-        let pnlPercent = 0;
-        if (trade.action === 'BUY') {
-          pnl = currentPrice - trade.entryPrice;
-          pnlPercent = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
-        } else if (trade.action === 'SELL') {
-          pnl = trade.entryPrice - currentPrice;
-          pnlPercent = ((trade.entryPrice - currentPrice) / trade.entryPrice) * 100;
-        }
-
-        // Ensure pnlPercent is a number before using toFixed
-        const safePnlPercent = typeof pnlPercent === 'number' ? pnlPercent : 0;
-        console.log(`💰 ${trade.symbol} P&L: Entry $${trade.entryPrice.toFixed(2)} → Current $${currentPrice.toFixed(2)} = ${safePnlPercent >= 0 ? '+' : ''}${safePnlPercent.toFixed(2)}%`);
-
-        // Fetch historical data for analysis (pass currentPrice to avoid duplicate price fetch)
-        const historicalData = await fetchHistoricalData(coinData.id || trade.symbol, coinData, this.stats, config, currentPrice);
-
-        return {
-          symbol: trade.symbol,
-          name: trade.name,
-          currentPrice: currentPrice,
-          entryPrice: trade.entryPrice,
-          takeProfit: trade.takeProfit,
-          stopLoss: trade.stopLoss,
-          action: trade.action,
-          pnl: pnl,
-          pnlPercent: pnlPercent,
-          status: trade.status,
-          historicalData: historicalData
-        };
-      }));
-
-      // Retrieve historical data for each trade
-      console.log('📚 Retrieving historical data for trades...');
-      const tradesWithHistory = await Promise.all(tradesForAI.map(async (trade) => {
-        try {
-          const historical = await retrieveRelatedData({
-            symbol: trade.symbol,
-            days: 30,
-            limit: 3
-          });
-          return { ...trade, historicalData: historical };
-        } catch (error) {
-          console.error(`⚠️ Failed to retrieve historical data for ${trade.symbol}:`, error.message);
-          return { ...trade, historicalData: { evaluations: [], news: [] } };
-        }
-      }));
-
-      // Fetch news for each trade (with timeout protection)
-      console.log('📰 Fetching news for trades...');
-      const tradesWithNews = await Promise.all(tradesWithHistory.map(async (trade) => {
-        try {
-          // Add timeout wrapper to prevent hanging
-          const newsPromise = fetchCryptoNews(trade.symbol, 3);
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('News fetch timeout')), 5000)
-          );
-          const news = await Promise.race([newsPromise, timeoutPromise]);
-          if (news && news.articles && news.articles.length > 0) {
-            console.log(`✅ Fetched ${news.articles.length} news articles for ${trade.symbol}`);
-          }
-          return { ...trade, news };
-        } catch (error) {
-          // Silently fail - news is optional
-          return { ...trade, news: { articles: [], total: 0 } };
-        }
-      }));
-      console.log('✅ Trade data prepared with news');
-
-      // Create AI prompt for trade re-evaluation
-      // Limit context size to prevent token limit issues
-      // For many trades, we'll process in smaller batches
-      const MAX_TRADES_PER_BATCH = 5; // Process max 5 trades at a time to avoid truncation
-      const tradeBatches = [];
-      for (let i = 0; i < tradesWithNews.length; i += MAX_TRADES_PER_BATCH) {
-        tradeBatches.push(tradesWithNews.slice(i, i + MAX_TRADES_PER_BATCH));
+      // Calculate fresh P&L based on current price
+      let pnl = 0;
+      let pnlPercent = 0;
+      if (trade.action === 'BUY') {
+        pnl = currentPrice - trade.entryPrice;
+        pnlPercent = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
+      } else if (trade.action === 'SELL') {
+        pnl = trade.entryPrice - currentPrice;
+        pnlPercent = ((trade.entryPrice - currentPrice) / trade.entryPrice) * 100;
       }
 
-      let allRecommendations = [];
+      // Ensure pnlPercent is a number before using toFixed
+      const safePnlPercent = typeof pnlPercent === 'number' ? pnlPercent : 0;
+      console.log(`💰 ${trade.symbol} P&L: Entry $${trade.entryPrice.toFixed(2)} → Current $${currentPrice.toFixed(2)} = ${safePnlPercent >= 0 ? '+' : ''}${safePnlPercent.toFixed(2)}%`);
 
-      // Process each batch separately
-      for (let batchIdx = 0; batchIdx < tradeBatches.length; batchIdx++) {
-        const batch = tradeBatches[batchIdx];
-        console.log(`📦 Processing trade batch ${batchIdx + 1}/${tradeBatches.length} (${batch.length} trades)...`);
+      // Fetch historical data for analysis (pass currentPrice to avoid duplicate price fetch)
+      const historicalData = await fetchHistoricalData(coinData.id || trade.symbol, coinData, this.stats, config, currentPrice);
 
-        try {
-          const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${batch.length} open trades and provide your recommendation for each.
+      return {
+        symbol: trade.symbol,
+        name: trade.name,
+        currentPrice: currentPrice,
+        entryPrice: trade.entryPrice,
+        takeProfit: trade.takeProfit,
+        stopLoss: trade.stopLoss,
+        action: trade.action,
+        pnl: pnl,
+        pnlPercent: pnlPercent,
+        status: trade.status,
+        historicalData: historicalData
+      };
+    }));
+
+    // Retrieve historical data for each trade
+    console.log('📚 Retrieving historical data for trades...');
+    const tradesWithHistory = await Promise.all(tradesForAI.map(async (trade) => {
+      try {
+        const historical = await retrieveRelatedData({
+          symbol: trade.symbol,
+          days: 30,
+          limit: 3
+        });
+        return { ...trade, historicalData: historical };
+      } catch (error) {
+        console.error(`⚠️ Failed to retrieve historical data for ${trade.symbol}:`, error.message);
+        return { ...trade, historicalData: { evaluations: [], news: [] } };
+      }
+    }));
+
+    // Fetch news for each trade (with timeout protection)
+    console.log('📰 Fetching news for trades...');
+    const tradesWithNews = await Promise.all(tradesWithHistory.map(async (trade) => {
+      try {
+        // Add timeout wrapper to prevent hanging
+        const newsPromise = fetchCryptoNews(trade.symbol, 3);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('News fetch timeout')), 5000)
+        );
+        const news = await Promise.race([newsPromise, timeoutPromise]);
+        if (news && news.articles && news.articles.length > 0) {
+          console.log(`✅ Fetched ${news.articles.length} news articles for ${trade.symbol}`);
+        }
+        return { ...trade, news };
+      } catch (error) {
+        // Silently fail - news is optional
+        return { ...trade, news: { articles: [], total: 0 } };
+      }
+    }));
+    console.log('✅ Trade data prepared with news');
+
+    // Create AI prompt for trade re-evaluation
+    // Limit context size to prevent token limit issues
+    // For many trades, we'll process in smaller batches
+    const MAX_TRADES_PER_BATCH = 5; // Process max 5 trades at a time to avoid truncation
+    const tradeBatches = [];
+    for (let i = 0; i < tradesWithNews.length; i += MAX_TRADES_PER_BATCH) {
+      tradeBatches.push(tradesWithNews.slice(i, i + MAX_TRADES_PER_BATCH));
+    }
+
+    let allRecommendations = [];
+
+    // Process each batch separately
+    for (let batchIdx = 0; batchIdx < tradeBatches.length; batchIdx++) {
+      const batch = tradeBatches[batchIdx];
+      console.log(`📦 Processing trade batch ${batchIdx + 1}/${tradeBatches.length} (${batch.length} trades)...`);
+
+      try {
+        const prompt = `You are a professional crypto trading analyst. Re-evaluate these ${batch.length} open trades and provide your recommendation for each.
 
 IMPORTANT CONTEXT: This is derivatives trading (perpetual swaps):
 - BUY trades = Long positions (profit when price goes UP)
@@ -7060,55 +7120,55 @@ IMPORTANT: Consider technical analysis, recent news, AND historical context when
 - If previous evaluations were wrong, learn from those mistakes
 
 ${batch.map((t, i) => {
-            let newsText = '';
-            if (t.news && t.news.articles && t.news.articles.length > 0) {
-              const newsItems = t.news.articles.slice(0, 3).map(n => `    - ${n.title} (${n.source})`).join('\n');
-              newsText = `\n- Recent News:\n${newsItems}`;
-            } else {
-              newsText = '\n- Recent News: No significant news found';
+          let newsText = '';
+          if (t.news && t.news.articles && t.news.articles.length > 0) {
+            const newsItems = t.news.articles.slice(0, 3).map(n => `    - ${n.title} (${n.source})`).join('\n');
+            newsText = `\n- Recent News:\n${newsItems}`;
+          } else {
+            newsText = '\n- Recent News: No significant news found';
+          }
+
+          // Include historical context
+          let historicalText = '';
+          const historical = t.historicalData || { evaluations: [], news: [] };
+          if (historical.evaluations && historical.evaluations.length > 0) {
+            const recentEvals = historical.evaluations
+              .slice(0, 2)
+              .filter(evaluation => evaluation && evaluation.data) // Filter out entries with null data
+              .map(evaluation => {
+                const date = new Date(evaluation.timestamp).toLocaleDateString();
+                const recommendation = evaluation.data.recommendation || evaluation.data.action || 'HOLD';
+                const confidence = ((evaluation.data.confidence || 0) * 100).toFixed(0);
+                return `    - [${date}] ${recommendation} (${confidence}%)`;
+              })
+              .join('\n');
+            if (recentEvals) {
+              historicalText += `\n- Previous Evaluations:\n${recentEvals}`;
             }
-
-            // Include historical context
-            let historicalText = '';
-            const historical = t.historicalData || { evaluations: [], news: [] };
-            if (historical.evaluations && historical.evaluations.length > 0) {
-              const recentEvals = historical.evaluations
-                .slice(0, 2)
-                .filter(evaluation => evaluation && evaluation.data) // Filter out entries with null data
-                .map(evaluation => {
-                  const date = new Date(evaluation.timestamp).toLocaleDateString();
-                  const recommendation = evaluation.data.recommendation || evaluation.data.action || 'HOLD';
-                  const confidence = ((evaluation.data.confidence || 0) * 100).toFixed(0);
-                  return `    - [${date}] ${recommendation} (${confidence}%)`;
-                })
-                .join('\n');
-              if (recentEvals) {
-                historicalText += `\n- Previous Evaluations:\n${recentEvals}`;
-              }
+          }
+          if (historical.news && historical.news.length > 0) {
+            const historicalNews = historical.news
+              .slice(0, 2)
+              .filter(n => n && n.title && n.publishedAt) // Filter out entries with null data
+              .map(n => {
+                const date = new Date(n.publishedAt).toLocaleDateString();
+                return `    - [${date}] ${n.title}`;
+              })
+              .join('\n');
+            if (historicalNews) {
+              historicalText += `\n- Historical News:\n${historicalNews}`;
             }
-            if (historical.news && historical.news.length > 0) {
-              const historicalNews = historical.news
-                .slice(0, 2)
-                .filter(n => n && n.title && n.publishedAt) // Filter out entries with null data
-                .map(n => {
-                  const date = new Date(n.publishedAt).toLocaleDateString();
-                  return `    - [${date}] ${n.title}`;
-                })
-                .join('\n');
-              if (historicalNews) {
-                historicalText += `\n- Historical News:\n${historicalNews}`;
-              }
-            }
+          }
 
-            // Safely handle pnlPercent - might be undefined or not a number
-            const pnlPercent = typeof t.pnlPercent === 'number' ? t.pnlPercent : 0;
-            const pnlText = `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%`;
+          // Safely handle pnlPercent - might be undefined or not a number
+          const pnlPercent = typeof t.pnlPercent === 'number' ? t.pnlPercent : 0;
+          const pnlText = `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%`;
 
-            // Calculate TP/SL as percentages for context (but make it clear they're dollar amounts)
-            const tpPercent = ((t.takeProfit - t.entryPrice) / t.entryPrice) * 100;
-            const slPercent = ((t.entryPrice - t.stopLoss) / t.entryPrice) * 100;
+          // Calculate TP/SL as percentages for context (but make it clear they're dollar amounts)
+          const tpPercent = ((t.takeProfit - t.entryPrice) / t.entryPrice) * 100;
+          const slPercent = ((t.entryPrice - t.stopLoss) / t.entryPrice) * 100;
 
-            return `
+          return `
 Trade ${i + 1}: ${t.symbol} (${t.name})
 - Action: ${t.action}
 - Entry Price: $${t.entryPrice.toFixed(2)}
@@ -7121,7 +7181,7 @@ Trade ${i + 1}: ${t.symbol} (${t.name})
 - Current P&L: ${pnlText}
 - Status: ${t.status}${newsText}${historicalText}
 `;
-          }).join('\n')}
+        }).join('\n')}
 
 For each trade, provide:
 1. Recommendation: HOLD, CLOSE, or ADJUST
@@ -7171,784 +7231,685 @@ Return JSON array format:
   }
 ]`;
 
-          // Call AI API directly
-          console.log('🤖 Calling AI API for trade re-evaluation...');
-          console.log(`📝 Prompt length: ${prompt.length} characters`);
-          const axios = require('axios');
-          const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-            model: config.AI_MODEL,
-            messages: [{ role: 'user', content: prompt }],
-            max_tokens: 4000, // Increased significantly for multiple trades (was 2000)
-            temperature: 0.1,
-          }, {
-            headers: {
-              Authorization: `Bearer ${apiKey}`, // Use the fallback apiKey variable
-              'Content-Type': 'application/json',
-              'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
-              'X-Title': 'Technical Analysis Bot',
-            },
-            timeout: 30000,
-          });
+        // Call AI API directly
+        console.log('🤖 Calling AI API for trade re-evaluation...');
+        console.log(`📝 Prompt length: ${prompt.length} characters`);
+        const axios = require('axios');
+        const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+          model: config.AI_MODEL,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 4000, // Increased significantly for multiple trades (was 2000)
+          temperature: 0.1,
+        }, {
+          headers: {
+            Authorization: `Bearer ${apiKey}`, // Use the fallback apiKey variable
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://my-deepseek-bot-1.onrender.com',
+            'X-Title': 'Technical Analysis Bot',
+          },
+          timeout: 30000,
+        });
 
-          // Parse AI response
-          console.log('✅ AI API responded successfully');
+        // Parse AI response
+        console.log('✅ AI API responded successfully');
 
-          // Check if response was truncated
-          const finishReason = response.data.choices[0].finish_reason;
-          if (finishReason === 'length') {
-            console.warn('⚠️ AI response was truncated (hit token limit)');
-            addLogEntry('⚠️ AI response truncated - may be incomplete', 'warning');
-          }
-
-          let aiContent = response.data.choices[0].message.content;
-
-          // Check if response is empty or too short
-          if (!aiContent || aiContent.trim().length === 0) {
-            console.error('❌ AI response is empty');
-            throw new Error('AI response is empty - no content received');
-          }
-
-          console.log(`📝 AI response length: ${aiContent.length} characters`);
-          console.log(`📝 AI response preview: ${aiContent.substring(0, 200)}`);
-          console.log(`📝 Finish reason: ${finishReason}`);
-
-          // Clean up markdown code blocks if present
-          aiContent = aiContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-
-          // Try to find JSON array
-          let jsonMatch = aiContent.match(/\[[\s\S]*\]/);
-
-          // If no match, try to find JSON object and wrap it in array
-          if (!jsonMatch) {
-            const objectMatch = aiContent.match(/\{[\s\S]*\}/);
-            if (objectMatch) {
-              console.log('⚠️ Found JSON object instead of array, wrapping in array...');
-              jsonMatch = [`[${objectMatch[0]}]`];
-            }
-          }
-
-          if (jsonMatch) {
-            console.log('✅ Found JSON in AI response');
-            try {
-              const recommendations = JSON.parse(jsonMatch[0]);
-              console.log(`✅ Parsed ${recommendations.length} recommendations`);
-
-              if (!Array.isArray(recommendations) || recommendations.length === 0) {
-                throw new Error('Invalid recommendations format - expected non-empty array');
-              }
-
-              // Filter out null/undefined entries and validate structure
-              const validRecommendations = recommendations.filter(rec => {
-                if (!rec || typeof rec !== 'object') {
-                  console.warn(`⚠️ Skipping invalid recommendation entry:`, rec);
-                  return false;
-                }
-                if (!rec.symbol) {
-                  console.warn(`⚠️ Skipping recommendation without symbol:`, rec);
-                  return false;
-                }
-                return true;
-              });
-
-              // Add to all recommendations
-              allRecommendations.push(...validRecommendations);
-
-            } catch (parseError) {
-              console.error('❌ Failed to parse AI response:', parseError.message);
-              addLogEntry(`Failed to parse AI response for batch ${batchIdx + 1}: ${parseError.message}`, 'error');
-            }
-          } else {
-            console.warn('⚠️ No JSON found in AI response');
-            addLogEntry(`No JSON found in AI response for batch ${batchIdx + 1}`, 'warning');
-          }
-        } catch (batchError) {
-          console.error(`❌ Error processing batch ${batchIdx + 1}:`, batchError.message);
-          addLogEntry(`Error processing batch ${batchIdx + 1}: ${batchError.message}`, 'error');
+        // Check if response was truncated
+        const finishReason = response.data.choices[0].finish_reason;
+        if (finishReason === 'length') {
+          console.warn('⚠️ AI response was truncated (hit token limit)');
+          addLogEntry('⚠️ AI response truncated - may be incomplete', 'warning');
         }
 
-        // Small delay between batches
-        if (batchIdx < tradeBatches.length - 1) {
-          await sleep(1000); // 1 second between batches
-        }
-      }
+        let aiContent = response.data.choices[0].message.content;
 
-      // Process all recommendations together
-      if (allRecommendations.length === 0) {
-        console.warn('⚠️ No recommendations received from AI');
-        addLogEntry('⚠️ No recommendations received from AI', 'warning');
-        return [];
-      }
-
-      // Filter out any null/undefined entries that might have slipped through
-      allRecommendations = allRecommendations.filter(rec => rec != null && typeof rec === 'object' && rec.symbol);
-
-      console.log(`✅ Total recommendations received: ${allRecommendations.length}`);
-
-      if (allRecommendations.length === 0) {
-        console.warn('⚠️ No valid recommendations after filtering');
-        addLogEntry('⚠️ No valid recommendations received from AI', 'warning');
-        return [];
-      }
-
-      // Build Telegram message
-      let telegramMessage = `🤖 *AI Trade Re-evaluation*\n\n`;
-      telegramMessage += `📊 *${openTrades.length} Open Trade${openTrades.length > 1 ? 's' : ''} Analyzed*\n\n`;
-
-      for (const rec of allRecommendations) {
-        // Safety check - skip if rec is null or invalid
-        if (!rec || typeof rec !== 'object' || !rec.symbol) {
-          console.warn(`⚠️ Skipping invalid recommendation entry:`, rec);
-          continue;
+        // Check if response is empty or too short
+        if (!aiContent || aiContent.trim().length === 0) {
+          console.error('❌ AI response is empty');
+          throw new Error('AI response is empty - no content received');
         }
 
-        const symbol = rec.symbol;
-        const recommendation = rec.recommendation || 'HOLD';
-        const confidence = (rec.confidence || 0) * 100;
-        const reason = rec.reason || 'No reason provided';
+        console.log(`📝 AI response length: ${aiContent.length} characters`);
+        console.log(`📝 AI response preview: ${aiContent.substring(0, 200)}`);
+        console.log(`📝 Finish reason: ${finishReason}`);
 
-        // Find the corresponding trade
-        const trade = openTrades.find(t => t.symbol === symbol);
-        const tradeData = tradesWithNews.find(t => t.symbol === symbol) ||
-          tradeBatches.flat().find(t => t.symbol === symbol);
-        const pnlPercent = trade && typeof trade.pnlPercent === 'number' ? trade.pnlPercent : 0;
-        const pnl = trade ? `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%` : 'N/A';
+        // Clean up markdown code blocks if present
+        aiContent = aiContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
 
-        // Store evaluation in database
-        if (trade) {
-          // Store AI evaluation with limited context to prevent MongoDB size issues
-          storeAIEvaluation({
-            symbol: symbol,
-            tradeId: trade.symbol, // Use symbol as trade identifier
-            type: 'trade_evaluation',
-            data: {
-              recommendation: recommendation,
-              confidence: rec.confidence || 0,
-              reason: reason,
-              pnlPercent: pnlPercent
-            },
-            model: config.AI_MODEL,
-            context: {
-              news: tradeData?.news?.articles?.slice(0, 5) || [], // Only last 5 articles
-              // Don't include historicalData - it's too large
-            }
-          }).catch(err => {
-            console.error(`⚠️ Failed to store trade evaluation for ${symbol}:`, err.message);
-          });
+        // Try to find JSON array
+        let jsonMatch = aiContent.match(/\[[\s\S]*\]/);
+
+        // If no match, try to find JSON object and wrap it in array
+        if (!jsonMatch) {
+          const objectMatch = aiContent.match(/\{[\s\S]*\}/);
+          if (objectMatch) {
+            console.log('⚠️ Found JSON object instead of array, wrapping in array...');
+            jsonMatch = [`[${objectMatch[0]}]`];
+          }
         }
 
-        // Add to log
-        addLogEntry(
-          `📊 ${symbol} AI Re-evaluation: ${recommendation} (${confidence.toFixed(0)}%) - ${reason}`,
-          recommendation === 'CLOSE' ? 'warning' : 'info'
-        );
-
-        // Execute AI recommendations
-        if (trade && recommendation !== 'HOLD') {
+        if (jsonMatch) {
+          console.log('✅ Found JSON in AI response');
           try {
-            if (recommendation === 'ADJUST') {
-              // Adjust take profit, stop loss, and/or DCA price
-              let adjusted = false;
-              if (rec.newTakeProfit && typeof rec.newTakeProfit === 'number' && rec.newTakeProfit > 0) {
-                const currentPrice = trade.currentPrice || trade.entryPrice;
-                const avgEntry = trade.averageEntryPrice || trade.entryPrice;
-                let newTP = rec.newTakeProfit;
+            const recommendations = JSON.parse(jsonMatch[0]);
+            console.log(`✅ Parsed ${recommendations.length} recommendations`);
 
-                // Validate TP value based on trade action
-                if (trade.action === 'BUY') {
-                  // For BUY: TP should be > entry price (profit target above entry)
-                  const minTP = avgEntry * 1.01; // At least 1% above entry
-                  const maxTP = avgEntry * 20; // Max 20x entry (suspiciously high)
+            if (!Array.isArray(recommendations) || recommendations.length === 0) {
+              throw new Error('Invalid recommendations format - expected non-empty array');
+            }
 
-                  if (newTP < minTP) {
-                    // Too low - likely a percentage or wrong value
-                    console.warn(`⚠️ ${symbol}: AI provided suspiciously low TP value ($${newTP.toFixed(2)}) for BUY trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
-                    addLogEntry(`⚠️ ${symbol}: AI TP value $${newTP.toFixed(2)} is too low for BUY trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
-                    // Don't apply the adjustment - keep existing TP
-                  } else if (newTP > maxTP) {
-                    // Too high - likely a percentage mistake
-                    console.warn(`⚠️ ${symbol}: AI provided suspiciously high TP value (${newTP}). Treating as percentage and converting...`);
-                    newTP = avgEntry * (1 + rec.newTakeProfit / 100);
-                    addLogEntry(`⚠️ ${symbol}: AI TP value ${rec.newTakeProfit} was too high - converted from percentage to $${newTP.toFixed(2)}`, 'warning');
-
-                    const oldTP = trade.takeProfit;
-                    trade.takeProfit = newTP;
-                    adjusted = true;
-                    addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
-                    telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
-                  } else {
-                    // Valid TP value
-                    const oldTP = trade.takeProfit;
-                    trade.takeProfit = newTP;
-                    adjusted = true;
-                    addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
-                    telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
-                  }
-                } else if (trade.action === 'SELL') {
-                  // For SELL (short): TP should be < entry price (profit when price goes down)
-                  const maxTP = avgEntry * 0.99; // At most 1% below entry
-                  const minTP = avgEntry * 0.05; // Min 5% of entry (suspiciously low)
-
-                  if (newTP > maxTP) {
-                    // Too high for short - likely wrong
-                    console.warn(`⚠️ ${symbol}: AI provided suspiciously high TP value ($${newTP.toFixed(2)}) for SELL trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
-                    addLogEntry(`⚠️ ${symbol}: AI TP value $${newTP.toFixed(2)} is too high for SELL trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
-                    // Don't apply the adjustment
-                  } else if (newTP < minTP) {
-                    // Too low - likely a percentage mistake
-                    console.warn(`⚠️ ${symbol}: AI provided suspiciously low TP value (${newTP}). Treating as percentage and converting...`);
-                    newTP = avgEntry * (1 - rec.newTakeProfit / 100);
-                    addLogEntry(`⚠️ ${symbol}: AI TP value ${rec.newTakeProfit} was too low - converted from percentage to $${newTP.toFixed(2)}`, 'warning');
-
-                    const oldTP = trade.takeProfit;
-                    trade.takeProfit = newTP;
-                    adjusted = true;
-                    addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
-                    telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
-                  } else {
-                    // Valid TP value
-                    const oldTP = trade.takeProfit;
-                    trade.takeProfit = newTP;
-                    adjusted = true;
-                    addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
-                    telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
-                  }
-                }
+            // Filter out null/undefined entries and validate structure
+            const validRecommendations = recommendations.filter(rec => {
+              if (!rec || typeof rec !== 'object') {
+                console.warn(`⚠️ Skipping invalid recommendation entry:`, rec);
+                return false;
               }
-              if (rec.newStopLoss && typeof rec.newStopLoss === 'number' && rec.newStopLoss > 0) {
-                const currentPrice = trade.currentPrice || trade.entryPrice;
-                const avgEntry = trade.averageEntryPrice || trade.entryPrice;
-                let newSL = rec.newStopLoss;
-
-                // Validate SL value based on trade action
-                if (trade.action === 'BUY') {
-                  // For BUY: SL should be < entry price (loss limit below entry)
-                  const maxSL = avgEntry * 0.99; // At most 1% below entry
-                  const minSL = avgEntry * 0.10; // Min 10% of entry (suspiciously low - would be 90% loss)
-
-                  if (newSL > maxSL) {
-                    // Too high for BUY - likely wrong
-                    console.warn(`⚠️ ${symbol}: AI provided suspiciously high SL value ($${newSL.toFixed(2)}) for BUY trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
-                    addLogEntry(`⚠️ ${symbol}: AI SL value $${newSL.toFixed(2)} is too high for BUY trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
-                    // Don't apply the adjustment - keep existing SL
-                  } else if (newSL < minSL) {
-                    // Too low - likely a percentage mistake
-                    console.warn(`⚠️ ${symbol}: AI provided suspiciously low SL value (${newSL}). Treating as percentage and converting...`);
-                    newSL = avgEntry * (1 - rec.newStopLoss / 100);
-                    addLogEntry(`⚠️ ${symbol}: AI SL value ${rec.newStopLoss} was too low - converted from percentage to $${newSL.toFixed(2)}`, 'warning');
-
-                    const oldSL = trade.stopLoss;
-                    trade.stopLoss = newSL;
-                    adjusted = true;
-                    addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
-                    telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
-                  } else {
-                    // Valid SL value
-                    const oldSL = trade.stopLoss;
-                    trade.stopLoss = newSL;
-                    adjusted = true;
-                    addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
-                    telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
-
-                    // FIX: Ensure DCA is positioned correctly relative to new SL
-                    // For BUY: DCA must be below SL (so DCA triggers before SL closes position)
-                    const currentDca = trade.addPosition || trade.dcaPrice;
-                    if (currentDca && currentDca > 0) {
-                      if (currentDca >= newSL) {
-                        // DCA is at or above SL - adjust DCA to be below SL
-                        const adjustedDca = newSL * 0.99; // 1% below SL
-                        console.log(`   🔄 ${symbol}: Adjusting DCA from $${currentDca.toFixed(2)} to $${adjustedDca.toFixed(2)} (must be below SL: $${newSL.toFixed(2)})`);
-                        trade.addPosition = adjustedDca;
-                        trade.dcaPrice = adjustedDca;
-                        addLogEntry(`🟡 ${symbol}: DCA auto-adjusted to $${adjustedDca.toFixed(2)} (below SL: $${newSL.toFixed(2)})`, 'info');
-                        telegramMessage += `   ⚙️ DCA: $${currentDca.toFixed(2)} → $${adjustedDca.toFixed(2)} (aligned with SL)\n`;
-                      }
-                    }
-                  }
-                } else if (trade.action === 'SELL') {
-                  // For SELL (short): SL should be > entry price (loss limit above entry)
-                  const minSL = avgEntry * 1.01; // At least 1% above entry
-                  const maxSL = avgEntry * 20; // Max 20x entry (suspiciously high)
-
-                  if (newSL < minSL) {
-                    // Too low for short - likely wrong
-                    console.warn(`⚠️ ${symbol}: AI provided suspiciously low SL value ($${newSL.toFixed(2)}) for SELL trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
-                    addLogEntry(`⚠️ ${symbol}: AI SL value $${newSL.toFixed(2)} is too low for SELL trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
-                    // Don't apply the adjustment
-                  } else if (newSL > maxSL) {
-                    // Too high - likely a percentage mistake
-                    console.warn(`⚠️ ${symbol}: AI provided suspiciously high SL value (${newSL}). Treating as percentage and converting...`);
-                    newSL = avgEntry * (1 + rec.newStopLoss / 100);
-                    addLogEntry(`⚠️ ${symbol}: AI SL value ${rec.newStopLoss} was too high - converted from percentage to $${newSL.toFixed(2)}`, 'warning');
-
-                    const oldSL = trade.stopLoss;
-                    trade.stopLoss = newSL;
-                    adjusted = true;
-                    addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
-                    telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
-                  } else {
-                    // Valid SL value
-                    const oldSL = trade.stopLoss;
-                    trade.stopLoss = newSL;
-                    adjusted = true;
-                    addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
-                    telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
-
-                    // FIX: Ensure DCA is positioned correctly relative to new SL
-                    // For SELL (short): DCA must be above SL (so DCA triggers before SL closes position)
-                    const currentDca = trade.addPosition || trade.dcaPrice;
-                    if (currentDca && currentDca > 0) {
-                      if (currentDca <= newSL) {
-                        // DCA is at or below SL - adjust DCA to be above SL
-                        const adjustedDca = newSL * 1.01; // 1% above SL
-                        console.log(`   🔄 ${symbol}: Adjusting DCA from $${currentDca.toFixed(2)} to $${adjustedDca.toFixed(2)} (must be above SL: $${newSL.toFixed(2)})`);
-                        trade.addPosition = adjustedDca;
-                        trade.dcaPrice = adjustedDca;
-                        addLogEntry(`🟡 ${symbol}: DCA auto-adjusted to $${adjustedDca.toFixed(2)} (above SL: $${newSL.toFixed(2)})`, 'info');
-                        telegramMessage += `   ⚙️ DCA: $${currentDca.toFixed(2)} → $${adjustedDca.toFixed(2)} (aligned with SL)\n`;
-                      }
-                    }
-                  }
-                }
+              if (!rec.symbol) {
+                console.warn(`⚠️ Skipping recommendation without symbol:`, rec);
+                return false;
               }
-              // Handle both newDcaPrice (new field) and newAddPosition (legacy field) for backward compatibility
-              // FIX: Declare newDcaValue outside if block to avoid scope issues
-              const newDcaValue = rec.newDcaPrice || rec.newAddPosition;
-              if (newDcaValue && typeof newDcaValue === 'number' && newDcaValue > 0) {
-                const oldDca = trade.addPosition || trade.dcaPrice || trade.entryPrice;
-                const currentSL = trade.stopLoss;
+              return true;
+            });
 
-                // FIX: Validate DCA position relative to SL before applying
-                let finalDcaValue = newDcaValue;
-                let dcaAdjusted = false;
+            // Add to all recommendations
+            allRecommendations.push(...validRecommendations);
 
-                if (currentSL && currentSL > 0) {
-                  if (trade.action === 'BUY') {
-                    // For BUY (Long): Entry > DCA > SL
-                    // DCA must be ABOVE SL (so DCA triggers before SL closes position)
-                    if (newDcaValue <= currentSL) {
-                      finalDcaValue = currentSL * 1.01; // 1% ABOVE SL
-                      dcaAdjusted = true;
-                      console.log(`   🔄 ${symbol}: DCA value $${newDcaValue.toFixed(2)} is at/below SL $${currentSL.toFixed(2)} - adjusting to $${finalDcaValue.toFixed(2)}`);
-                      addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(4)} to $${finalDcaValue.toFixed(4)} (must be above SL: $${currentSL.toFixed(2)})`, 'warning');
-                    }
-                  } else if (trade.action === 'SELL') {
-                    // For SELL (Short): Entry < DCA < SL
-                    // DCA must be BELOW SL (so DCA triggers before SL closes position)
-                    if (newDcaValue >= currentSL) {
-                      finalDcaValue = currentSL * 0.99; // 1% BELOW SL
-                      dcaAdjusted = true;
-                      console.log(`   🔄 ${symbol}: DCA value $${newDcaValue.toFixed(2)} is at/above SL $${currentSL.toFixed(2)} - adjusting to $${finalDcaValue.toFixed(2)}`);
-                      addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(4)} to $${finalDcaValue.toFixed(4)} (must be below SL: $${currentSL.toFixed(2)})`, 'warning');
-                    }
-                  }
-                }
+          } catch (parseError) {
+            console.error('❌ Failed to parse AI response:', parseError.message);
+            addLogEntry(`Failed to parse AI response for batch ${batchIdx + 1}: ${parseError.message}`, 'error');
+          }
+        } else {
+          console.warn('⚠️ No JSON found in AI response');
+          addLogEntry(`No JSON found in AI response for batch ${batchIdx + 1}`, 'warning');
+        }
+      } catch (batchError) {
+        console.error(`❌ Error processing batch ${batchIdx + 1}:`, batchError.message);
+        addLogEntry(`Error processing batch ${batchIdx + 1}: ${batchError.message}`, 'error');
+      }
 
-                trade.addPosition = finalDcaValue;
-                trade.dcaPrice = finalDcaValue; // Store in both fields for consistency
-                adjusted = true;
+      // Small delay between batches
+      if (batchIdx < tradeBatches.length - 1) {
+        await sleep(1000); // 1 second between batches
+      }
+    }
 
-                if (dcaAdjusted) {
-                  addLogEntry(`🟡 ${symbol}: AI adjusted DCA Price from $${oldDca.toFixed(2)} to $${finalDcaValue.toFixed(2)} (auto-aligned with SL)`, 'info');
-                  telegramMessage += `   ⚙️ DCA: $${oldDca.toFixed(2)} → $${finalDcaValue.toFixed(2)} (aligned with SL)\n`;
+    // Process all recommendations together
+    if (allRecommendations.length === 0) {
+      console.warn('⚠️ No recommendations received from AI');
+      addLogEntry('⚠️ No recommendations received from AI', 'warning');
+      return [];
+    }
+
+    // Filter out any null/undefined entries that might have slipped through
+    allRecommendations = allRecommendations.filter(rec => rec != null && typeof rec === 'object' && rec.symbol);
+
+    console.log(`✅ Total recommendations received: ${allRecommendations.length}`);
+
+    if (allRecommendations.length === 0) {
+      console.warn('⚠️ No valid recommendations after filtering');
+      addLogEntry('⚠️ No valid recommendations received from AI', 'warning');
+      return [];
+    }
+
+    // Build Telegram message
+    let telegramMessage = `🤖 *AI Trade Re-evaluation*\n\n`;
+    telegramMessage += `📊 *${openTrades.length} Open Trade${openTrades.length > 1 ? 's' : ''} Analyzed*\n\n`;
+
+    for (const rec of allRecommendations) {
+      // Safety check - skip if rec is null or invalid
+      if (!rec || typeof rec !== 'object' || !rec.symbol) {
+        console.warn(`⚠️ Skipping invalid recommendation entry:`, rec);
+        continue;
+      }
+
+      const symbol = rec.symbol;
+      const recommendation = rec.recommendation || 'HOLD';
+      const confidence = (rec.confidence || 0) * 100;
+      const reason = rec.reason || 'No reason provided';
+
+      // Find the corresponding trade
+      const trade = openTrades.find(t => t.symbol === symbol);
+      const tradeData = tradesWithNews.find(t => t.symbol === symbol) ||
+        tradeBatches.flat().find(t => t.symbol === symbol);
+      const pnlPercent = trade && typeof trade.pnlPercent === 'number' ? trade.pnlPercent : 0;
+      const pnl = trade ? `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%` : 'N/A';
+
+      // Store evaluation in database
+      if (trade) {
+        // Store AI evaluation with limited context to prevent MongoDB size issues
+        storeAIEvaluation({
+          symbol: symbol,
+          tradeId: trade.symbol, // Use symbol as trade identifier
+          type: 'trade_evaluation',
+          data: {
+            recommendation: recommendation,
+            confidence: rec.confidence || 0,
+            reason: reason,
+            pnlPercent: pnlPercent
+          },
+          model: config.AI_MODEL,
+          context: {
+            news: tradeData?.news?.articles?.slice(0, 5) || [], // Only last 5 articles
+            // Don't include historicalData - it's too large
+          }
+        }).catch(err => {
+          console.error(`⚠️ Failed to store trade evaluation for ${symbol}:`, err.message);
+        });
+      }
+
+      // Add to log
+      addLogEntry(
+        `📊 ${symbol} AI Re-evaluation: ${recommendation} (${confidence.toFixed(0)}%) - ${reason}`,
+        recommendation === 'CLOSE' ? 'warning' : 'info'
+      );
+
+      // Execute AI recommendations
+      if (trade && recommendation !== 'HOLD') {
+        try {
+          if (recommendation === 'ADJUST') {
+            // Adjust take profit, stop loss, and/or DCA price
+            let adjusted = false;
+            if (rec.newTakeProfit && typeof rec.newTakeProfit === 'number' && rec.newTakeProfit > 0) {
+              const currentPrice = trade.currentPrice || trade.entryPrice;
+              const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+              let newTP = rec.newTakeProfit;
+
+              // Validate TP value based on trade action
+              if (trade.action === 'BUY') {
+                // For BUY: TP should be > entry price (profit target above entry)
+                const minTP = avgEntry * 1.01; // At least 1% above entry
+                const maxTP = avgEntry * 20; // Max 20x entry (suspiciously high)
+
+                if (newTP < minTP) {
+                  // Too low - likely a percentage or wrong value
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously low TP value ($${newTP.toFixed(2)}) for BUY trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
+                  addLogEntry(`⚠️ ${symbol}: AI TP value $${newTP.toFixed(2)} is too low for BUY trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
+                  // Don't apply the adjustment - keep existing TP
+                } else if (newTP > maxTP) {
+                  // Too high - likely a percentage mistake
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously high TP value (${newTP}). Treating as percentage and converting...`);
+                  newTP = avgEntry * (1 + rec.newTakeProfit / 100);
+                  addLogEntry(`⚠️ ${symbol}: AI TP value ${rec.newTakeProfit} was too high - converted from percentage to $${newTP.toFixed(2)}`, 'warning');
+
+                  const oldTP = trade.takeProfit;
+                  trade.takeProfit = newTP;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
                 } else {
-                  addLogEntry(`🟡 ${symbol}: AI adjusted DCA Price from $${oldDca.toFixed(2)} to $${finalDcaValue.toFixed(2)}`, 'info');
-                  telegramMessage += `   ⚙️ DCA: $${oldDca.toFixed(2)} → $${finalDcaValue.toFixed(2)}\n`;
+                  // Valid TP value
+                  const oldTP = trade.takeProfit;
+                  trade.takeProfit = newTP;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
+                }
+              } else if (trade.action === 'SELL') {
+                // For SELL (short): TP should be < entry price (profit when price goes down)
+                const maxTP = avgEntry * 0.99; // At most 1% below entry
+                const minTP = avgEntry * 0.05; // Min 5% of entry (suspiciously low)
+
+                if (newTP > maxTP) {
+                  // Too high for short - likely wrong
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously high TP value ($${newTP.toFixed(2)}) for SELL trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
+                  addLogEntry(`⚠️ ${symbol}: AI TP value $${newTP.toFixed(2)} is too high for SELL trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
+                  // Don't apply the adjustment
+                } else if (newTP < minTP) {
+                  // Too low - likely a percentage mistake
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously low TP value (${newTP}). Treating as percentage and converting...`);
+                  newTP = avgEntry * (1 - rec.newTakeProfit / 100);
+                  addLogEntry(`⚠️ ${symbol}: AI TP value ${rec.newTakeProfit} was too low - converted from percentage to $${newTP.toFixed(2)}`, 'warning');
+
+                  const oldTP = trade.takeProfit;
+                  trade.takeProfit = newTP;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
+                } else {
+                  // Valid TP value
+                  const oldTP = trade.takeProfit;
+                  trade.takeProfit = newTP;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Take Profit from $${oldTP.toFixed(2)} to $${newTP.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ TP: $${oldTP.toFixed(2)} → $${newTP.toFixed(2)}\n`;
                 }
               }
-              if (adjusted) {
-                // Removed: DynamoDB persistence - OKX is the only source of truth
-                addLogEntry(`✅ ${symbol}: Trade parameters updated by AI`, 'success');
+            }
+            if (rec.newStopLoss && typeof rec.newStopLoss === 'number' && rec.newStopLoss > 0) {
+              const currentPrice = trade.currentPrice || trade.entryPrice;
+              const avgEntry = trade.averageEntryPrice || trade.entryPrice;
+              let newSL = rec.newStopLoss;
 
-                // IMPORTANT: Update orders on OKX when TP/SL/DCA are adjusted
-                try {
-                  console.log(`🔄 ${symbol}: Updating orders on OKX after AI adjustment...`);
+              // Validate SL value based on trade action
+              if (trade.action === 'BUY') {
+                // For BUY: SL should be < entry price (loss limit below entry)
+                const maxSL = avgEntry * 0.99; // At most 1% below entry
+                const minSL = avgEntry * 0.10; // Min 10% of entry (suspiciously low - would be 90% loss)
 
-                  // If TP or SL was adjusted, cancel old orders and place new ones on OKX
-                  if (rec.newTakeProfit || rec.newStopLoss) {
-                    // Cancel existing TP/SL algo orders first
-                    // CRITICAL: Must verify cancellation succeeds to prevent duplicates
-                    let cancellationSucceeded = false;
+                if (newSL > maxSL) {
+                  // Too high for BUY - likely wrong
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously high SL value ($${newSL.toFixed(2)}) for BUY trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
+                  addLogEntry(`⚠️ ${symbol}: AI SL value $${newSL.toFixed(2)} is too high for BUY trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
+                  // Don't apply the adjustment - keep existing SL
+                } else if (newSL < minSL) {
+                  // Too low - likely a percentage mistake
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously low SL value (${newSL}). Treating as percentage and converting...`);
+                  newSL = avgEntry * (1 - rec.newStopLoss / 100);
+                  addLogEntry(`⚠️ ${symbol}: AI SL value ${rec.newStopLoss} was too low - converted from percentage to $${newSL.toFixed(2)}`, 'warning');
 
+                  const oldSL = trade.stopLoss;
+                  trade.stopLoss = newSL;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
+                } else {
+                  // Valid SL value
+                  const oldSL = trade.stopLoss;
+                  trade.stopLoss = newSL;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
+
+                  // FIX: Ensure DCA is positioned correctly relative to new SL
+                  // For BUY: DCA must be below SL (so DCA triggers before SL closes position)
+                  const currentDca = trade.addPosition || trade.dcaPrice;
+                  if (currentDca && currentDca > 0) {
+                    if (currentDca >= newSL) {
+                      // DCA is at or above SL - adjust DCA to be below SL
+                      const adjustedDca = newSL * 0.99; // 1% below SL
+                      console.log(`   🔄 ${symbol}: Adjusting DCA from $${currentDca.toFixed(2)} to $${adjustedDca.toFixed(2)} (must be below SL: $${newSL.toFixed(2)})`);
+                      trade.addPosition = adjustedDca;
+                      trade.dcaPrice = adjustedDca;
+                      addLogEntry(`🟡 ${symbol}: DCA auto-adjusted to $${adjustedDca.toFixed(2)} (below SL: $${newSL.toFixed(2)})`, 'info');
+                      telegramMessage += `   ⚙️ DCA: $${currentDca.toFixed(2)} → $${adjustedDca.toFixed(2)} (aligned with SL)\n`;
+                    }
+                  }
+                }
+              } else if (trade.action === 'SELL') {
+                // For SELL (short): SL should be > entry price (loss limit above entry)
+                const minSL = avgEntry * 1.01; // At least 1% above entry
+                const maxSL = avgEntry * 20; // Max 20x entry (suspiciously high)
+
+                if (newSL < minSL) {
+                  // Too low for short - likely wrong
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously low SL value ($${newSL.toFixed(2)}) for SELL trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
+                  addLogEntry(`⚠️ ${symbol}: AI SL value $${newSL.toFixed(2)} is too low for SELL trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
+                  // Don't apply the adjustment
+                } else if (newSL > maxSL) {
+                  // Too high - likely a percentage mistake
+                  console.warn(`⚠️ ${symbol}: AI provided suspiciously high SL value (${newSL}). Treating as percentage and converting...`);
+                  newSL = avgEntry * (1 + rec.newStopLoss / 100);
+                  addLogEntry(`⚠️ ${symbol}: AI SL value ${rec.newStopLoss} was too high - converted from percentage to $${newSL.toFixed(2)}`, 'warning');
+
+                  const oldSL = trade.stopLoss;
+                  trade.stopLoss = newSL;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
+                } else {
+                  // Valid SL value
+                  const oldSL = trade.stopLoss;
+                  trade.stopLoss = newSL;
+                  adjusted = true;
+                  addLogEntry(`🟡 ${symbol}: AI adjusted Stop Loss from $${oldSL.toFixed(2)} to $${newSL.toFixed(2)}`, 'info');
+                  telegramMessage += `   ⚙️ SL: $${oldSL.toFixed(2)} → $${newSL.toFixed(2)}\n`;
+
+                  // FIX: Ensure DCA is positioned correctly relative to new SL
+                  // For SELL (short): DCA must be above SL (so DCA triggers before SL closes position)
+                  const currentDca = trade.addPosition || trade.dcaPrice;
+                  if (currentDca && currentDca > 0) {
+                    if (currentDca <= newSL) {
+                      // DCA is at or below SL - adjust DCA to be above SL
+                      const adjustedDca = newSL * 1.01; // 1% above SL
+                      console.log(`   🔄 ${symbol}: Adjusting DCA from $${currentDca.toFixed(2)} to $${adjustedDca.toFixed(2)} (must be above SL: $${newSL.toFixed(2)})`);
+                      trade.addPosition = adjustedDca;
+                      trade.dcaPrice = adjustedDca;
+                      addLogEntry(`🟡 ${symbol}: DCA auto-adjusted to $${adjustedDca.toFixed(2)} (above SL: $${newSL.toFixed(2)})`, 'info');
+                      telegramMessage += `   ⚙️ DCA: $${currentDca.toFixed(2)} → $${adjustedDca.toFixed(2)} (aligned with SL)\n`;
+                    }
+                  }
+                }
+              }
+            }
+            // Handle both newDcaPrice (new field) and newAddPosition (legacy field) for backward compatibility
+            // FIX: Declare newDcaValue outside if block to avoid scope issues
+            const newDcaValue = rec.newDcaPrice || rec.newAddPosition;
+            if (newDcaValue && typeof newDcaValue === 'number' && newDcaValue > 0) {
+              const oldDca = trade.addPosition || trade.dcaPrice || trade.entryPrice;
+              const currentSL = trade.stopLoss;
+
+              // FIX: Validate DCA position relative to SL before applying
+              let finalDcaValue = newDcaValue;
+              let dcaAdjusted = false;
+
+              if (currentSL && currentSL > 0) {
+                if (trade.action === 'BUY') {
+                  // For BUY (Long): Entry > DCA > SL
+                  // DCA must be ABOVE SL (so DCA triggers before SL closes position)
+                  if (newDcaValue <= currentSL) {
+                    finalDcaValue = currentSL * 1.01; // 1% ABOVE SL
+                    dcaAdjusted = true;
+                    console.log(`   🔄 ${symbol}: DCA value $${newDcaValue.toFixed(2)} is at/below SL $${currentSL.toFixed(2)} - adjusting to $${finalDcaValue.toFixed(2)}`);
+                    addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(4)} to $${finalDcaValue.toFixed(4)} (must be above SL: $${currentSL.toFixed(2)})`, 'warning');
+                  }
+                } else if (trade.action === 'SELL') {
+                  // For SELL (Short): Entry < DCA < SL
+                  // DCA must be BELOW SL (so DCA triggers before SL closes position)
+                  if (newDcaValue >= currentSL) {
+                    finalDcaValue = currentSL * 0.99; // 1% BELOW SL
+                    dcaAdjusted = true;
+                    console.log(`   🔄 ${symbol}: DCA value $${newDcaValue.toFixed(2)} is at/above SL $${currentSL.toFixed(2)} - adjusting to $${finalDcaValue.toFixed(2)}`);
+                    addLogEntry(`⚠️ ${symbol}: DCA adjusted from $${newDcaValue.toFixed(4)} to $${finalDcaValue.toFixed(4)} (must be below SL: $${currentSL.toFixed(2)})`, 'warning');
+                  }
+                }
+              }
+
+              trade.addPosition = finalDcaValue;
+              trade.dcaPrice = finalDcaValue; // Store in both fields for consistency
+              adjusted = true;
+
+              if (dcaAdjusted) {
+                addLogEntry(`🟡 ${symbol}: AI adjusted DCA Price from $${oldDca.toFixed(2)} to $${finalDcaValue.toFixed(2)} (auto-aligned with SL)`, 'info');
+                telegramMessage += `   ⚙️ DCA: $${oldDca.toFixed(2)} → $${finalDcaValue.toFixed(2)} (aligned with SL)\n`;
+              } else {
+                addLogEntry(`🟡 ${symbol}: AI adjusted DCA Price from $${oldDca.toFixed(2)} to $${finalDcaValue.toFixed(2)}`, 'info');
+                telegramMessage += `   ⚙️ DCA: $${oldDca.toFixed(2)} → $${finalDcaValue.toFixed(2)}\n`;
+              }
+            }
+            if (adjusted) {
+              // Removed: DynamoDB persistence - OKX is the only source of truth
+              addLogEntry(`✅ ${symbol}: Trade parameters updated by AI`, 'success');
+
+              // IMPORTANT: Update orders on OKX when TP/SL/DCA are adjusted
+              try {
+                console.log(`🔄 ${symbol}: Updating orders on OKX after AI adjustment...`);
+
+                // Validate AI adjustments against fixed rules
+                const validated = this.validateAIAdjustment(trade, rec);
+
+                // Apply validated values
+                if (validated.newTakeProfit) {
+                  trade.takeProfit = validated.newTakeProfit;
+                  addLogEntry(`🟡 ${symbol}: TP updated to $${trade.takeProfit.toFixed(2)}`, 'info');
+                }
+                if (validated.newStopLoss) {
+                  trade.stopLoss = validated.newStopLoss;
+                  addLogEntry(`🟡 ${symbol}: SL updated to $${trade.stopLoss.toFixed(2)}`, 'info');
+                }
+
+                // If TP or SL was adjusted, use robust recovery manager to update orders
+                if (validated.newTakeProfit || validated.newStopLoss) {
+                  console.log(`🔄 ${symbol}: Using TP_SL_Recovery to safely update orders...`);
+
+                  // Use the robust retry logic which handles cancellation and placement safely
+                  // It also fetches currentPrice internally if needed
+                  const updateResult = await TP_SL_Recovery.retryTP_SL_Placement(trade);
+
+                  if (updateResult.fallback) {
+                    console.warn(`⚠️ ${symbol}: Used fallback TP/SL placement`);
+                    addLogEntry(`⚠️ ${symbol}: Used fallback TP/SL placement`, 'warning');
+                  } else {
+                    console.log(`✅ ${symbol}: TP/SL orders successfully updated`);
+                    addLogEntry(`✅ ${symbol}: TP/SL orders updated on OKX`, 'success');
+
+                    // Update trade object with new order IDs
+                    trade.okxTpAlgoId = updateResult.tpOrder?.ordId;
+                    trade.okxSlAlgoId = updateResult.slOrder?.ordId;
+                    trade.okxAlgoId = updateResult.tpOrder?.ordId; // Primary ID
+                  }
+                }
+
+                // If DCA was adjusted, cancel old DCA order and place new one
+                // FIX: Check if newDcaValue exists and is valid before using
+                if (newDcaValue && typeof newDcaValue === 'number' && newDcaValue > 0) {
+                  // Cancel existing DCA order if it exists
+                  let cancellationSucceeded = false;
+
+                  if (trade.okxDcaOrderId) {
                     try {
-                      const { getOkxAlgoOrders, cancelOkxAlgoOrders } = require('../services/exchangeService');
-                      const { isExchangeTradingEnabled, getPreferredExchange, OKX_SYMBOL_MAP } = require('../services/exchangeService');
+                      const { isExchangeTradingEnabled, getPreferredExchange, cancelOkxOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
                       const exchangeConfig = isExchangeTradingEnabled();
 
                       if (exchangeConfig.enabled) {
                         const exchange = getPreferredExchange();
-                        const okxSymbol = OKX_SYMBOL_MAP[symbol];
+                        const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
 
                         if (okxSymbol && exchange) {
-                          // Fetch existing algo orders from OKX
-                          try {
-                            const algoOrders = await Promise.race([
-                              getOkxAlgoOrders(
-                                okxSymbol,
-                                'conditional',
-                                exchange.apiKey,
-                                exchange.apiSecret,
-                                exchange.passphrase,
-                                exchange.baseUrl
-                              ),
-                              new Promise((_, reject) =>
-                                setTimeout(() => reject(new Error('OKX API timeout (5s)')), 5000)
-                              )
-                            ]).catch(err => {
-                              console.warn(`⚠️ ${symbol}: Timeout checking algo orders: ${err.message}`);
-                              return { success: false, error: err.message };
-                            });
+                          const cancelResult = await cancelOkxOrder(
+                            okxSymbol,
+                            trade.okxDcaOrderId,
+                            null, // clOrdId
+                            exchange.apiKey,
+                            exchange.apiSecret,
+                            exchange.passphrase,
+                            exchange.baseUrl,
+                            null // DON'T pass tdMode for limit orders
+                          );
 
-                            if (algoOrders && algoOrders.success && algoOrders.orders && algoOrders.orders.length > 0) {
-                              const activeOrders = algoOrders.orders.filter(order => {
-                                const state = order.state || order.ordState || '';
-                                return state === 'live' || state === 'effective' || state === 'partially_filled';
-                              });
-
-                              if (activeOrders.length > 0) {
-                                const ordersToCancel = activeOrders
-                                  .map(order => {
-                                    const cancelOrder = { instId: okxSymbol };
-                                    // Only include ONE of algoId or algoClOrdId, not both
-                                    if (order.algoId) {
-                                      cancelOrder.algoId = order.algoId;
-                                    } else if (order.algoClOrdId) {
-                                      cancelOrder.algoClOrdId = order.algoClOrdId;
-                                    }
-                                    // NOTE: Removed tdMode here as it might be causing 'Incorrect json data format'
-                                    // OKX cancel-algos endpoint usually just needs algoId and instId
-                                    return cancelOrder;
-                                  })
-                                  .filter(order => order.algoId || order.algoClOrdId);
-
-                                if (ordersToCancel.length > 0) {
-                                  console.log(`🗑️ ${symbol}: Canceling ${ordersToCancel.length} active algo order(s) from OKX...`);
-                                  const cancelResult = await cancelOkxAlgoOrders(
-                                    ordersToCancel,
-                                    exchange.apiKey,
-                                    exchange.apiSecret,
-                                    exchange.passphrase,
-                                    exchange.baseUrl
-                                  );
-
-                                  // Verify cancellation succeeded
-                                  if (cancelResult && cancelResult.success) {
-                                    console.log(`✅ ${symbol}: Canceled ${ordersToCancel.length} existing algo order(s) from OKX`);
-                                    cancellationSucceeded = true;
-
-                                    // Clear old algo IDs from trade object
-                                    trade.okxTpAlgoId = null;
-                                    trade.okxSlAlgoId = null;
-                                  } else {
-                                    const errorMsg = `TP/SL algo order cancellation failed for ${symbol}: ${cancelResult?.error || 'Unknown error'}`;
-                                    console.error(`❌ ${errorMsg}`);
-
-                                    // Send Telegram notification
-                                    addLogEntry(errorMsg, 'error');
-                                  }
-                                }
-                              } else {
-                                // No active orders to cancel, safe to proceed
-                                cancellationSucceeded = true;
-                              }
-                            } else {
-                              // No orders found or fetch failed
-                              if (algoOrders && !algoOrders.success) {
-                                const errorMsg = `Failed to fetch algo orders for ${symbol}: ${algoOrders.error}`;
-                                console.error(`❌ ${errorMsg}`);
-                                addLogEntry(errorMsg, 'error');
-                              } else {
-                                // No existing orders, safe to proceed
-                                cancellationSucceeded = true;
-                              }
-                            }
-                          } catch (fetchError) {
-                            const errorMsg = `Could not fetch algo orders for ${symbol}: ${fetchError.message}`;
+                          // Verify cancellation succeeded
+                          if (cancelResult && cancelResult.success) {
+                            console.log(`🗑️ ${symbol}: Canceled old DCA order on OKX (ID: ${trade.okxDcaOrderId})`);
+                            cancellationSucceeded = true;
+                            trade.okxDcaOrderId = null; // Clear old order ID
+                          } else {
+                            const errorMsg = `DCA order cancellation failed for ${symbol}: ${cancelResult?.error || 'Unknown error'}`;
                             console.error(`❌ ${errorMsg}`);
+
+                            // Send Telegram notification for DCA cancellation failure
                             addLogEntry(errorMsg, 'error');
                           }
                         }
                       }
                     } catch (cancelError) {
-                      const errorMsg = `Error canceling algo orders for ${symbol}: ${cancelError.message}`;
+                      const errorMsg = `DCA order cancellation error for ${symbol}: ${cancelError.message}`;
                       console.error(`❌ ${errorMsg}`);
 
+                      // Send Telegram notification for DCA cancellation error
                       // const { addLogEntry } = require('../services/exchangeService');
                       addLogEntry(errorMsg, 'error');
                     }
-
-                    // Only place new TP/SL orders if cancellation succeeded (or no old orders existed)
-                    if (!cancellationSucceeded) {
-                      console.warn(`⚠️ ${symbol}: Skipping new TP/SL order placement - old orders still exist on OKX`);
-                      // const { addLogEntry } = require('../services/exchangeService');
-                      addLogEntry(`⚠️ ${symbol}: Skipped new TP/SL - old order cancellation failed. Manual cleanup required!`, 'warning');
-                      continue; // Skip to next recommendation
-                    }
-
-                    // Now place new TP/SL orders with updated prices
-                    const orderResult = await this.placeTradeAlgoOrders(trade);
-                    if (orderResult) {
-                      console.log(`✅ ${symbol}: TP/SL orders updated on OKX`);
-                      // const { addLogEntry } = require('../services/exchangeService');
-                      addLogEntry(`✅ ${symbol}: TP/SL orders updated on OKX after AI adjustment`, 'success');
-                    } else {
-                      console.warn(`⚠️ ${symbol}: Failed to update TP/SL orders on OKX`);
-                      // const { addLogEntry } = require('../services/exchangeService');
-                      addLogEntry(`⚠️ ${symbol}: Failed to update TP/SL orders on OKX`, 'warning');
-                    }
+                  } else {
+                    // No existing DCA order, safe to place new one
+                    cancellationSucceeded = true;
                   }
 
-                  // If DCA was adjusted, cancel old DCA order and place new one
-                  // FIX: Check if newDcaValue exists and is valid before using
-                  if (newDcaValue && typeof newDcaValue === 'number' && newDcaValue > 0) {
-                    // Cancel existing DCA order if it exists
-                    let cancellationSucceeded = false;
+                  // Only place new DCA order if cancellation succeeded (or no old order existed)
+                  if (!cancellationSucceeded) {
+                    console.warn(`⚠️ ${symbol}: Skipping new DCA order placement - old order still exists on OKX`);
+                    // const { addLogEntry } = require('../services/exchangeService');
+                    addLogEntry(`⚠️ ${symbol}: Skipped new DCA - old order cancellation failed. Manual cleanup required!`, 'warning');
+                    continue; // Skip to next recommendation
+                  }
 
-                    if (trade.okxDcaOrderId) {
-                      try {
-                        const { isExchangeTradingEnabled, getPreferredExchange, cancelOkxOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
-                        const exchangeConfig = isExchangeTradingEnabled();
+                  // Place new DCA limit order
+                  try {
+                    const { executeOkxLimitOrder, OKX_SYMBOL_MAP, getOkxOpenPositions, isExchangeTradingEnabled, getPreferredExchange } = require('../services/exchangeService');
+                    const exchangeConfig = isExchangeTradingEnabled();
 
-                        if (exchangeConfig.enabled) {
-                          const exchange = getPreferredExchange();
-                          const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
-
-                          if (okxSymbol && exchange) {
-                            const cancelResult = await cancelOkxOrder(
-                              okxSymbol,
-                              trade.okxDcaOrderId,
-                              null, // clOrdId
-                              exchange.apiKey,
-                              exchange.apiSecret,
-                              exchange.passphrase,
-                              exchange.baseUrl,
-                              null // DON'T pass tdMode for limit orders
-                            );
-
-                            // Verify cancellation succeeded
-                            if (cancelResult && cancelResult.success) {
-                              console.log(`🗑️ ${symbol}: Canceled old DCA order on OKX (ID: ${trade.okxDcaOrderId})`);
-                              cancellationSucceeded = true;
-                              trade.okxDcaOrderId = null; // Clear old order ID
-                            } else {
-                              const errorMsg = `DCA order cancellation failed for ${symbol}: ${cancelResult?.error || 'Unknown error'}`;
-                              console.error(`❌ ${errorMsg}`);
-
-                              // Send Telegram notification for DCA cancellation failure
-                              addLogEntry(errorMsg, 'error');
-                            }
-                          }
-                        }
-                      } catch (cancelError) {
-                        const errorMsg = `DCA order cancellation error for ${symbol}: ${cancelError.message}`;
-                        console.error(`❌ ${errorMsg}`);
-
-                        // Send Telegram notification for DCA cancellation error
-                        // const { addLogEntry } = require('../services/exchangeService');
-                        addLogEntry(errorMsg, 'error');
-                      }
-                    } else {
-                      // No existing DCA order, safe to place new one
-                      cancellationSucceeded = true;
+                    if (!exchangeConfig.enabled) {
+                      throw new Error('Exchange trading not enabled');
                     }
 
-                    // Only place new DCA order if cancellation succeeded (or no old order existed)
-                    if (!cancellationSucceeded) {
-                      console.warn(`⚠️ ${symbol}: Skipping new DCA order placement - old order still exists on OKX`);
-                      // const { addLogEntry } = require('../services/exchangeService');
-                      addLogEntry(`⚠️ ${symbol}: Skipped new DCA - old order cancellation failed. Manual cleanup required!`, 'warning');
-                      continue; // Skip to next recommendation
-                    }
+                    const exchange = getPreferredExchange();
+                    const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
 
-                    // Place new DCA limit order
-                    try {
-                      const { executeOkxLimitOrder, OKX_SYMBOL_MAP, getOkxOpenPositions, isExchangeTradingEnabled, getPreferredExchange } = require('../services/exchangeService');
-                      const exchangeConfig = isExchangeTradingEnabled();
+                    if (okxSymbol && exchange) {
+                      // Get current position size for DCA quantity calculation
+                      const okxPositions = await getOkxOpenPositions(
+                        exchange.apiKey,
+                        exchange.apiSecret,
+                        exchange.passphrase,
+                        exchange.baseUrl
+                      );
+                      const okxPos = okxPositions.find(p => p.coin === trade.symbol);
+                      const positionSize = okxPos?.quantity || trade.quantity || 0;
 
-                      if (!exchangeConfig.enabled) {
-                        throw new Error('Exchange trading not enabled');
+                      // Calculate DCA quantity using FIXED USD tiers (same as initial position logic)
+                      // BTC: $100, $100, $200, $400, $800
+                      // Others: $50, $50, $100, $200, $400
+
+                      const isBTC = trade.symbol === 'BTC';
+                      const positionSizes = isBTC
+                        ? [100, 100, 200, 400, 800]  // BTC position sizes
+                        : [50, 50, 100, 200, 400];   // Other coins position sizes
+
+                      // Count existing positions for this symbol to determine DCA tier
+                      const existingPositions = this.activeTrades.filter(t =>
+                        t.symbol === trade.symbol &&
+                        (t.status === 'OPEN' || t.status === 'DCA_HIT' || t.status === 'PENDING')
+                      ).length;
+
+                      // DCA is for the next position, array is 0-indexed
+                      const dcaPositionIndex = Math.min(existingPositions, positionSizes.length - 1);
+                      const dcaSizeUSD = positionSizes[dcaPositionIndex];
+
+                      // Calculate DCA quantity in coins
+                      let dcaQuantity = dcaSizeUSD / newDcaValue;
+
+                      console.log(`   💰 AI DCA Sizing: Tier #${dcaPositionIndex + 1}: $${dcaSizeUSD} → ${dcaQuantity.toFixed(8)} coins @ $${newDcaValue.toFixed(2)}`);
+
+                      const contractSpecs = {
+                        'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },
+                        'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },
+                        'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+                        'XRP-USDT-SWAP': { contractSize: 100, minOrder: 1 },
+                        'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },
+                        'ADA-USDT-SWAP': { contractSize: 100, minOrder: 1 },
+                        'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },
+                        'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+                        'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+                        'LINK-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
+                      };
+
+                      const dcaSpec = contractSpecs[okxSymbol] || { contractSize: 1, minOrder: 0.01 };
+                      const dcaCoinQuantity = dcaQuantity;
+                      const dcaContracts = dcaCoinQuantity / dcaSpec.contractSize;
+
+                      let finalDcaQuantity = dcaQuantity;
+                      if (dcaCoinQuantity >= dcaSpec.minOrder) {
+                        finalDcaQuantity = dcaContracts; // Use fractional contracts
+                        console.log(`   ✅ DCA contracts: ${dcaContracts.toFixed(4)} (meets minimum)`);
+                      } else {
+                        // Below minimum, adjust to minimum
+                        finalDcaQuantity = dcaSpec.minOrder / dcaSpec.contractSize;
+                        console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${symbol} = ${finalDcaQuantity.toFixed(4)} contracts`);
                       }
 
-                      const exchange = getPreferredExchange();
-                      const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+                      if (dcaQuantity > 0) {
+                        const dcaSide = trade.action === 'BUY' ? 'buy' : 'sell';
+                        const leverage = trade.leverage || 1;
 
-                      if (okxSymbol && exchange) {
-                        // Get current position size for DCA quantity calculation
-                        const okxPositions = await getOkxOpenPositions(
+                        const dcaResult = await executeOkxLimitOrder(
+                          okxSymbol,
+                          dcaSide,
+                          finalDcaQuantity, // Use contract-converted quantity
+                          newDcaValue,
                           exchange.apiKey,
                           exchange.apiSecret,
                           exchange.passphrase,
-                          exchange.baseUrl
+                          exchange.baseUrl,
+                          leverage
                         );
-                        const okxPos = okxPositions.find(p => p.coin === trade.symbol);
-                        const positionSize = okxPos?.quantity || trade.quantity || 0;
 
-                        // Calculate DCA quantity using FIXED USD tiers (same as initial position logic)
-                        // BTC: $100, $100, $200, $400, $800
-                        // Others: $50, $50, $100, $200, $400
-
-                        const isBTC = trade.symbol === 'BTC';
-                        const positionSizes = isBTC
-                          ? [100, 100, 200, 400, 800]  // BTC position sizes
-                          : [50, 50, 100, 200, 400];   // Other coins position sizes
-
-                        // Count existing positions for this symbol to determine DCA tier
-                        const existingPositions = this.activeTrades.filter(t =>
-                          t.symbol === trade.symbol &&
-                          (t.status === 'OPEN' || t.status === 'DCA_HIT' || t.status === 'PENDING')
-                        ).length;
-
-                        // DCA is for the next position, array is 0-indexed
-                        const dcaPositionIndex = Math.min(existingPositions, positionSizes.length - 1);
-                        const dcaSizeUSD = positionSizes[dcaPositionIndex];
-
-                        // Calculate DCA quantity in coins
-                        let dcaQuantity = dcaSizeUSD / newDcaValue;
-
-                        console.log(`   💰 AI DCA Sizing: Tier #${dcaPositionIndex + 1}: $${dcaSizeUSD} → ${dcaQuantity.toFixed(8)} coins @ $${newDcaValue.toFixed(2)}`);
-
-                        const contractSpecs = {
-                          'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },
-                          'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },
-                          'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                          'XRP-USDT-SWAP': { contractSize: 100, minOrder: 1 },
-                          'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },
-                          'ADA-USDT-SWAP': { contractSize: 100, minOrder: 1 },
-                          'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },
-                          'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                          'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                          'LINK-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                        };
-
-                        const dcaSpec = contractSpecs[okxSymbol] || { contractSize: 1, minOrder: 0.01 };
-                        const dcaCoinQuantity = dcaQuantity;
-                        const dcaContracts = dcaCoinQuantity / dcaSpec.contractSize;
-
-                        let finalDcaQuantity = dcaQuantity;
-                        if (dcaCoinQuantity >= dcaSpec.minOrder) {
-                          finalDcaQuantity = dcaContracts; // Use fractional contracts
-                          console.log(`   ✅ DCA contracts: ${dcaContracts.toFixed(4)} (meets minimum)`);
+                        if (dcaResult.success) {
+                          trade.okxDcaOrderId = dcaResult.orderId;
+                          trade.okxDcaPrice = newDcaValue;
+                          trade.okxDcaQuantity = dcaQuantity;
+                          console.log(`✅ ${symbol}: New DCA order placed on OKX at $${newDcaValue.toFixed(2)}`);
+                          addLogEntry(`✅ ${symbol}: New DCA order placed on OKX at $${newDcaValue.toFixed(2)}`, 'success');
                         } else {
-                          // Below minimum, adjust to minimum
-                          finalDcaQuantity = dcaSpec.minOrder / dcaSpec.contractSize;
-                          console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${symbol} = ${finalDcaQuantity.toFixed(4)} contracts`);
+                          console.warn(`⚠️ ${symbol}: Failed to place new DCA order: ${dcaResult.error}`);
+                          addLogEntry(`⚠️ ${symbol}: Failed to place new DCA order: ${dcaResult.error}`, 'warning');
                         }
-
-                        if (dcaQuantity > 0) {
-                          const dcaSide = trade.action === 'BUY' ? 'buy' : 'sell';
-                          const leverage = trade.leverage || 1;
-
-                          const dcaResult = await executeOkxLimitOrder(
-                            okxSymbol,
-                            dcaSide,
-                            finalDcaQuantity, // Use contract-converted quantity
-                            newDcaValue,
-                            exchange.apiKey,
-                            exchange.apiSecret,
-                            exchange.passphrase,
-                            exchange.baseUrl,
-                            leverage
-                          );
-
-                          if (dcaResult.success) {
-                            trade.okxDcaOrderId = dcaResult.orderId;
-                            trade.okxDcaPrice = newDcaValue;
-                            trade.okxDcaQuantity = dcaQuantity;
-                            console.log(`✅ ${symbol}: New DCA order placed on OKX at $${newDcaValue.toFixed(2)}`);
-                            addLogEntry(`✅ ${symbol}: New DCA order placed on OKX at $${newDcaValue.toFixed(2)}`, 'success');
-                          } else {
-                            console.warn(`⚠️ ${symbol}: Failed to place new DCA order: ${dcaResult.error}`);
-                            addLogEntry(`⚠️ ${symbol}: Failed to place new DCA order: ${dcaResult.error}`, 'warning');
-                          }
-                        } else {
-                          console.warn(`⚠️ ${symbol}: DCA quantity is 0, skipping DCA order placement`);
-                        }
+                      } else {
+                        console.warn(`⚠️ ${symbol}: DCA quantity is 0, skipping DCA order placement`);
                       }
-                    } catch (dcaError) {
-                      console.error(`❌ ${symbol}: Error placing new DCA order: ${dcaError.message}`);
-                      addLogEntry(`❌ ${symbol}: Error placing new DCA order: ${dcaError.message}`, 'error');
                     }
+                  } catch (dcaError) {
+                    console.error(`❌ ${symbol}: Error placing new DCA order: ${dcaError.message}`);
+                    addLogEntry(`❌ ${symbol}: Error placing new DCA order: ${dcaError.message}`, 'error');
                   }
-                } catch (updateError) {
-                  console.error(`❌ ${symbol}: Error updating orders on OKX: ${updateError.message}`);
-                  addLogEntry(`❌ ${symbol}: Error updating orders on OKX: ${updateError.message}`, 'error');
                 }
-              }
-            } else if (recommendation === 'CLOSE') {
-              // Check if DCA is still available - warn AI if it should have suggested DCA
-              if (trade.dcaCount < 5 && pnlPercent < 0) {
-                addLogEntry(`⚠️ ${symbol}: AI recommended CLOSE but DCA still available (${5 - trade.dcaCount} remaining). Consider DCA instead.`, 'warning');
-                telegramMessage += `   ⚠️ Note: DCA still available (${5 - trade.dcaCount} remaining)\n`;
-              }
-
-              // Close the trade
-              const closeResult = await this.closeTradeByAI(trade, reason, confidence);
-              if (closeResult.success) {
-                addLogEntry(`🔴 ${symbol}: Trade closed by AI - ${reason}`, 'warning');
-                telegramMessage += `   ✅ Trade closed at $${closeResult.closePrice.toFixed(2)}\n`;
-              } else {
-                addLogEntry(`⚠️ ${symbol}: AI close recommendation failed - ${closeResult.error}`, 'warning');
-                telegramMessage += `   ⚠️ Close failed: ${closeResult.error}\n`;
+              } catch (updateError) {
+                console.error(`❌ ${symbol}: Error updating orders on OKX: ${updateError.message}`);
+                addLogEntry(`❌ ${symbol}: Error updating orders on OKX: ${updateError.message}`, 'error');
               }
             }
-          } catch (execError) {
-            console.error(`❌ Error executing AI recommendation for ${symbol}:`, execError);
-            addLogEntry(`❌ ${symbol}: Failed to execute AI recommendation - ${execError.message}`, 'error');
+          } else if (recommendation === 'CLOSE') {
+            // Check if DCA is still available - warn AI if it should have suggested DCA
+            if (trade.dcaCount < 5 && pnlPercent < 0) {
+              addLogEntry(`⚠️ ${symbol}: AI recommended CLOSE but DCA still available (${5 - trade.dcaCount} remaining). Consider DCA instead.`, 'warning');
+              telegramMessage += `   ⚠️ Note: DCA still available (${5 - trade.dcaCount} remaining)\n`;
+            }
+
+            // Close the trade
+            const closeResult = await this.closeTradeByAI(trade, reason, confidence);
+            if (closeResult.success) {
+              addLogEntry(`🔴 ${symbol}: Trade closed by AI - ${reason}`, 'warning');
+              telegramMessage += `   ✅ Trade closed at $${closeResult.closePrice.toFixed(2)}\n`;
+            } else {
+              addLogEntry(`⚠️ ${symbol}: AI close recommendation failed - ${closeResult.error}`, 'warning');
+              telegramMessage += `   ⚠️ Close failed: ${closeResult.error}\n`;
+            }
           }
-        }
-
-        // Add to Telegram message
-        const emoji = recommendation === 'CLOSE' ? '🔴' : recommendation === 'ADJUST' ? '🟡' : '🟢';
-        telegramMessage += `${emoji} *${symbol}* - ${recommendation}\n`;
-        telegramMessage += `   P&L: ${pnl} | Confidence: ${confidence.toFixed(0)}%\n`;
-        telegramMessage += `   ${reason}\n\n`;
-      }
-
-      // Send to Telegram with cooldown to avoid duplicate notifications
-      const now = Date.now();
-      const lastNotified = this.lastOpenTradesReevalNotifiedAt || 0;
-      const elapsed = now - lastNotified;
-
-      if (elapsed < this.openTradesReevalCooldownMs) {
-        console.log(
-          `⏱️ Skipping AI re-evaluation Telegram notification (cooldown ${this.openTradesReevalCooldownMs / 60000
-          }min, elapsed ${(elapsed / 1000).toFixed(1)}s)`
-        );
-        addLogEntry(
-          '⏱️ Skipped AI re-evaluation Telegram notification due to cooldown',
-          'info'
-        );
-      } else {
-        console.log('📤 Sending re-evaluation to Telegram...');
-        console.log(`📝 Message length: ${telegramMessage.length} characters`);
-        addLogEntry('📤 Sending re-evaluation results to Telegram...', 'info');
-        try {
-          const sent = await sendTelegramMessage(telegramMessage);
-          if (sent) {
-            console.log('✅ AI re-evaluation sent to Telegram successfully');
-            addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
-            this.lastOpenTradesReevalNotifiedAt = now;
-          } else {
-            console.log('⚠️ Failed to send re-evaluation to Telegram');
-            addLogEntry('⚠️ Failed to send re-evaluation to Telegram', 'warning');
-          }
-        } catch (telegramError) {
-          console.error('❌ Telegram error:', telegramError);
-          addLogEntry(
-            `⚠️ Failed to send re-evaluation to Telegram: ${telegramError.message}`,
-            'warning'
-          );
+        } catch (execError) {
+          console.error(`❌ Error executing AI recommendation for ${symbol}:`, execError);
+          addLogEntry(`❌ ${symbol}: Failed to execute AI recommendation - ${execError.message}`, 'error');
         }
       }
 
-      return allRecommendations;
-
-    } catch (error) {
-      console.error('❌ AI re-evaluation error:', error.message);
-      console.error('Error stack:', error.stack);
-      addLogEntry(`⚠️ AI re-evaluation failed: ${error.message}`, 'warning');
-      return [];
+      // Add to Telegram message
+      const emoji = recommendation === 'CLOSE' ? '🔴' : recommendation === 'ADJUST' ? '🟡' : '🟢';
+      telegramMessage += `${emoji} *${symbol}* - ${recommendation}\n`;
+      telegramMessage += `   P&L: ${pnl} | Confidence: ${confidence.toFixed(0)}%\n`;
+      telegramMessage += `   ${reason}\n\n`;
     }
+
+    // Send to Telegram with cooldown to avoid duplicate notifications
+    const now = Date.now();
+    const lastNotified = this.lastOpenTradesReevalNotifiedAt || 0;
+    const elapsed = now - lastNotified;
+
+    if (elapsed < this.openTradesReevalCooldownMs) {
+      console.log(
+        `⏱️ Skipping AI re-evaluation Telegram notification (cooldown ${this.openTradesReevalCooldownMs / 60000
+        }min, elapsed ${(elapsed / 1000).toFixed(1)}s)`
+      );
+      addLogEntry(
+        '⏱️ Skipped AI re-evaluation Telegram notification due to cooldown',
+        'info'
+      );
+    } else {
+      console.log('📤 Sending re-evaluation to Telegram...');
+      console.log(`📝 Message length: ${telegramMessage.length} characters`);
+      addLogEntry('📤 Sending re-evaluation results to Telegram...', 'info');
+      try {
+        const sent = await sendTelegramMessage(telegramMessage);
+        if (sent) {
+          console.log('✅ AI re-evaluation sent to Telegram successfully');
+          addLogEntry('✅ AI re-evaluation sent to Telegram', 'success');
+          this.lastOpenTradesReevalNotifiedAt = now;
+        } else {
+          console.log('⚠️ Failed to send re-evaluation to Telegram');
+          addLogEntry('⚠️ Failed to send re-evaluation to Telegram', 'warning');
+        }
+      } catch (telegramError) {
+        console.error('❌ Telegram error:', telegramError);
+        addLogEntry(
+          `⚠️ Failed to send re-evaluation to Telegram: ${telegramError.message}`,
+          'warning'
+        );
+      }
+    }
+
+    return allRecommendations;
+
+  } catch (error) {
+    console.error('❌ AI re-evaluation error:', error.message);
+    console.error('Error stack:', error.stack);
+    addLogEntry(`⚠️ AI re-evaluation failed: ${error.message}`, 'warning');
+    return [];
   }
+}
 
   // New method: Get active trades
   /**
@@ -7956,579 +7917,579 @@ Return JSON array format:
    * Moves trade from activeTrades to closedTrades
    */
   async closeTradeByAI(trade, reason, confidence) {
-    try {
-      const { executeTakeProfit, executeStopLoss } = require('../services/exchangeService');
+  try {
+    const { executeTakeProfit, executeStopLoss } = require('../services/exchangeService');
 
-      // Determine if this is a profit or loss close
-      const pnlPercent = typeof trade.pnlPercent === 'number' ? trade.pnlPercent : 0;
-      const isProfit = pnlPercent > 0;
+    // Determine if this is a profit or loss close
+    const pnlPercent = typeof trade.pnlPercent === 'number' ? trade.pnlPercent : 0;
+    const isProfit = pnlPercent > 0;
 
-      // Execute close order (use take profit for profit, stop loss for loss)
-      let closeResult;
-      if (isProfit) {
-        closeResult = await executeTakeProfit(trade);
-      } else {
-        closeResult = await executeStopLoss(trade);
-      }
+    // Execute close order (use take profit for profit, stop loss for loss)
+    let closeResult;
+    if (isProfit) {
+      closeResult = await executeTakeProfit(trade);
+    } else {
+      closeResult = await executeStopLoss(trade);
+    }
 
-      if (!closeResult.success && !closeResult.skipped) {
-        return {
-          success: false,
-          error: closeResult.error || 'Close execution failed'
-        };
-      }
-
-      // Create closed trade record
-      const closedTrade = {
-        ...trade,
-        status: isProfit ? 'AI_CLOSED_PROFIT' : 'AI_CLOSED_LOSS',
-        closedAt: new Date(),
-        closePrice: trade.currentPrice,
-        closeReason: reason,
-        aiConfidence: confidence,
-        finalPnl: trade.pnl,
-        finalPnlPercent: pnlPercent,
-        executionOrderId: closeResult.orderId,
-        executionPrice: closeResult.price || trade.currentPrice,
-        executedQty: closeResult.executedQty || trade.quantity
+    if (!closeResult.success && !closeResult.skipped) {
+      return {
+        success: false,
+        error: closeResult.error || 'Close execution failed'
       };
+    }
 
-      // Remove from active trades
-      this.activeTrades = this.activeTrades.filter(t => t.symbol !== trade.symbol);
+    // Create closed trade record
+    const closedTrade = {
+      ...trade,
+      status: isProfit ? 'AI_CLOSED_PROFIT' : 'AI_CLOSED_LOSS',
+      closedAt: new Date(),
+      closePrice: trade.currentPrice,
+      closeReason: reason,
+      aiConfidence: confidence,
+      finalPnl: trade.pnl,
+      finalPnlPercent: pnlPercent,
+      executionOrderId: closeResult.orderId,
+      executionPrice: closeResult.price || trade.currentPrice,
+      executedQty: closeResult.executedQty || trade.quantity
+    };
 
-      // Add to closed trades
-      this.closedTrades.push(closedTrade);
+    // Remove from active trades
+    this.activeTrades = this.activeTrades.filter(t => t.symbol !== trade.symbol);
 
-      // Keep only last 100 closed trades in memory
-      if (this.closedTrades.length > 100) {
-        this.closedTrades = this.closedTrades.slice(-100);
-      }
+    // Add to closed trades
+    this.closedTrades.push(closedTrade);
 
-      // Cancel TP/SL algo orders if they exist
-      await this.cancelTradeAlgoOrders(trade);
+    // Keep only last 100 closed trades in memory
+    if (this.closedTrades.length > 100) {
+      this.closedTrades = this.closedTrades.slice(-100);
+    }
 
-      // Verify position closure with OKX (sync position state)
-      try {
-        const { isExchangeTradingEnabled, getPreferredExchange, getOkxOpenPositions } = require('../services/exchangeService');
-        const exchangeConfig = isExchangeTradingEnabled();
+    // Cancel TP/SL algo orders if they exist
+    await this.cancelTradeAlgoOrders(trade);
 
-        if (exchangeConfig.enabled) {
-          const exchange = getPreferredExchange();
-          if (exchange && exchange.exchange === 'OKX') {
-            const okxSymbol = require('../services/exchangeService').OKX_SYMBOL_MAP[trade.symbol];
-            if (okxSymbol) {
-              const positions = await getOkxOpenPositions(
-                exchange.apiKey,
-                exchange.apiSecret,
-                exchange.passphrase,
-                exchange.baseUrl
-              );
+    // Verify position closure with OKX (sync position state)
+    try {
+      const { isExchangeTradingEnabled, getPreferredExchange, getOkxOpenPositions } = require('../services/exchangeService');
+      const exchangeConfig = isExchangeTradingEnabled();
 
-              // Check if position still exists for this symbol
-              const openPosition = positions.find(p => p.instId === okxSymbol && parseFloat(p.pos || '0') !== 0);
-              if (openPosition) {
-                console.warn(`⚠️ ${trade.symbol}: Position still open on OKX after close. Position size: ${openPosition.pos}`);
-              } else {
-                console.log(`✅ ${trade.symbol}: Position verified closed on OKX`);
-              }
+      if (exchangeConfig.enabled) {
+        const exchange = getPreferredExchange();
+        if (exchange && exchange.exchange === 'OKX') {
+          const okxSymbol = require('../services/exchangeService').OKX_SYMBOL_MAP[trade.symbol];
+          if (okxSymbol) {
+            const positions = await getOkxOpenPositions(
+              exchange.apiKey,
+              exchange.apiSecret,
+              exchange.passphrase,
+              exchange.baseUrl
+            );
+
+            // Check if position still exists for this symbol
+            const openPosition = positions.find(p => p.instId === okxSymbol && parseFloat(p.pos || '0') !== 0);
+            if (openPosition) {
+              console.warn(`⚠️ ${trade.symbol}: Position still open on OKX after close. Position size: ${openPosition.pos}`);
+            } else {
+              console.log(`✅ ${trade.symbol}: Position verified closed on OKX`);
             }
           }
         }
-      } catch (syncError) {
-        console.warn(`⚠️ Failed to sync position closure for ${trade.symbol}: ${syncError.message}`);
-        // Don't fail the close operation if sync fails
       }
-
-      // Update portfolio with closed trade
-      await closeTrade(
-        trade.symbol,
-        trade.pnl || 0,
-        pnlPercent,
-        trade.entryPrice,
-        closedTrade.closePrice,
-        closedTrade.executedQty || trade.quantity
-      );
-
-      // Removed: DynamoDB persistence - OKX is the only source of truth
-
-      // Recalculate portfolio
-      await recalculateFromTrades(this.activeTrades);
-
-      console.log(`✅ ${trade.symbol}: Trade closed by AI - ${isProfit ? 'Profit' : 'Loss'}: ${pnlPercent.toFixed(2)}%`);
-
-      return {
-        success: true,
-        closePrice: trade.currentPrice,
-        pnl: pnlPercent,
-        isProfit: isProfit
-      };
-    } catch (error) {
-      console.error(`❌ Error closing trade ${trade.symbol} by AI:`, error);
-      return {
-        success: false,
-        error: error.message
-      };
+    } catch (syncError) {
+      console.warn(`⚠️ Failed to sync position closure for ${trade.symbol}: ${syncError.message}`);
+      // Don't fail the close operation if sync fails
     }
+
+    // Update portfolio with closed trade
+    await closeTrade(
+      trade.symbol,
+      trade.pnl || 0,
+      pnlPercent,
+      trade.entryPrice,
+      closedTrade.closePrice,
+      closedTrade.executedQty || trade.quantity
+    );
+
+    // Removed: DynamoDB persistence - OKX is the only source of truth
+
+    // Recalculate portfolio
+    await recalculateFromTrades(this.activeTrades);
+
+    console.log(`✅ ${trade.symbol}: Trade closed by AI - ${isProfit ? 'Profit' : 'Loss'}: ${pnlPercent.toFixed(2)}%`);
+
+    return {
+      success: true,
+      closePrice: trade.currentPrice,
+      pnl: pnlPercent,
+      isProfit: isProfit
+    };
+  } catch (error) {
+    console.error(`❌ Error closing trade ${trade.symbol} by AI:`, error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
+}
 
   /**
    * Save closed trades to storage
    * Removed: DynamoDB persistence - OKX is the only source of truth
    */
   async saveClosedTrades() {
-    // Removed: DynamoDB persistence - OKX is the only source of truth
-    // Closed trades are kept in memory only (last 100)
-  }
+  // Removed: DynamoDB persistence - OKX is the only source of truth
+  // Closed trades are kept in memory only (last 100)
+}
 
   /**
    * Load closed trades from storage
    * Removed: DynamoDB persistence - OKX is the only source of truth
    */
   async loadClosedTrades() {
-    // Removed: DynamoDB persistence - OKX is the only source of truth
-    // Closed trades are kept in memory only (last 100)
-    this.closedTrades = [];
-    console.log('📂 Closed trades: OKX is the only source of truth (no DynamoDB persistence)');
-  }
+  // Removed: DynamoDB persistence - OKX is the only source of truth
+  // Closed trades are kept in memory only (last 100)
+  this.closedTrades = [];
+  console.log('📂 Closed trades: OKX is the only source of truth (no DynamoDB persistence)');
+}
 
-  getActiveTrades() {
-    return this.activeTrades.filter(trade => trade.status === 'OPEN' || trade.status === 'DCA_HIT'); // Only show open or DCA triggered trades in dashboard
-  }
+getActiveTrades() {
+  return this.activeTrades.filter(trade => trade.status === 'OPEN' || trade.status === 'DCA_HIT'); // Only show open or DCA triggered trades in dashboard
+}
 
-  /**
-   * Get closed trades for display
-   * @returns {Array} Array of closed trade objects
-   */
-  getClosedTrades() {
-    return this.closedTrades || [];
-  }
+/**
+ * Get closed trades for display
+ * @returns {Array} Array of closed trade objects
+ */
+getClosedTrades() {
+  return this.closedTrades || [];
+}
 
-  applyScanFilters(analysis, options) {
-    const cfg = options || {};
-    if (cfg.minConfidence && analysis.confidence < cfg.minConfidence) return false;
-    if (cfg.include) {
-      if (!cfg.include.buy && analysis.action === 'BUY') return false;
-      if (!cfg.include.sell && analysis.action === 'SELL') return false;
-      if (!cfg.include.hold && analysis.action === 'HOLD') return false;
-    }
-    return true;
+applyScanFilters(analysis, options) {
+  const cfg = options || {};
+  if (cfg.minConfidence && analysis.confidence < cfg.minConfidence) return false;
+  if (cfg.include) {
+    if (!cfg.include.buy && analysis.action === 'BUY') return false;
+    if (!cfg.include.sell && analysis.action === 'SELL') return false;
+    if (!cfg.include.hold && analysis.action === 'HOLD') return false;
   }
+  return true;
+}
 
-  basicTechnicalAnalysis(coin, usesMockData = false) {
-    return {
-      symbol: coin.symbol,
-      name: coin.name,
-      action: 'HOLD',
-      price: '$0.00',
-      confidence: 0.1,
-      signal: 'HOLD | Data Unavailable',
-      reason: 'Technical analysis data not available',
-      insights: ['Data fetch failed'],
-      timestamp: new Date(),
-      usesMockData,
-      news: [],
-      frames: {}, // Add top-level frames property (empty but defined)
-      patterns: [], // Add empty patterns array
-      indicators: {
-        momentum: 'N/A',
-        frames: {},
-        daily: {
-          rsi: 'N/A',
-          bollingerPosition: 'N/A',
-          trend: 'N/A',
-          support: 'N/A',
-          resistance: 'N/A',
-        },
-        hourly: {
-          rsi: 'N/A',
-          bollingerPosition: 'N/A',
-          trend: 'N/A',
-        },
-        fourHour: {
-          rsi: 'N/A',
-          trend: 'N/A',
-          momentum: 'N/A',
-          bollingerPosition: 'N/A',
-        },
-        weekly: {
-          rsi: 'N/A',
-          trend: 'N/A',
-          momentum: 'N/A',
-          bollingerPosition: 'N/A',
-        },
+basicTechnicalAnalysis(coin, usesMockData = false) {
+  return {
+    symbol: coin.symbol,
+    name: coin.name,
+    action: 'HOLD',
+    price: '$0.00',
+    confidence: 0.1,
+    signal: 'HOLD | Data Unavailable',
+    reason: 'Technical analysis data not available',
+    insights: ['Data fetch failed'],
+    timestamp: new Date(),
+    usesMockData,
+    news: [],
+    frames: {}, // Add top-level frames property (empty but defined)
+    patterns: [], // Add empty patterns array
+    indicators: {
+      momentum: 'N/A',
+      frames: {},
+      daily: {
+        rsi: 'N/A',
+        bollingerPosition: 'N/A',
+        trend: 'N/A',
+        support: 'N/A',
+        resistance: 'N/A',
       },
-      heatmapEntry: null,
-    };
-  }
+      hourly: {
+        rsi: 'N/A',
+        bollingerPosition: 'N/A',
+        trend: 'N/A',
+      },
+      fourHour: {
+        rsi: 'N/A',
+        trend: 'N/A',
+        momentum: 'N/A',
+        bollingerPosition: 'N/A',
+      },
+      weekly: {
+        rsi: 'N/A',
+        trend: 'N/A',
+        momentum: 'N/A',
+        bollingerPosition: 'N/A',
+      },
+    },
+    heatmapEntry: null,
+  };
+}
 
   // Proxy methods to services
   async sendTelegramNotification(opportunity, options = {}) {
-    return await sendTelegramNotification(opportunity, this.lastNotificationTime, this.stats, this.greedFearIndex, this.globalMetrics, options);
-  }
+  return await sendTelegramNotification(opportunity, this.lastNotificationTime, this.stats, this.greedFearIndex, this.globalMetrics, options);
+}
 
   async sendTestNotification() {
-    return await sendTestNotification(config);
-  }
+  return await sendTestNotification(config);
+}
 
-  getTradingRules() {
-    return {
-      ...this.tradingRules,
-      confidenceThreshold: (this.tradingRules.minConfidence * 100).toFixed(0) + '%',
-      patterns: {
-        buy: {
-          ...this.tradingRules.patterns.buy,
-          description: this.getBuyPatternsDescription()
-        },
-        sell: {
-          ...this.tradingRules.patterns.sell,
-          description: this.getSellPatternsDescription()
-        },
-        hold: [
-          'RSI between ' + this.tradingRules.rsi.neutralMin + '-' + this.tradingRules.rsi.neutralMax + ' (neutral zone)',
-          'No clear trend direction',
-          'Price consolidating between support/resistance',
-          'Confidence below threshold',
-          'Mixed signals across timeframes'
-        ]
+getTradingRules() {
+  return {
+    ...this.tradingRules,
+    confidenceThreshold: (this.tradingRules.minConfidence * 100).toFixed(0) + '%',
+    patterns: {
+      buy: {
+        ...this.tradingRules.patterns.buy,
+        description: this.getBuyPatternsDescription()
       },
-      indicators: {
-        rsi: {
-          oversold: '< ' + this.tradingRules.rsi.oversold,
-          neutral: this.tradingRules.rsi.neutralMin + '-' + this.tradingRules.rsi.neutralMax,
-          overbought: '> ' + this.tradingRules.rsi.overbought
-        },
-        bollinger: {
-          lower: 'Price near lower band (position < ' + (this.tradingRules.bollinger.lowerThreshold * 100) + '%)',
-          middle: 'Price in middle (neutral)',
-          upper: 'Price near upper band (position > ' + (this.tradingRules.bollinger.upperThreshold * 100) + '%)'
-        },
-        fibonacci: {
-          levels: ['23.6%', '38.2%', '50.0%', '61.8%', '78.6%'],
-          support: this.tradingRules.fibonacci.supportLevels.map(l => (l * 100).toFixed(1) + '%').join(' and ') + ' are key support levels',
-          resistance: this.tradingRules.fibonacci.resistanceLevels.map(l => (l * 100).toFixed(1) + '%').join(' and ') + ' are key resistance levels'
-        },
-        supportResistance: {
-          support: 'Lowest price in recent ' + this.tradingRules.supportResistance.lookbackPeriod + ' periods',
-          resistance: 'Highest price in recent ' + this.tradingRules.supportResistance.lookbackPeriod + ' periods',
-          breakout: 'Price breaking above resistance (bullish) or below support (bearish)'
-        }
+      sell: {
+        ...this.tradingRules.patterns.sell,
+        description: this.getSellPatternsDescription()
       },
-      timeframes: ['10m', '1h', '4h', '1d', '1w'],
-      cooldown: '30 minutes between notifications for same coin'
-    };
-  }
-
-  getBuyPatternsDescription() {
-    const patterns = [];
-    if (this.tradingRules.patterns.buy.requireRSIOversold) {
-      patterns.push(`RSI < ${this.tradingRules.rsi.oversold} (oversold)`);
-    }
-    if (this.tradingRules.patterns.buy.requireBollingerLower) {
-      patterns.push('Bollinger Lower Band');
-    }
-    if (this.tradingRules.patterns.buy.requireSupportLevel) {
-      patterns.push('Price at Support Level');
-    }
-    if (this.tradingRules.patterns.buy.requireFibonacciSupport) {
-      patterns.push('Fibonacci Support Level');
-    }
-    if (this.tradingRules.patterns.buy.requireBullishTrend) {
-      patterns.push('Bullish Trend');
-    }
-    if (this.tradingRules.patterns.buy.requirePattern) {
-      patterns.push('Trading Pattern Required (Channels, H&S, etc.)');
-    }
-    if (this.tradingRules.patterns.buy.minTimeframeAlignment > 1) {
-      patterns.push(`${this.tradingRules.patterns.buy.minTimeframeAlignment}+ timeframes aligned`);
-    }
-    return patterns.length > 0 ? patterns : ['Default buy patterns'];
-  }
-
-  getSellPatternsDescription() {
-    const patterns = [];
-    if (this.tradingRules.patterns.sell.requireRSIOverbought) {
-      patterns.push(`RSI > ${this.tradingRules.rsi.overbought} (overbought)`);
-    }
-    if (this.tradingRules.patterns.sell.requireBollingerUpper) {
-      patterns.push('Bollinger Upper Band');
-    }
-    if (this.tradingRules.patterns.sell.requireResistanceLevel) {
-      patterns.push('Price at Resistance Level');
-    }
-    if (this.tradingRules.patterns.sell.requireFibonacciResistance) {
-      patterns.push('Fibonacci Resistance Level');
-    }
-    if (this.tradingRules.patterns.sell.requireBearishTrend) {
-      patterns.push('Bearish Trend');
-    }
-    if (this.tradingRules.patterns.sell.requirePattern) {
-      patterns.push('Trading Pattern Required (Channels, H&S, etc.)');
-    }
-    if (this.tradingRules.patterns.sell.minTimeframeAlignment > 1) {
-      patterns.push(`${this.tradingRules.patterns.sell.minTimeframeAlignment}+ timeframes aligned`);
-    }
-    return patterns.length > 0 ? patterns : ['Default sell patterns'];
-  }
-
-  setTradingRules(newRules) {
-    // Merge new rules with existing, keeping defaults for missing values
-    if (newRules.minConfidence !== undefined) {
-      this.tradingRules.minConfidence = Math.max(0.1, Math.min(0.99, newRules.minConfidence));
-    }
-    if (newRules.enabledIndicators) {
-      this.tradingRules.enabledIndicators = { ...this.tradingRules.enabledIndicators, ...newRules.enabledIndicators };
-    }
-    if (newRules.rsi) {
-      this.tradingRules.rsi = { ...this.tradingRules.rsi, ...newRules.rsi };
-    }
-    if (newRules.bollinger) {
-      this.tradingRules.bollinger = { ...this.tradingRules.bollinger, ...newRules.bollinger };
-    }
-    if (newRules.fibonacci) {
-      this.tradingRules.fibonacci = { ...this.tradingRules.fibonacci, ...newRules.fibonacci };
-    }
-    if (newRules.supportResistance) {
-      this.tradingRules.supportResistance = { ...this.tradingRules.supportResistance, ...newRules.supportResistance };
-    }
-    if (newRules.patterns) {
-      if (newRules.patterns.buy) {
-        this.tradingRules.patterns.buy = { ...this.tradingRules.patterns.buy, ...newRules.patterns.buy };
+      hold: [
+        'RSI between ' + this.tradingRules.rsi.neutralMin + '-' + this.tradingRules.rsi.neutralMax + ' (neutral zone)',
+        'No clear trend direction',
+        'Price consolidating between support/resistance',
+        'Confidence below threshold',
+        'Mixed signals across timeframes'
+      ]
+    },
+    indicators: {
+      rsi: {
+        oversold: '< ' + this.tradingRules.rsi.oversold,
+        neutral: this.tradingRules.rsi.neutralMin + '-' + this.tradingRules.rsi.neutralMax,
+        overbought: '> ' + this.tradingRules.rsi.overbought
+      },
+      bollinger: {
+        lower: 'Price near lower band (position < ' + (this.tradingRules.bollinger.lowerThreshold * 100) + '%)',
+        middle: 'Price in middle (neutral)',
+        upper: 'Price near upper band (position > ' + (this.tradingRules.bollinger.upperThreshold * 100) + '%)'
+      },
+      fibonacci: {
+        levels: ['23.6%', '38.2%', '50.0%', '61.8%', '78.6%'],
+        support: this.tradingRules.fibonacci.supportLevels.map(l => (l * 100).toFixed(1) + '%').join(' and ') + ' are key support levels',
+        resistance: this.tradingRules.fibonacci.resistanceLevels.map(l => (l * 100).toFixed(1) + '%').join(' and ') + ' are key resistance levels'
+      },
+      supportResistance: {
+        support: 'Lowest price in recent ' + this.tradingRules.supportResistance.lookbackPeriod + ' periods',
+        resistance: 'Highest price in recent ' + this.tradingRules.supportResistance.lookbackPeriod + ' periods',
+        breakout: 'Price breaking above resistance (bullish) or below support (bearish)'
       }
-      if (newRules.patterns.sell) {
-        this.tradingRules.patterns.sell = { ...this.tradingRules.patterns.sell, ...newRules.patterns.sell };
-      }
-    }
-    if (newRules.patternDetection) {
-      this.tradingRules.patternDetection = { ...this.tradingRules.patternDetection, ...newRules.patternDetection };
-    }
-    if (newRules.multiTimeframeConsensus) {
-      this.tradingRules.multiTimeframeConsensus = { ...this.tradingRules.multiTimeframeConsensus, ...newRules.multiTimeframeConsensus };
-    }
-    // Update minConfidence reference
-    this.minConfidence = this.tradingRules.minConfidence;
-    return this.tradingRules;
+    },
+    timeframes: ['10m', '1h', '4h', '1d', '1w'],
+    cooldown: '30 minutes between notifications for same coin'
+  };
+}
+
+getBuyPatternsDescription() {
+  const patterns = [];
+  if (this.tradingRules.patterns.buy.requireRSIOversold) {
+    patterns.push(`RSI < ${this.tradingRules.rsi.oversold} (oversold)`);
   }
+  if (this.tradingRules.patterns.buy.requireBollingerLower) {
+    patterns.push('Bollinger Lower Band');
+  }
+  if (this.tradingRules.patterns.buy.requireSupportLevel) {
+    patterns.push('Price at Support Level');
+  }
+  if (this.tradingRules.patterns.buy.requireFibonacciSupport) {
+    patterns.push('Fibonacci Support Level');
+  }
+  if (this.tradingRules.patterns.buy.requireBullishTrend) {
+    patterns.push('Bullish Trend');
+  }
+  if (this.tradingRules.patterns.buy.requirePattern) {
+    patterns.push('Trading Pattern Required (Channels, H&S, etc.)');
+  }
+  if (this.tradingRules.patterns.buy.minTimeframeAlignment > 1) {
+    patterns.push(`${this.tradingRules.patterns.buy.minTimeframeAlignment}+ timeframes aligned`);
+  }
+  return patterns.length > 0 ? patterns : ['Default buy patterns'];
+}
 
-  calculateRiskManagement(analysis) {
-    const currentPrice = Number(analysis.price.replace(/[^0-9.]/g, '')) || 0;
-    const indicators = analysis.indicators || {};
-    const frames = indicators.frames || {};
-    const action = analysis.action;
+getSellPatternsDescription() {
+  const patterns = [];
+  if (this.tradingRules.patterns.sell.requireRSIOverbought) {
+    patterns.push(`RSI > ${this.tradingRules.rsi.overbought} (overbought)`);
+  }
+  if (this.tradingRules.patterns.sell.requireBollingerUpper) {
+    patterns.push('Bollinger Upper Band');
+  }
+  if (this.tradingRules.patterns.sell.requireResistanceLevel) {
+    patterns.push('Price at Resistance Level');
+  }
+  if (this.tradingRules.patterns.sell.requireFibonacciResistance) {
+    patterns.push('Fibonacci Resistance Level');
+  }
+  if (this.tradingRules.patterns.sell.requireBearishTrend) {
+    patterns.push('Bearish Trend');
+  }
+  if (this.tradingRules.patterns.sell.requirePattern) {
+    patterns.push('Trading Pattern Required (Channels, H&S, etc.)');
+  }
+  if (this.tradingRules.patterns.sell.minTimeframeAlignment > 1) {
+    patterns.push(`${this.tradingRules.patterns.sell.minTimeframeAlignment}+ timeframes aligned`);
+  }
+  return patterns.length > 0 ? patterns : ['Default sell patterns'];
+}
 
-    // Get support and resistance levels
-    const support = Number(indicators.daily?.support) || currentPrice * 0.95;
-    const resistance = Number(indicators.daily?.resistance) || currentPrice * 1.05;
+setTradingRules(newRules) {
+  // Merge new rules with existing, keeping defaults for missing values
+  if (newRules.minConfidence !== undefined) {
+    this.tradingRules.minConfidence = Math.max(0.1, Math.min(0.99, newRules.minConfidence));
+  }
+  if (newRules.enabledIndicators) {
+    this.tradingRules.enabledIndicators = { ...this.tradingRules.enabledIndicators, ...newRules.enabledIndicators };
+  }
+  if (newRules.rsi) {
+    this.tradingRules.rsi = { ...this.tradingRules.rsi, ...newRules.rsi };
+  }
+  if (newRules.bollinger) {
+    this.tradingRules.bollinger = { ...this.tradingRules.bollinger, ...newRules.bollinger };
+  }
+  if (newRules.fibonacci) {
+    this.tradingRules.fibonacci = { ...this.tradingRules.fibonacci, ...newRules.fibonacci };
+  }
+  if (newRules.supportResistance) {
+    this.tradingRules.supportResistance = { ...this.tradingRules.supportResistance, ...newRules.supportResistance };
+  }
+  if (newRules.patterns) {
+    if (newRules.patterns.buy) {
+      this.tradingRules.patterns.buy = { ...this.tradingRules.patterns.buy, ...newRules.patterns.buy };
+    }
+    if (newRules.patterns.sell) {
+      this.tradingRules.patterns.sell = { ...this.tradingRules.patterns.sell, ...newRules.patterns.sell };
+    }
+  }
+  if (newRules.patternDetection) {
+    this.tradingRules.patternDetection = { ...this.tradingRules.patternDetection, ...newRules.patternDetection };
+  }
+  if (newRules.multiTimeframeConsensus) {
+    this.tradingRules.multiTimeframeConsensus = { ...this.tradingRules.multiTimeframeConsensus, ...newRules.multiTimeframeConsensus };
+  }
+  // Update minConfidence reference
+  this.minConfidence = this.tradingRules.minConfidence;
+  return this.tradingRules;
+}
 
-    // Calculate ATR-based stop loss (volatility-adjusted)
-    const { calculateATR } = require('../services/positionSizingService');
-    let atr = 0;
-    let useATR = false;
+calculateRiskManagement(analysis) {
+  const currentPrice = Number(analysis.price.replace(/[^0-9.]/g, '')) || 0;
+  const indicators = analysis.indicators || {};
+  const frames = indicators.frames || {};
+  const action = analysis.action;
 
-    // Try to get price data for ATR calculation
-    if (analysis.priceData && Array.isArray(analysis.priceData) && analysis.priceData.length >= 15) {
-      try {
-        // Validate price data has required fields (high, low, close)
-        const validPriceData = analysis.priceData.filter(p =>
-          p && (p.high || p.price) && (p.low || p.price) && (p.close || p.price)
-        );
+  // Get support and resistance levels
+  const support = Number(indicators.daily?.support) || currentPrice * 0.95;
+  const resistance = Number(indicators.daily?.resistance) || currentPrice * 1.05;
 
-        if (validPriceData.length >= 15) {
-          atr = calculateATR(validPriceData, 14);
-          useATR = atr > 0;
+  // Calculate ATR-based stop loss (volatility-adjusted)
+  const { calculateATR } = require('../services/positionSizingService');
+  let atr = 0;
+  let useATR = false;
 
-          if (!useATR) {
-            console.log(`⚠️ ATR calculation returned 0 for ${analysis.symbol || 'unknown'} - using default stop loss`);
-          }
-        } else {
-          console.log(`⚠️ Insufficient valid price data for ATR (${validPriceData.length}/15 required) - using default stop loss`);
+  // Try to get price data for ATR calculation
+  if (analysis.priceData && Array.isArray(analysis.priceData) && analysis.priceData.length >= 15) {
+    try {
+      // Validate price data has required fields (high, low, close)
+      const validPriceData = analysis.priceData.filter(p =>
+        p && (p.high || p.price) && (p.low || p.price) && (p.close || p.price)
+      );
+
+      if (validPriceData.length >= 15) {
+        atr = calculateATR(validPriceData, 14);
+        useATR = atr > 0;
+
+        if (!useATR) {
+          console.log(`⚠️ ATR calculation returned 0 for ${analysis.symbol || 'unknown'} - using default stop loss`);
         }
-      } catch (error) {
-        console.log(`⚠️ ATR calculation failed for ${analysis.symbol || 'unknown'}, using default: ${error.message}`);
+      } else {
+        console.log(`⚠️ Insufficient valid price data for ATR (${validPriceData.length}/15 required) - using default stop loss`);
       }
-    } else if (analysis.priceData) {
-      console.log(`⚠️ Price data available but insufficient length (${analysis.priceData.length || 0}/15 required) - using default stop loss`);
+    } catch (error) {
+      console.log(`⚠️ ATR calculation failed for ${analysis.symbol || 'unknown'}, using default: ${error.message}`);
     }
-
-    // Fallback to default if ATR not available
-    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 20.0;
-    const volatility = useATR ? atr : (currentPrice * defaultSLPercent / 100);
-
-    let entryPrice, takeProfit, stopLoss, addPosition, expectedGainPercent;
-
-    if (action === 'BUY') {
-      // BUY signal - Improved risk/reward ratio (target 3:1 or better)
-      entryPrice = currentPrice;
-
-      // Use fixed 20% stop loss (wider than 15% DCA)
-      stopLoss = entryPrice * (1 - defaultSLPercent / 100); // 20% below
-
-      // Fixed 10% take profit
-      takeProfit = entryPrice * 1.10; // 10% above
-
-      // Fixed 15% DCA (between SL and entry)
-      addPosition = entryPrice * 0.85; // 15% below for DCA
-      expectedGainPercent = 10;
-
-    } else if (action === 'SELL') {
-      // SELL signal - Improved risk/reward ratio (target 3:1 or better)
-      entryPrice = currentPrice;
-
-      // Use fixed 20% stop loss (wider than 15% DCA)
-      stopLoss = entryPrice * (1 + defaultSLPercent / 100); // 20% above
-
-      // Fixed 10% take profit
-      takeProfit = entryPrice * 0.90; // 10% below
-
-      // Fixed 15% DCA (between entry and SL)
-      addPosition = entryPrice * 1.15; // 15% above for averaging
-      expectedGainPercent = 10;
-
-    } else {
-      // HOLD or unknown
-      entryPrice = currentPrice;
-      takeProfit = currentPrice * 1.05;
-      stopLoss = currentPrice * 0.95;
-      addPosition = currentPrice;
-      expectedGainPercent = 5;
-    }
-
-    return {
-      entryPrice: Number(entryPrice.toFixed(2)),
-      takeProfit: Number(takeProfit.toFixed(2)),
-      stopLoss: Number(stopLoss.toFixed(2)),
-      addPosition: Number(addPosition.toFixed(2)),
-      expectedGainPercent: Number(expectedGainPercent)
-    };
+  } else if (analysis.priceData) {
+    console.log(`⚠️ Price data available but insufficient length (${analysis.priceData.length || 0}/15 required) - using default stop loss`);
   }
 
-  matchesTradingRules(analysis) {
-    const rules = this.tradingRules;
-    const indicators = analysis.indicators || {};
-    const frames = indicators.frames || {};
+  // Fallback to default if ATR not available
+  const defaultSLPercent = this.tradingRules?.defaultStopLoss || 20.0;
+  const volatility = useATR ? atr : (currentPrice * defaultSLPercent / 100);
 
-    // Filter out HOLD signals - we only want actionable BUY/SELL opportunities
-    if (analysis.action === 'HOLD') {
-      return false;
-    }
+  let entryPrice, takeProfit, stopLoss, addPosition, expectedGainPercent;
 
-    // Check if action type is enabled
-    if (analysis.action === 'BUY' && !rules.patterns.buy.enabled) return false;
-    if (analysis.action === 'SELL' && !rules.patterns.sell.enabled) return false;
+  if (action === 'BUY') {
+    // BUY signal - Improved risk/reward ratio (target 3:1 or better)
+    entryPrice = currentPrice;
 
-    if (analysis.action === 'BUY') {
-      const buyRules = rules.patterns.buy;
-      let matches = 0;
+    // Use fixed 20% stop loss (wider than 15% DCA)
+    stopLoss = entryPrice * (1 - defaultSLPercent / 100); // 20% below
 
-      // Check RSI requirement
-      if (buyRules.requireRSIOversold) {
-        const dailyRSI = Number(indicators.daily?.rsi) || 50;
-        if (dailyRSI < rules.rsi.oversold) matches++;
-      }
+    // Fixed 10% take profit
+    takeProfit = entryPrice * 1.10; // 10% above
 
-      // Check Bollinger requirement
-      if (buyRules.requireBollingerLower) {
-        if (indicators.daily?.bollingerPosition === 'LOWER') matches++;
-      }
+    // Fixed 15% DCA (between SL and entry)
+    addPosition = entryPrice * 0.85; // 15% below for DCA
+    expectedGainPercent = 10;
 
-      // Check support level
-      if (buyRules.requireSupportLevel) {
-        // Would need price comparison logic here
-        matches++; // Placeholder
-      }
+  } else if (action === 'SELL') {
+    // SELL signal - Improved risk/reward ratio (target 3:1 or better)
+    entryPrice = currentPrice;
 
-      // Check Fibonacci
-      if (buyRules.requireFibonacciSupport) {
-        // Would need Fibonacci position check
-        matches++; // Placeholder
-      }
+    // Use fixed 20% stop loss (wider than 15% DCA)
+    stopLoss = entryPrice * (1 + defaultSLPercent / 100); // 20% above
 
-      // Check trend alignment
-      if (buyRules.requireBullishTrend) {
-        const bullishFrames = Object.values(frames).filter(f => f.trend === 'BULLISH').length;
-        if (bullishFrames >= buyRules.minTimeframeAlignment) matches++;
-      }
+    // Fixed 10% take profit
+    takeProfit = entryPrice * 0.90; // 10% below
 
-      // Check pattern requirement
-      if (buyRules.requirePattern) {
-        const bullishPatterns = (analysis.patterns || []).filter(p => p.signal === 'BULLISH');
-        if (bullishPatterns.length > 0) matches++;
-      }
+    // Fixed 15% DCA (between entry and SL)
+    addPosition = entryPrice * 1.15; // 15% above for averaging
+    expectedGainPercent = 10;
 
-      // If no specific requirements, allow through
-      if (!buyRules.requireRSIOversold && !buyRules.requireBollingerLower &&
-        !buyRules.requireSupportLevel && !buyRules.requireFibonacciSupport &&
-        !buyRules.requireBullishTrend && !buyRules.requirePattern) {
-        return true;
-      }
-
-      // Require at least one match if any requirements are set
-      return matches > 0;
-    }
-
-    if (analysis.action === 'SELL') {
-      const sellRules = rules.patterns.sell;
-      let matches = 0;
-
-      if (sellRules.requireRSIOverbought) {
-        const dailyRSI = Number(indicators.daily?.rsi) || 50;
-        if (dailyRSI > rules.rsi.overbought) matches++;
-      }
-
-      if (sellRules.requireBollingerUpper) {
-        if (indicators.daily?.bollingerPosition === 'UPPER') matches++;
-      }
-
-      if (sellRules.requireResistanceLevel) {
-        matches++; // Placeholder
-      }
-
-      if (sellRules.requireFibonacciResistance) {
-        matches++; // Placeholder
-      }
-
-      if (sellRules.requireBearishTrend) {
-        const bearishFrames = Object.values(frames).filter(f => f.trend === 'BEARISH').length;
-        if (bearishFrames >= sellRules.minTimeframeAlignment) matches++;
-      }
-
-      // Check pattern requirement
-      if (sellRules.requirePattern) {
-        const bearishPatterns = (analysis.patterns || []).filter(p => p.signal === 'BEARISH');
-        if (bearishPatterns.length > 0) matches++;
-      }
-
-      if (!sellRules.requireRSIOverbought && !sellRules.requireBollingerUpper &&
-        !sellRules.requireResistanceLevel && !sellRules.requireFibonacciResistance &&
-        !sellRules.requireBearishTrend && !sellRules.requirePattern) {
-        return true;
-      }
-
-      return matches > 0;
-    }
-
-    return true; // HOLD always passes
+  } else {
+    // HOLD or unknown
+    entryPrice = currentPrice;
+    takeProfit = currentPrice * 1.05;
+    stopLoss = currentPrice * 0.95;
+    addPosition = currentPrice;
+    expectedGainPercent = 5;
   }
+
+  return {
+    entryPrice: Number(entryPrice.toFixed(2)),
+    takeProfit: Number(takeProfit.toFixed(2)),
+    stopLoss: Number(stopLoss.toFixed(2)),
+    addPosition: Number(addPosition.toFixed(2)),
+    expectedGainPercent: Number(expectedGainPercent)
+  };
+}
+
+matchesTradingRules(analysis) {
+  const rules = this.tradingRules;
+  const indicators = analysis.indicators || {};
+  const frames = indicators.frames || {};
+
+  // Filter out HOLD signals - we only want actionable BUY/SELL opportunities
+  if (analysis.action === 'HOLD') {
+    return false;
+  }
+
+  // Check if action type is enabled
+  if (analysis.action === 'BUY' && !rules.patterns.buy.enabled) return false;
+  if (analysis.action === 'SELL' && !rules.patterns.sell.enabled) return false;
+
+  if (analysis.action === 'BUY') {
+    const buyRules = rules.patterns.buy;
+    let matches = 0;
+
+    // Check RSI requirement
+    if (buyRules.requireRSIOversold) {
+      const dailyRSI = Number(indicators.daily?.rsi) || 50;
+      if (dailyRSI < rules.rsi.oversold) matches++;
+    }
+
+    // Check Bollinger requirement
+    if (buyRules.requireBollingerLower) {
+      if (indicators.daily?.bollingerPosition === 'LOWER') matches++;
+    }
+
+    // Check support level
+    if (buyRules.requireSupportLevel) {
+      // Would need price comparison logic here
+      matches++; // Placeholder
+    }
+
+    // Check Fibonacci
+    if (buyRules.requireFibonacciSupport) {
+      // Would need Fibonacci position check
+      matches++; // Placeholder
+    }
+
+    // Check trend alignment
+    if (buyRules.requireBullishTrend) {
+      const bullishFrames = Object.values(frames).filter(f => f.trend === 'BULLISH').length;
+      if (bullishFrames >= buyRules.minTimeframeAlignment) matches++;
+    }
+
+    // Check pattern requirement
+    if (buyRules.requirePattern) {
+      const bullishPatterns = (analysis.patterns || []).filter(p => p.signal === 'BULLISH');
+      if (bullishPatterns.length > 0) matches++;
+    }
+
+    // If no specific requirements, allow through
+    if (!buyRules.requireRSIOversold && !buyRules.requireBollingerLower &&
+      !buyRules.requireSupportLevel && !buyRules.requireFibonacciSupport &&
+      !buyRules.requireBullishTrend && !buyRules.requirePattern) {
+      return true;
+    }
+
+    // Require at least one match if any requirements are set
+    return matches > 0;
+  }
+
+  if (analysis.action === 'SELL') {
+    const sellRules = rules.patterns.sell;
+    let matches = 0;
+
+    if (sellRules.requireRSIOverbought) {
+      const dailyRSI = Number(indicators.daily?.rsi) || 50;
+      if (dailyRSI > rules.rsi.overbought) matches++;
+    }
+
+    if (sellRules.requireBollingerUpper) {
+      if (indicators.daily?.bollingerPosition === 'UPPER') matches++;
+    }
+
+    if (sellRules.requireResistanceLevel) {
+      matches++; // Placeholder
+    }
+
+    if (sellRules.requireFibonacciResistance) {
+      matches++; // Placeholder
+    }
+
+    if (sellRules.requireBearishTrend) {
+      const bearishFrames = Object.values(frames).filter(f => f.trend === 'BEARISH').length;
+      if (bearishFrames >= sellRules.minTimeframeAlignment) matches++;
+    }
+
+    // Check pattern requirement
+    if (sellRules.requirePattern) {
+      const bearishPatterns = (analysis.patterns || []).filter(p => p.signal === 'BEARISH');
+      if (bearishPatterns.length > 0) matches++;
+    }
+
+    if (!sellRules.requireRSIOverbought && !sellRules.requireBollingerUpper &&
+      !sellRules.requireResistanceLevel && !sellRules.requireFibonacciResistance &&
+      !sellRules.requireBearishTrend && !sellRules.requirePattern) {
+      return true;
+    }
+
+    return matches > 0;
+  }
+
+  return true; // HOLD always passes
+}
 
   /**
    * Request AI to re-evaluate TP/SL/DCA levels after a DCA order fills
    * This ensures levels are recalculated based on the new average entry price
    */
   async requestAILevelUpdate(trade, newAverageEntry) {
-    try {
-      console.log(`🤖 [${trade.symbol}] Requesting AI re-evaluation after DCA #${trade.dcaCount}`);
-      console.log(`   Original Entry: $${trade.entryPrice.toFixed(2)}, New Average: $${newAverageEntry.toFixed(2)}`);
+  try {
+    console.log(`🤖 [${trade.symbol}] Requesting AI re-evaluation after DCA #${trade.dcaCount}`);
+    console.log(`   Original Entry: $${trade.entryPrice.toFixed(2)}, New Average: $${newAverageEntry.toFixed(2)}`);
 
-      // Get current price
-      const currentPrice = await this.getCurrentPrice(trade.symbol);
-      if (!currentPrice) {
-        console.error(`❌ Could not fetch current price for ${trade.symbol}`);
-        return false;
-      }
+    // Get current price
+    const currentPrice = await this.getCurrentPrice(trade.symbol);
+    if (!currentPrice) {
+      console.error(`❌ Could not fetch current price for ${trade.symbol}`);
+      return false;
+    }
 
-      // Build AI prompt with position context
-      const { callFreeAI } = require('../services/aiService');
+    // Build AI prompt with position context
+    const { callFreeAI } = require('../services/aiService');
 
-      const prompt = `Trade Level Update Required - DCA Executed
+    const prompt = `Trade Level Update Required - DCA Executed
 
 Symbol: ${trade.symbol}
 Action: ${trade.action}
@@ -8560,214 +8521,214 @@ Respond with JSON only:
   "reason": "Brief explanation of the updated levels"
 }`;
 
-      // Call free AI for level updates (saves premium AI costs)
-      const aiResponse = await callFreeAI(prompt);
+    // Call free AI for level updates (saves premium AI costs)
+    const aiResponse = await callFreeAI(prompt);
 
-      // Parse JSON response
-      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        console.error(`❌ AI response invalid format for ${trade.symbol}`);
-        return false;
-      }
-
-      const newLevels = JSON.parse(jsonMatch[0]);
-
-      // Validate levels
-      const MIN_TP_PERCENT = 10.0;
-      const MIN_SL_PERCENT = 20.0;  // WIDER stop loss (20% vs 15% DCA)
-      const DCA_PERCENT = 15.0;
-
-      let validatedTP = newLevels.takeProfit;
-      let validatedSL = newLevels.stopLoss;
-      let validatedDCA = newLevels.addPosition;
-
-      // Validate TP distance
-      if (trade.action === 'BUY') {
-        const tpDistance = ((validatedTP - newAverageEntry) / newAverageEntry) * 100;
-        if (tpDistance < MIN_TP_PERCENT) {
-          validatedTP = newAverageEntry * (1 + MIN_TP_PERCENT / 100);
-          console.log(`   🛡️ Adjusted TP to minimum ${MIN_TP_PERCENT}%: $${validatedTP.toFixed(2)}`);
-        }
-      } else {
-        const tpDistance = ((newAverageEntry - validatedTP) / newAverageEntry) * 100;
-        if (tpDistance < MIN_TP_PERCENT) {
-          validatedTP = newAverageEntry * (1 - MIN_TP_PERCENT / 100);
-          console.log(`   🛡️ Adjusted TP to minimum ${MIN_TP_PERCENT}%: $${validatedTP.toFixed(2)}`);
-        }
-      }
-
-      // Validate SL distance
-      if (trade.action === 'BUY') {
-        const slDistance = ((newAverageEntry - validatedSL) / newAverageEntry) * 100;
-        if (slDistance < MIN_SL_PERCENT) {
-          validatedSL = newAverageEntry * (1 - MIN_SL_PERCENT / 100);
-          console.log(`   🛡️ Adjusted SL to minimum ${MIN_SL_PERCENT}%: $${validatedSL.toFixed(2)}`);
-        }
-      } else {
-        const slDistance = ((validatedSL - newAverageEntry) / newAverageEntry) * 100;
-        if (slDistance < MIN_SL_PERCENT) {
-          validatedSL = newAverageEntry * (1 + MIN_SL_PERCENT / 100);
-          console.log(`   🛡️ Adjusted SL to minimum ${MIN_SL_PERCENT}%: $${validatedSL.toFixed(2)}`);
-        }
-      }
-
-      // Validate DCA distance and direction
-      if (trade.action === 'BUY') {
-        validatedDCA = newAverageEntry * (1 - DCA_PERCENT / 100);
-        // Ensure DCA is between SL and average
-        if (validatedDCA <= validatedSL) {
-          validatedDCA = validatedSL + ((newAverageEntry - validatedSL) * 0.4);
-          console.log(`   🔄 Adjusted DCA to 40% between SL and average: $${validatedDCA.toFixed(2)}`);
-        }
-      } else {
-        validatedDCA = newAverageEntry * (1 + DCA_PERCENT / 100);
-        // Ensure DCA is between average and SL
-        if (validatedDCA >= validatedSL) {
-          validatedDCA = newAverageEntry + ((validatedSL - newAverageEntry) * 0.4);
-          console.log(`   🔄 Adjusted DCA to 40% between average and SL: $${validatedDCA.toFixed(2)}`);
-        }
-      }
-
-      console.log(`✅ AI provided updated levels:`);
-      console.log(`   TP: $${trade.takeProfit.toFixed(2)} → $${validatedTP.toFixed(2)}`);
-      console.log(`   SL: $${trade.stopLoss.toFixed(2)} → $${validatedSL.toFixed(2)}`);
-      console.log(`   DCA: $${trade.addPosition ? trade.addPosition.toFixed(2) : 'N/A'} → $${validatedDCA.toFixed(2)}`);
-      console.log(`   Reason: ${newLevels.reason || 'Updated based on new average entry'}`);
-
-      // Apply new levels
-      await this.updateTradeLevelsAfterDCA(trade, {
-        takeProfit: validatedTP,
-        stopLoss: validatedSL,
-        addPosition: validatedDCA,
-        reason: newLevels.reason
-      });
-
-      return true;
-
-    } catch (error) {
-      console.error(`❌ Error requesting AI level update for ${trade.symbol}:`, error.message);
+    // Parse JSON response
+    const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error(`❌ AI response invalid format for ${trade.symbol}`);
       return false;
     }
+
+    const newLevels = JSON.parse(jsonMatch[0]);
+
+    // Validate levels
+    const MIN_TP_PERCENT = 10.0;
+    const MIN_SL_PERCENT = 20.0;  // WIDER stop loss (20% vs 15% DCA)
+    const DCA_PERCENT = 15.0;
+
+    let validatedTP = newLevels.takeProfit;
+    let validatedSL = newLevels.stopLoss;
+    let validatedDCA = newLevels.addPosition;
+
+    // Validate TP distance
+    if (trade.action === 'BUY') {
+      const tpDistance = ((validatedTP - newAverageEntry) / newAverageEntry) * 100;
+      if (tpDistance < MIN_TP_PERCENT) {
+        validatedTP = newAverageEntry * (1 + MIN_TP_PERCENT / 100);
+        console.log(`   🛡️ Adjusted TP to minimum ${MIN_TP_PERCENT}%: $${validatedTP.toFixed(2)}`);
+      }
+    } else {
+      const tpDistance = ((newAverageEntry - validatedTP) / newAverageEntry) * 100;
+      if (tpDistance < MIN_TP_PERCENT) {
+        validatedTP = newAverageEntry * (1 - MIN_TP_PERCENT / 100);
+        console.log(`   🛡️ Adjusted TP to minimum ${MIN_TP_PERCENT}%: $${validatedTP.toFixed(2)}`);
+      }
+    }
+
+    // Validate SL distance
+    if (trade.action === 'BUY') {
+      const slDistance = ((newAverageEntry - validatedSL) / newAverageEntry) * 100;
+      if (slDistance < MIN_SL_PERCENT) {
+        validatedSL = newAverageEntry * (1 - MIN_SL_PERCENT / 100);
+        console.log(`   🛡️ Adjusted SL to minimum ${MIN_SL_PERCENT}%: $${validatedSL.toFixed(2)}`);
+      }
+    } else {
+      const slDistance = ((validatedSL - newAverageEntry) / newAverageEntry) * 100;
+      if (slDistance < MIN_SL_PERCENT) {
+        validatedSL = newAverageEntry * (1 + MIN_SL_PERCENT / 100);
+        console.log(`   🛡️ Adjusted SL to minimum ${MIN_SL_PERCENT}%: $${validatedSL.toFixed(2)}`);
+      }
+    }
+
+    // Validate DCA distance and direction
+    if (trade.action === 'BUY') {
+      validatedDCA = newAverageEntry * (1 - DCA_PERCENT / 100);
+      // Ensure DCA is between SL and average
+      if (validatedDCA <= validatedSL) {
+        validatedDCA = validatedSL + ((newAverageEntry - validatedSL) * 0.4);
+        console.log(`   🔄 Adjusted DCA to 40% between SL and average: $${validatedDCA.toFixed(2)}`);
+      }
+    } else {
+      validatedDCA = newAverageEntry * (1 + DCA_PERCENT / 100);
+      // Ensure DCA is between average and SL
+      if (validatedDCA >= validatedSL) {
+        validatedDCA = newAverageEntry + ((validatedSL - newAverageEntry) * 0.4);
+        console.log(`   🔄 Adjusted DCA to 40% between average and SL: $${validatedDCA.toFixed(2)}`);
+      }
+    }
+
+    console.log(`✅ AI provided updated levels:`);
+    console.log(`   TP: $${trade.takeProfit.toFixed(2)} → $${validatedTP.toFixed(2)}`);
+    console.log(`   SL: $${trade.stopLoss.toFixed(2)} → $${validatedSL.toFixed(2)}`);
+    console.log(`   DCA: $${trade.addPosition ? trade.addPosition.toFixed(2) : 'N/A'} → $${validatedDCA.toFixed(2)}`);
+    console.log(`   Reason: ${newLevels.reason || 'Updated based on new average entry'}`);
+
+    // Apply new levels
+    await this.updateTradeLevelsAfterDCA(trade, {
+      takeProfit: validatedTP,
+      stopLoss: validatedSL,
+      addPosition: validatedDCA,
+      reason: newLevels.reason
+    });
+
+    return true;
+
+  } catch (error) {
+    console.error(`❌ Error requesting AI level update for ${trade.symbol}:`, error.message);
+    return false;
   }
+}
 
   /**
    * Update TP/SL/DCA levels after DCA fills
    * Cancels old orders and places new ones with updated prices
    */
   async updateTradeLevelsAfterDCA(trade, newLevels) {
-    try {
-      console.log(`🔄 [${trade.symbol}] Updating trade levels after DCA...`);
+  try {
+    console.log(`🔄 [${trade.symbol}] Updating trade levels after DCA...`);
 
-      const { cancelOrder, placeOrder } = require('../services/exchangeService');
+    const { cancelOrder, placeOrder } = require('../services/exchangeService');
 
-      // Step 1: Cancel existing TP order
-      if (trade.okxTpOrderId) {
-        try {
-          await cancelOrder(trade.symbol, trade.okxTpOrderId);
-          console.log(`   ✅ Cancelled old TP order: ${trade.okxTpOrderId}`);
-        } catch (error) {
-          console.log(`   ⚠️ Could not cancel old TP order: ${error.message}`);
-        }
-      }
-
-      // Step 2: Cancel existing SL order
-      if (trade.okxSlOrderId) {
-        try {
-          await cancelOrder(trade.symbol, trade.okxSlOrderId);
-          console.log(`   ✅ Cancelled old SL order: ${trade.okxSlOrderId}`);
-        } catch (error) {
-          console.log(`   ⚠️ Could not cancel old SL order: ${error.message}`);
-        }
-      }
-
-      // Step 3: Cancel existing DCA order
-      if (trade.okxDcaOrderId) {
-        try {
-          await cancelOrder(trade.symbol, trade.okxDcaOrderId);
-          console.log(`   ✅ Cancelled old DCA order: ${trade.okxDcaOrderId}`);
-        } catch (error) {
-          console.log(`   ⚠️ Could not cancel old DCA order: ${error.message}`);
-        }
-      }
-
-      // Step 4: Update trade object with new levels
-      trade.takeProfit = newLevels.takeProfit;
-      trade.stopLoss = newLevels.stopLoss;
-      trade.addPosition = newLevels.addPosition;
-      trade.dcaPrice = newLevels.addPosition;
-
-      // Step 5: Place new TP order
+    // Step 1: Cancel existing TP order
+    if (trade.okxTpOrderId) {
       try {
-        const tpOrder = await placeOrder({
-          symbol: trade.symbol,
-          side: trade.action === 'BUY' ? 'sell' : 'buy',
-          type: 'limit',
-          price: newLevels.takeProfit,
-          quantity: trade.quantity,
-          reduceOnly: true
-        });
-        trade.okxTpOrderId = tpOrder.orderId;
-        console.log(`   ✅ Placed new TP order at $${newLevels.takeProfit.toFixed(2)}`);
+        await cancelOrder(trade.symbol, trade.okxTpOrderId);
+        console.log(`   ✅ Cancelled old TP order: ${trade.okxTpOrderId}`);
       } catch (error) {
-        console.error(`   ❌ Failed to place new TP order: ${error.message}`);
+        console.log(`   ⚠️ Could not cancel old TP order: ${error.message}`);
       }
-
-      // Step 6: Place new SL order
-      try {
-        const slOrder = await placeOrder({
-          symbol: trade.symbol,
-          side: trade.action === 'BUY' ? 'sell' : 'buy',
-          type: 'stop_market',
-          stopPrice: newLevels.stopLoss,
-          quantity: trade.quantity,
-          reduceOnly: true
-        });
-        trade.okxSlOrderId = slOrder.orderId;
-        console.log(`   ✅ Placed new SL order at $${newLevels.stopLoss.toFixed(2)}`);
-      } catch (error) {
-        console.error(`   ❌ Failed to place new SL order: ${error.message}`);
-      }
-
-      // Step 7: Place new DCA order
-      try {
-        const dcaOrder = await placeOrder({
-          symbol: trade.symbol,
-          side: trade.action === 'BUY' ? 'buy' : 'sell',
-          type: 'limit',
-          price: newLevels.addPosition,
-          quantity: trade.quantity, // Same size as current position
-          reduceOnly: false
-        });
-        trade.okxDcaOrderId = dcaOrder.orderId;
-        console.log(`   ✅ Placed new DCA order at $${newLevels.addPosition.toFixed(2)}`);
-      } catch (error) {
-        console.error(`   ❌ Failed to place new DCA order: ${error.message}`);
-      }
-
-      console.log(`✅ [${trade.symbol}] Trade levels updated successfully after DCA #${trade.dcaCount}`);
-
-      // Send Telegram notification
-      try {
-        const { sendTelegramMessage } = require('../services/notificationService');
-        const message = `🔄 ${trade.symbol} Levels Updated After DCA #${trade.dcaCount}\n\n` +
-          `📊 New Average Entry: $${trade.averageEntryPrice.toFixed(2)}\n` +
-          `🎯 New TP: $${newLevels.takeProfit.toFixed(2)}\n` +
-          `🛡️ New SL: $${newLevels.stopLoss.toFixed(2)}\n` +
-          `💰 New DCA: $${newLevels.addPosition.toFixed(2)}\n\n` +
-          `${newLevels.reason || 'Levels recalculated based on new average entry'}`;
-
-        await sendTelegramMessage(message);
-      } catch (error) {
-        // Silently fail if Telegram not configured
-      }
-
-      return true;
-
-    } catch (error) {
-      console.error(`❌ Error updating trade levels for ${trade.symbol}:`, error.message);
-      return false;
     }
+
+    // Step 2: Cancel existing SL order
+    if (trade.okxSlOrderId) {
+      try {
+        await cancelOrder(trade.symbol, trade.okxSlOrderId);
+        console.log(`   ✅ Cancelled old SL order: ${trade.okxSlOrderId}`);
+      } catch (error) {
+        console.log(`   ⚠️ Could not cancel old SL order: ${error.message}`);
+      }
+    }
+
+    // Step 3: Cancel existing DCA order
+    if (trade.okxDcaOrderId) {
+      try {
+        await cancelOrder(trade.symbol, trade.okxDcaOrderId);
+        console.log(`   ✅ Cancelled old DCA order: ${trade.okxDcaOrderId}`);
+      } catch (error) {
+        console.log(`   ⚠️ Could not cancel old DCA order: ${error.message}`);
+      }
+    }
+
+    // Step 4: Update trade object with new levels
+    trade.takeProfit = newLevels.takeProfit;
+    trade.stopLoss = newLevels.stopLoss;
+    trade.addPosition = newLevels.addPosition;
+    trade.dcaPrice = newLevels.addPosition;
+
+    // Step 5: Place new TP order
+    try {
+      const tpOrder = await placeOrder({
+        symbol: trade.symbol,
+        side: trade.action === 'BUY' ? 'sell' : 'buy',
+        type: 'limit',
+        price: newLevels.takeProfit,
+        quantity: trade.quantity,
+        reduceOnly: true
+      });
+      trade.okxTpOrderId = tpOrder.orderId;
+      console.log(`   ✅ Placed new TP order at $${newLevels.takeProfit.toFixed(2)}`);
+    } catch (error) {
+      console.error(`   ❌ Failed to place new TP order: ${error.message}`);
+    }
+
+    // Step 6: Place new SL order
+    try {
+      const slOrder = await placeOrder({
+        symbol: trade.symbol,
+        side: trade.action === 'BUY' ? 'sell' : 'buy',
+        type: 'stop_market',
+        stopPrice: newLevels.stopLoss,
+        quantity: trade.quantity,
+        reduceOnly: true
+      });
+      trade.okxSlOrderId = slOrder.orderId;
+      console.log(`   ✅ Placed new SL order at $${newLevels.stopLoss.toFixed(2)}`);
+    } catch (error) {
+      console.error(`   ❌ Failed to place new SL order: ${error.message}`);
+    }
+
+    // Step 7: Place new DCA order
+    try {
+      const dcaOrder = await placeOrder({
+        symbol: trade.symbol,
+        side: trade.action === 'BUY' ? 'buy' : 'sell',
+        type: 'limit',
+        price: newLevels.addPosition,
+        quantity: trade.quantity, // Same size as current position
+        reduceOnly: false
+      });
+      trade.okxDcaOrderId = dcaOrder.orderId;
+      console.log(`   ✅ Placed new DCA order at $${newLevels.addPosition.toFixed(2)}`);
+    } catch (error) {
+      console.error(`   ❌ Failed to place new DCA order: ${error.message}`);
+    }
+
+    console.log(`✅ [${trade.symbol}] Trade levels updated successfully after DCA #${trade.dcaCount}`);
+
+    // Send Telegram notification
+    try {
+      const { sendTelegramMessage } = require('../services/notificationService');
+      const message = `🔄 ${trade.symbol} Levels Updated After DCA #${trade.dcaCount}\n\n` +
+        `📊 New Average Entry: $${trade.averageEntryPrice.toFixed(2)}\n` +
+        `🎯 New TP: $${newLevels.takeProfit.toFixed(2)}\n` +
+        `🛡️ New SL: $${newLevels.stopLoss.toFixed(2)}\n` +
+        `💰 New DCA: $${newLevels.addPosition.toFixed(2)}\n\n` +
+        `${newLevels.reason || 'Levels recalculated based on new average entry'}`;
+
+      await sendTelegramMessage(message);
+    } catch (error) {
+      // Silently fail if Telegram not configured
+    }
+
+    return true;
+
+  } catch (error) {
+    console.error(`❌ Error updating trade levels for ${trade.symbol}:`, error.message);
+    return false;
   }
+}
 }
 
 module.exports = ProfessionalTradingBot;
