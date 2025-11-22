@@ -247,7 +247,7 @@ async function getBatchAIAnalysis(allCoinsData, globalMetrics, options = {}) {
 
   // Retrieve historical data for all coins (async, don't block)
   const historicalDataPromises = allCoinsData.map(coin =>
-    retrieveRelatedData({ symbol: coin.symbol, days: 30, limit: 10 })
+    retrieveRelatedData({ symbol: coin.symbol, days: 30, limit: 3 })
       .catch(err => {
         console.error(`⚠️ Failed to retrieve historical data for ${coin.symbol}:`, err.message);
         return { evaluations: [], news: [] };

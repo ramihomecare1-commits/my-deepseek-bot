@@ -7158,7 +7158,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           const historical = await retrieveRelatedData({
             symbol: trade.symbol,
             days: 30,
-            limit: 10
+            limit: 3
           });
           return { ...trade, historicalData: historical };
         } catch (error) {
