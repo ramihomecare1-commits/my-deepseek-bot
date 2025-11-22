@@ -896,86 +896,107 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
   }
 }
 
-async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, passphrase, baseUrl, leverage = 1) {
+async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, passphrase, baseUrl, leverage = 1, reduceOnly = false) {
   try {
     const requestPath = '/api/v5/trade/order';
     const tdMode = 'isolated'; // Isolated margin for derivatives (matches OKX account config)
 
-    // OKX lot size (minimum order increment) - quantity must be a multiple of this
-    // For most perpetual swaps, lot size is 0.01 contracts
-    // BTC: 1 contract = 0.01 BTC, lot size = 0.01 contracts = 0.0001 BTC
-    const lotSizeMap = {
-      'BTC-USDT-SWAP': 0.01,   // 0.01 contracts = 0.0001 BTC
-      'ETH-USDT-SWAP': 0.01,   // 0.01 contracts = 0.001 ETH
-      'SOL-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 SOL
-      'XRP-USDT-SWAP': 1,      // 1 contract = 10 XRP
-      'DOGE-USDT-SWAP': 10,    // 10 contracts = 1000 DOGE
-      'ADA-USDT-SWAP': 0.1,    // 0.1 contracts = 1 ADA (step size per OKX)
-      'MATIC-USDT-SWAP': 1,    // 1 contract = 10 MATIC
-      'DOT-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 DOT
-      'AVAX-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 AVAX
-      'LINK-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 LINK
+    // OKX Contract Sizes (Coins per Contract)
+    // MUST MATCH OKX SPECS EXACTLY
+    const CONTRACT_SIZES = {
+      'BTC-USDT-SWAP': 0.01,    // 1 contract = 0.01 BTC
+      'ETH-USDT-SWAP': 0.1,     // 1 contract = 0.1 ETH
+      'SOL-USDT-SWAP': 1,       // 1 contract = 1 SOL
+      'XRP-USDT-SWAP': 10,      // 1 contract = 10 XRP
+      'DOGE-USDT-SWAP': 100,    // 1 contract = 100 DOGE
+      'ADA-USDT-SWAP': 10,      // 1 contract = 10 ADA
+      'MATIC-USDT-SWAP': 10,    // 1 contract = 10 MATIC
+      'DOT-USDT-SWAP': 1,       // 1 contract = 1 DOT
+      'AVAX-USDT-SWAP': 1,      // 1 contract = 1 AVAX
+      'LINK-USDT-SWAP': 1,      // 1 contract = 1 LINK
     };
 
-    const lotSize = lotSizeMap[symbol] || 1; // Default to 1 if symbol not found
+    const contractSize = CONTRACT_SIZES[symbol] || 1; // Default to 1 if unknown (dangerous, but fallback)
 
-    // Round quantity to nearest lot size multiple
-    // Example: 0.1089 contracts with lot size 0.01 → 0.11 contracts (11 lots)
-    let roundedQuantity = Math.round(quantity / lotSize) * lotSize;
+    // Convert Coins to Contracts
+    // Example: 100 ADA / 10 (size) = 10 Contracts
+    let contractQuantity = quantity / contractSize;
+
+    // OKX lot size (minimum order increment in CONTRACTS)
+    // Usually 1 contract, but some are 0.1 or 0.01
+    const lotSizeMap = {
+      'BTC-USDT-SWAP': 1,   // Min 1 contract
+      'ETH-USDT-SWAP': 1,   // Min 1 contract
+      'SOL-USDT-SWAP': 1,
+      'XRP-USDT-SWAP': 1,
+      'DOGE-USDT-SWAP': 1,
+      'ADA-USDT-SWAP': 1,   // Fixed: was 0.1, should be 1
+      'MATIC-USDT-SWAP': 1,
+      'DOT-USDT-SWAP': 1,
+      'AVAX-USDT-SWAP': 1,
+      'LINK-USDT-SWAP': 1,
+    };
+
+    const lotSize = lotSizeMap[symbol] || 1;
+
+    // Round to nearest lot (contracts)
+    let roundedContracts = Math.round(contractQuantity / lotSize) * lotSize;
 
     // Ensure minimum 1 lot
-    if (roundedQuantity < lotSize) {
-      roundedQuantity = lotSize;
+    if (roundedContracts < lotSize) {
+      roundedContracts = lotSize;
     }
 
-    // Round to avoid floating point precision issues (e.g., 0.10999999 → 0.11)
-    roundedQuantity = parseFloat(roundedQuantity.toFixed(8));
+    // Round to avoid floating point issues
+    roundedContracts = parseFloat(roundedContracts.toFixed(8));
 
-    if (roundedQuantity !== quantity) {
-      console.log(`⚠️ [OKX API] Quantity adjusted from ${quantity} to ${roundedQuantity} (lot size: ${lotSize})`);
+    // Define roundedQuantity (in coins) for logging and return values
+    const roundedQuantity = roundedContracts * contractSize;
+
+    console.log(`📏 [OKX API] Sizing: ${quantity} ${symbol} → ${contractQuantity.toFixed(4)} Contracts (Size: ${contractSize}) → Rounded: ${roundedContracts}`);
+
+    if (roundedContracts <= 0) {
+      throw new Error(`Calculated contract size is 0. Quantity ${quantity} too small for ${symbol} (Min: ${contractSize * lotSize})`);
     }
 
     // Pre-order validation: Check max order size and available balance
-    try {
-      const maxSize = await getOkxMaxSize(symbol, tdMode, apiKey, apiSecret, passphrase, baseUrl, leverage.toString());
-      const maxAvailSize = await getOkxMaxAvailSize(symbol, tdMode, apiKey, apiSecret, passphrase, baseUrl);
+    // SKIP VALIDATION IF REDUCE ONLY (Closing position)
+    if (!reduceOnly) {
+      try {
+        const maxSize = await getOkxMaxSize(symbol, tdMode, apiKey, apiSecret, passphrase, baseUrl, leverage.toString());
+        const maxAvailSize = await getOkxMaxAvailSize(symbol, tdMode, apiKey, apiSecret, passphrase, baseUrl);
 
-      if (maxSize) {
-        const maxBuy = parseFloat(maxSize.maxBuy || 0);
-        const maxSell = parseFloat(maxSize.maxSell || 0);
-        const maxAllowed = side.toLowerCase() === 'buy' ? maxBuy : maxSell;
+        if (maxSize) {
+          const maxBuy = parseFloat(maxSize.maxBuy || 0);
+          const maxSell = parseFloat(maxSize.maxSell || 0);
+          const maxAllowed = side.toLowerCase() === 'buy' ? maxBuy : maxSell;
 
-        if (maxAllowed > 0 && roundedQuantity > maxAllowed) {
-          console.log(`⚠️ [OKX API] Order size ${roundedQuantity} exceeds maximum allowed ${maxAllowed}, adjusting...`);
-          roundedQuantity = Math.floor(maxAllowed);
-
-          if (roundedQuantity < 1) {
+          if (maxAllowed > 0 && roundedContracts > maxAllowed) {
+            console.log(`⚠️ [OKX API] Order size ${roundedContracts} exceeds maximum allowed ${maxAllowed}`);
             throw new Error(`Order size exceeds maximum allowed (max: ${maxAllowed} contracts). Reduce position size.`);
           }
         }
-      }
 
-      if (maxAvailSize) {
-        const availBuy = parseFloat(maxAvailSize.availBuy || 0);
-        const availSell = parseFloat(maxAvailSize.availSell || 0);
-        const availAllowed = side.toLowerCase() === 'buy' ? availBuy : availSell;
+        if (maxAvailSize) {
+          const availBuy = parseFloat(maxAvailSize.availBuy || 0);
+          const availSell = parseFloat(maxAvailSize.availSell || 0);
+          const availAllowed = side.toLowerCase() === 'buy' ? availBuy : availSell;
 
-        if (availAllowed > 0 && roundedQuantity > availAllowed) {
-          console.log(`⚠️ [OKX API] Order size ${roundedQuantity} exceeds available balance ${availAllowed}, adjusting...`);
-          roundedQuantity = Math.floor(availAllowed);
-
-          if (roundedQuantity < 1) {
+          if (availAllowed > 0 && roundedContracts > availAllowed) {
+            console.log(`⚠️ [OKX API] Order size ${roundedContracts} exceeds available balance ${availAllowed}`);
             throw new Error(`Insufficient available balance (available: ${availAllowed} contracts). Check account balance.`);
           }
         }
+      } catch (validationError) {
+        // If validation fails with a critical error (insufficient balance, exceeds max), throw it
+        if (validationError.message.includes('exceeds maximum') || validationError.message.includes('Insufficient')) {
+          throw validationError;
+        }
+        // For other validation errors, log but continue (order might still work)
+        console.log(`⚠️ [OKX API] Pre-order validation warning: ${validationError.message}`);
       }
-    } catch (validationError) {
-      // If validation fails with a critical error (insufficient balance, exceeds max), throw it
-      if (validationError.message.includes('exceeds maximum') || validationError.message.includes('Insufficient')) {
-        throw validationError;
-      }
-      // For other validation errors, log but continue (order might still work)
-      console.log(`⚠️ [OKX API] Pre-order validation warning: ${validationError.message}`);
+    } else {
+      console.log(`ℹ️ [OKX API] Skipping size validation for ReduceOnly order`);
     }
 
     // Set leverage to requested value BEFORE placing order (fix error 50016)
@@ -1049,13 +1070,18 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
 
     const body = {
       instId: symbol,
-      tdMode: tdMode, // Cross margin for derivatives (allows leverage and shorting)
+      tdMode: tdMode, // Isolated margin for derivatives
       side: side.toLowerCase(), // 'buy' (long) or 'sell' (short)
       posSide: posSide, // Position side: 'long' for buy, 'short' for sell (required for derivatives)
       ordType: 'market', // Market order
-      sz: roundedQuantity.toString(), // Size (contract quantity, rounded to lot size)
+      sz: roundedContracts.toString(), // Size (contract quantity, rounded to lot size)
       lever: leverage.toString() // Leverage (1-125, default 1x)
     };
+
+    // Add reduceOnly flag if specified (for TP/SL orders)
+    if (reduceOnly) {
+      body.reduceOnly = true;
+    }
 
     // Log order details for debugging
     console.log(`🔵 [OKX API] Order body:`, JSON.stringify(body));
@@ -2715,23 +2741,34 @@ async function setOkxLeverage(instId, leverage, mgnMode, posSide, apiKey, apiSec
   try {
     const requestPath = '/api/v5/account/set-leverage';
 
+    // Get account configuration to check position mode
+    let accountConfig = null;
+    let posMode = 'net_mode'; // Default to net_mode
+    try {
+      accountConfig = await getOkxAccountConfig(apiKey, apiSecret, passphrase, baseUrl);
+      posMode = accountConfig?.posMode || 'net_mode';
+      console.log(`🔍 [OKX API] Account position mode: ${posMode}`);
+    } catch (configError) {
+      console.log(`⚠️ [OKX API] Could not get account config, assuming net_mode: ${configError.message}`);
+    }
+
     // Build request body according to OKX API documentation
     // For SWAP instruments:
-    // - Scenario #9: cross-margin mode - NO posSide parameter
-    // - Scenario #11: isolated-margin mode with long/short - REQUIRES posSide parameter
+    // - Net Mode (net_mode): NO posSide parameter
+    // - Hedge Mode (long_short_mode): REQUIRES posSide parameter for isolated margin
     const body = {
       instId: instId,
       lever: leverage.toString(),
       mgnMode: mgnMode
     };
 
-    // Only include posSide for isolated margin mode in long/short position mode
+    // Only include posSide for Hedge Mode (long_short_mode) with isolated margin
     // Per OKX API docs: "posSide is only required when margin mode is isolated in long/short position mode"
-    if (mgnMode === 'isolated' && posSide && posSide !== 'net') {
+    if (posMode === 'long_short_mode' && mgnMode === 'isolated' && posSide && posSide !== 'net') {
       body.posSide = posSide;
-      console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${mgnMode} mode, ${posSide} side)...`);
+      console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${mgnMode} mode, ${posSide} side, Hedge Mode)...`);
     } else {
-      console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${mgnMode} mode)...`);
+      console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${mgnMode} mode, Net Mode)...`);
     }
 
     console.log(`📋 [OKX API] Leverage request body:`, JSON.stringify(body));
@@ -3802,7 +3839,8 @@ async function executeTakeProfit(trade) {
     exchange.apiSecret,
     exchange.passphrase,
     exchange.baseUrl,
-    leverage
+    leverage,
+    true  // reduceOnly = true for Take Profit
   );
 }
 
@@ -3877,7 +3915,8 @@ async function executeStopLoss(trade) {
     exchange.apiSecret,
     exchange.passphrase,
     exchange.baseUrl,
-    leverage
+    leverage,
+    true  // reduceOnly = true for Stop Loss
   );
 }
 
