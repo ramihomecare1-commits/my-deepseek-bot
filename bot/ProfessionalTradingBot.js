@@ -3417,17 +3417,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     };
 
     const entryPrice = parsePrice(safeOpportunity.entryPrice);
-    const takeProfit = parsePrice(safeOpportunity.takeProfit);
-    const stopLoss = parsePrice(safeOpportunity.stopLoss);
-    const addPosition = parsePrice(safeOpportunity.addPosition || safeOpportunity.dcaPrice);
+    let takeProfit = parsePrice(safeOpportunity.takeProfit);
+    let stopLoss = parsePrice(safeOpportunity.stopLoss);
+    let addPosition = parsePrice(safeOpportunity.addPosition || safeOpportunity.dcaPrice);
 
     // Ensure TP, SL, and DCA levels are always set with proper defaults
     const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 10.0; // Default to 10%
-    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 20.0; // Default to 20% default (wider than 15% DCA)
-
-    let takeProfit = parsePrice(opportunity.takeProfit);
-    let stopLoss = parsePrice(opportunity.stopLoss);
-    let addPosition = parsePrice(opportunity.addPosition);
+    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 20.0; // Default to 20%
 
     // Validate and set defaults for TP
     if (!takeProfit || takeProfit <= 0 || takeProfit === entryPrice) {
