@@ -1122,7 +1122,6 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       if (tpPrice && slPrice) {
         // Both TP and SL in one algo order
         attachAlgoOrds.push({
-          attachAlgoClOrdId: `tp-sl-${Date.now()}`, // Custom client order ID
           tpTriggerPx: tpPrice.toFixed(6),
           tpOrdPx: '-1', // Market price when triggered
           slTriggerPx: slPrice.toFixed(6),
@@ -1132,7 +1131,6 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       } else if (tpPrice) {
         // TP only
         attachAlgoOrds.push({
-          attachAlgoClOrdId: `tp-${Date.now()}`,
           tpTriggerPx: tpPrice.toFixed(6),
           tpOrdPx: '-1'
         });
@@ -1140,7 +1138,6 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
       } else if (slPrice) {
         // SL only
         attachAlgoOrds.push({
-          attachAlgoClOrdId: `sl-${Date.now()}`,
           slTriggerPx: slPrice.toFixed(6),
           slOrdPx: '-1'
         });
