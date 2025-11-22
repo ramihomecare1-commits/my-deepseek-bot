@@ -2854,37 +2854,16 @@ async function setOkxLeverage(instId, leverage, mgnMode, posSide, apiKey, apiSec
   try {
     const requestPath = '/api/v5/account/set-leverage';
 
-    // Get account configuration to check position mode
-    let accountConfig = null;
-    let posMode = 'net_mode'; // Default to net_mode
-    try {
-      accountConfig = await getOkxAccountConfig(apiKey, apiSecret, passphrase, baseUrl);
-      posMode = accountConfig?.posMode || 'net_mode';
-      console.log(`🔍 [OKX API] Account position mode: ${posMode}`);
-    } catch (configError) {
-      console.log(`⚠️ [OKX API] Could not get account config, assuming net_mode: ${configError.message}`);
-    }
-
-    // Build request body according to OKX API documentation
-    // For SWAP instruments:
-    // - Net Mode (net_mode): NO posSide parameter
-    // - Hedge Mode (long_short_mode): REQUIRES posSide parameter for isolated margin
+    // FIXED: For isolated mode, don't include posSide - causes 50002 error
+    // Only required fields: instId, lever, mgnMode
     const body = {
-      instId: instId,
+      instId,
       lever: leverage.toString(),
-      mgnMode: mgnMode
+      mgnMode: mgnMode || 'isolated'
+      // posSide removed - causes "Incorrect json data format" error (50002)
     };
 
-    // Only include posSide for Hedge Mode (long_short_mode) with isolated margin
-    // Per OKX API docs: "posSide is only required when margin mode is isolated in long/short position mode"
-    if (posMode === 'long_short_mode' && mgnMode === 'isolated' && posSide && posSide !== 'net') {
-      body.posSide = posSide;
-      console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${mgnMode} mode, ${posSide} side, Hedge Mode)...`);
-    } else {
-      console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${mgnMode} mode, Net Mode)...`);
-    }
-
-    console.log(`📋 [OKX API] Leverage request body:`, JSON.stringify(body));
+    console.log(`🎯 [OKX API] Setting leverage (corrected):`, JSON.stringify(body));
 
     const response = await executeOkxRequestWithFallback({
       apiKey,
@@ -2893,77 +2872,139 @@ async function setOkxLeverage(instId, leverage, mgnMode, posSide, apiKey, apiSec
       baseUrl,
       requestPath,
       method: 'POST',
-      body: JSON.stringify(body)
+      body
     });
 
     if (response.data?.code === '0') {
-      console.log(`✅ [OKX API] Leverage set to ${leverage}x successfully for ${posSide}`);
-      return {
-        success: true,
-        leverage: leverage
-      };
+      console.log(`✅ [OKX API] Leverage set successfully to ${leverage}x for ${instId}`);
+      return { success: true };
+    } else if (response.data?.code === '59107') {
+      // Leverage already set to this value
+      console.log(`ℹ️ [OKX API] Leverage already set to ${leverage}x for ${instId}`);
+      return { success: true, warning: 'Leverage already at target value' };
     } else {
-      const errorMsg = response.data?.msg || 'Unknown error';
-      const errorCode = response.data?.code || 'N/A';
-      console.warn(`⚠️ [OKX API] Failed to set leverage for ${posSide} (code: ${errorCode}): ${errorMsg}`);
-      console.warn(`📋 [OKX API] Request was:`, JSON.stringify(body));
+      console.log(`⚠️ [OKX API] Leverage setting returned code ${response.data?.code}: ${response.data?.msg}`);
+      return { success: false, error: response.data?.msg };
+    }
+  } catch (error) {
+    console.log(`⚠️ [OKX API] Leverage setting non-critical error: ${error.message}`);
+    console.log(`📝 Continuing with OKX account default leverage...`);
+    return { success: false, error: error.message, warning: 'Using account default leverage' };
+  }
+}
+try {
+  const requestPath = '/api/v5/account/set-leverage';
 
-      // If error 50002 and we're in long/short mode, try setting for both sides
-      if (errorCode === '50002' && (posSide === 'long' || posSide === 'short')) {
-        console.log(`🔄 [OKX API] Trying to set leverage for both long and short sides...`);
+  // Get account configuration to check position mode
+  let accountConfig = null;
+  let posMode = 'net_mode'; // Default to net_mode
+  try {
+    accountConfig = await getOkxAccountConfig(apiKey, apiSecret, passphrase, baseUrl);
+    posMode = accountConfig?.posMode || 'net_mode';
+    console.log(`🔍 [OKX API] Account position mode: ${posMode}`);
+  } catch (configError) {
+    console.log(`⚠️ [OKX API] Could not get account config, assuming net_mode: ${configError.message}`);
+  }
 
-        const oppositeSide = posSide === 'long' ? 'short' : 'long';
-        const oppositeBody = { ...body, posSide: oppositeSide };
+  // Build request body according to OKX API documentation
+  // For SWAP instruments:
+  // - Net Mode (net_mode): NO posSide parameter
+  // - Hedge Mode (long_short_mode): REQUIRES posSide parameter for isolated margin
+  const body = {
+    instId: instId,
+    lever: leverage.toString(),
+    mgnMode: mgnMode
+  };
 
-        const oppositeResponse = await executeOkxRequestWithFallback({
+  // Only include posSide for Hedge Mode (long_short_mode) with isolated margin
+  // Per OKX API docs: "posSide is only required when margin mode is isolated in long/short position mode"
+  if (posMode === 'long_short_mode' && mgnMode === 'isolated' && posSide && posSide !== 'net') {
+    body.posSide = posSide;
+    console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${mgnMode} mode, ${posSide} side, Hedge Mode)...`);
+  } else {
+    console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${mgnMode} mode, Net Mode)...`);
+  }
+
+  console.log(`📋 [OKX API] Leverage request body:`, JSON.stringify(body));
+
+  const response = await executeOkxRequestWithFallback({
+    apiKey,
+    apiSecret,
+    passphrase,
+    baseUrl,
+    requestPath,
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+
+  if (response.data?.code === '0') {
+    console.log(`✅ [OKX API] Leverage set to ${leverage}x successfully for ${posSide}`);
+    return {
+      success: true,
+      leverage: leverage
+    };
+  } else {
+    const errorMsg = response.data?.msg || 'Unknown error';
+    const errorCode = response.data?.code || 'N/A';
+    console.warn(`⚠️ [OKX API] Failed to set leverage for ${posSide} (code: ${errorCode}): ${errorMsg}`);
+    console.warn(`📋 [OKX API] Request was:`, JSON.stringify(body));
+
+    // If error 50002 and we're in long/short mode, try setting for both sides
+    if (errorCode === '50002' && (posSide === 'long' || posSide === 'short')) {
+      console.log(`🔄 [OKX API] Trying to set leverage for both long and short sides...`);
+
+      const oppositeSide = posSide === 'long' ? 'short' : 'long';
+      const oppositeBody = { ...body, posSide: oppositeSide };
+
+      const oppositeResponse = await executeOkxRequestWithFallback({
+        apiKey,
+        apiSecret,
+        passphrase,
+        baseUrl,
+        requestPath,
+        method: 'POST',
+        body: JSON.stringify(oppositeBody)
+      });
+
+      if (oppositeResponse.data?.code === '0') {
+        console.log(`✅ [OKX API] Leverage set to ${leverage}x for ${oppositeSide}`);
+        // Now try original side again
+        const retryResponse = await executeOkxRequestWithFallback({
           apiKey,
           apiSecret,
           passphrase,
           baseUrl,
           requestPath,
           method: 'POST',
-          body: JSON.stringify(oppositeBody)
+          body: JSON.stringify(body)
         });
 
-        if (oppositeResponse.data?.code === '0') {
-          console.log(`✅ [OKX API] Leverage set to ${leverage}x for ${oppositeSide}`);
-          // Now try original side again
-          const retryResponse = await executeOkxRequestWithFallback({
-            apiKey,
-            apiSecret,
-            passphrase,
-            baseUrl,
-            requestPath,
-            method: 'POST',
-            body: JSON.stringify(body)
-          });
-
-          if (retryResponse.data?.code === '0') {
-            console.log(`✅ [OKX API] Leverage set to ${leverage}x for ${posSide} after setting opposite side`);
-            return {
-              success: true,
-              leverage: leverage
-            };
-          }
+        if (retryResponse.data?.code === '0') {
+          console.log(`✅ [OKX API] Leverage set to ${leverage}x for ${posSide} after setting opposite side`);
+          return {
+            success: true,
+            leverage: leverage
+          };
         }
       }
-
-      // Return success anyway if error is not critical (leverage might already be set)
-      return {
-        success: errorCode === '59107', // Already set to same leverage
-        leverage: leverage,
-        warning: errorMsg,
-        errorCode: errorCode
-      };
     }
-  } catch (error) {
-    console.warn(`⚠️ [OKX API] Error setting leverage: ${error.message}`);
-    // Fail gracefully - order might still work
+
+    // Return success anyway if error is not critical (leverage might already be set)
     return {
-      success: false,
-      error: error.message
+      success: errorCode === '59107', // Already set to same leverage
+      leverage: leverage,
+      warning: errorMsg,
+      errorCode: errorCode
     };
   }
+} catch (error) {
+  console.warn(`⚠️ [OKX API] Error setting leverage: ${error.message}`);
+  // Fail gracefully - order might still work
+  return {
+    success: false,
+    error: error.message
+  };
+}
 }
 
 /**
