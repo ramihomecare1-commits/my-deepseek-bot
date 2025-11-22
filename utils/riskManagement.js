@@ -526,7 +526,6 @@ class TradeValidator {
       violations.push(`SL: ${trade.stopLoss} vs ${expected.stopLoss}`);
     }
 
-    const dcaPrice = trade.dcaPrice || trade.addPosition;
     if (dcaPrice) {
       const dcaDiff = Math.abs(dcaPrice - expected.dcaPrice) / trade.entryPrice;
       if (dcaDiff > tolerance) {
