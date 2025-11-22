@@ -1010,8 +1010,8 @@ Respond ONLY with valid JSON.`;
     const currentTrade = this.bot.activeTrades[tradeIndex];
     const entryPrice = currentTrade.entryPrice || 0;
 
-    // VALIDATION: Enforce minimum stop loss distance (10% minimum for proper risk management)
-    const MIN_SL_PERCENT = 10.0;
+    // VALIDATION: Enforce minimum stop loss distance (20% minimum for proper risk management)
+    const MIN_SL_PERCENT = 20.0;  // WIDER stop loss (20% vs 15% DCA)
     let validatedSL = recommendations.newStopLoss;
 
     if (entryPrice > 0) {
