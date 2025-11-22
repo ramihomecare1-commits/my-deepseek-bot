@@ -16,17 +16,18 @@ class TP_SL_Manager {
             // If currentPrice not provided, fetch it from OKX
             if (!currentPrice) {
                 console.log(`📊 Fetching current price for ${trade.symbol} for TP/SL placement...`);
-                const { getTicker } = require('../services/exchangeService');
 
-                const exchangeConfig = isExchangeTradingEnabled();
+                // Get exchange config directly (same way monitoring does) - avoids circular dependency
+                const exchangeService = require('../services/exchangeService');
+                const exchangeConfig = exchangeService.isExchangeTradingEnabled();
                 if (!exchangeConfig.enabled) {
                     throw new Error('Exchange trading not enabled');
                 }
 
-                const exchange = getPreferredExchange();
-                const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+                const exchange = exchangeService.getPreferredExchange();
+                const okxSymbol = exchangeService.OKX_SYMBOL_MAP[trade.symbol];
 
-                const ticker = await getTicker(okxSymbol, exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
+                const ticker = await exchangeService.getTicker(okxSymbol, exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
                 currentPrice = parseFloat(ticker.data[0].last);
                 console.log(`✅ Current price for ${trade.symbol}: $${currentPrice}`);
             }
@@ -146,13 +147,13 @@ class TP_SL_Recovery {
             try {
                 console.log(`🔄 TP/SL placement attempt ${attempt}/${maxRetries} for ${trade.symbol}`);
 
-                // Fetch current price
-                const { getTicker } = require('../services/exchangeService');
-                const exchangeConfig = isExchangeTradingEnabled();
-                const exchange = getPreferredExchange();
-                const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+                // Fetch current price - use exchangeService directly to avoid circular dependency
+                const exchangeService = require('../services/exchangeService');
+                const exchangeConfig = exchangeService.isExchangeTradingEnabled();
+                const exchange = exchangeService.getPreferredExchange();
+                const okxSymbol = exchangeService.OKX_SYMBOL_MAP[trade.symbol];
 
-                const ticker = await getTicker(okxSymbol, exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
+                const ticker = await exchangeService.getTicker(okxSymbol, exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
                 const currentPrice = parseFloat(ticker.data[0].last);
 
                 const result = await TP_SL_Manager.placeTP_SL_Orders(trade, currentPrice);
@@ -183,17 +184,18 @@ class TP_SL_Recovery {
         try {
             console.log(`🔄 Using fallback TP/SL strategy for ${trade.symbol}`);
 
-            const exchangeConfig = isExchangeTradingEnabled();
+            // Use exchangeService directly to avoid circular dependency
+            const exchangeService = require('../services/exchangeService');
+            const exchangeConfig = exchangeService.isExchangeTradingEnabled();
             if (!exchangeConfig.enabled) {
                 throw new Error('Exchange trading not enabled');
             }
 
-            const exchange = getPreferredExchange();
-            const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+            const exchange = exchangeService.getPreferredExchange();
+            const okxSymbol = exchangeService.OKX_SYMBOL_MAP[trade.symbol];
 
             // Fetch current price
-            const { getTicker } = require('../services/exchangeService');
-            const ticker = await getTicker(okxSymbol, exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
+            const ticker = await exchangeService.getTicker(okxSymbol, exchange.apiKey, exchange.apiSecret, exchange.passphrase, exchange.baseUrl);
             const currentPrice = parseFloat(ticker.data[0].last);
 
             // Try placing orders individually
