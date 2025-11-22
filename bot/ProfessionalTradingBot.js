@@ -440,8 +440,8 @@ class ProfessionalTradingBot {
             okxPositions.forEach(okxPos => {
               // Create trade record from OKX position with TP, SL, and DCA defaults
               const entryPrice = okxPos.avgPrice || 0;
-              const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 5.0;
-              const defaultSLPercent = this.tradingRules?.defaultStopLoss || 5.0;
+              const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 10.0;
+              const defaultSLPercent = this.tradingRules?.defaultStopLoss || 20.0;
               const action = okxPos.side === 'short' ? 'SELL' : 'BUY';
 
               let takeProfit, stopLoss, addPosition;
@@ -3415,8 +3415,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
     // Ensure TP, SL, and DCA levels are always set with proper defaults
     // Default: 5% TP, 5% SL, DCA at 10% below entry for BUY (or 10% above for SELL)
-    const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 5.0; // 5% default
-    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 5.0; // 5% default
+    const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 10.0; // 10% default
+    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 20.0; // 20% default (wider than 15% DCA)
 
     let takeProfit = parsePrice(opportunity.takeProfit);
     let stopLoss = parsePrice(opportunity.stopLoss);
@@ -3518,7 +3518,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },         // 1 contract = 1 SOL, min = 0.1 SOL
         'XRP-USDT-SWAP': { contractSize: 100, minOrder: 1 },        // 1 contract = 100 XRP, min = 1 XRP
         'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },       // 1 contract = 100 DOGE, min = 10 DOGE
-        'ADA-USDT-SWAP': { contractSize: 100, minOrder: 1 },         // 1 contract = 100 ADA, min = 1 ADA
+        'ADA-USDT-SWAP': { contractSize: 10, minOrder: 1 },          // 1 contract = 10 ADA, min = 1 ADA
         'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },        // 1 contract = 10 MATIC, min = 1 MATIC
         'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },         // 1 contract = 1 DOT, min = 0.1 DOT
         'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },        // 1 contract = 1 AVAX, min = 0.1 AVAX
@@ -4411,8 +4411,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       }
 
       // Check for NEW positions on OKX that aren't in activeTrades
-      const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 5.0;
-      const defaultSLPercent = this.tradingRules?.defaultStopLoss || 5.0;
+      const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 10.0;
+      const defaultSLPercent = this.tradingRules?.defaultStopLoss || 20.0;
 
       for (const okxPos of okxPositions) {
         // Check if we already have this position in activeTrades
@@ -5099,8 +5099,8 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
    */
   async fixMissingTradeLevels() {
     let fixedCount = 0;
-    const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 5.0;
-    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 5.0;
+    const defaultTPPercent = this.tradingRules?.defaultTakeProfit || 10.0;
+    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 20.0;
 
     for (const trade of this.activeTrades) {
       let needsFix = false;
@@ -8508,7 +8508,7 @@ Return JSON array format:
     }
 
     // Fallback to default if ATR not available
-    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 5.0;
+    const defaultSLPercent = this.tradingRules?.defaultStopLoss || 20.0;
     const volatility = useATR ? atr : (currentPrice * defaultSLPercent / 100);
 
     let entryPrice, takeProfit, stopLoss, addPosition, expectedGainPercent;
