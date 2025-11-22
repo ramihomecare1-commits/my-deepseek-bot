@@ -8517,47 +8517,29 @@ Return JSON array format:
       // BUY signal - Improved risk/reward ratio (target 3:1 or better)
       entryPrice = currentPrice;
 
-      // Use ATR-based stop loss: Entry - (2 * ATR)
-      // Fallback to support-based or percentage-based if ATR not available
-      if (useATR) {
-        stopLoss = Math.max(
-          entryPrice - (2 * atr), // ATR-based: 2x ATR below entry
-          support * 0.98, // Don't go below support
-          entryPrice * 0.95 // Minimum 5% stop
-        );
-      } else {
-        stopLoss = Math.max(support * 0.98, entryPrice * (1 - defaultSLPercent / 100));
-      }
+      // Use fixed 20% stop loss (wider than 15% DCA)
+      stopLoss = entryPrice * (1 - defaultSLPercent / 100); // 20% below
 
-      // Target 3:1 risk/reward: if stop is 3%, take profit should be 9%+
-      const riskPercent = ((entryPrice - stopLoss) / entryPrice) * 100;
-      const targetReward = riskPercent * 3; // 3:1 risk/reward
-      takeProfit = Math.min(resistance * 1.02, currentPrice * (1 + targetReward / 100)); // 9-12% above
-      addPosition = currentPrice * 0.98; // 2% below for DCA
-      expectedGainPercent = ((takeProfit - entryPrice) / entryPrice * 100).toFixed(2);
+      // Fixed 10% take profit
+      takeProfit = entryPrice * 1.10; // 10% above
+
+      // Fixed 15% DCA (between SL and entry)
+      addPosition = entryPrice * 0.85; // 15% below for DCA
+      expectedGainPercent = 10;
 
     } else if (action === 'SELL') {
       // SELL signal - Improved risk/reward ratio (target 3:1 or better)
       entryPrice = currentPrice;
 
-      // Use ATR-based stop loss: Entry + (2 * ATR)
-      // Fallback to resistance-based or percentage-based if ATR not available
-      if (useATR) {
-        stopLoss = Math.min(
-          entryPrice + (2 * atr), // ATR-based: 2x ATR above entry
-          resistance * 1.02, // Don't go above resistance
-          entryPrice * 1.05 // Minimum 5% stop
-        );
-      } else {
-        stopLoss = Math.min(resistance * 1.02, entryPrice * (1 + defaultSLPercent / 100));
-      }
+      // Use fixed 20% stop loss (wider than 15% DCA)
+      stopLoss = entryPrice * (1 + defaultSLPercent / 100); // 20% above
 
-      // Target 3:1 risk/reward: if stop is 3%, take profit should be 9%+
-      const riskPercent = ((stopLoss - entryPrice) / entryPrice) * 100;
-      const targetReward = riskPercent * 3; // 3:1 risk/reward
-      takeProfit = Math.max(support * 0.98, currentPrice * (1 - targetReward / 100)); // 9-12% below
-      addPosition = currentPrice * 1.02; // 2% above for averaging
-      expectedGainPercent = ((entryPrice - takeProfit) / entryPrice * 100).toFixed(2);
+      // Fixed 10% take profit
+      takeProfit = entryPrice * 0.90; // 10% below
+
+      // Fixed 15% DCA (between entry and SL)
+      addPosition = entryPrice * 1.15; // 15% above for averaging
+      expectedGainPercent = 10;
 
     } else {
       // HOLD or unknown
