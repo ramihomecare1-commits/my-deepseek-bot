@@ -804,18 +804,22 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
     const requestPath = '/api/v5/trade/order';
     const tdMode = 'isolated'; // Isolated margin for derivatives
 
-    // Apply same lot size rounding as market orders
+    // NOTE: This function expects quantity in CONTRACTS (not Coins)
+    // This matches how executeDCA calls it.
+
+    // OKX lot size (minimum order increment in CONTRACTS)
+    // Usually 1 contract for Swaps
     const lotSizeMap = {
-      'BTC-USDT-SWAP': 0.01,   // 0.01 contracts = 0.0001 BTC
-      'ETH-USDT-SWAP': 0.01,   // 0.01 contracts = 0.001 ETH
-      'SOL-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 SOL
-      'XRP-USDT-SWAP': 1,      // 1 contract = 10 XRP
-      'DOGE-USDT-SWAP': 10,    // 10 contracts = 1000 DOGE
-      'ADA-USDT-SWAP': 0.1,    // 0.1 contracts = 1 ADA
-      'MATIC-USDT-SWAP': 1,    // 1 contract = 10 MATIC
-      'DOT-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 DOT
-      'AVAX-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 AVAX
-      'LINK-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 LINK
+      'BTC-USDT-SWAP': 1,
+      'ETH-USDT-SWAP': 1,
+      'SOL-USDT-SWAP': 1,
+      'XRP-USDT-SWAP': 1,
+      'DOGE-USDT-SWAP': 1,
+      'ADA-USDT-SWAP': 1,
+      'MATIC-USDT-SWAP': 1,
+      'DOT-USDT-SWAP': 1,
+      'AVAX-USDT-SWAP': 1,
+      'LINK-USDT-SWAP': 1,
     };
 
     const lotSize = lotSizeMap[symbol] || 1;
@@ -832,7 +836,7 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
     roundedQuantity = parseFloat(roundedQuantity.toFixed(8));
 
     if (roundedQuantity !== quantity) {
-      console.log(`⚠️ [OKX API] DCA quantity adjusted from ${quantity} to ${roundedQuantity} (lot size: ${lotSize})`);
+      console.log(`⚠️ [OKX API] DCA quantity adjusted from ${quantity} to ${roundedQuantity} Contracts (lot size: ${lotSize})`);
     }
 
     if (roundedQuantity <= 0) {
@@ -901,38 +905,59 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
     const requestPath = '/api/v5/trade/order';
     const tdMode = 'isolated'; // Isolated margin for derivatives (matches OKX account config)
 
-    // OKX lot size (minimum order increment) - quantity must be a multiple of this
-    // For most perpetual swaps, lot size is 0.01 contracts
-    // BTC: 1 contract = 0.01 BTC, lot size = 0.01 contracts = 0.0001 BTC
-    const lotSizeMap = {
-      'BTC-USDT-SWAP': 0.01,   // 0.01 contracts = 0.0001 BTC
-      'ETH-USDT-SWAP': 0.01,   // 0.01 contracts = 0.001 ETH
-      'SOL-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 SOL
-      'XRP-USDT-SWAP': 1,      // 1 contract = 10 XRP
-      'DOGE-USDT-SWAP': 10,    // 10 contracts = 1000 DOGE
-      'ADA-USDT-SWAP': 0.1,    // 0.1 contracts = 1 ADA (step size per OKX)
-      'MATIC-USDT-SWAP': 1,    // 1 contract = 10 MATIC
-      'DOT-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 DOT
-      'AVAX-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 AVAX
-      'LINK-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 LINK
+    // OKX Contract Sizes (Coins per Contract)
+    // MUST MATCH OKX SPECS EXACTLY
+    const CONTRACT_SIZES = {
+      'BTC-USDT-SWAP': 0.01,
+      'ETH-USDT-SWAP': 0.1,
+      'SOL-USDT-SWAP': 1,
+      'XRP-USDT-SWAP': 100,
+      'DOGE-USDT-SWAP': 100,
+      'ADA-USDT-SWAP': 100,
+      'MATIC-USDT-SWAP': 10,
+      'DOT-USDT-SWAP': 1,
+      'AVAX-USDT-SWAP': 1,
+      'LINK-USDT-SWAP': 1,
     };
 
-    const lotSize = lotSizeMap[symbol] || 1; // Default to 1 if symbol not found
+    const contractSize = CONTRACT_SIZES[symbol] || 1; // Default to 1 if unknown (dangerous, but fallback)
 
-    // Round quantity to nearest lot size multiple
-    // Example: 0.1089 contracts with lot size 0.01 → 0.11 contracts (11 lots)
-    let roundedQuantity = Math.round(quantity / lotSize) * lotSize;
+    // Convert Coins to Contracts
+    // Example: 100 ADA / 100 (size) = 1 Contract
+    let contractQuantity = quantity / contractSize;
+
+    // OKX lot size (minimum order increment in CONTRACTS)
+    // Usually 1 contract, but some are 0.1 or 0.01
+    const lotSizeMap = {
+      'BTC-USDT-SWAP': 1,   // Min 1 contract
+      'ETH-USDT-SWAP': 1,   // Min 1 contract
+      'SOL-USDT-SWAP': 1,
+      'XRP-USDT-SWAP': 1,
+      'DOGE-USDT-SWAP': 1,
+      'ADA-USDT-SWAP': 1,
+      'MATIC-USDT-SWAP': 1,
+      'DOT-USDT-SWAP': 1,
+      'AVAX-USDT-SWAP': 1,
+      'LINK-USDT-SWAP': 1,
+    };
+
+    const lotSize = lotSizeMap[symbol] || 1;
+
+    // Round to nearest lot (contracts)
+    let roundedContracts = Math.round(contractQuantity / lotSize) * lotSize;
 
     // Ensure minimum 1 lot
-    if (roundedQuantity < lotSize) {
-      roundedQuantity = lotSize;
+    if (roundedContracts < lotSize) {
+      roundedContracts = lotSize;
     }
 
-    // Round to avoid floating point precision issues (e.g., 0.10999999 → 0.11)
-    roundedQuantity = parseFloat(roundedQuantity.toFixed(8));
+    // Round to avoid floating point issues
+    roundedContracts = parseFloat(roundedContracts.toFixed(8));
 
-    if (roundedQuantity !== quantity) {
-      console.log(`⚠️ [OKX API] Quantity adjusted from ${quantity} to ${roundedQuantity} (lot size: ${lotSize})`);
+    console.log(`📏 [OKX API] Sizing: ${quantity} ${symbol} -> ${contractQuantity.toFixed(4)} Contracts (Size: ${contractSize}) -> Rounded: ${roundedContracts}`);
+
+    if (roundedContracts <= 0) {
+      throw new Error(`Calculated contract size is 0. Quantity ${quantity} too small for ${symbol} (Min: ${contractSize * lotSize})`);
     }
 
     // Pre-order validation: Check max order size and available balance
@@ -1276,7 +1301,14 @@ async function getOkxOpenPositions(apiKey, apiSecret, passphrase, baseUrl) {
         const pos = parseFloat(position.pos || 0);
         const avgPx = parseFloat(position.avgPx || 0);
         const leverage = parseFloat(position.lever || 1);
-        const side = pos > 0 ? 'long' : pos < 0 ? 'short' : null;
+        // OKX Hedge Mode: posSide is 'long' or 'short', pos is always positive
+        // Net Mode: posSide is 'net', pos is positive (long) or negative (short)
+        let side = position.posSide;
+
+        if (side === 'net') {
+          side = pos > 0 ? 'long' : pos < 0 ? 'short' : null;
+        }
+
         const absPos = Math.abs(pos);
 
         if (absPos > 0.00000001) {
@@ -3721,6 +3753,13 @@ function calculateQuantity(symbol, price, positionSizeUSD) {
     size = portfolioValue * 0.015; // 1.5% of portfolio (default)
   }
 
+  // SAFETY CAP: Prevent massive positions due to bugs
+  const MAX_POSITION_SIZE_USD = 1000;
+  if (size > MAX_POSITION_SIZE_USD) {
+    console.warn(`⚠️ Safety Cap: Position size $${size} exceeds limit of $${MAX_POSITION_SIZE_USD}. Capping at $${MAX_POSITION_SIZE_USD}.`);
+    size = MAX_POSITION_SIZE_USD;
+  }
+
   // Calculate quantity
   const quantity = size / price;
 
@@ -4216,6 +4255,7 @@ module.exports = {
   getOkxCandles,
   getOkxOrderBook,
   getOkxTrades,
+  getOkxOpenPositions,
   calculateQuantity,
   getPreferredExchange,
   executeOkxMarketOrder,

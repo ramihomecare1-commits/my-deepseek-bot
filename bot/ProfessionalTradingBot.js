@@ -3602,7 +3602,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     console.log(`📝 Added ${newTrade.symbol} to activeTrades with PENDING status (prevents duplicate race condition)`);
 
     // EXECUTE ORDER ON OKX FIRST (source of truth)
-    const { isExchangeTradingEnabled, getPreferredExchange, executeOkxMarketOrder, executeOkxBatchOrders, placeOkxAlgoOrder, validateOkxLeverage } = require('../services/exchangeService');
+    const { isExchangeTradingEnabled, getPreferredExchange, executeOkxMarketOrder, executeOkxBatchOrders, placeOkxAlgoOrder, validateOkxLeverage, getOkxOpenPositions } = require('../services/exchangeService');
 
     const exchangeConfig = isExchangeTradingEnabled();
 
@@ -3614,6 +3614,46 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         const posSide = side === 'buy' ? 'long' : 'short';
         const modeLabel = 'OKX_DEMO';
         let leverage = parseFloat(process.env.OKX_LEVERAGE || '1');
+
+        // SAFETY CHECK 1: Max Position Size
+        const estimatedSizeUSD = initialQuantity * entryPrice;
+        const MAX_SAFE_SIZE_USD = 1000;
+        if (estimatedSizeUSD > MAX_SAFE_SIZE_USD) {
+          console.error(`🛑 SAFETY BLOCK: Attempted to open massive position $${estimatedSizeUSD.toFixed(2)} for ${newTrade.symbol}. Limit is $${MAX_SAFE_SIZE_USD}.`);
+          addLogEntry(`SAFETY BLOCK: Massive position size detected ($${estimatedSizeUSD.toFixed(2)}). Trade skipped.`, 'error');
+          newTrade.status = 'FAILED';
+          newTrade.error = 'Safety Block: Massive Position Size';
+          return;
+        }
+
+        // SAFETY CHECK 2: Hedge Mode / Duplicate Position
+        try {
+          const currentPositions = await getOkxOpenPositions(
+            exchange.apiKey,
+            exchange.apiSecret,
+            exchange.passphrase,
+            exchange.baseUrl
+          );
+
+          if (currentPositions && Array.isArray(currentPositions)) {
+            const existingPos = currentPositions.find(p => p.instId === okxSymbol && parseFloat(p.notionalUsd) > 5); // Ignore dust
+            if (existingPos) {
+              const existingSide = existingPos.posSide; // 'long' or 'short'
+              if (existingSide !== posSide) {
+                console.error(`🛑 SAFETY BLOCK: Opposing position exists for ${newTrade.symbol} (${existingSide}). Skipping ${posSide} trade to prevent Hedge Mode conflict.`);
+                addLogEntry(`SAFETY BLOCK: Opposing position exists (${existingSide}). Skipping ${posSide} trade.`, 'warning');
+                newTrade.status = 'SKIPPED';
+                newTrade.error = 'Safety Block: Opposing Position Exists';
+                return;
+              } else {
+                console.log(`ℹ️ Adding to existing ${existingSide} position for ${newTrade.symbol}`);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`⚠️ Failed to check existing positions before trade: ${err.message}`);
+          // Proceed with caution or block? Proceeding for now as API might be flaky
+        }
 
         // Validate leverage against OKX limits
         try {
