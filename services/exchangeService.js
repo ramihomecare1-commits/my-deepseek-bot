@@ -902,7 +902,7 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
   }
 }
 
-async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, passphrase, baseUrl, leverage = 1, reduceOnly = false) {
+async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, passphrase, baseUrl, leverage = 1, reduceOnly = false, tpPrice = null, slPrice = null) {
   try {
     const requestPath = '/api/v5/trade/order';
     const tdMode = 'isolated'; // Isolated margin for derivatives
@@ -1033,11 +1033,9 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
     }
 
     // Set leverage to requested value BEFORE placing order (fix error 50016)
-    // Determine position side based on order side
-    const posSide = side.toLowerCase() === 'buy' ? 'long' : 'short';
-
+    // Note: posSide is NOT needed for leverage setting API
     try {
-      const setLeverageResult = await setOkxLeverage(symbol, leverage, tdMode, posSide, apiKey, apiSecret, passphrase, baseUrl);
+      const setLeverageResult = await setOkxLeverage(symbol, leverage, tdMode, null, apiKey, apiSecret, passphrase, baseUrl);
       if (setLeverageResult.success) {
         console.log(`✅ [OKX API] Leverage confirmed at ${leverage}x`);
       } else if (setLeverageResult.warning) {
@@ -1100,6 +1098,7 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
 
     // For cross margin mode, posSide was already determined above (line 924)
     // 'buy' = long position, 'sell' = short position
+    const posSide = side.toLowerCase() === 'buy' ? 'long' : 'short';
 
     const body = {
       instId: symbol,
@@ -1114,6 +1113,43 @@ async function executeOkxMarketOrder(symbol, side, quantity, apiKey, apiSecret, 
     // Add reduceOnly flag if specified (for TP/SL orders)
     if (reduceOnly) {
       body.reduceOnly = true;
+    }
+
+    // Add TP/SL orders using attachAlgoOrds (more reliable than separate placement)
+    if (tpPrice || slPrice) {
+      const attachAlgoOrds = [];
+
+      if (tpPrice && slPrice) {
+        // Both TP and SL in one algo order
+        attachAlgoOrds.push({
+          attachAlgoClOrdId: `tp-sl-${Date.now()}`, // Custom client order ID
+          tpTriggerPx: tpPrice.toFixed(6),
+          tpOrdPx: '-1', // Market price when triggered
+          slTriggerPx: slPrice.toFixed(6),
+          slOrdPx: '-1' // Market price when triggered
+        });
+        console.log(`📊 [OKX API] Attaching TP/SL orders: TP=$${tpPrice.toFixed(2)}, SL=$${slPrice.toFixed(2)}`);
+      } else if (tpPrice) {
+        // TP only
+        attachAlgoOrds.push({
+          attachAlgoClOrdId: `tp-${Date.now()}`,
+          tpTriggerPx: tpPrice.toFixed(6),
+          tpOrdPx: '-1'
+        });
+        console.log(`📊 [OKX API] Attaching TP order: TP=$${tpPrice.toFixed(2)}`);
+      } else if (slPrice) {
+        // SL only
+        attachAlgoOrds.push({
+          attachAlgoClOrdId: `sl-${Date.now()}`,
+          slTriggerPx: slPrice.toFixed(6),
+          slOrdPx: '-1'
+        });
+        console.log(`📊 [OKX API] Attaching SL order: SL=$${slPrice.toFixed(2)}`);
+      }
+
+      if (attachAlgoOrds.length > 0) {
+        body.attachAlgoOrds = attachAlgoOrds;
+      }
     }
 
     // Log order details for debugging

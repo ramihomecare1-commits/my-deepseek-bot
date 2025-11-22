@@ -3646,6 +3646,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         }
 
         console.log(`💰 Executing ${newTrade.action} order on OKX (${modeLabel}): ${side} ${initialQuantity} ${newTrade.symbol} at $${entryPrice.toFixed(2)}`);
+        console.log(`📊 TP/SL will be attached to order: TP=$${takeProfit.toFixed(2)}, SL=$${stopLoss.toFixed(2)}`);
 
         try {
           const orderResult = await executeOkxMarketOrder(
@@ -3656,7 +3657,10 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             exchange.apiSecret,
             exchange.passphrase,
             exchange.baseUrl,
-            leverage
+            leverage,
+            false, // reduceOnly
+            takeProfit, // TP price
+            stopLoss // SL price
           );
 
           if (orderResult.success) {
