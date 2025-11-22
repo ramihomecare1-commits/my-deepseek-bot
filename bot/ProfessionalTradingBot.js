@@ -3672,6 +3672,15 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             // Update quantity from actual execution
             newTrade.quantity = orderResult.executedQty || initialQuantity;
 
+            // TP/SL orders were already attached to the main order via attachAlgoOrds
+            // No need to place them separately - this prevents duplicates and errors
+            console.log(`✅ TP/SL orders attached to main order via attachAlgoOrds`);
+            console.log(`   - TP: $${takeProfit.toFixed(2)}`);
+            console.log(`   - SL: $${stopLoss.toFixed(2)}`);
+            newTrade.tpSlAutoPlaced = true; // Mark as placed via attachAlgoOrds
+            addLogEntry(`✅ ${newTrade.symbol}: Order placed with TP/SL attached`, 'success');
+
+            /* DISABLED: TP/SL are now placed via attachAlgoOrds (prevents duplicates)
             // Automatically place TP/SL algo orders on OKX using robust recovery manager
             console.log(`📊 Placing TP/SL orders for ${newTrade.symbol}...`);
             try {
@@ -3704,6 +3713,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               newTrade.tpSlError = finalError.message;
               addLogEntry(`TP/SL placement failed for ${newTrade.symbol}: ${finalError.message}`, 'error');
             }
+            */
             // Place DCA limit order at addPosition price (if trade goes against us)
             // For BUY: DCA limit buy order at lower price (addPosition < entryPrice)
             // For SELL: DCA limit sell order at higher price (addPosition > entryPrice)
