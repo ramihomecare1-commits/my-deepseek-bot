@@ -1678,6 +1678,9 @@ class ProfessionalTradingBot {
         console.log('✅ No coins need escalation to premium AI');
       }
 
+      // Check position consistency for trades with DCA fills
+      await this.checkPositionConsistency();
+
       console.log('✅ Monitoring cycle complete');
 
     } catch (error) {
@@ -8610,95 +8613,135 @@ Respond with JSON only:
   }
 
   /**
+   * Check position consistency - verify TP/SL levels match average entry after DCA fills
+   * This runs periodically in monitoring to catch any missed updates
+   */
+  async checkPositionConsistency() {
+    try {
+      const { RiskManager } = require('../utils/riskManagement');
+
+      for (const trade of this.trades) {
+        // Only check trades that have had DCA fills
+        if (!trade || trade.status !== 'OPEN' || trade.dcaCount === 0) {
+          continue;
+        }
+
+        // Calculate expected TP/SL based on current average entry price
+        const expectedLevels = RiskManager.calculateLevels(
+          trade.averageEntryPrice,
+          trade.action,
+          trade.symbol
+        );
+
+        // Check if current TP/SL deviate significantly from expected (>2% tolerance)
+        const tpDeviation = Math.abs(trade.takeProfit - expectedLevels.takeProfit) / trade.averageEntryPrice;
+        const slDeviation = Math.abs(trade.stopLoss - expectedLevels.stopLoss) / trade.averageEntryPrice;
+
+        if (tpDeviation > 0.02 || slDeviation > 0.02) {
+          console.log(`⚠️ [${trade.symbol}] TP/SL inconsistency detected after DCA #${trade.dcaCount}:`);
+          console.log(`   Current TP: $${trade.takeProfit.toFixed(2)}, Expected: $${expectedLevels.takeProfit.toFixed(2)} (${(tpDeviation * 100).toFixed(2)}% deviation)`);
+          console.log(`   Current SL: $${trade.stopLoss.toFixed(2)}, Expected: $${expectedLevels.stopLoss.toFixed(2)} (${(slDeviation * 100).toFixed(2)}% deviation)`);
+          console.log(`   🔄 Triggering TP/SL update...`);
+
+          // Trigger update to fix the inconsistency
+          await this.updateTradeLevelsAfterDCA(trade, {
+            takeProfit: expectedLevels.takeProfit,
+            stopLoss: expectedLevels.stopLoss,
+            addPosition: expectedLevels.dcaPrice,
+            reason: 'Consistency check: TP/SL levels updated to match average entry price'
+          });
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error in position consistency check:`, error.message);
+    }
+  }
+
+  /**
    * Update TP/SL/DCA levels after DCA fills
    * Cancels old orders and places new ones with updated prices
    */
   async updateTradeLevelsAfterDCA(trade, newLevels) {
     try {
-      console.log(`🔄 [${trade.symbol}] Updating trade levels after DCA...`);
+      console.log(`🔄 [${trade.symbol}] Updating trade levels after DCA #${trade.dcaCount}...`);
+      console.log(`   📊 New Average Entry: $${trade.averageEntryPrice.toFixed(2)}`);
+      console.log(`   🎯 New TP: $${newLevels.takeProfit.toFixed(2)}`);
+      console.log(`   🛡️ New SL: $${newLevels.stopLoss.toFixed(2)}`);
+      console.log(`   💰 New DCA: $${newLevels.addPosition.toFixed(2)}`);
 
-      const { cancelOrder, placeOrder } = require('../services/exchangeService');
+      const { cancelOkxAlgoOrders, isExchangeTradingEnabled, getPreferredExchange, OKX_SYMBOL_MAP, executeOkxLimitOrder } = require('../services/exchangeService');
+      const { TP_SL_Manager } = require('../utils/tpSlManager');
 
-      // Step 1: Cancel existing TP order
-      if (trade.okxTpOrderId) {
-        try {
-          await cancelOrder(trade.symbol, trade.okxTpOrderId);
-          console.log(`   ✅ Cancelled old TP order: ${trade.okxTpOrderId}`);
-        } catch (error) {
-          console.log(`   ⚠️ Could not cancel old TP order: ${error.message}`);
-        }
+      const exchangeConfig = isExchangeTradingEnabled();
+      if (!exchangeConfig.enabled) {
+        console.log(`⚠️ Exchange trading disabled, skipping TP/SL update`);
+        return false;
       }
 
-      // Step 2: Cancel existing SL order
-      if (trade.okxSlOrderId) {
-        try {
-          await cancelOrder(trade.symbol, trade.okxSlOrderId);
-          console.log(`   ✅ Cancelled old SL order: ${trade.okxSlOrderId}`);
-        } catch (error) {
-          console.log(`   ⚠️ Could not cancel old SL order: ${error.message}`);
+      const exchange = getPreferredExchange();
+      const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
+
+      // Step 1: Cancel ALL existing algo orders (TP/SL/DCA) for this symbol
+      try {
+        console.log(`   🗑️ Cancelling existing algo orders...`);
+        const cancelResult = await cancelOkxAlgoOrders(
+          okxSymbol,
+          exchange.apiKey,
+          exchange.apiSecret,
+          exchange.passphrase,
+          exchange.baseUrl
+        );
+
+        if (cancelResult.success) {
+          console.log(`   ✅ Cancelled ${cancelResult.data?.length || 0} existing algo orders`);
         }
+      } catch (error) {
+        console.log(`   ⚠️ Could not cancel old orders: ${error.message}`);
       }
 
-      // Step 3: Cancel existing DCA order
-      if (trade.okxDcaOrderId) {
-        try {
-          await cancelOrder(trade.symbol, trade.okxDcaOrderId);
-          console.log(`   ✅ Cancelled old DCA order: ${trade.okxDcaOrderId}`);
-        } catch (error) {
-          console.log(`   ⚠️ Could not cancel old DCA order: ${error.message}`);
-        }
-      }
-
-      // Step 4: Update trade object with new levels
+      // Step 2: Update trade object with new levels
       trade.takeProfit = newLevels.takeProfit;
       trade.stopLoss = newLevels.stopLoss;
       trade.addPosition = newLevels.addPosition;
       trade.dcaPrice = newLevels.addPosition;
 
-      // Step 5: Place new TP order
+      // Step 3: Place new TP/SL orders using TP_SL_Manager
       try {
-        const tpOrder = await placeOrder({
-          symbol: trade.symbol,
-          side: trade.action === 'BUY' ? 'sell' : 'buy',
-          type: 'limit',
-          price: newLevels.takeProfit,
-          quantity: trade.quantity,
-          reduceOnly: true
-        });
-        trade.okxTpOrderId = tpOrder.orderId;
-        console.log(`   ✅ Placed new TP order at $${newLevels.takeProfit.toFixed(2)}`);
+        console.log(`   📊 Placing new TP/SL orders...`);
+        const tpSlResult = await TP_SL_Manager.placeTP_SL_Orders(trade, trade.averageEntryPrice);
+
+        if (tpSlResult.tpOrder) {
+          trade.okxTpOrderId = tpSlResult.tpOrder.algoId || tpSlResult.tpOrder.ordId;
+          console.log(`   ✅ New TP order placed: ${trade.okxTpOrderId}`);
+        }
+
+        if (tpSlResult.slOrder) {
+          trade.okxSlOrderId = tpSlResult.slOrder.algoId || tpSlResult.slOrder.ordId;
+          console.log(`   ✅ New SL order placed: ${trade.okxSlOrderId}`);
+        }
       } catch (error) {
-        console.error(`   ❌ Failed to place new TP order: ${error.message}`);
+        console.error(`   ❌ Failed to place new TP/SL orders: ${error.message}`);
       }
 
-      // Step 6: Place new SL order
+      // Step 4: Place new DCA limit order
       try {
-        const slOrder = await placeOrder({
-          symbol: trade.symbol,
-          side: trade.action === 'BUY' ? 'sell' : 'buy',
-          type: 'stop_market',
-          stopPrice: newLevels.stopLoss,
-          quantity: trade.quantity,
-          reduceOnly: true
-        });
-        trade.okxSlOrderId = slOrder.orderId;
-        console.log(`   ✅ Placed new SL order at $${newLevels.stopLoss.toFixed(2)}`);
-      } catch (error) {
-        console.error(`   ❌ Failed to place new SL order: ${error.message}`);
-      }
+        console.log(`   💰 Placing new DCA limit order at $${newLevels.addPosition.toFixed(2)}...`);
+        const dcaOrderResult = await executeOkxLimitOrder(
+          okxSymbol,
+          trade.action === 'BUY' ? 'buy' : 'sell',
+          trade.quantity, // Same size as current position
+          newLevels.addPosition,
+          exchange.apiKey,
+          exchange.apiSecret,
+          exchange.passphrase,
+          exchange.baseUrl
+        );
 
-      // Step 7: Place new DCA order
-      try {
-        const dcaOrder = await placeOrder({
-          symbol: trade.symbol,
-          side: trade.action === 'BUY' ? 'buy' : 'sell',
-          type: 'limit',
-          price: newLevels.addPosition,
-          quantity: trade.quantity, // Same size as current position
-          reduceOnly: false
-        });
-        trade.okxDcaOrderId = dcaOrder.orderId;
-        console.log(`   ✅ Placed new DCA order at $${newLevels.addPosition.toFixed(2)}`);
+        if (dcaOrderResult.success) {
+          trade.okxDcaOrderId = dcaOrderResult.orderId;
+          trade.okxDcaPrice = newLevels.addPosition;
+          console.log(`   ✅ New DCA order placed: ${trade.okxDcaOrderId}`);
+        }
       } catch (error) {
         console.error(`   ❌ Failed to place new DCA order: ${error.message}`);
       }
