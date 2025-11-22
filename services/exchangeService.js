@@ -2887,14 +2887,14 @@ async function setOkxLeverage(instId, leverage, mgnMode, posSide, apiKey, apiSec
       return { success: false, error: response.data?.msg };
     }
   } catch (error) {
-    lever: leverage.toString(),
-      mgnMode: mgnMode
-  };
+    console.log(`⚠️ [OKX API] Leverage setting non-critical error: ${error.message}`);
+    console.log(`📝 Continuing with OKX account default leverage...`);
+    return { success: false, error: error.message, warning: 'Using account default leverage' };
+  }
+}
 
-  // Only include posSide for Hedge Mode (long_short_mode) with isolated margin
-  // Per OKX API docs: "posSide is only required when margin mode is isolated in long/short position mode"
-  if (posMode === 'long_short_mode' && mgnMode === 'isolated' && posSide && posSide !== 'net') {
-    body.posSide = posSide;
+/**
+ * Get OKX max order size for an instrument;
     console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${mgnMode} mode, ${posSide} side, Hedge Mode)...`);
   } else {
     console.log(`🔧 [OKX API] Setting leverage to ${leverage}x for ${instId} (${mgnMode} mode, Net Mode)...`);
