@@ -7090,6 +7090,11 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         // Fetch historical data for analysis (pass currentPrice to avoid duplicate price fetch)
         const historicalData = await fetchHistoricalData(coinData.id || trade.symbol, coinData, this.stats, config, currentPrice);
 
+        // Calculate trade age
+        const tradeOpenTime = trade.createdAt || trade.okxExecutedAt || Date.now();
+        const tradeAge = Date.now() - tradeOpenTime;
+        const tradeAgeHours = (tradeAge / (1000 * 60 * 60)).toFixed(1);
+
         return {
           symbol: trade.symbol,
           name: trade.name,
@@ -7101,6 +7106,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           pnl: pnl,
           pnlPercent: pnlPercent,
           status: trade.status,
+          tradeAge: tradeAge,
+          tradeAgeHours: tradeAgeHours,
+          dcaCount: trade.dcaCount || 0,
           historicalData: historicalData
         };
       }));
@@ -7231,6 +7239,8 @@ Trade ${i + 1}: ${t.symbol} (${t.name})
 - Stop Loss: $${t.stopLoss.toFixed(2)} (which equals ${slPercent >= 0 ? '+' : ''}${slPercent.toFixed(2)}% loss from entry price of $${t.entryPrice.toFixed(2)})
   ⚠️ CRITICAL: The Stop Loss value "$${t.stopLoss.toFixed(2)}" is a DOLLAR AMOUNT (price level), NOT a percentage.
 - Current P&L: ${pnlText}
+- Trade Age: ${t.tradeAgeHours} hours (opened ${t.tradeAgeHours < 1 ? 'less than 1 hour' : t.tradeAgeHours + ' hours'} ago)
+- DCA Count: ${t.dcaCount || 0}/5
 - Status: ${t.status}${newsText}${historicalText}
 `;
           }).join('\n')}
@@ -7259,7 +7269,23 @@ IMPORTANT RULES:
 - Before recommending CLOSE on a losing trade, check if DCA is available (dcaCount < 5). DCA is often better than closing at a loss.
 - For ADJUST: You can adjust Take Profit (newTakeProfit), Stop Loss (newStopLoss), and/or DCA Price (newDcaPrice). Only provide values you want to change. Leave null if no change needed.
 - For DCA Price (newDcaPrice): This is the price level where we add to the position. For BUY trades, DCA should be BELOW current price (buy the dip). For SELL trades, DCA should be ABOVE current price (short the rally).
-- For CLOSE: Only recommend if trade is profitable OR if all DCAs are exhausted (dcaCount >= 5) and loss is significant.
+
+🚨 PARTIAL CLOSE RULES (CRITICAL - MUST FOLLOW):
+- DO NOT recommend CLOSE unless ONE of these conditions is met:
+  1. Profit is at least 50% of TP target
+     Example: Entry $100, TP $110 (10% gain), Current $105 (5% gain) → Profit is 50% of TP → CAN recommend CLOSE
+     Example: Entry $100, TP $110 (10% gain), Current $103 (3% gain) → Profit is only 30% of TP → MUST use HOLD, NOT CLOSE
+  2. All DCAs exhausted (dcaCount >= 5) AND loss is significant (> 15%)
+  3. Stop loss has been hit or very close to being hit
+- If profit < 50% of TP target: Use HOLD or ADJUST instead of CLOSE
+- Let winning trades run to capture full profit potential
+
+🚨 TRADE AGE RULES (CRITICAL - MUST FOLLOW):
+- DO NOT recommend CLOSE for trades opened less than 4 hours ago
+- New trades need time to develop - give them at least 4 hours
+- Exception: If stop loss is hit or imminent, can close immediately
+- If trade age < 4 hours: Use HOLD or ADJUST instead of CLOSE
+- This prevents inconsistent behavior (opening then immediately closing)
 
 Return JSON array format:
 [
@@ -7362,8 +7388,39 @@ Return JSON array format:
                 return true;
               });
 
+              // 🚨 VALIDATE CLOSE RECOMMENDATIONS - Enforce partial close and trade age rules
+              const validatedRecommendations = validRecommendations.map(rec => {
+                if (rec.recommendation === 'CLOSE') {
+                  const trade = batch.find(t => t.symbol === rec.symbol);
+                  if (trade) {
+                    // Check 1: Trade age (must be at least 4 hours old)
+                    const tradeAgeHours = parseFloat(trade.tradeAgeHours);
+                    if (tradeAgeHours < 4) {
+                      console.log(`⚠️ ${rec.symbol}: AI recommended CLOSE but trade is only ${tradeAgeHours}h old - changing to HOLD`);
+                      rec.recommendation = 'HOLD';
+                      rec.reason = `[Auto-corrected: Trade too new (${tradeAgeHours}h), needs 4h minimum] ` + rec.reason;
+                      rec.confidence = Math.max(0.5, rec.confidence - 0.2); // Reduce confidence
+                    } else {
+                      // Check 2: Profit requirement (must be at least 50% of TP target)
+                      const pnlPercent = trade.pnlPercent || 0;
+                      const tpPercent = ((trade.takeProfit - trade.entryPrice) / trade.entryPrice) * 100;
+                      const profitRatio = tpPercent !== 0 ? pnlPercent / tpPercent : 0;
+
+                      // Only enforce profit rule if trade is profitable and DCAs not exhausted
+                      if (pnlPercent > 0 && profitRatio < 0.5 && (trade.dcaCount || 0) < 5) {
+                        console.log(`⚠️ ${rec.symbol}: AI recommended CLOSE but profit (${pnlPercent.toFixed(1)}%) is < 50% of TP (${tpPercent.toFixed(1)}%) - changing to HOLD`);
+                        rec.recommendation = 'HOLD';
+                        rec.reason = `[Auto-corrected: Profit ${pnlPercent.toFixed(1)}% is only ${(profitRatio * 100).toFixed(0)}% of TP target, let it run] ` + rec.reason;
+                        rec.confidence = Math.max(0.5, rec.confidence - 0.2); // Reduce confidence
+                      }
+                    }
+                  }
+                }
+                return rec;
+              });
+
               // Add to all recommendations
-              allRecommendations.push(...validRecommendations);
+              allRecommendations.push(...validatedRecommendations);
 
             } catch (parseError) {
               console.error('❌ Failed to parse AI response:', parseError.message);
