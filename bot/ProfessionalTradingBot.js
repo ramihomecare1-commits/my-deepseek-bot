@@ -3875,7 +3875,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     // Place initial DCA using calculateQuantity() - same as re-evaluation DCA
                     // This uses LIVE OKX contract specs instead of hardcoded values
                     try {
-                      const { calculateQuantity, getDCASize } = require('../services/exchangeService');
+                      const { calculateQuantity } = require('../services/exchangeService');
                       const { getDCASize: getPortfolioDCASize } = require('../services/portfolioService');
 
                       console.log('🔄 Placing initial DCA using calculateQuantity() (live OKX specs)...');
