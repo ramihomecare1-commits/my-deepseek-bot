@@ -9,28 +9,48 @@ const path = require('path');
 const SETTINGS_FILE = path.join(__dirname, '../data/alertSettings.json');
 const HISTORY_FILE = path.join(__dirname, '../data/alertHistory.json');
 
-// Default settings
+// Default settings - ULTRA-FILTERED for highest probability only
 const DEFAULT_SETTINGS = {
     enabled: true,
     alertTypes: {
         levelBreakout: true,
         keyLevelTest: true,
-        volumeMomentum: true
+        volumeMomentum: false // Disabled - too noisy without other confirmations
     },
     thresholds: {
-        minConfidence: 7,
-        maxDistance: 2.0,
-        minStrength: 0.7
+        minConfidence: 8.5,        // Increased from 7 to 8.5
+        maxDistance: 1.5,           // Decreased from 2.0 to 1.5%
+        minStrength: 0.8,           // Increased from 0.7 to 0.8 (strong only)
+        minConfluence: 3,           // NEW: Minimum 3 confluence factors
+        minVolumeRatio: 1.8,        // NEW: Minimum 180% volume
+        minTouchCount: 3            // NEW: Minimum 3 historical tests
     },
     coinSettings: {
-        BTC: { distance: 2, scanInterval: 15 },
-        ETH: { distance: 2, scanInterval: 15 },
-        default: { distance: 3, scanInterval: 60 }
+        BTC: { distance: 1.5, scanInterval: 15, enabled: true },
+        ETH: { distance: 1.5, scanInterval: 15, enabled: true },
+        BNB: { distance: 1.5, scanInterval: 30, enabled: true },
+        SOL: { distance: 1.5, scanInterval: 30, enabled: true },
+        XRP: { distance: 1.5, scanInterval: 30, enabled: true },
+        // Disable other coins - focus on top 5 only
+        default: { distance: 1.5, scanInterval: 60, enabled: false }
     },
     quietHours: {
         enabled: false,
         start: "22:00",
         end: "06:00"
+    },
+    priorityLevels: {
+        // Only CRITICAL and HIGH - no MEDIUM/LOW
+        critical: {
+            minConfidence: 9.0,
+            minVolumeRatio: 2.5,
+            minConfluence: 4
+        },
+        high: {
+            minConfidence: 8.5,
+            minVolumeRatio: 1.8,
+            minConfluence: 3
+        }
     }
 };
 

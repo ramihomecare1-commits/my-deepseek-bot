@@ -38,6 +38,13 @@ function shouldSendAlert(alert, coin) {
 async function scanForAlerts(coins, settings) {
     for (const coin of coins) {
         try {
+            // Check if coin is enabled in settings
+            const coinSettings = getCoinSettings(coin, settings);
+            if (coinSettings.enabled === false) {
+                console.log(`⏭️ ${coin}: Disabled in settings`);
+                continue;
+            }
+
             console.log(`🔍 Scanning ${coin} for alerts...`);
 
             // Fetch candles
@@ -63,22 +70,23 @@ async function scanForAlerts(coins, settings) {
                     .map(l => checkProximity(l, currentPrice))
             };
 
-            // Detect alerts
+            // Detect alerts (pass settings for strict filtering)
             const alerts = [];
 
             if (settings.alertTypes.levelBreakout) {
-                const breakout = detectBreakout(coin, candles, enhancedLevels);
+                const breakout = detectBreakout(coin, candles, enhancedLevels, settings);
                 if (breakout) alerts.push(breakout);
             }
 
             if (settings.alertTypes.keyLevelTest) {
-                const levelTest = detectLevelTest(coin, candles, enhancedLevels);
+                const levelTest = detectLevelTest(coin, candles, enhancedLevels, settings);
                 if (levelTest) alerts.push(levelTest);
             }
 
+            // Volume momentum disabled by default in ultra-filtered mode
             if (settings.alertTypes.volumeMomentum) {
                 const momentum = detectVolumeMomentum(coin, candles, enhancedLevels);
-                if (momentum) alerts.push(momentum);
+                if (momentum && momentum.confidence >= 8.5) alerts.push(momentum);
             }
 
             // Send alerts (with deduplication)
@@ -92,7 +100,7 @@ async function scanForAlerts(coins, settings) {
             }
 
             if (alerts.length === 0) {
-                console.log(`✅ ${coin}: No alerts`);
+                console.log(`✅ ${coin}: No high-probability alerts`);
             }
 
         } catch (error) {
@@ -102,7 +110,7 @@ async function scanForAlerts(coins, settings) {
 }
 
 /**
- * Start alert scanner jobs
+ * Start alert scanner jobs (ULTRA-FILTERED - Top 5 only)
  */
 function startAlertScanner() {
     const settings = loadAlertSettings();
@@ -112,38 +120,33 @@ function startAlertScanner() {
         return;
     }
 
-    console.log('🚀 Starting alert scanner...');
+    console.log('🚀 Starting ULTRA-FILTERED alert scanner...');
+    console.log('   🎯 Focus: BTC, ETH, Top 5 market cap only');
+    console.log('   📊 Filters: Confidence 8.5+, Volume 180%+, 3+ confluence');
     console.log('');
 
-    // BTC/ETH - Every 15 minutes
+    // BTC/ETH - Every 15 minutes (highest priority)
     cron.schedule('*/15 * * * *', () => {
         console.log('');
-        console.log('🔍 [15min] Scanning BTC/ETH for alerts...');
+        console.log('🔍 [15min] Scanning BTC/ETH for HIGH-PROBABILITY alerts...');
         scanForAlerts(['BTC', 'ETH'], settings);
     });
 
-    // Major altcoins - Every 30 minutes
+    // Top 5 market cap - Every 30 minutes
     cron.schedule('*/30 * * * *', () => {
         console.log('');
-        console.log('🔍 [30min] Scanning major altcoins for alerts...');
-        scanForAlerts(['BNB', 'SOL', 'XRP', 'ADA'], settings);
+        console.log('🔍 [30min] Scanning Top 5 for HIGH-PROBABILITY alerts...');
+        scanForAlerts(['BNB', 'SOL', 'XRP'], settings);
     });
 
-    // All coins - Every hour
-    cron.schedule('0 * * * *', () => {
-        console.log('');
-        console.log('🔍 [1hr] Scanning all coins for alerts...');
-        scanForAlerts(['AVAX', 'DOT', 'MATIC', 'LINK'], settings);
-    });
-
-    console.log('✅ Alert scanner started successfully!');
+    console.log('✅ ULTRA-FILTERED alert scanner started!');
     console.log('   📊 BTC/ETH: Every 15 minutes');
-    console.log('   📊 Major Altcoins: Every 30 minutes');
-    console.log('   📊 All Coins: Every hour');
+    console.log('   📊 Top 5 (BNB/SOL/XRP): Every 30 minutes');
+    console.log('   ⚡ Only CRITICAL and HIGH priority alerts');
     console.log('');
 
     // Run initial scan immediately
-    console.log('🔍 Running initial scan...');
+    console.log('🔍 Running initial HIGH-PROBABILITY scan...');
     scanForAlerts(['BTC', 'ETH'], settings);
 }
 

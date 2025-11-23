@@ -91,24 +91,20 @@ function formatAlertMessage(alert) {
 }
 
 /**
- * Determine alert urgency level
+ * Determine alert urgency level (ONLY CRITICAL OR HIGH)
  * @param {Object} alert - Alert object
- * @returns {string} Urgency level (HIGH/MEDIUM/LOW)
+ * @returns {string} Urgency level (CRITICAL/HIGH only)
  */
 function getUrgency(alert) {
-    if (alert.type === 'LEVEL_BREAKOUT' && alert.confidence >= 8) {
-        return 'HIGH';
-    }
-    if (alert.type === 'KEY_LEVEL_TEST' && alert.touchCount >= 5) {
-        return 'HIGH';
-    }
-    if (alert.type === 'VOLUME_MOMENTUM' && alert.volumeRatio >= 2.5) {
-        return 'HIGH';
-    }
-    if (alert.confidence >= 7) {
-        return 'MEDIUM';
-    }
-    return 'LOW';
+    // CRITICAL: Exceptional opportunities only
+    if (alert.priority === 'CRITICAL') return 'CRITICAL';
+    if (alert.confidence >= 9.0) return 'CRITICAL';
+    if (alert.type === 'LEVEL_BREAKOUT' && alert.volumeRatio >= 2.5 && alert.confluence >= 4) return 'CRITICAL';
+    if (alert.type === 'KEY_LEVEL_TEST' && alert.touchCount >= 5 && alert.confidence >= 9.0) return 'CRITICAL';
+
+    // HIGH: All other alerts that pass filters
+    // (anything below HIGH is already filtered out)
+    return 'HIGH';
 }
 
 /**

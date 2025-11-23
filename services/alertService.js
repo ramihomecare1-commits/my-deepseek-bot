@@ -126,13 +126,14 @@ function isNearKeyLevel(price, levels, threshold = 0.02) {
 }
 
 /**
- * Detect level breakout alerts
+ * Detect level breakout alerts (ULTRA-FILTERED)
  * @param {string} symbol - Coin symbol
  * @param {Array} candles - Historical candles
  * @param {Object} levels - Support/resistance levels
+ * @param {Object} settings - Alert settings (optional)
  * @returns {Object|null} Alert object or null
  */
-function detectBreakout(symbol, candles, levels) {
+function detectBreakout(symbol, candles, levels, settings = null) {
     if (candles.length < 2) return null;
 
     const currentCandle = candles[candles.length - 1];
@@ -142,15 +143,36 @@ function detectBreakout(symbol, candles, levels) {
     const currentVolume = currentCandle.volume;
     const avgVolume = calculateAverageVolume(candles, 20);
 
+    // ULTRA-STRICT: Minimum volume ratio (default 200% for breakouts)
+    const minVolumeRatio = settings?.thresholds?.minVolumeRatio || 2.0;
+    const minConfluence = settings?.thresholds?.minConfluence || 3;
+    const minTouchCount = settings?.thresholds?.minTouchCount || 3;
+
     // Check each level
     const allLevels = [...levels.support, ...levels.resistance];
 
     for (const level of allLevels) {
         const isBreakout = checkBreakout(currentPrice, previousPrice, level);
-        const hasVolumeConfirmation = currentVolume > avgVolume * 1.5;
+        const volumeRatio = currentVolume / avgVolume;
+        const hasVolumeConfirmation = volumeRatio >= minVolumeRatio;
+        const confluence = countConfluence(level);
 
-        if (isBreakout && hasVolumeConfirmation && level.strength >= 0.7) {
+        // ULTRA-STRICT FILTERS:
+        // 1. Must be breakout
+        // 2. Volume > 200% (or configured minimum)
+        // 3. Strength must be "strong" (0.8+)
+        // 4. Minimum 3 confluence factors
+        // 5. Minimum 3 historical touches
+        if (isBreakout &&
+            hasVolumeConfirmation &&
+            level.strength >= 0.8 &&
+            confluence >= minConfluence &&
+            (level.touchCount || 0) >= minTouchCount) {
+
             const confidence = calculateBreakoutConfidence(level, currentVolume, avgVolume);
+
+            // FINAL FILTER: Confidence must be 8.5+
+            if (confidence < 8.5) continue;
 
             return {
                 type: 'LEVEL_BREAKOUT',
@@ -160,13 +182,14 @@ function detectBreakout(symbol, candles, levels) {
                 levelType: level.type,
                 direction: level.type === 'support' ? 'BELOW' : 'ABOVE',
                 confidence,
-                volumeRatio: parseFloat((currentVolume / avgVolume).toFixed(2)),
+                volumeRatio: parseFloat(volumeRatio.toFixed(2)),
                 strength: level.strength,
-                confluence: countConfluence(level),
+                confluence,
                 touchCount: level.touchCount || 0,
                 action: level.type === 'support' ?
-                    'WATCH_CONTINUATION_DOWN' :
-                    'CONSIDER_LONG_BREAKOUT',
+                    'STRONG_BREAKDOWN_CONFIRMED' :
+                    'STRONG_BREAKOUT_CONFIRMED',
+                priority: confidence >= 9.0 && volumeRatio >= 2.5 ? 'CRITICAL' : 'HIGH',
                 timestamp: new Date()
             };
         }
@@ -176,27 +199,39 @@ function detectBreakout(symbol, candles, levels) {
 }
 
 /**
- * Detect key level test alerts
+ * Detect key level test alerts (ULTRA-FILTERED)
  * @param {string} symbol - Coin symbol
  * @param {Array} candles - Historical candles
  * @param {Object} levels - Support/resistance levels
+ * @param {Object} settings - Alert settings (optional)
  * @returns {Object|null} Alert object or null
  */
-function detectLevelTest(symbol, candles, levels) {
+function detectLevelTest(symbol, candles, levels, settings = null) {
     if (candles.length === 0) return null;
 
     const currentPrice = candles[candles.length - 1].close;
     const allLevels = [...levels.support, ...levels.resistance];
 
+    const minTouchCount = settings?.thresholds?.minTouchCount || 3;
+    const minConfluence = settings?.thresholds?.minConfluence || 3;
+
     for (const level of allLevels) {
         const distance = Math.abs(level.price - currentPrice) / currentPrice;
 
-        // Within 1% and strong level with multiple touches
-        if (distance < 0.01 &&
-            level.touchCount >= 3 &&
-            level.strength >= 0.7) {
+        // ULTRA-STRICT FILTERS:
+        // 1. Within 0.5% (tighter than before)
+        // 2. Strong level only (0.8+)
+        // 3. Minimum 3 touches
+        // 4. Minimum 3 confluence factors
+        if (distance < 0.005 &&  // 0.5% instead of 1%
+            level.strength >= 0.8 &&
+            (level.touchCount || 0) >= minTouchCount &&
+            countConfluence(level) >= minConfluence) {
 
             const confidence = calculateLevelTestConfidence(level);
+
+            // FINAL FILTER: Confidence must be 8.5+
+            if (confidence < 8.5) continue;
 
             return {
                 type: 'KEY_LEVEL_TEST',
@@ -211,8 +246,9 @@ function detectLevelTest(symbol, candles, levels) {
                 confluence: countConfluence(level),
                 volumeConfirmed: level.volumeConfirmed || false,
                 action: level.type === 'support' ?
-                    'WATCH_BOUNCE_OPPORTUNITY' :
-                    'WATCH_REJECTION_OPPORTUNITY',
+                    'STRONG_BOUNCE_EXPECTED' :
+                    'STRONG_REJECTION_EXPECTED',
+                priority: confidence >= 9.0 && level.touchCount >= 5 ? 'CRITICAL' : 'HIGH',
                 timestamp: new Date()
             };
         }
