@@ -3159,6 +3159,10 @@ async function amendOkxAlgoOrder(params, apiKey, apiSecret, passphrase, baseUrl)
  */
 async function getOkxTicker(instId, baseUrl) {
   try {
+    // Rate limiting: Add 300ms delay between requests to avoid 429 errors
+    // OKX allows ~20 requests per 2 seconds for public endpoints
+    await new Promise(resolve => setTimeout(resolve, 300));
+
     const requestPath = `/api/v5/market/ticker?instId=${instId}`;
 
     // Market data endpoints don't require authentication
@@ -3175,8 +3179,11 @@ async function getOkxTicker(instId, baseUrl) {
         success: true,
         instId: ticker.instId,
         last: parseFloat(ticker.last || 0),
+        lastSz: parseFloat(ticker.lastSz || 0),
         askPx: parseFloat(ticker.askPx || 0),
+        askSz: parseFloat(ticker.askSz || 0),
         bidPx: parseFloat(ticker.bidPx || 0),
+        bidSz: parseFloat(ticker.bidSz || 0),
         open24h: parseFloat(ticker.open24h || 0),
         high24h: parseFloat(ticker.high24h || 0),
         low24h: parseFloat(ticker.low24h || 0),
@@ -3191,6 +3198,41 @@ async function getOkxTicker(instId, baseUrl) {
       };
     }
   } catch (error) {
+    // Check if it's a rate limit error
+    if (error.response?.status === 429) {
+      console.log(`⚠️ [OKX API] Rate limit hit for ${instId}, retrying after 1s...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Retry once
+      try {
+        const requestPath = `/api/v5/market/ticker?instId=${instId}`;
+        const response = await axios.get(`${baseUrl}${requestPath}`, {
+          timeout: 10000,
+          headers: { 'Content-Type': 'application/json' }
+        });
+        if (response.data?.code === '0' && response.data?.data?.[0]) {
+          const ticker = response.data.data[0];
+          return {
+            success: true,
+            instId: ticker.instId,
+            last: parseFloat(ticker.last || 0),
+            lastSz: parseFloat(ticker.lastSz || 0),
+            askPx: parseFloat(ticker.askPx || 0),
+            askSz: parseFloat(ticker.askSz || 0),
+            bidPx: parseFloat(ticker.bidPx || 0),
+            bidSz: parseFloat(ticker.bidSz || 0),
+            open24h: parseFloat(ticker.open24h || 0),
+            high24h: parseFloat(ticker.high24h || 0),
+            low24h: parseFloat(ticker.low24h || 0),
+            vol24h: parseFloat(ticker.vol24h || 0),
+            volCcy24h: parseFloat(ticker.volCcy24h || 0),
+            ts: parseInt(ticker.ts || 0)
+          };
+        }
+      } catch (retryError) {
+        console.log(`⚠️ [OKX API] Retry failed for ${instId}: ${retryError.message}`);
+      }
+    }
+
     console.log(`⚠️ [OKX API] Error getting ticker for ${instId}: ${error.message}`);
     return {
       success: false,
