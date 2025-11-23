@@ -7246,13 +7246,18 @@ Trade ${i + 1}: ${t.symbol} (${t.name})
           }).join('\n')}
 
 For each trade, provide:
-1. Recommendation: HOLD, CLOSE, or ADJUST
+1. Recommendation: HOLD or ADJUST
+   🚨 CRITICAL: DO NOT use CLOSE recommendation
+   - Trades are closed ONLY by OKX TP/SL orders (attached to position)
+   - AI cannot close trades manually
+   - If you think trade should exit: Use ADJUST to tighten TP/SL instead
+   - OKX will automatically close when TP or SL is hit
 2. Confidence: 0.0 to 1.0
 3. Reason: Brief explanation
 4. If ADJUST: provide newTakeProfit and/or newStopLoss and/or newDcaPrice (DCA level) (optional - only if adjustment needed)
    IMPORTANT: newTakeProfit and newStopLoss must be DOLLAR AMOUNTS (e.g., $1000.00), NOT percentages
    Example: If you want to adjust TP to $1000, use newTakeProfit: 1000.00 (not 1000%)
-5. If CLOSE: consider DCA/addPosition first - if DCA is still available (dcaCount < 5), suggest DCA instead of closing
+5. If you want to exit a trade: Adjust TP/SL closer to current price, OKX will handle the close
 
 POSITION SIZING RULES (CRITICAL):
 - Maximum 5 positions can be open at once
@@ -7419,8 +7424,19 @@ Return JSON array format:
                 return rec;
               });
 
+              // 🚨 BLOCK ALL CLOSE RECOMMENDATIONS - OKX TP/SL is the ONLY exit mechanism
+              const finalRecommendations = validatedRecommendations.map(rec => {
+                if (rec.recommendation === 'CLOSE') {
+                  console.log(`🚫 ${rec.symbol}: AI recommended CLOSE - BLOCKED (OKX TP/SL handles all exits)`);
+                  rec.recommendation = 'HOLD';
+                  rec.reason = `[Auto-blocked: Trades exit via OKX TP/SL only, AI cannot close] ` + rec.reason;
+                  rec.confidence = 0.5; // Low confidence for blocked action
+                }
+                return rec;
+              });
+
               // Add to all recommendations
-              allRecommendations.push(...validatedRecommendations);
+              allRecommendations.push(...finalRecommendations);
 
             } catch (parseError) {
               console.error('❌ Failed to parse AI response:', parseError.message);
@@ -7959,6 +7975,9 @@ Return JSON array format:
                 telegramMessage += `   ⚠️ Note: DCA still available (${5 - trade.dcaCount} remaining)\n`;
               }
 
+              // DISABLED: AI cannot close trades - OKX TP/SL is the ONLY exit mechanism
+              // All CLOSE recommendations are blocked by validation above
+              /*
               // Close the trade
               const closeResult = await this.closeTradeByAI(trade, reason, confidence);
               if (closeResult.success) {
@@ -7968,6 +7987,14 @@ Return JSON array format:
                 addLogEntry(`⚠️ ${symbol}: AI close recommendation failed - ${closeResult.error}`, 'warning');
                 telegramMessage += `   ⚠️ Close failed: ${closeResult.error}\n`;
               }
+              */
+
+              // Log that CLOSE was blocked (should never reach here due to validation)
+              if (recommendation === 'CLOSE') {
+                console.log(`🚫 ${symbol}: AI CLOSE blocked - OKX TP/SL will handle exit`);
+                addLogEntry(`🚫 ${symbol}: AI CLOSE blocked - awaiting OKX TP/SL trigger`, 'info');
+                telegramMessage += `   ℹ️ CLOSE blocked - OKX TP/SL active\n`;
+              }
             }
           } catch (execError) {
             console.error(`❌ Error executing AI recommendation for ${symbol}:`, execError);
@@ -7975,8 +8002,8 @@ Return JSON array format:
           }
         }
 
-        // Add to Telegram message
-        const emoji = recommendation === 'CLOSE' ? '🔴' : recommendation === 'ADJUST' ? '🟡' : '🟢';
+        // Add to Telegram message (CLOSE is blocked, so only HOLD and ADJUST)
+        const emoji = recommendation === 'ADJUST' ? '🟡' : '🟢';
         telegramMessage += `${emoji} *${symbol}* - ${recommendation}\n`;
         telegramMessage += `   P&L: ${pnl} | Confidence: ${confidence.toFixed(0)}%\n`;
         telegramMessage += `   ${reason}\n\n`;
