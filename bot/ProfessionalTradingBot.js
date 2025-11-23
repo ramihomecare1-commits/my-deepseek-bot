@@ -3872,18 +3872,50 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                       console.log(`   ⚠️ Failed to get position size, using executed quantity: ${positionSize}`);
                     }
 
-                    // Place initial DCA using calculateQuantity() - same as re-evaluation DCA
-                    // This uses LIVE OKX contract specs instead of hardcoded values
+                    // Place initial DCA - MUST convert coins to contracts for OKX derivatives
+                    // Re-evaluation uses contracts, initial was using coins (causing insufficient margin)
                     try {
-                      const { calculateQuantity } = require('../services/exchangeService');
+                      const { calculateQuantity, fetchOkxContractSpecs } = require('../services/exchangeService');
                       const { getDCASize: getPortfolioDCASize } = require('../services/portfolioService');
 
-                      console.log('🔄 Placing initial DCA using calculateQuantity() (live OKX specs)...');
+                      console.log('🔄 Placing initial DCA with contract conversion...');
 
                       const dcaSizeUSD = getPortfolioDCASize(0, newTrade.symbol);
-                      const dcaQuantity = calculateQuantity(newTrade.symbol, dcaPrice, dcaSizeUSD);
+                      console.log(`💰 DCA Size: $${dcaSizeUSD} for ${newTrade.symbol}`);
 
-                      console.log(`✅ Calculated DCA quantity: ${dcaQuantity} for $${dcaSizeUSD} at $${dcaPrice.toFixed(2)}`);
+                      // Step 1: Calculate coin quantity
+                      let coinQuantity = calculateQuantity(newTrade.symbol, dcaPrice, dcaSizeUSD);
+                      console.log(`📊 Coin quantity: ${coinQuantity} ${newTrade.symbol}`);
+
+                      // Step 2: Convert coins to contracts using OKX specs
+                      let dcaQuantity = coinQuantity;
+
+                      // Fetch live OKX contract specs
+                      const specs = await fetchOkxContractSpecs([okxSymbol], exchange.baseUrl);
+                      const contractSpec = specs.get(okxSymbol);
+
+                      if (contractSpec) {
+                        // Convert coin quantity to contracts
+                        const contractQuantity = coinQuantity / contractSpec.ctVal;
+
+                        // Round to lot size
+                        const adjustedContracts = Math.floor(contractQuantity / contractSpec.lotSz) * contractSpec.lotSz;
+
+                        dcaQuantity = adjustedContracts;
+
+                        console.log(`🔄 Contract conversion: ${coinQuantity} coins → ${contractQuantity.toFixed(4)} contracts → ${adjustedContracts} (lot size: ${contractSpec.lotSz})`);
+                        console.log(`📋 Contract specs: ctVal=${contractSpec.ctVal}, minSz=${contractSpec.minSz}, lotSz=${contractSpec.lotSz}`);
+
+                        // Verify this is a reasonable contract quantity
+                        if (dcaQuantity > 100) {
+                          console.log(`🚨 SUSPICIOUS: DCA quantity ${dcaQuantity} seems too high for contracts!`);
+                          console.log(`   This might indicate coin quantity instead of contracts.`);
+                        }
+                      } else {
+                        console.log(`⚠️ No contract specs found for ${okxSymbol}, using coin quantity as-is`);
+                      }
+
+                      console.log(`✅ Final DCA quantity: ${dcaQuantity} CONTRACTS for $${dcaSizeUSD} at $${dcaPrice.toFixed(2)}`);
 
                       if (dcaQuantity > 0) {
                         const { executeOkxLimitOrder } = require('../services/exchangeService');
