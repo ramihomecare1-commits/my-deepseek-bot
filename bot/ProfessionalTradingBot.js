@@ -3875,17 +3875,14 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                     if (!positionSize || positionSize <= 0) {
                       console.log(`⚠️ ${newTrade.symbol}: Cannot place DCA order - no valid position size found`);
                     } else {
-                      // Calculate DCA quantity using FIXED tiers (same as initial position logic)
+                      // Calculate DCA quantity using getDCASize() from portfolioService
+                      // This ensures DCA uses correct fixed amounts:
                       // BTC: $100, $100, $200, $400, $800
                       // Others: $50, $50, $100, $200, $400
 
-                      // Determine which tier this DCA belongs to
-                      // existingPositions is the count BEFORE this new trade
-                      // So this new trade is existingPositions + 1 (Position #1 if existing was 0)
-                      // The DCA order is for the NEXT addition, so it's existingPositions + 2 (Position #2)
-                      // Array is 0-indexed, so index = (existingPositions + 1)
-                      const dcaPositionIndex = Math.min(existingPositions + 1, positionSizes.length - 1);
-                      const dcaSizeUSD = positionSizes[dcaPositionIndex];
+                      const { getDCASize } = require('../services/portfolioService');
+                      const dcaCount = 0; // This is the FIRST DCA order for this trade
+                      const dcaSizeUSD = getDCASize(dcaCount, newTrade.symbol);
 
                       let dcaQuantity = dcaSizeUSD / dcaPrice;
 
