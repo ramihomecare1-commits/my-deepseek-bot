@@ -1129,7 +1129,9 @@
               <h4>Tools & Monitoring</h4>
               <div class="button-group">
                 <button class="btn-telegram" onclick="handleTestTelegram(event)">📱 Telegram Test</button>
-                <button class="btn-secondary" onclick="handleTriggerNewsFilter(event)" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; font-weight: 600;">📰 Test News Filter (Free AI)</button>
+                <button class="btn-secondary" onclick="handleTriggerNewsFilter(event)"
+                  style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; font-weight: 600;">📰 Test
+                  News Filter (Free AI)</button>
                 <button class="btn-secondary" onclick="toggleRules()">⚙️ Trading Rules</button>
                 <button class="btn-secondary" onclick="openTriggerSettings()"
                   style="background: linear-gradient(135deg, #22c55e, #10b981); color: white; font-weight: 600;">🎯
@@ -1160,6 +1162,39 @@
             <div id="nextScan">Next scan: Not scheduled</div>
           </div>
         </div>
+      </section>
+
+      <!-- Pattern Scanner Section -->
+      <section class="section-block" id="pattern-scanner">
+        <div class="section-title">
+          <h3 style="color: #0f172a;">📊 Pattern Scanner</h3>
+          <span class="pill">MEXC · 2000 Candles</span>
+        </div>
+
+        <div class="controls">
+          <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+            <select id="scannerSymbol"
+              style="padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(148,163,184,0.4); background: white; color: #0f172a; font-weight: 600;">
+              <option value="BTC">Bitcoin (BTC)</option>
+              <option value="ETH">Ethereum (ETH)</option>
+              <option value="SOL">Solana (SOL)</option>
+              <option value="ADA">Cardano (ADA)</option>
+              <option value="LINK">Chainlink (LINK)</option>
+            </select>
+
+            <select id="scannerTimeframe"
+              style="padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(148,163,184,0.4); background: white; color: #0f172a; font-weight: 600;">
+              <option value="1d">Daily</option>
+              <option value="1w">Weekly</option>
+            </select>
+
+            <button id="runScanner" class="btn-primary">
+              🔍 Scan Patterns
+            </button>
+          </div>
+        </div>
+
+        <div id="scannerResults" style="margin-top: 20px;"></div>
       </section>
 
       <!-- Trading Rules Panel -->
@@ -1912,7 +1947,7 @@
     async function handleTriggerNewsFilter(evt) {
       const button = evt?.target || event?.target;
       const originalText = button ? button.textContent : '📰 Test News Filter (Free AI)';
-      
+
       try {
         if (button) {
           button.disabled = true;
@@ -3854,6 +3889,73 @@
     function closeBacktestModal() {
       document.getElementById('backtest-modal').style.display = 'none';
     }
+
+    // Pattern Scanner Event Handler
+    document.getElementById('runScanner')?.addEventListener('click', async () => {
+      const symbol = document.getElementById('scannerSymbol').value;
+      const timeframe = document.getElementById('scannerTimeframe').value;
+      const resultsDiv = document.getElementById('scannerResults');
+
+      resultsDiv.innerHTML = '<div style="text-align: center; padding: 40px; color: #6366f1; font-weight: 600;">🔄 Scanning ' + symbol + ' (' + timeframe + ')...</div>';
+
+      try {
+        const response = await fetch('/api/scanner/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol, timeframe })
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+          resultsDiv.innerHTML = `<div style="color: #ef4444; padding: 20px; background: rgba(239, 68, 68, 0.1); border-radius: 12px;">${data.error}</div>`;
+          return;
+        }
+
+        // Display results
+        let html = `
+          <div style="margin-top: 20px;">
+            <div style="background: rgba(15, 23, 42, 0.05); padding: 16px; border-radius: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+              <div><strong style="font-size: 1.2em;">${symbol}</strong> · ${timeframe} · ${data.candleCount} candles</div>
+              <div style="font-size: 1.3em; font-weight: 700; color: #6366f1;">$${data.currentPrice.toFixed(2)}</div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
+              <div style="background: white; border-radius: 12px; padding: 16px; border: 2px solid rgba(34, 197, 94, 0.3);">
+                <h4 style="color: #15803d; margin-bottom: 12px; font-size: 1.1em;">📍 Support Levels</h4>
+                ${data.levels.support.length > 0 ? data.levels.support.map(l => `
+                  <div style="padding: 10px; background: rgba(34, 197, 94, 0.05); border-radius: 8px; margin-bottom: 8px; border-left: 3px solid #22c55e;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                      <strong style="font-size: 1.1em;">$${l.price.toFixed(2)}</strong>
+                      <span style="color: #15803d; font-weight: 600;">${l.distance}</span>
+                    </div>
+                    <div style="font-size: 0.85em; color: #475569;">${l.method} · ${l.strength || 'medium'}</div>
+                  </div>
+                `).join('') : '<div style="color: #64748b; text-align: center; padding: 20px;">No support levels detected</div>'}
+              </div>
+              
+              <div style="background: white; border-radius: 12px; padding: 16px; border: 2px solid rgba(239, 68, 68, 0.3);">
+                <h4 style="color: #b91c1c; margin-bottom: 12px; font-size: 1.1em;">🎯 Resistance Levels</h4>
+                ${data.levels.resistance.length > 0 ? data.levels.resistance.map(l => `
+                  <div style="padding: 10px; background: rgba(239, 68, 68, 0.05); border-radius: 8px; margin-bottom: 8px; border-left: 3px solid #ef4444;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                      <strong style="font-size: 1.1em;">$${l.price.toFixed(2)}</strong>
+                      <span style="color: #b91c1c; font-weight: 600;">${l.distance}</span>
+                    </div>
+                    <div style="font-size: 0.85em; color: #475569;">${l.method} · ${l.strength || 'medium'}</div>
+                  </div>
+                `).join('') : '<div style="color: #64748b; text-align: center; padding: 20px;">No resistance levels detected</div>'}
+              </div>
+            </div>
+          </div>
+        `;
+
+        resultsDiv.innerHTML = html;
+
+      } catch (error) {
+        resultsDiv.innerHTML = `<div style="color: #ef4444; padding: 20px; background: rgba(239, 68, 68, 0.1); border-radius: 12px;">Error: ${error.message}</div>`;
+      }
+    });
   </script>
 
 </body>
