@@ -5819,6 +5819,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
           trade.okxDcaPrice = dcaPrice;
           trade.okxDcaQuantity = dcaQuantity;
           placedCount++;
+
+          // CRITICAL: Save trades immediately to prevent race condition
+          // Without this, subsequent calls to placeMissingDcaOrders() will place duplicate orders
+          const { saveTrades } = require('../services/tradePersistenceService');
+          await saveTrades(this.activeTrades);
+          console.log(`   💾 Saved trade with DCA order ID to prevent duplicates`);
+
           addLogEntry(`DCA limit order placed on OKX for ${trade.symbol} at $${dcaPrice.toFixed(2)} (will execute if price reaches this level)`, 'info');
         } else {
           console.log(`⚠️ Failed to place DCA limit order for ${trade.symbol}: ${dcaOrderResult.error || 'Unknown error'}`);
