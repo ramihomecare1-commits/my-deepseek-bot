@@ -19,6 +19,61 @@ function findSupportResistance(candles) {
 }
 
 /**
+ * Add volume confirmation to a price level
+ * @param {Object} level - Price level object
+ * @param {Array} candles - Historical candle data
+ * @returns {Object} Level with volume confirmation data
+ */
+function addVolumeConfirmation(level, candles) {
+    const avgVolume = candles.reduce((sum, c) => sum + c.volume, 0) / candles.length;
+    const tolerance = level.price * 0.01; // 1% tolerance
+
+    // Find candles near this level
+    const nearbyCandles = candles.filter(c =>
+        Math.abs(c.close - level.price) < tolerance ||
+        Math.abs(c.high - level.price) < tolerance ||
+        Math.abs(c.low - level.price) < tolerance
+    );
+
+    if (nearbyCandles.length === 0) {
+        return {
+            ...level,
+            volumeConfirmed: false,
+            volumeStrength: 0,
+            volumeRatio: 0
+        };
+    }
+
+    const levelVolume = nearbyCandles.reduce((sum, c) => sum + c.volume, 0) / nearbyCandles.length;
+    const volumeRatio = levelVolume / avgVolume;
+
+    return {
+        ...level,
+        volumeConfirmed: volumeRatio >= 1.5, // High volume if 1.5x+ average
+        volumeStrength: Math.min(volumeRatio, 3) / 3, // Normalize to 0-1, cap at 3x
+        volumeRatio: parseFloat(volumeRatio.toFixed(2)),
+        touchCount: nearbyCandles.length
+    };
+}
+
+/**
+ * Check proximity to current price
+ * @param {Object} level - Price level object
+ * @param {number} currentPrice - Current price
+ * @returns {Object} Level with proximity data
+ */
+function checkProximity(level, currentPrice) {
+    const distance = Math.abs(level.price - currentPrice) / currentPrice;
+
+    return {
+        ...level,
+        isNear: distance < 0.02, // Within 2%
+        distancePercent: parseFloat((distance * 100).toFixed(2))
+    };
+}
+
+
+/**
  * Find swing highs and lows
  * @param {Array} candles - Historical candle data
  * @param {number} lookback - Number of candles to look back (default 20)
@@ -343,5 +398,7 @@ module.exports = {
     findMASupport,
     calculatePatternConfidence,
     checkVolumeSpike,
-    measurePatternSharpness
+    measurePatternSharpness,
+    addVolumeConfirmation,
+    checkProximity
 };

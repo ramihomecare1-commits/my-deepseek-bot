@@ -1065,7 +1065,7 @@ router.post('/scanner/run', async (req, res) => {
 
     // Import services
     const { fetchMexcCandlesBatch } = require('../services/mexcDataService');
-    const { findSupportResistance } = require('../utils/patternDetector');
+    const { findSupportResistance, addVolumeConfirmation, checkProximity } = require('../utils/patternDetector');
 
     // Fetch 2000 candles from MEXC
     const mexcSymbol = `${symbol}USDT`; // Convert BTC -> BTCUSDT
@@ -1113,6 +1113,8 @@ router.post('/scanner/run', async (req, res) => {
           }))
         ]
           .filter(l => l.price < currentPrice) // Only include levels BELOW current price
+          .map(l => addVolumeConfirmation(l, candles)) // Add volume confirmation
+          .map(l => checkProximity(l, currentPrice)) // Add proximity check
           .sort((a, b) => b.price - a.price) // Sort from highest to lowest (closest to current price first)
           .slice(0, 5), // Top 5 support levels
 
@@ -1134,6 +1136,8 @@ router.post('/scanner/run', async (req, res) => {
           }))
         ]
           .filter(l => l.price > currentPrice) // Only include levels ABOVE current price
+          .map(l => addVolumeConfirmation(l, candles)) // Add volume confirmation
+          .map(l => checkProximity(l, currentPrice)) // Add proximity check
           .sort((a, b) => a.price - b.price) // Sort from lowest to highest (closest to current price first)
           .slice(0, 5), // Top 5 resistance levels
 

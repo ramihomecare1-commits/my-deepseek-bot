@@ -3934,7 +3934,12 @@
                       <strong style="font-size: 1.1em;">$${l.price.toFixed(2)}</strong>
                       <span style="color: #15803d; font-weight: 600;">${l.distance}</span>
                     </div>
-                    <div style="font-size: 0.85em; color: #475569;">${l.method} · ${l.strength || 'medium'}</div>
+                    <div style="font-size: 0.85em; color: #475569; margin-bottom: 4px;">${l.method} · ${l.strength || 'medium'}</div>
+                    <div style="font-size: 0.8em; display: flex; gap: 8px; flex-wrap: wrap;">
+                      ${l.volumeConfirmed ? `<span style="background: rgba(99, 102, 241, 0.1); color: #6366f1; padding: 2px 6px; border-radius: 4px;">📊 Volume: ${l.volumeRatio}x</span>` : ''}
+                      ${l.isNear ? `<span style="background: rgba(251, 191, 36, 0.1); color: #f59e0b; padding: 2px 6px; border-radius: 4px;">⚠️ Near price</span>` : ''}
+                      ${l.touchCount ? `<span style="background: rgba(148, 163, 184, 0.1); color: #64748b; padding: 2px 6px; border-radius: 4px;">${l.touchCount} touches</span>` : ''}
+                    </div>
                   </div>
                 `).join('') : '<div style="color: #64748b; text-align: center; padding: 20px;">No support levels detected</div>'}
               </div>
@@ -3947,7 +3952,12 @@
                       <strong style="font-size: 1.1em;">$${l.price.toFixed(2)}</strong>
                       <span style="color: #b91c1c; font-weight: 600;">${l.distance}</span>
                     </div>
-                    <div style="font-size: 0.85em; color: #475569;">${l.method} · ${l.strength || 'medium'}</div>
+                    <div style="font-size: 0.85em; color: #475569; margin-bottom: 4px;">${l.method} · ${l.strength || 'medium'}</div>
+                    <div style="font-size: 0.8em; display: flex; gap: 8px; flex-wrap: wrap;">
+                      ${l.volumeConfirmed ? `<span style="background: rgba(99, 102, 241, 0.1); color: #6366f1; padding: 2px 6px; border-radius: 4px;">📊 Volume: ${l.volumeRatio}x</span>` : ''}
+                      ${l.isNear ? `<span style="background: rgba(251, 191, 36, 0.1); color: #f59e0b; padding: 2px 6px; border-radius: 4px;">⚠️ Near price</span>` : ''}
+                      ${l.touchCount ? `<span style="background: rgba(148, 163, 184, 0.1); color: #64748b; padding: 2px 6px; border-radius: 4px;">${l.touchCount} touches</span>` : ''}
+                    </div>
                   </div>
                 `).join('') : '<div style="color: #64748b; text-align: center; padding: 20px;">No resistance levels detected</div>'}
               </div>
