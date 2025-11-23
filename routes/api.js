@@ -1049,6 +1049,109 @@ router.post('/validate-trade', (req, res) => {
   }
 });
 
+// Pattern Scanner endpoint
+router.post('/scanner/run', async (req, res) => {
+  try {
+    const { symbol, timeframe } = req.body;
+
+    if (!symbol || !timeframe) {
+      return res.status(400).json({
+        success: false,
+        error: 'Symbol and timeframe are required'
+      });
+    }
+
+    console.log(`📊 Running pattern scanner for ${symbol} (${timeframe})...`);
+
+    // Import services
+    const { fetchMexcCandlesBatch } = require('../services/mexcDataService');
+    const { findSupportResistance } = require('../utils/patternDetector');
+
+    // Fetch 2000 candles from MEXC
+    const mexcSymbol = `${symbol}USDT`; // Convert BTC -> BTCUSDT
+    const candles = await fetchMexcCandlesBatch(mexcSymbol, timeframe, 2000);
+
+    if (!candles || candles.length === 0) {
+      return res.json({
+        success: false,
+        error: 'No candle data available',
+        symbol,
+        timeframe
+      });
+    }
+
+    // Detect support/resistance using multiple methods
+    const levels = findSupportResistance(candles);
+
+    // Get current price
+    const currentPrice = candles[candles.length - 1].close;
+
+    // Format results
+    const results = {
+      success: true,
+      symbol,
+      timeframe,
+      candleCount: candles.length,
+      currentPrice,
+      timestamp: new Date(),
+      levels: {
+        support: [
+          ...levels.swingLevels.support.map(l => ({
+            ...l,
+            method: 'Swing Lows',
+            distance: ((currentPrice - l.price) / currentPrice * 100).toFixed(2) + '%'
+          })),
+          ...levels.psychological.filter(l => l.type === 'support').map(l => ({
+            ...l,
+            method: 'Psychological',
+            distance: ((currentPrice - l.price) / currentPrice * 100).toFixed(2) + '%'
+          })),
+          ...levels.movingAverages.filter(l => l.type === 'support').map(l => ({
+            ...l,
+            method: l.reason,
+            distance: ((currentPrice - l.price) / currentPrice * 100).toFixed(2) + '%'
+          }))
+        ].sort((a, b) => b.price - a.price).slice(0, 5), // Top 5 support levels
+
+        resistance: [
+          ...levels.swingLevels.resistance.map(l => ({
+            ...l,
+            method: 'Swing Highs',
+            distance: ((l.price - currentPrice) / currentPrice * 100).toFixed(2) + '%'
+          })),
+          ...levels.psychological.filter(l => l.type === 'resistance').map(l => ({
+            ...l,
+            method: 'Psychological',
+            distance: ((l.price - currentPrice) / currentPrice * 100).toFixed(2) + '%'
+          })),
+          ...levels.movingAverages.filter(l => l.type === 'resistance').map(l => ({
+            ...l,
+            method: l.reason,
+            distance: ((l.price - currentPrice) / currentPrice * 100).toFixed(2) + '%'
+          }))
+        ].sort((a, b) => a.price - b.price).slice(0, 5), // Top 5 resistance levels
+
+        volumeProfile: levels.volumeProfile.slice(0, 5).map(node => ({
+          price: node.price.toFixed(2),
+          volume: node.volume.toFixed(2),
+          strength: (node.strength * 100).toFixed(0) + '%',
+          method: 'Volume Profile'
+        }))
+      }
+    };
+
+    console.log(`✅ Pattern scanner completed for ${symbol}`);
+    res.json(results);
+
+  } catch (error) {
+    console.error('Pattern scanner error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
 module.exports.addLogEntry = addLogEntry;
 module.exports.addMonitoringActivity = addMonitoringActivity;
