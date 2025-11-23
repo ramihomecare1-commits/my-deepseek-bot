@@ -1111,7 +1111,10 @@ router.post('/scanner/run', async (req, res) => {
             method: l.reason,
             distance: ((currentPrice - l.price) / currentPrice * 100).toFixed(2) + '%'
           }))
-        ].sort((a, b) => b.price - a.price).slice(0, 5), // Top 5 support levels
+        ]
+          .filter(l => l.price < currentPrice) // Only include levels BELOW current price
+          .sort((a, b) => b.price - a.price) // Sort from highest to lowest (closest to current price first)
+          .slice(0, 5), // Top 5 support levels
 
         resistance: [
           ...levels.swingLevels.resistance.map(l => ({
@@ -1129,7 +1132,10 @@ router.post('/scanner/run', async (req, res) => {
             method: l.reason,
             distance: ((l.price - currentPrice) / currentPrice * 100).toFixed(2) + '%'
           }))
-        ].sort((a, b) => a.price - b.price).slice(0, 5), // Top 5 resistance levels
+        ]
+          .filter(l => l.price > currentPrice) // Only include levels ABOVE current price
+          .sort((a, b) => a.price - b.price) // Sort from lowest to highest (closest to current price first)
+          .slice(0, 5), // Top 5 resistance levels
 
         volumeProfile: levels.volumeProfile.slice(0, 5).map(node => ({
           price: node.price.toFixed(2),
