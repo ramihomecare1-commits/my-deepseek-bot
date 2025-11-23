@@ -9,6 +9,50 @@ const axios = require('axios');
 const MEXC_BASE_URL = 'https://api.mexc.com';
 
 /**
+ * Normalize interval format for MEXC API compatibility
+ * MEXC requires specific interval formats:
+ * - Weekly: 1W (uppercase)
+ * - Daily: 1d (lowercase)
+ * - Minutes: 1m, 5m, 15m, 30m (lowercase)
+ * - Hours: 4h, 8h (lowercase, limited options)
+ * @param {string} interval - User-friendly interval (e.g., '1w', '1d', '1h')
+ * @returns {string} MEXC-compatible interval
+ */
+function normalizeMexcInterval(interval) {
+    const intervalMap = {
+        // Weekly - must be uppercase
+        '1w': '1W',
+        '1week': '1W',
+
+        // Daily - lowercase
+        '1d': '1d',
+        '1day': '1d',
+
+        // Hours - only specific values supported
+        '1h': '4h',  // MEXC doesn't support 1h, use 4h instead
+        '2h': '4h',  // MEXC doesn't support 2h, use 4h instead
+        '4h': '4h',
+        '6h': '8h',  // MEXC doesn't support 6h, use 8h instead
+        '8h': '8h',
+        '12h': '8h', // MEXC doesn't support 12h, use 8h instead
+
+        // Minutes - lowercase
+        '1m': '1m',
+        '5m': '5m',
+        '15m': '15m',
+        '30m': '30m'
+    };
+
+    const normalized = intervalMap[interval.toLowerCase()] || interval;
+
+    if (normalized !== interval) {
+        console.log(`📊 Normalized interval: ${interval} → ${normalized}`);
+    }
+
+    return normalized;
+}
+
+/**
  * Fetch historical candles from MEXC
  * @param {string} symbol - Trading pair (e.g., 'BTCUSDT')
  * @param {string} interval - Candle interval ('1d', '1w', '1h', etc.)
@@ -17,16 +61,19 @@ const MEXC_BASE_URL = 'https://api.mexc.com';
  */
 async function fetchMexcCandles(symbol, interval = '1d', limit = 1000) {
     try {
+        // Normalize interval to MEXC-compatible format
+        const normalizedInterval = normalizeMexcInterval(interval);
+
         // MEXC Spot API endpoint
         const endpoint = '/api/v3/klines';
         const url = `${MEXC_BASE_URL}${endpoint}`;
 
-        console.log(`📊 Fetching ${limit} ${interval} candles for ${symbol} from MEXC...`);
+        console.log(`📊 Fetching ${limit} ${normalizedInterval} candles for ${symbol} from MEXC...`);
 
         const response = await axios.get(url, {
             params: {
                 symbol: symbol,
-                interval: interval,
+                interval: normalizedInterval,
                 limit: Math.min(limit, 1000) // MEXC spot max is 1000
             },
             timeout: 15000
@@ -42,7 +89,11 @@ async function fetchMexcCandles(symbol, interval = '1d', limit = 1000) {
         return [];
 
     } catch (error) {
-        console.error(`❌ Error fetching MEXC candles: ${error.message}`);
+        console.error(`❌ Error fetching MEXC candles for ${symbol} (${interval}):`, error.message);
+        if (error.response) {
+            console.error(`   Status: ${error.response.status}`);
+            console.error(`   Error: ${JSON.stringify(error.response.data)}`);
+        }
         return [];
     }
 }
@@ -79,14 +130,17 @@ function normalizeMexcCandles(rawCandles) {
  * @returns {Promise<Array>} Combined candles
  */
 async function fetchMexcCandlesBatch(symbol, interval, totalCandles = 2000) {
+    // Normalize interval first
+    const normalizedInterval = normalizeMexcInterval(interval);
+
     const batchSize = 1000;
     const batches = Math.ceil(totalCandles / batchSize);
     const allCandles = [];
 
-    console.log(`📊 Fetching ${totalCandles} candles in ${batches} batches...`);
+    console.log(`📊 Fetching ${totalCandles} ${normalizedInterval} candles in ${batches} batches...`);
 
     for (let i = 0; i < batches; i++) {
-        const candles = await fetchMexcCandles(symbol, interval, batchSize);
+        const candles = await fetchMexcCandles(symbol, normalizedInterval, batchSize);
 
         if (candles.length === 0) break;
 
