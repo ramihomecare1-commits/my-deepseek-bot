@@ -4,7 +4,7 @@ const config = require('../config/config');
 // Fetch global metrics from multiple APIs
 async function fetchGlobalMetrics(globalMetrics, stats, coinmarketcapEnabled, coinmarketcapApiKey) {
   const now = Date.now();
-  
+
   // CoinPaprika removed due to rate limiting issues
 
   // Fetch from CoinMarketCap (if API key available)
@@ -43,7 +43,7 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
       throw new Error('Config not available in fetchEnhancedPriceData');
     }
   }
-  
+
   let primaryData = null;
   let usedMock = false;
 
@@ -51,7 +51,7 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
   // Use Promise.race to get fastest response and reduce memory usage
   const TIMEOUT = 8000; // 8 second timeout per request
   const pricePromises = [];
-  
+
   // MEXC (FREE, no API key, direct API call)
   if (coin.symbol && EXCHANGE_SYMBOL_MAP[coin.symbol]) {
     pricePromises.push(
@@ -63,7 +63,7 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
       ]).catch(() => null)
     );
   }
-  
+
   // Gate.io (FREE, no API key, direct API call)
   if (coin.symbol && EXCHANGE_SYMBOL_MAP[coin.symbol]) {
     pricePromises.push(
@@ -75,7 +75,7 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
       ]).catch(() => null)
     );
   }
-  
+
   // Binance disabled for now to avoid ScraperAPI rate limits
   // if (coin.symbol && BINANCE_SYMBOL_MAP[coin.symbol]) {
   //   pricePromises.push(
@@ -87,17 +87,17 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
   //     ]).catch(() => null)
   //   );
   // }
-  
+
   // Race to get the fastest successful response (cancels slower requests)
   if (pricePromises.length > 0) {
     try {
       // Use Promise.race to get first successful result and abandon others
       const fastestResult = await Promise.race(
-        pricePromises.map((p, idx) => 
+        pricePromises.map((p, idx) =>
           p.then(result => result ? { ...result, index: idx } : null)
         )
       );
-      
+
       if (fastestResult && fastestResult.source) {
         const { source, data } = fastestResult;
         primaryData = {
@@ -146,7 +146,7 @@ async function fetchEnhancedPriceData(coin, priceCache, stats, config) {
           timeout: 10000,
         },
       );
-      
+
       if (cmcResponse.data && cmcResponse.data.data && cmcResponse.data.data[coin.coinmarketcap_id]) {
         const cmcData = cmcResponse.data.data[coin.coinmarketcap_id];
         primaryData = {
@@ -218,7 +218,7 @@ async function fetchBinancePrice(symbol) {
     const scraperApiKey = process.env.SCRAPER_API_KEY || '';
     let url = 'https://api.binance.com/api/v3/ticker/24hr';
     let params = { symbol: binanceSymbol };
-    
+
     if (scraperApiKey) {
       // Route through ScraperAPI to bypass geo-restrictions
       url = `http://api.scraperapi.com`;
@@ -266,7 +266,7 @@ async function fetchBinanceKlines(symbol, interval, limit) {
     const scraperApiKey = process.env.SCRAPER_API_KEY || '';
     let url = 'https://api.binance.com/api/v3/klines';
     let params = { symbol: binanceSymbol, interval, limit };
-    
+
     if (scraperApiKey) {
       // Route through ScraperAPI to bypass geo-restrictions
       url = `http://api.scraperapi.com`;
@@ -374,9 +374,9 @@ async function fetchMEXCKlines(symbol, interval, limit) {
     } else if (interval === '1d') {
       mexcInterval = '1d'; // MEXC uses lowercase 1d for daily
     }
-    
+
     let mexcLimit = Math.min(limit, 2000);
-    
+
     // Adjust limit based on interval
     if (mexcInterval === '5m') {
       // For 5m, max reasonable is ~288 (24 hours)
@@ -388,7 +388,7 @@ async function fetchMEXCKlines(symbol, interval, limit) {
       // For 1d, max is 2000
       mexcLimit = Math.min(mexcLimit, 2000);
     }
-    
+
     const response = await axios.get('https://api.mexc.com/api/v3/klines', {
       params: { symbol: mexcSymbol, interval: mexcInterval, limit: mexcLimit },
       timeout: 15000,
@@ -431,9 +431,9 @@ async function fetchGateIOKlines(symbol, interval, limit) {
     } else if (interval === '1d') {
       gateInterval = '1d';
     }
-    
+
     let gateLimit = Math.min(limit, 1000);
-    
+
     // Adjust limit based on interval
     if (gateInterval === '5m') {
       // For 5m, max reasonable is ~288 (24 hours)
@@ -445,15 +445,15 @@ async function fetchGateIOKlines(symbol, interval, limit) {
       // For 1d, max is 1000
       gateLimit = Math.min(gateLimit, 1000);
     }
-    
+
     // Gate.io uses underscore format: BTC_USDT instead of BTCUSDT
     const gateCurrencyPair = gateSymbol.replace('USDT', '_USDT');
 
     const response = await axios.get('https://api.gateio.ws/api/v4/spot/candlesticks', {
-      params: { 
-        currency_pair: gateCurrencyPair, 
-        interval: gateInterval, 
-        limit: gateLimit 
+      params: {
+        currency_pair: gateCurrencyPair,
+        interval: gateInterval,
+        limit: gateLimit
       },
       timeout: 15000,
     });
@@ -516,21 +516,21 @@ async function fetchOkxCandlesForHistorical(symbol, bar, limit) {
   try {
     const { getOkxCandles, OKX_SYMBOL_MAP, getPreferredExchange } = require('./exchangeService');
     const exchange = getPreferredExchange();
-    
+
     // Only try OKX if it's the preferred exchange
     if (!exchange || exchange.exchange !== 'OKX') {
       throw new Error('OKX not configured');
     }
-    
+
     // Map symbol to OKX format (e.g., 'BTC' -> 'BTC-USDT-SWAP')
     const okxSymbol = OKX_SYMBOL_MAP[symbol] || `${symbol}-USDT-SWAP`;
     const okxBaseUrl = exchange.baseUrl || 'https://www.okx.com';
-    
+
     // Ensure limit doesn't exceed OKX maximum
     const okxLimit = Math.min(limit, 300);
-    
+
     const result = await getOkxCandles(okxSymbol, bar, okxLimit.toString(), null, null, okxBaseUrl);
-    
+
     if (result.success && result.candles && result.candles.length > 0) {
       // Convert OKX format to expected format: { timestamp, price }
       // OKX returns candles in reverse chronological order (newest first), so we reverse them
@@ -545,10 +545,10 @@ async function fetchOkxCandlesForHistorical(symbol, bar, limit) {
           volume: candle.volume
         }))
         .sort((a, b) => a.timestamp - b.timestamp); // Sort oldest first
-      
+
       return candles;
     }
-    
+
     throw new Error('OKX returned empty data');
   } catch (error) {
     // Silently fail - will fallback to external APIs
@@ -568,12 +568,12 @@ async function fetchHistoricalData(coinId, coin, stats, config, currentPrice = n
 
   const fetchData = async (days, interval) => {
     const symbol = coin?.symbol;
-    
+
     // Safety check: if symbol is undefined, we can't fetch data
     if (!symbol) {
       throw new Error(`Symbol is undefined for coin: ${JSON.stringify(coin)}`);
     }
-    
+
     // 0. Try OKX FIRST (primary source for derivatives trading - matches execution prices!)
     try {
       let okxBar, okxLimit;
@@ -589,9 +589,9 @@ async function fetchHistoricalData(coinId, coin, stats, config, currentPrice = n
         okxBar = '1D'; // Daily candles
         okxLimit = Math.min(days, 300); // OKX max is 300 candles
       }
-      
+
       const allData = await fetchOkxCandlesForHistorical(symbol, okxBar, okxLimit);
-      
+
       if (allData.length > 0) {
         currentPrice = currentPrice || allData[allData.length - 1].price;
         console.log(`✅ ${symbol}: Fetched ${allData.length} candles from OKX (${okxBar})`);
@@ -601,7 +601,7 @@ async function fetchHistoricalData(coinId, coin, stats, config, currentPrice = n
       // Silently continue to external APIs - OKX might not have this coin or failed
       console.log(`⚠️ ${symbol}: OKX candlesticks unavailable, trying external APIs: ${okxError.message}`);
     }
-    
+
     // 1. Try MEXC (FREE, direct API, 2000 klines per request, no scraper needed!)
     if (symbol && EXCHANGE_SYMBOL_MAP[symbol]) {
       try {
@@ -617,7 +617,7 @@ async function fetchHistoricalData(coinId, coin, stats, config, currentPrice = n
           mexcInterval = '1d';
           mexcLimit = Math.min(days, 2000); // MEXC supports up to 2000 klines!
         }
-        
+
         const data = await fetchMEXCKlines(symbol, mexcInterval, mexcLimit);
         if (data.length > 0) {
           currentPrice = currentPrice || data[data.length - 1].price;
@@ -643,7 +643,7 @@ async function fetchHistoricalData(coinId, coin, stats, config, currentPrice = n
           gateInterval = '1d';
           gateLimit = Math.min(days, 1000); // Gate.io supports up to 1000 klines
         }
-        
+
         try {
           const data = await fetchGateIOKlines(symbol, gateInterval, gateLimit);
           if (data.length > 0) {
@@ -685,7 +685,7 @@ async function fetchHistoricalData(coinId, coin, stats, config, currentPrice = n
           binanceInterval = '1d';
           binanceLimit = Math.min(days, 365); // Daily data
         }
-        
+
         const data = await fetchBinanceKlines(symbol, binanceInterval, binanceLimit);
         if (data.length > 0) {
           currentPrice = currentPrice || data[data.length - 1].price;
@@ -710,7 +710,7 @@ async function fetchHistoricalData(coinId, coin, stats, config, currentPrice = n
           limit = days;
           aggregate = 24; // Daily
         }
-        
+
         console.log(`📊 ${symbol}: Fetching ${days}d data from CryptoCompare...`);
         const data = await fetchCryptoCompare(symbol, limit, aggregate);
         if (data.length > 0) {
@@ -728,14 +728,15 @@ async function fetchHistoricalData(coinId, coin, stats, config, currentPrice = n
   };
 
   try {
+    // Fetch historical data for different timeframes
     const [minuteRaw, hourlyData, dailyData] = await Promise.all([
       fetchData(1, null),
       fetchData(7, 'hourly'),
-      fetchData(30, 'daily'),
+      fetchData(300, 'daily'), // Increased from 30 to 300 for better historical analysis
     ]);
-    
+
     const minuteData = minuteRaw.slice(-720);
-    
+
     // Validate we have real data
     if (minuteData.length === 0 || hourlyData.length === 0 || dailyData.length === 0) {
       throw new Error('No valid price data received');
@@ -766,12 +767,12 @@ async function fetchLongTermHistoricalData(coin) {
   const symbol = coin?.symbol;
   const coinId = coin?.id || coin?.name?.toLowerCase();
   const days = 1825; // 5 years
-  
+
   // 1. Try MEXC FIRST (excellent for long-term - 2000 klines per request = only 1 request for 5 years, direct API!)
   if (symbol && EXCHANGE_SYMBOL_MAP[symbol]) {
     try {
       const data = await fetchMEXCKlines(symbol, '1d', 2000); // MEXC supports up to 2000!
-      
+
       if (data.length >= 365) { // At least 1 year
         return data;
       }
@@ -786,17 +787,17 @@ async function fetchLongTermHistoricalData(coin) {
       const allData = [];
       const now = Date.now();
       const fiveYearsAgo = now - (days * 24 * 60 * 60 * 1000);
-      
+
       // Gate.io max is 1000 candles per request
       // We need 2 requests to get 5 years (1825 days)
       for (let batch = 0; batch < 2; batch++) {
         const batchEnd = now - (batch * 1000 * 24 * 60 * 60 * 1000);
         const batchStart = Math.max(batchEnd - (1000 * 24 * 60 * 60 * 1000), fiveYearsAgo);
-        
+
         try {
           // Gate.io uses underscore format: BTC_USDT instead of BTCUSDT
           const gateCurrencyPair = EXCHANGE_SYMBOL_MAP[symbol].replace('USDT', '_USDT');
-          
+
           const response = await axios.get('https://api.gateio.ws/api/v4/spot/candlesticks', {
             params: {
               currency_pair: gateCurrencyPair,
@@ -807,19 +808,19 @@ async function fetchLongTermHistoricalData(coin) {
             },
             timeout: 15000,
           });
-          
+
           if (response.data && Array.isArray(response.data) && response.data.length > 0) {
             const batchData = response.data.map(([timestamp, volume, close]) => ({
               timestamp: new Date(parseInt(timestamp) * 1000),
               price: parseFloat(close),
             })).filter(item => Number.isFinite(item.price) && item.price > 0);
-            
+
             allData.push(...batchData);
-            
+
             // If we got less than 1000, we've reached the end
             if (response.data.length < 1000) break;
           }
-          
+
           // Small delay between requests
           if (batch < 1) {
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -829,10 +830,10 @@ async function fetchLongTermHistoricalData(coin) {
           break; // Otherwise, use what we have
         }
       }
-      
+
       // Sort by timestamp (oldest first)
       allData.sort((a, b) => a.timestamp - b.timestamp);
-      
+
       if (allData.length >= 365) { // At least 1 year
         return allData;
       }
@@ -849,18 +850,18 @@ async function fetchLongTermHistoricalData(coin) {
       const allData = [];
       const now = Date.now();
       const fiveYearsAgo = now - (days * 24 * 60 * 60 * 1000);
-      
+
       // Binance max is 1000 candles per request
       // We need multiple requests to get 5 years (1825 days)
       const batches = Math.ceil(days / 1000);
-      
+
       for (let batch = 0; batch < batches; batch++) {
         const batchStart = now - ((batch + 1) * 1000 * 24 * 60 * 60 * 1000);
         const batchEnd = now - (batch * 1000 * 24 * 60 * 60 * 1000);
-        
+
         // Don't go beyond 5 years
         const actualStart = Math.max(batchStart, fiveYearsAgo);
-        
+
         try {
           let url = 'https://api.binance.com/api/v3/klines';
           let params = {
@@ -870,7 +871,7 @@ async function fetchLongTermHistoricalData(coin) {
             endTime: batchEnd,
             startTime: actualStart
           };
-          
+
           if (scraperApiKey) {
             url = `http://api.scraperapi.com`;
             params = {
@@ -878,22 +879,22 @@ async function fetchLongTermHistoricalData(coin) {
               url: `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=1d&limit=1000&endTime=${batchEnd}&startTime=${actualStart}`
             };
           }
-          
+
           const response = await axios.get(url, { params, timeout: 15000 });
           const data = scraperApiKey ? response.data : response.data;
-          
+
           if (data && Array.isArray(data) && data.length > 0) {
             const batchData = data.map(([openTime, open, high, low, close]) => ({
               timestamp: new Date(openTime),
               price: parseFloat(close),
             })).filter(item => Number.isFinite(item.price) && item.price > 0);
-            
+
             allData.push(...batchData);
-            
+
             // If we got less than 1000, we've reached the end
             if (data.length < 1000) break;
           }
-          
+
           // Small delay between requests to avoid rate limits
           if (batch < batches - 1) {
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -904,10 +905,10 @@ async function fetchLongTermHistoricalData(coin) {
           break; // Otherwise, use what we have
         }
       }
-      
+
       // Sort by timestamp (oldest first)
       allData.sort((a, b) => a.timestamp - b.timestamp);
-      
+
       if (allData.length >= 365) { // At least 1 year
         return allData;
       }
@@ -924,9 +925,9 @@ async function fetchLongTermHistoricalData(coin) {
       // For 5 years, we'll request daily data (aggregate=24 means daily)
       const limit = Math.min(days, 2000); // CryptoCompare limit
       const response = await axios.get('https://min-api.cryptocompare.com/data/v2/histoday', {
-        params: { 
-          fsym: symbol, 
-          tsym: 'USD', 
+        params: {
+          fsym: symbol,
+          tsym: 'USD',
           limit: limit,
           toTs: Math.floor(Date.now() / 1000) // Current timestamp
         },
@@ -939,7 +940,7 @@ async function fetchLongTermHistoricalData(coin) {
           timestamp: new Date(item.time * 1000),
           price: item.close,
         })).filter(item => Number.isFinite(item.price) && item.price > 0);
-        
+
         if (data.length >= 365) {
           console.log(`✅ ${symbol}: CryptoCompare long-term data - ${data.length} days`);
           return data;
@@ -1024,7 +1025,7 @@ async function ensureGreedFearIndex(greedFearIndex) {
 async function generateMockPriceData(coin) {
   const basePrice = 100 + Math.random() * 1000;
   const change24h = (Math.random() - 0.5) * 20;
-  
+
   return {
     price: basePrice,
     market_cap: basePrice * (1000000 + Math.random() * 9000000),
@@ -1076,11 +1077,11 @@ async function generateRealisticMockData(coinId) {
 
     generateMinute(720, minute);
 
-    return { 
-      minuteData: minute, 
-      hourlyData: hourly, 
-      dailyData: daily, 
-      currentPrice: basePrice 
+    return {
+      minuteData: minute,
+      hourlyData: hourly,
+      dailyData: daily,
+      currentPrice: basePrice
     };
   } catch (mockError) {
     return generateBasicMockData();
@@ -1126,11 +1127,11 @@ function generateBasicMockData() {
 
   generateMinute(720);
 
-  return { 
-    minuteData: minute, 
-    hourlyData: hourly, 
-    dailyData: daily, 
-    currentPrice: basePrice 
+  return {
+    minuteData: minute,
+    hourlyData: hourly,
+    dailyData: daily,
+    currentPrice: basePrice
   };
 }
 
