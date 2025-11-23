@@ -3872,75 +3872,26 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                       console.log(`   ⚠️ Failed to get position size, using executed quantity: ${positionSize}`);
                     }
 
-                    if (!positionSize || positionSize <= 0) {
-                      console.log(`⚠️ ${newTrade.symbol}: Cannot place DCA order - no valid position size found`);
-                    } else {
-                      // Calculate DCA quantity using getDCASize() from portfolioService
-                      // This ensures DCA uses correct fixed amounts:
-                      // BTC: $100, $100, $200, $400, $800
-                      // Others: $50, $50, $100, $200, $400
+                    // Place initial DCA using calculateQuantity() - same as re-evaluation DCA
+                    // This uses LIVE OKX contract specs instead of hardcoded values
+                    try {
+                      const { calculateQuantity, getDCASize } = require('../services/exchangeService');
+                      const { getDCASize: getPortfolioDCASize } = require('../services/portfolioService');
 
-                      const { getDCASize } = require('../services/portfolioService');
-                      const dcaCount = 0; // This is the FIRST DCA order for this trade
-                      const dcaSizeUSD = getDCASize(dcaCount, newTrade.symbol);
+                      console.log('🔄 Placing initial DCA using calculateQuantity() (live OKX specs)...');
 
-                      let dcaQuantity = dcaSizeUSD / dcaPrice;
+                      const dcaSizeUSD = getPortfolioDCASize(0, newTrade.symbol);
+                      const dcaQuantity = calculateQuantity(newTrade.symbol, dcaPrice, dcaSizeUSD);
 
-                      // Apply minimum quantity checks
-                      if (dcaQuantity < 1 && positionSize >= 1) {
-                        // For contracts where size must be integer (usually)
-                        // But for crypto-margined or some linear, it might be fractional.
-                        // Safest is to check against 0.01 or 1 based on symbol type, but here we use a heuristic
-                        // If current position is integer, likely DCA should be too? 
-                        // Actually, let's trust the division but ensure min size
-                        // dcaQuantity = 1; 
-                      }
-
-                      // Ensure minimum 0.01 (standard for most crypto)
-                      if (dcaQuantity < 0.01) {
-                        dcaQuantity = 0.01;
-                      }
-
-                      console.log(`   💰 DCA Sizing: $${dcaSizeUSD} (Tier #${dcaPositionIndex + 1}) -> ${dcaQuantity.toFixed(8)} coins @ $${dcaPrice.toFixed(2)}`);
-
-                      // Convert to OKX contracts for DCA order (same as initial trade)
-                      const contractSpecs = {
-                        'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },
-                        'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },
-                        'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                        'XRP-USDT-SWAP': { contractSize: 100, minOrder: 1 },
-                        'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },
-                        'ADA-USDT-SWAP': { contractSize: 100, minOrder: 1 },
-                        'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },
-                        'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                        'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                        'LINK-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                      };
-
-                      const dcaSpec = contractSpecs[okxSymbol] || { contractSize: 1, minOrder: 0.01 };
-                      const dcaCoinQuantity = dcaQuantity;
-                      const dcaContracts = dcaCoinQuantity / dcaSpec.contractSize;
-
-                      if (dcaCoinQuantity >= dcaSpec.minOrder) {
-                        dcaQuantity = dcaContracts; // Use fractional contracts
-                        console.log(`   ✅ DCA contracts: ${dcaContracts.toFixed(4)} (meets minimum)`);
-                      } else {
-                        // Below minimum, adjust to minimum
-                        dcaQuantity = dcaSpec.minOrder / dcaSpec.contractSize;
-                        console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${newTrade.symbol} = ${dcaQuantity.toFixed(4)} contracts`);
-                      }
-
-                      console.log(`   📊 DCA quantity calculation - positionSize=${positionSize}, dcaQuantity=${dcaQuantity}`);
+                      console.log(`✅ Calculated DCA quantity: ${dcaQuantity} for $${dcaSizeUSD} at $${dcaPrice.toFixed(2)}`);
 
                       if (dcaQuantity > 0) {
-                        console.log(`📊 Placing DCA limit order for ${newTrade.symbol} at $${dcaPrice.toFixed(2)} (${dcaSide}, qty: ${dcaQuantity})...`);
-
                         const { executeOkxLimitOrder } = require('../services/exchangeService');
                         const dcaOrderResult = await executeOkxLimitOrder(
                           okxSymbol,
                           dcaSide,
                           dcaQuantity,
-                          dcaPrice, // Limit price
+                          dcaPrice,
                           exchange.apiKey,
                           exchange.apiSecret,
                           exchange.passphrase,
@@ -3949,10 +3900,11 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                         );
 
                         if (dcaOrderResult.success) {
-                          console.log(`✅ DCA limit order placed for ${newTrade.symbol} at $${dcaPrice.toFixed(2)}! Order ID: ${dcaOrderResult.orderId}`);
+                          console.log(`✅ Initial DCA order placed for ${newTrade.symbol} at $${dcaPrice.toFixed(2)}! Order ID: ${dcaOrderResult.orderId}`);
                           newTrade.okxDcaOrderId = dcaOrderResult.orderId;
                           newTrade.okxDcaPrice = dcaPrice;
                           newTrade.okxDcaQuantity = dcaQuantity;
+                          newTrade.dcaCount = 0;
                           console.log(`   📝 Saved DCA order ID to trade object: ${newTrade.okxDcaOrderId}`);
                           addLogEntry(`DCA limit order placed on OKX for ${newTrade.symbol} at $${dcaPrice.toFixed(2)} (will execute if price reaches this level)`, 'info');
                         } else {
@@ -3961,6 +3913,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                       } else {
                         console.log(`⚠️ ${newTrade.symbol}: DCA quantity is 0, skipping DCA limit order`);
                       }
+                    } catch (dcaError) {
+                      console.error(`❌ Error placing DCA order for ${newTrade.symbol}: ${dcaError.message}`);
+                      // Don't fail the trade if DCA order fails - it's optional
                     }
                   }
                 }
