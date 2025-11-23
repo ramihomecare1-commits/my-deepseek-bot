@@ -810,38 +810,59 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
     const requestPath = '/api/v5/trade/order';
     const tdMode = 'isolated'; // Isolated margin for derivatives
 
-    // Apply same lot size rounding as market orders
-    const lotSizeMap = {
-      'BTC-USDT-SWAP': 0.01,   // 0.01 contracts = 0.0001 BTC
-      'ETH-USDT-SWAP': 0.01,   // 0.01 contracts = 0.001 ETH
-      'SOL-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 SOL
-      'XRP-USDT-SWAP': 1,      // 1 contract = 10 XRP
-      'DOGE-USDT-SWAP': 10,    // 10 contracts = 1000 DOGE
-      'ADA-USDT-SWAP': 0.1,    // 0.1 contracts = 1 ADA
-      'MATIC-USDT-SWAP': 1,    // 1 contract = 10 MATIC
-      'DOT-USDT-SWAP': 0.1,    // 0.1 contracts = 0.1 DOT
-      'AVAX-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 AVAX
-      'LINK-USDT-SWAP': 0.1,   // 0.1 contracts = 0.1 LINK
-    };
+    // CRITICAL FIX: quantity is in COINS from calculateQuantity()
+    // We need to convert to CONTRACTS before rounding
+    // Example: 0.001355 BTC → 0.1355 contracts → round to 0.14 → 0.0014 BTC
 
-    const lotSize = lotSizeMap[symbol] || 1;
+    let roundedContracts;
+    let finalCoins;
+    let actualUSD;
+    const requestedUSD = quantity * price;
 
-    // Round quantity to nearest lot size multiple
-    let roundedQuantity = Math.round(quantity / lotSize) * lotSize;
+    try {
+      // Fetch live contract specs
+      const specs = await fetchOkxContractSpecs([symbol], baseUrl);
+      const contractSpec = specs.get(symbol);
 
-    // Ensure minimum 1 lot
-    if (roundedQuantity < lotSize) {
-      roundedQuantity = lotSize;
+      if (!contractSpec) {
+        throw new Error(`No contract specs available for ${symbol}`);
+      }
+
+      const { ctVal, minSz, lotSz } = contractSpec;
+
+      // Convert coins to contracts
+      const rawContracts = quantity / ctVal;
+
+      // Round to lot size
+      roundedContracts = Math.round(rawContracts / lotSz) * lotSz;
+
+      // Ensure minimum size
+      if (roundedContracts < minSz) {
+        roundedContracts = minSz;
+      }
+
+      // Calculate actual values for logging
+      finalCoins = roundedContracts * ctVal;
+      actualUSD = finalCoins * price;
+
+      console.log(`📊 [OKX API] DCA sizing for ${symbol}:`);
+      console.log(`   Requested: $${requestedUSD.toFixed(2)} → ${quantity.toFixed(8)} coins`);
+      console.log(`   Contracts: ${rawContracts.toFixed(4)} → Rounded: ${roundedContracts}`);
+      console.log(`   Final: ${finalCoins.toFixed(8)} coins = $${actualUSD.toFixed(2)}`);
+      console.log(`   Specs: ctVal=${ctVal}, minSz=${minSz}, lotSz=${lotSz}`);
+
+    } catch (specError) {
+      console.log(`⚠️ [OKX API] Error fetching specs: ${specError.message}, using fallback`);
+      // Fallback: use quantity as-is (assume it's already in correct format)
+      roundedContracts = quantity;
+      finalCoins = quantity;
+      actualUSD = quantity * price;
     }
 
     // Round to avoid floating point precision issues
-    roundedQuantity = parseFloat(roundedQuantity.toFixed(8));
+    roundedContracts = parseFloat(roundedContracts.toFixed(8));
 
-    if (roundedQuantity !== quantity) {
-      console.log(`⚠️ [OKX API] DCA quantity adjusted from ${quantity} to ${roundedQuantity} (lot size: ${lotSize})`);
-    }
-
-    if (roundedQuantity <= 0) {
+    if (roundedContracts <= 0) {
       throw new Error('Invalid quantity: must be greater than 0');
     }
 
@@ -853,12 +874,12 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
       side: side.toLowerCase(),
       posSide: posSide,
       ordType: 'limit', // Limit order
-      sz: roundedQuantity.toString(),
+      sz: roundedContracts.toString(), // OKX expects contracts
       px: price.toFixed(8), // Limit price with precision
       lever: leverage.toString()
     };
 
-    console.log(`📊 [OKX API] Placing limit order: ${side} ${roundedQuantity} ${symbol} at $${price.toFixed(2)} (Leverage: ${leverage}x)`);
+    console.log(`📊 [OKX API] Placing limit order: ${side} ${roundedContracts} contracts (${finalCoins?.toFixed(8) || roundedContracts} ${symbol.split('-')[0]}) at $${price.toFixed(2)} (Leverage: ${leverage}x)`);
 
     const response = await executeOkxRequestWithFallback({
       apiKey,
@@ -879,7 +900,8 @@ async function executeOkxLimitOrder(symbol, side, quantity, price, apiKey, apiSe
         orderId: order.ordId,
         symbol: order.instId,
         side: order.side,
-        quantity: roundedQuantity,
+        quantity: roundedContracts, // Contracts sent to OKX
+        coins: finalCoins, // Actual coin amount
         price: price,
         status: order.state,
         mode: 'OKX'
