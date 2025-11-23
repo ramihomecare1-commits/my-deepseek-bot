@@ -41,51 +41,101 @@ function formatAlertMessage(alert) {
     const emoji = {
         'LEVEL_BREAKOUT': '🚨',
         'KEY_LEVEL_TEST': '⚠️',
-        'VOLUME_MOMENTUM': '📊'
+        'VOLUME_MOMENTUM': '📊',
+        'HEAD_AND_SHOULDERS': '🚨',
+        'INVERSE_HEAD_AND_SHOULDERS': '✅',
+        'DOUBLE_TOP': '🚨',
+        'DOUBLE_BOTTOM': '✅',
+        'TRIANGLE_BREAKOUT': '📐',
+        'CANDLESTICK_PATTERN': '🕯️'
     };
 
     const typeLabel = {
         'LEVEL_BREAKOUT': 'BREAKOUT',
         'KEY_LEVEL_TEST': 'LEVEL TEST',
-        'VOLUME_MOMENTUM': 'MOMENTUM'
+        'VOLUME_MOMENTUM': 'MOMENTUM',
+        'HEAD_AND_SHOULDERS': 'HEAD & SHOULDERS',
+        'INVERSE_HEAD_AND_SHOULDERS': 'INVERSE H&S',
+        'DOUBLE_TOP': 'DOUBLE TOP',
+        'DOUBLE_BOTTOM': 'DOUBLE BOTTOM',
+        'TRIANGLE_BREAKOUT': 'TRIANGLE BREAKOUT',
+        'CANDLESTICK_PATTERN': 'CANDLESTICK'
     };
 
-    let message = `${emoji[alert.type]} *${alert.symbol} ${typeLabel[alert.type]}*\n\n`;
-    message += `💰 Current: $${alert.price.toLocaleString()}\n`;
+    const timeframeLabel = alert.timeframe ? ` [${alert.timeframe.toUpperCase()}]` : '';
+    let message = `${emoji[alert.type]} *${alert.symbol} ${typeLabel[alert.type]}${timeframeLabel}*\\n\\n`;
 
-    if (alert.level) {
-        const distance = ((alert.level - alert.price) / alert.price * 100).toFixed(2);
-        message += `🎯 Level: $${alert.level.toLocaleString()} (${distance > 0 ? '+' : ''}${distance}%)\n`;
-    }
+    // Pattern-specific formatting
+    if (alert.type === 'HEAD_AND_SHOULDERS' || alert.type === 'INVERSE_HEAD_AND_SHOULDERS') {
+        message += `💰 Current: $${alert.currentPrice.toLocaleString()}\\n`;
+        message += `📉 Pattern: ${alert.direction === 'bullish' ? 'Bullish' : 'Bearish'} Reversal\\n`;
+        message += `🎯 Neckline: $${alert.neckline.toLocaleString()}\\n`;
+        message += `🎯 Target: $${alert.target.toLocaleString()}\\n`;
+        message += `📊 Confidence: ${alert.confidence}/10\\n`;
+        if (alert.volumeConfirmed) message += `📈 Volume: ${alert.volumeRatio}x on breakout\\n`;
+        message += `\\n💡 *${alert.direction.toUpperCase()} REVERSAL CONFIRMED*\\n`;
+    } else if (alert.type === 'DOUBLE_TOP' || alert.type === 'DOUBLE_BOTTOM') {
+        message += `💰 Current: $${alert.currentPrice.toLocaleString()}\\n`;
+        message += `📉 Pattern: ${alert.direction === 'bullish' ? 'Bullish' : 'Bearish'} Reversal\\n`;
+        message += `🎯 ${alert.type === 'DOUBLE_TOP' ? 'Resistance' : 'Support'}: $${(alert.resistance || alert.support).toLocaleString()}\\n`;
+        message += `🎯 Target: $${alert.target.toLocaleString()}\\n`;
+        message += `📊 Confidence: ${alert.confidence}/10\\n`;
+        if (alert.volumeConfirmed) message += `📈 Volume: ${alert.volumeRatio}x\\n`;
+        if (alert.volumeDivergence) message += `⚠️ Volume Divergence (Weakness)\\n`;
+        message += `\\n💡 *${alert.direction.toUpperCase()} REVERSAL CONFIRMED*\\n`;
+    } else if (alert.type === 'TRIANGLE_BREAKOUT') {
+        message += `💰 Current: $${alert.currentPrice.toLocaleString()}\\n`;
+        message += `📐 Type: ${alert.triangleType.charAt(0).toUpperCase() + alert.triangleType.slice(1)} Triangle\\n`;
+        message += `📈 Direction: ${alert.direction.toUpperCase()}\\n`;
+        message += `🎯 Breakout: $${alert.breakoutLevel.toLocaleString()}\\n`;
+        message += `🎯 Target: $${alert.target.toLocaleString()}\\n`;
+        message += `📊 Confidence: ${alert.confidence}/10\\n`;
+        if (alert.volumeConfirmed) message += `📈 Volume: ${alert.volumeRatio}x\\n`;
+        message += `\\n💡 *${alert.direction.toUpperCase()} BREAKOUT CONFIRMED*\\n`;
+    } else if (alert.type === 'CANDLESTICK_PATTERN') {
+        message += `💰 Current: $${alert.currentPrice.toLocaleString()}\\n`;
+        message += `🕯️ Pattern: ${alert.pattern.replace(/_/g, ' ').toUpperCase()}\\n`;
+        message += `📈 Direction: ${alert.direction.toUpperCase()}\\n`;
+        message += `📊 Confidence: ${alert.confidence}/10\\n`;
+        message += `\\n💡 *${alert.description.toUpperCase()}*\\n`;
+    } else {
+        // Level-based alerts (existing logic)
+        message += `💰 Current: $${alert.price.toLocaleString()}\\n`;
 
-    message += `📊 Confidence: ${alert.confidence}/10\n`;
+        if (alert.level) {
+            const distance = ((alert.level - alert.price) / alert.price * 100).toFixed(2);
+            message += `🎯 Level: $${alert.level.toLocaleString()} (${distance > 0 ? '+' : ''}${distance}%)\\n`;
+        }
 
-    if (alert.volumeRatio) {
-        message += `📈 Volume: ${alert.volumeRatio}x average\n`;
-    }
+        message += `📊 Confidence: ${alert.confidence}/10\\n`;
 
-    if (alert.touchCount) {
-        message += `🔄 Tests: ${alert.touchCount} touches\n`;
-    }
+        if (alert.volumeRatio) {
+            message += `📈 Volume: ${alert.volumeRatio}x average\\n`;
+        }
 
-    if (alert.strength) {
-        message += `💪 Strength: ${alert.strength}\n`;
-    }
+        if (alert.touchCount) {
+            message += `🔄 Tests: ${alert.touchCount} touches\\n`;
+        }
 
-    if (alert.confluence) {
-        message += `🎯 Confluence: ${alert.confluence} factors\n`;
-    }
+        if (alert.strength) {
+            message += `💪 Strength: ${alert.strength}\\n`;
+        }
 
-    if (alert.priceChange) {
-        message += `📉 Move: ${alert.priceChange}% ${alert.direction}\n`;
-    }
+        if (alert.confluence) {
+            message += `🎯 Confluence: ${alert.confluence} factors\\n`;
+        }
 
-    if (alert.action) {
-        message += `\n💡 *${alert.action.replace(/_/g, ' ')}*\n`;
+        if (alert.priceChange) {
+            message += `📉 Move: ${alert.priceChange}% ${alert.direction}\\n`;
+        }
+
+        if (alert.action) {
+            message += `\\n💡 *${alert.action.replace(/_/g, ' ')}*\\n`;
+        }
     }
 
     const time = new Date(alert.timestamp).toLocaleTimeString();
-    message += `\n⏰ ${time}`;
+    message += `\\n⏰ ${time}`;
 
     return message;
 }

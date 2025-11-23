@@ -4,6 +4,14 @@
  */
 
 const { addVolumeConfirmation } = require('../utils/patternDetector');
+const {
+    detectHeadAndShoulders,
+    detectInverseHeadAndShoulders,
+    detectDoubleTop,
+    detectDoubleBottom,
+    detectTriangle,
+    detectCandlestickPatterns
+} = require('../utils/chartPatterns');
 
 /**
  * Calculate average volume over N periods
@@ -300,5 +308,13 @@ module.exports = {
     detectVolumeMomentum,
     calculateAverageVolume,
     calculateBreakoutConfidence,
-    calculateLevelTestConfidence
+    calculateLevelTestConfidence,
+    // Chart patterns
+    detectHeadAndShoulders,
+    detectInverseHeadAndShoulders,
+    detectDoubleTop,
+    detectDoubleBottom,
+    detectTriangle,
+    detectCandlestickPatterns
 };
+

@@ -15,7 +15,12 @@ const DEFAULT_SETTINGS = {
     alertTypes: {
         levelBreakout: true,
         keyLevelTest: true,
-        volumeMomentum: false // Disabled - too noisy without other confirmations
+        volumeMomentum: false, // Disabled - too noisy without other confirmations
+        // Chart patterns
+        headAndShoulders: true,
+        doubleTops: true,
+        triangles: true,
+        candlestickPatterns: true
     },
     thresholds: {
         minConfidence: 8.5,        // Increased from 7 to 8.5
@@ -25,14 +30,33 @@ const DEFAULT_SETTINGS = {
         minVolumeRatio: 1.8,        // NEW: Minimum 180% volume
         minTouchCount: 3            // NEW: Minimum 3 historical tests
     },
+    // Top 20 coins (excluding stablecoins/wrapped)
     coinSettings: {
-        BTC: { distance: 1.5, scanInterval: 15, enabled: true },
-        ETH: { distance: 1.5, scanInterval: 15, enabled: true },
-        BNB: { distance: 1.5, scanInterval: 30, enabled: true },
-        SOL: { distance: 1.5, scanInterval: 30, enabled: true },
-        XRP: { distance: 1.5, scanInterval: 30, enabled: true },
-        // Disable other coins - focus on top 5 only
-        default: { distance: 1.5, scanInterval: 60, enabled: false }
+        // Tier 1 - Every 15 min
+        BTC: { distance: 1.5, scanInterval: 15, enabled: true, timeframes: ['1d', '1w'] },
+        ETH: { distance: 1.5, scanInterval: 15, enabled: true, timeframes: ['1d', '1w'] },
+        // Tier 2 - Every 30 min
+        BNB: { distance: 1.5, scanInterval: 30, enabled: true, timeframes: ['1d', '1w'] },
+        SOL: { distance: 1.5, scanInterval: 30, enabled: true, timeframes: ['1d', '1w'] },
+        XRP: { distance: 1.5, scanInterval: 30, enabled: true, timeframes: ['1d', '1w'] },
+        ADA: { distance: 1.5, scanInterval: 30, enabled: true, timeframes: ['1d', '1w'] },
+        DOGE: { distance: 1.5, scanInterval: 30, enabled: true, timeframes: ['1d', '1w'] },
+        TRX: { distance: 1.5, scanInterval: 30, enabled: true, timeframes: ['1d', '1w'] },
+        AVAX: { distance: 1.5, scanInterval: 30, enabled: true, timeframes: ['1d', '1w'] },
+        DOT: { distance: 1.5, scanInterval: 30, enabled: true, timeframes: ['1d', '1w'] },
+        // Tier 3 - Every 1 hour
+        MATIC: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
+        LINK: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
+        UNI: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
+        ATOM: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
+        LTC: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
+        APT: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
+        ARB: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
+        OP: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
+        INJ: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
+        SUI: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
+        // Disable other coins - focus on top 20 only
+        default: { distance: 1.5, scanInterval: 60, enabled: false, timeframes: ['1d'] }
     },
     quietHours: {
         enabled: false,
