@@ -18,13 +18,13 @@ const PORT = process.env.PORT || 10000;
 // Environment validation
 function validateEnvironment() {
   const warnings = [];
-  
+
   // Check for tier-specific API keys (new system)
   const hasFreeTierKey = !!process.env.FREE_TIER_API_KEY;
   const hasPremiumTierKey = !!process.env.PREMIUM_TIER_API_KEY;
   const hasLegacyKey = !!process.env.API_KEY || !!process.env.AI_API_KEY;
   const hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
-  
+
   // AI analysis warning (only if no keys at all)
   if (!hasFreeTierKey && !hasPremiumTierKey && !hasLegacyKey && !hasOpenRouterKey) {
     warnings.push('⚠️  No AI API keys found - AI analysis will use deterministic fallback');
@@ -38,7 +38,7 @@ function validateEnvironment() {
       warnings.push('⚠️  PREMIUM_TIER_API_KEY not set - premium tier will use free tier key');
     }
   }
-  
+
   if (!config.TELEGRAM_ENABLED) {
     warnings.push('⚠️  Telegram credentials not configured - notifications disabled');
   }
@@ -120,23 +120,23 @@ app.locals.tradingBot = null;
 async function initializeBotAsync() {
   try {
     console.log('🔄 Initializing trading bot...');
-    
+
     // Check Bybit configuration status (triggers startup logging)
     const { isExchangeTradingEnabled } = require('./services/exchangeService');
     isExchangeTradingEnabled(); // This will log Bybit status on first call
-    
+
     tradingBot = new ProfessionalTradingBot();
     app.locals.tradingBot = tradingBot;
-    
+
     // Initialize bot: Load saved trades and portfolio state
     await tradingBot.initialize();
-    
+
     // Start independent trades update timer (runs every 1 minute, regardless of scans)
     tradingBot.startTradesUpdateTimer();
-    
+
     // Start two-tier AI monitoring - runs every minute with v3 + R1 escalation
     tradingBot.startMonitoringTimer();
-    
+
     // Add log entry
     try {
       const { addLogEntry } = require('./routes/api');
@@ -144,7 +144,7 @@ async function initializeBotAsync() {
     } catch (e) {
       // Logging not available yet, ignore
     }
-    
+
     console.log('✅ Trading bot initialized (using JavaScript analysis)');
   } catch (error) {
     console.error('❌ Bot initialization error:', error);
@@ -156,6 +156,10 @@ async function initializeBotAsync() {
 
 // API routes
 app.use('/api', apiRoutes);
+
+// Alert management routes
+const alertRoutes = require('./routes/alerts');
+app.use('/api/alerts', alertRoutes);
 
 // Telegram webhook for chatting with Premium AI
 app.post('/telegram/webhook', express.json(), async (req, res) => {
@@ -247,9 +251,9 @@ app.get('/', (req, res) => {
 // Error handling
 app.use((error, req, res, next) => {
   console.error('Error:', error);
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Internal server error',
-    message: error.message 
+    message: error.message
   });
 });
 
@@ -264,7 +268,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n✅ Server listening on port ${PORT}`);
   console.log(`✅ Health check: http://localhost:${PORT}/health`);
   console.log(`✅ Server ready for health checks`);
-  
+
   // Start keep-alive service to prevent Render from sleeping
   // Render free tier sleeps after 15 minutes, so we ping every 10 minutes
   try {
@@ -279,17 +283,27 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   } catch (error) {
     console.log(`⚠️ Failed to start keep-alive service: ${error.message}`);
   }
-  
+
   // Initialize bot AFTER server is listening (non-blocking)
   setImmediate(() => {
     initializeBotAsync();
+
+    // Start alert scanner after bot initialization
+    setTimeout(() => {
+      try {
+        const { startAlertScanner } = require('./jobs/alertScannerJob');
+        startAlertScanner();
+      } catch (error) {
+        console.error('❌ Failed to start alert scanner:', error.message);
+      }
+    }, 5000); // Wait 5 seconds for bot to initialize
   });
-  
+
   // Log additional info asynchronously (non-blocking)
   setTimeout(() => {
     console.log(`\n🚀 Professional Crypto Scanner`);
     console.log(`📡 Server running on port ${PORT}`);
-    
+
     if (tradingBot && tradingBot.trackedCoins && tradingBot.trackedCoins.length) {
       console.log('📊 Strategy: RSI + Bollinger + Support/Resistance + Momentum + AI overlay');
       console.log(`⏰ Auto-scan: ${tradingBot.selectedIntervalKey || '1h'} intervals`);
@@ -298,7 +312,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`📰 News: ${config.NEWS_ENABLED ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
       console.log(`🤖 AI: ${(config.MONITORING_API_KEY || config.PREMIUM_API_KEY || config.AI_API_KEY) ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
     }
-    
+
     console.log('🔔 Test Telegram: POST /api/test-telegram');
     console.log('🌐 Web UI: http://localhost:' + PORT);
     console.log('');
@@ -309,6 +323,12 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
   keepAliveService.stop();
+  try {
+    const { stopAlertScanner } = require('./jobs/alertScannerJob');
+    stopAlertScanner();
+  } catch (e) {
+    // Ignore if not loaded
+  }
   server.close(() => {
     console.log('Process terminated');
   });
@@ -317,6 +337,12 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   console.log('SIGINT received, shutting down gracefully');
   keepAliveService.stop();
+  try {
+    const { stopAlertScanner } = require('./jobs/alertScannerJob');
+    stopAlertScanner();
+  } catch (e) {
+    // Ignore if not loaded
+  }
   server.close(() => {
     process.exit(0);
   });
