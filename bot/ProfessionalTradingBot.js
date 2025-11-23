@@ -4319,10 +4319,61 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       }
 
       // Update quantities from OKX (source of truth) for existing trades
+      let syncedCount = 0;
+      const tradesToRemove = [];
+
+      this.activeTrades.forEach(trade => {
+        const okxPos = okxPositions.find(p => p.coin === trade.symbol);
+
+        if (okxPos) {
+          const oldQuantity = trade.quantity || 0;
+          trade.quantity = okxPos.quantity;
+          trade.okxQuantity = okxPos.quantity;
+          trade.okxFree = okxPos.free;
+          trade.okxLocked = okxPos.locked;
+          trade.lastSyncedWithOkx = new Date();
+
+          if (Math.abs(oldQuantity - okxPos.quantity) > 0.00000001) {
+            console.log(`🔄 ${trade.symbol}: Synced with OKX - Quantity: ${oldQuantity.toFixed(8)} → ${okxPos.quantity.toFixed(8)}`);
+            syncedCount++;
+          }
+        } else {
+          // CRITICAL: Trade exists in memory but NOT on OKX
+          // This is a "ghost trade" that should be removed
+          if (trade.status === 'OPEN' || trade.status === 'DCA_HIT') {
+            console.warn(`⚠️ ${trade.symbol}: Ghost trade detected (not on OKX) - marking for removal`);
+            console.warn(`   Trade ID: ${trade.id}, Status: ${trade.status}, Entry: $${trade.entryPrice?.toFixed(2)}`);
+            tradesToRemove.push(trade);
+          }
+        }
+      });
+
+      // Remove ghost trades from activeTrades
+      if (tradesToRemove.length > 0) {
+        console.log(`🗑️ Removing ${tradesToRemove.length} ghost trade(s) that don't exist on OKX...`);
+
+        for (const ghostTrade of tradesToRemove) {
+          // Mark as CLOSED
+          ghostTrade.status = 'CLOSED';
+          ghostTrade.closedAt = new Date();
+          ghostTrade.note = (ghostTrade.note || '') + ' | Ghost trade - not found on OKX';
+
+          console.log(`   ❌ Removed: ${ghostTrade.symbol} (ID: ${ghostTrade.id})`);
+        }
+
+        // Remove from activeTrades array
+        this.activeTrades = this.activeTrades.filter(t => !tradesToRemove.includes(t));
+
+        // CRITICAL: Persist changes immediately to prevent ghost trades from reappearing
+        const { saveTrades } = require('../services/tradePersistenceService');
+        await saveTrades(this.activeTrades);
+        console.log(`   💾 Persisted changes - ghost trades removed from database`);
+
+        addLogEntry(`Removed ${tradesToRemove.length} ghost trade(s) not found on OKX`, 'info');
+      }
 
       if (syncedCount > 0) {
-        // Removed: DynamoDB persistence - OKX is the only source of truth
-        console.log(`✅ Synced ${syncedCount} trades with OKX positions`);
+        console.log(`✅ Synced ${syncedCount} trade(s) with OKX positions`);
       }
     } catch (error) {
       console.error(`❌ Error syncing with OKX positions: ${error.message}`);
