@@ -22,15 +22,15 @@ function convertDatesToTimestamps(obj) {
   if (obj === null || obj === undefined) {
     return obj;
   }
-  
+
   if (obj instanceof Date) {
     return obj.getTime();
   }
-  
+
   if (Array.isArray(obj)) {
     return obj.map(item => convertDatesToTimestamps(item));
   }
-  
+
   if (typeof obj === 'object') {
     const converted = {};
     for (const key in obj) {
@@ -40,7 +40,7 @@ function convertDatesToTimestamps(obj) {
     }
     return converted;
   }
-  
+
   return obj;
 }
 
@@ -51,6 +51,11 @@ let useDynamoDB = false;
  * Initialize DynamoDB connection if credentials are provided
  */
 async function initDynamoDB() {
+  // DynamoDB DISABLED to prevent ghost trades
+  console.log('⚠️ DynamoDB persistence is DISABLED by configuration');
+  return false;
+
+  /*
   const hasCredentials = process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY;
   if (!hasCredentials) {
     return false;
@@ -65,6 +70,7 @@ async function initDynamoDB() {
     console.log('📂 Falling back to file system storage');
     return false;
   }
+  */
 }
 
 /**
@@ -92,11 +98,11 @@ async function loadTradesFromDynamo() {
       trade.tradeId = tradeId;
       return trade;
     });
-    
+
     if (loadedTrades.length > 0) {
       console.log(`📋 Loaded ${loadedTrades.length} trades from DynamoDB:`, loadedTrades.map(t => ({ symbol: t.symbol, id: t.id, status: t.status })));
     }
-    
+
     return loadedTrades;
   } catch (error) {
     console.error('❌ Error loading trades from DynamoDB:', error);
@@ -118,10 +124,10 @@ async function saveTradesToDynamo(trades) {
     const existing = await docClient.send(new ScanCommand({ TableName: TABLES.ACTIVE_TRADES }));
     const existingTrades = existing.Items || [];
     const existingTradeIds = new Set(existingTrades.map(item => item.id || item.tradeId).filter(Boolean));
-    
+
     // Get IDs of trades we want to save
     const tradesToSaveIds = new Set(trades.map(t => t.id || t.tradeId).filter(Boolean));
-    
+
     // Find trades to delete: exist in DB but not in trades array
     // BUT: Only delete if they're explicitly closed (TP_HIT, SL_HIT, CLOSED)
     // NEVER delete open trades, even if they're very old (long-term positions are valid)
@@ -130,27 +136,27 @@ async function saveTradesToDynamo(trades) {
       if (!itemId || tradesToSaveIds.has(itemId)) {
         return false; // Keep if it's in the new list
       }
-      
+
       // Only delete if trade is explicitly closed (TP_HIT, SL_HIT, CLOSED)
       // NEVER delete open trades, regardless of age
       const isClosed = item.status === 'TP_HIT' || item.status === 'SL_HIT' || item.status === 'CLOSED';
-      
+
       // For open trades not in memory, ALWAYS preserve them (don't delete)
       if (!isClosed) {
         console.warn(`⚠️ Preserving ${item.symbol} trade in DynamoDB (not in memory but still open/active)`);
         return false; // Don't delete open trades, regardless of age
       }
-      
+
       return true; // Only delete closed trades
     });
-    
+
     // Log if we're about to delete trades (only closed trades)
     if (tradesToDelete.length > 0) {
       const deletedSymbols = tradesToDelete.map(t => `${t.symbol} (${t.status})`).join(', ');
       console.warn(`⚠️ Will delete ${tradesToDelete.length} closed trade(s) from DynamoDB: ${deletedSymbols}`);
       console.warn(`   💡 These are closed trades (TP_HIT, SL_HIT, CLOSED) that should be in closedTrades table.`);
     }
-    
+
     // Delete only trades that are not in the new list
     if (tradesToDelete.length > 0) {
       const deleteOps = tradesToDelete.map(item => {
@@ -159,7 +165,7 @@ async function saveTradesToDynamo(trades) {
           DeleteRequest: { Key: { id: itemId } }
         };
       });
-    
+
       // DynamoDB batch write (max 25 items per batch)
       const batches = [];
       for (let i = 0; i < deleteOps.length; i += 25) {
@@ -173,7 +179,7 @@ async function saveTradesToDynamo(trades) {
           }
         }));
       }
-      
+
       if (tradesToDelete.length > 0) {
         console.log(`🗑️ Deleted ${tradesToDelete.length} trade(s) from DynamoDB`);
       }
@@ -184,14 +190,14 @@ async function saveTradesToDynamo(trades) {
       const putOps = trades.map(trade => {
         // Use tradeId if id doesn't exist (for compatibility)
         const tradeId = trade.id || trade.tradeId || uuidv4();
-        
+
         // Convert all Date objects to timestamps recursively
         const tradeCopy = convertDatesToTimestamps({
           ...trade,
           id: tradeId,
           tradeId: tradeId // Ensure both fields exist for compatibility
         });
-        
+
         return {
           PutRequest: {
             Item: tradeCopy
@@ -212,7 +218,7 @@ async function saveTradesToDynamo(trades) {
           }
         }));
       }
-      
+
       const newTrades = trades.filter(t => {
         const tradeId = t.id || t.tradeId;
         return tradeId && !existingTradeIds.has(tradeId);
@@ -221,12 +227,12 @@ async function saveTradesToDynamo(trades) {
         const tradeId = t.id || t.tradeId;
         return tradeId && existingTradeIds.has(tradeId);
       });
-      
+
       console.log(`💾 Saved ${trades.length} trades to DynamoDB (${newTrades.length} new, ${updatedTrades.length} updated)`);
       // Debug: Log trade IDs for verification
       const tradeIds = trades.map(t => ({ symbol: t.symbol, id: t.id || t.tradeId, status: t.status }));
       console.log(`📋 Trade IDs saved:`, tradeIds);
-      
+
       // Special warning for BTC
       const btcTrade = trades.find(t => t.symbol === 'BTC' || t.symbol === 'btc');
       if (!btcTrade && existingTrades.find(t => (t.symbol === 'BTC' || t.symbol === 'btc'))) {
@@ -238,7 +244,7 @@ async function saveTradesToDynamo(trades) {
         console.warn(`⚠️ WARNING: DynamoDB has ${existingTrades.length} trades but trades array is empty. All trades will be deleted!`);
       }
     }
-    
+
     return true;
   } catch (error) {
     console.error('❌ Error saving trades to DynamoDB:', error);
@@ -262,6 +268,8 @@ async function ensureDataDir() {
  * @returns {Promise<Array>} Array of trade objects
  */
 async function loadTrades() {
+  // DynamoDB DISABLED to prevent ghost trades
+  /*
   // Try DynamoDB first if credentials are set
   if (process.env.AWS_ACCESS_KEY_ID) {
     console.log('📂 Attempting to load trades from DynamoDB...');
@@ -275,11 +283,12 @@ async function loadTrades() {
     }
     // If DynamoDB connection failed, fall through to file system
   }
+  */
 
   // Fallback to file system
   try {
     await ensureDataDir();
-    
+
     // Check if file exists
     try {
       await fs.access(TRADES_FILE);
@@ -291,18 +300,18 @@ async function loadTrades() {
       console.log(`💡 Solution: Use AWS DynamoDB (free tier) for persistent storage. Set AWS_ACCESS_KEY_ID environment variable.`);
       return [];
     }
-    
+
     const data = await fs.readFile(TRADES_FILE, 'utf8');
     console.log(`📂 Trades file size: ${data.length} bytes`);
-    
+
     if (!data || data.trim().length === 0) {
       console.log('⚠️ Trades file is empty');
       return [];
     }
-    
+
     const trades = JSON.parse(data);
     console.log(`📂 Parsed ${Array.isArray(trades) ? trades.length : 0} trades from file`);
-    
+
     // Validate and convert dates
     if (Array.isArray(trades)) {
       const validTrades = trades.map(trade => {
@@ -312,11 +321,11 @@ async function loadTrades() {
         }
         return trade;
       }).filter(trade => trade && trade.symbol); // Filter out invalid trades
-      
+
       console.log(`✅ Loaded ${validTrades.length} valid trades`);
       return validTrades;
     }
-    
+
     console.log('⚠️ Trades file does not contain an array');
     return [];
   } catch (error) {
@@ -337,6 +346,8 @@ async function loadTrades() {
  * @returns {Promise<boolean>} Success status
  */
 async function saveTrades(trades) {
+  // DynamoDB DISABLED to prevent ghost trades
+  /*
   // Try DynamoDB first if credentials are set
   if (process.env.AWS_ACCESS_KEY_ID) {
     const saved = await saveTradesToDynamo(trades);
@@ -345,11 +356,12 @@ async function saveTrades(trades) {
     }
     // If DynamoDB save failed, fall through to file system
   }
+  */
 
   // Fallback to file system
   try {
     await ensureDataDir();
-    
+
     // Convert to JSON-safe format (Date objects to ISO strings)
     const tradesToSave = trades.map(trade => {
       const tradeCopy = { ...trade };
@@ -358,7 +370,7 @@ async function saveTrades(trades) {
       }
       return tradeCopy;
     });
-    
+
     const jsonData = JSON.stringify(tradesToSave, null, 2);
     await fs.writeFile(TRADES_FILE, jsonData, 'utf8');
     console.log(`💾 Saved ${tradesToSave.length} trades to ${TRADES_FILE} (${jsonData.length} bytes)`);
@@ -383,6 +395,8 @@ function getTradesFilePath() {
  * @returns {Promise<Array>} Array of closed trade objects
  */
 async function loadClosedTrades() {
+  // DynamoDB DISABLED to prevent ghost trades
+  /*
   // Try DynamoDB first if credentials are set
   if (process.env.AWS_ACCESS_KEY_ID) {
     try {
@@ -415,23 +429,24 @@ async function loadClosedTrades() {
       return [];
     }
   }
-  
+  */
+
   // Fallback to file system
   try {
     await ensureDataDir();
     const CLOSED_TRADES_FILE = path.join(DATA_DIR, 'closed-trades.json');
-    
+
     try {
       await fs.access(CLOSED_TRADES_FILE);
     } catch (accessError) {
       return [];
     }
-    
+
     const data = await fs.readFile(CLOSED_TRADES_FILE, 'utf8');
     if (!data || data.trim().length === 0) {
       return [];
     }
-    
+
     const trades = JSON.parse(data);
     if (Array.isArray(trades)) {
       return trades.map(trade => {
@@ -444,7 +459,7 @@ async function loadClosedTrades() {
         return trade;
       }).filter(trade => trade && trade.symbol);
     }
-    
+
     return [];
   } catch (error) {
     console.error('❌ Error loading closed trades:', error);
@@ -458,6 +473,8 @@ async function loadClosedTrades() {
  * @returns {Promise<boolean>} Success status
  */
 async function saveClosedTrades(trades) {
+  // DynamoDB DISABLED to prevent ghost trades
+  /*
   // Try DynamoDB first if credentials are set
   if (process.env.AWS_ACCESS_KEY_ID) {
     try {
@@ -557,12 +574,13 @@ async function saveClosedTrades(trades) {
       return false;
     }
   }
-  
+  */
+
   // Fallback to file system
   try {
     await ensureDataDir();
     const CLOSED_TRADES_FILE = path.join(DATA_DIR, 'closed-trades.json');
-    
+
     // Convert to JSON-safe format
     const tradesToSave = trades.map(trade => {
       const tradeCopy = { ...trade };
@@ -574,7 +592,7 @@ async function saveClosedTrades(trades) {
       }
       return tradeCopy;
     });
-    
+
     const jsonData = JSON.stringify(tradesToSave, null, 2);
     await fs.writeFile(CLOSED_TRADES_FILE, jsonData, 'utf8');
     console.log(`💾 Saved ${tradesToSave.length} closed trades to ${CLOSED_TRADES_FILE}`);
