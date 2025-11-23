@@ -2926,6 +2926,36 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
               continue;
             }
 
+            // 🚨 CRITICAL: Check for position conflicts (prevent long+short for same symbol)
+            const existingTrade = this.activeTrades.find(t => t.symbol === opp.symbol && t.status === 'OPEN');
+            if (existingTrade) {
+              if (existingTrade.action === opp.action) {
+                console.log(`⏭️ ${opp.symbol}: Already have ${opp.action} position - skipping duplicate`);
+                continue;
+              } else {
+                console.log(`🚨 CRITICAL CONFLICT DETECTED: ${opp.symbol}`);
+                console.log(`   Existing: ${existingTrade.action} at $${existingTrade.entryPrice}`);
+                console.log(`   New signal: ${opp.action} at $${opp.entryPrice}`);
+                console.log(`   ❌ BLOCKING: Cannot open ${opp.action} while ${existingTrade.action} position is active`);
+
+                // Send emergency notification
+                try {
+                  const { sendTelegramMessage } = require('../services/notificationService');
+                  await sendTelegramMessage(
+                    `🚨 POSITION CONFLICT PREVENTED\n\n` +
+                    `Symbol: ${opp.symbol}\n` +
+                    `Existing: ${existingTrade.action} at $${existingTrade.entryPrice}\n` +
+                    `Blocked: ${opp.action} at $${opp.entryPrice}\n\n` +
+                    `⚠️ Cannot open opposite position while existing trade is active.`
+                  );
+                } catch (notifError) {
+                  console.log(`   ⚠️ Could not send conflict notification: ${notifError.message}`);
+                }
+
+                continue; // Skip this trade
+              }
+            }
+
             console.log(`💼 Executing trade for ${opp.symbol}: ${opp.action} at $${opp.entryPrice?.toFixed(2) || 'N/A'} (${currentActiveTrades + 1}/5 positions)`);
             try {
               await this.addActiveTrade(opp);
