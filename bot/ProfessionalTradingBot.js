@@ -4319,30 +4319,6 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       }
 
       // Update quantities from OKX (source of truth) for existing trades
-      let syncedCount = 0;
-      this.activeTrades.forEach(trade => {
-        const okxPos = okxPositions.find(p => p.coin === trade.symbol);
-
-        if (okxPos) {
-          const oldQuantity = trade.quantity || 0;
-          trade.quantity = okxPos.quantity;
-          trade.okxQuantity = okxPos.quantity;
-          trade.okxFree = okxPos.free;
-          trade.okxLocked = okxPos.locked;
-          trade.lastSyncedWithOkx = new Date();
-
-          if (Math.abs(oldQuantity - okxPos.quantity) > 0.00000001) {
-            console.log(`🔄 ${trade.symbol}: Synced with OKX - Quantity: ${oldQuantity.toFixed(8)} → ${okxPos.quantity.toFixed(8)}`);
-            syncedCount++;
-          }
-        } else if (trade.quantity > 0 && trade.status === 'OPEN') {
-          // Trade in memory but not on OKX - mark as closed
-          console.log(`⚠️ ${trade.symbol}: Position not found on OKX - marking as closed`);
-          trade.status = 'CLOSED';
-          trade.okxQuantity = 0;
-          trade.lastSyncedWithOkx = new Date();
-        }
-      });
 
       if (syncedCount > 0) {
         // Removed: DynamoDB persistence - OKX is the only source of truth
