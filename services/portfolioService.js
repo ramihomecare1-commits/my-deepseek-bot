@@ -56,14 +56,14 @@ async function loadPortfolio() {
     await ensureDataDir();
     const data = await fs.readFile(PORTFOLIO_FILE, 'utf8');
     const loaded = JSON.parse(data);
-    
+
     // Merge with defaults to handle missing fields
     portfolioState = {
       ...portfolioState,
       ...loaded,
       lastUpdated: new Date().toISOString()
     };
-    
+
     return portfolioState;
   } catch (error) {
     if (error.code === 'ENOENT') {
@@ -103,14 +103,14 @@ function getPortfolio() {
  */
 function getPortfolioStats() {
   const stats = { ...portfolioState };
-  
+
   // Calculate additional metrics
   stats.availableBalance = stats.currentBalance;
   stats.totalEquity = stats.currentBalance + stats.totalUnrealized;
-  stats.roi = stats.initialCapital > 0 
-    ? ((stats.totalEquity - stats.initialCapital) / stats.initialCapital) * 100 
+  stats.roi = stats.initialCapital > 0
+    ? ((stats.totalEquity - stats.initialCapital) / stats.initialCapital) * 100
     : 0;
-  
+
   return stats;
 }
 
@@ -120,13 +120,13 @@ function getPortfolioStats() {
 async function updateBalance(amount, type = 'TRADE') {
   portfolioState.currentBalance += amount;
   portfolioState.lastUpdated = new Date().toISOString();
-  
+
   if (type === 'INVEST') {
     portfolioState.totalInvested += Math.abs(amount);
   } else if (type === 'REALIZE') {
     portfolioState.totalRealized += amount;
   }
-  
+
   await savePortfolio();
   return portfolioState.currentBalance;
 }
@@ -157,11 +157,11 @@ async function updateTradePnl(tradeId, pnl, pnlPercent) {
 async function closeTrade(tradeId, pnl, pnlPercent, entryPrice, exitPrice, quantity) {
   portfolioState.closedPositions++;
   portfolioState.openPositions = Math.max(0, portfolioState.openPositions - 1);
-  
+
   // Update realized P&L
   portfolioState.totalRealized += pnl;
   portfolioState.totalPnl += pnl;
-  
+
   // Update win/loss stats
   if (pnl > 0) {
     portfolioState.winningTrades++;
@@ -180,16 +180,16 @@ async function closeTrade(tradeId, pnl, pnlPercent, entryPrice, exitPrice, quant
       portfolioState.largestLoss = pnl;
     }
   }
-  
+
   // Update win rate
   const closedCount = portfolioState.winningTrades + portfolioState.losingTrades;
   portfolioState.winRate = closedCount > 0
     ? (portfolioState.winningTrades / closedCount) * 100
     : 0;
-  
+
   // Update balance
   portfolioState.currentBalance += pnl;
-  
+
   portfolioState.lastUpdated = new Date().toISOString();
   await savePortfolio();
 }
@@ -200,21 +200,21 @@ async function closeTrade(tradeId, pnl, pnlPercent, entryPrice, exitPrice, quant
 async function recalculateFromTrades(activeTrades) {
   let totalUnrealized = 0;
   let openCount = 0;
-  
+
   activeTrades.forEach(trade => {
     if (trade.status === 'OPEN' || trade.status === 'DCA_HIT') {
       openCount++;
       totalUnrealized += trade.pnl || 0;
     }
   });
-  
+
   portfolioState.openPositions = openCount;
   portfolioState.totalUnrealized = totalUnrealized;
   portfolioState.totalPnl = portfolioState.totalRealized + totalUnrealized;
   portfolioState.totalPnlPercent = portfolioState.initialCapital > 0
     ? (portfolioState.totalPnl / portfolioState.initialCapital) * 100
     : 0;
-  
+
   portfolioState.lastUpdated = new Date().toISOString();
   await savePortfolio();
 }
@@ -227,7 +227,7 @@ async function recalculateFromClosedTrades(closedTrades) {
   if (!closedTrades || closedTrades.length === 0) {
     return;
   }
-  
+
   // Reset realized P&L and stats (will recalculate from closed trades)
   let totalRealized = 0;
   let winningTrades = 0;
@@ -237,17 +237,17 @@ async function recalculateFromClosedTrades(closedTrades) {
   let largestLoss = 0;
   let totalWinAmount = 0;
   let totalLossAmount = 0;
-  
+
   for (const trade of closedTrades) {
     const pnl = trade.finalPnl || trade.pnl || 0;
     const pnlPercent = trade.finalPnlPercent || trade.pnlPercent || 0;
     const entryPrice = trade.entryPrice || 0;
     const exitPrice = trade.closePrice || trade.executionPrice || trade.currentPrice || 0;
     const quantity = trade.quantity || trade.executedQty || 0;
-    
+
     totalRealized += pnl;
     totalClosedPositions++;
-    
+
     if (pnl > 0) {
       winningTrades++;
       totalWinAmount += pnl;
@@ -262,7 +262,7 @@ async function recalculateFromClosedTrades(closedTrades) {
       }
     }
   }
-  
+
   // Update portfolio state
   portfolioState.totalRealized = totalRealized;
   portfolioState.closedPositions = totalClosedPositions;
@@ -275,19 +275,19 @@ async function recalculateFromClosedTrades(closedTrades) {
   portfolioState.winRate = (winningTrades + losingTrades) > 0
     ? (winningTrades / (winningTrades + losingTrades)) * 100
     : 0;
-  
+
   // Update balance: start from initial capital, add all realized P&L
   portfolioState.currentBalance = portfolioState.initialCapital + totalRealized;
-  
+
   // Recalculate total P&L (will be updated when active trades are recalculated)
   portfolioState.totalPnl = portfolioState.totalRealized + portfolioState.totalUnrealized;
   portfolioState.totalPnlPercent = portfolioState.initialCapital > 0
     ? (portfolioState.totalPnl / portfolioState.initialCapital) * 100
     : 0;
-  
+
   portfolioState.lastUpdated = new Date().toISOString();
   await savePortfolio();
-  
+
   console.log(`✅ Recalculated portfolio from ${closedTrades.length} closed trades: ${winningTrades} wins, ${losingTrades} losses, Total P&L: $${totalRealized.toFixed(2)}`);
 }
 
@@ -334,23 +334,42 @@ function getPositionSize() {
  * - DCA 2: +2% of portfolio (total: 4.5%)
  * - DCA 3: +4% of portfolio (total: 8.5%)
  * - DCA 4: +1.5% of portfolio (total: 10% max)
+ * 
+ * EXCEPTION - BTC uses fixed amounts:
+ * - DCA 1: $100
+ * - DCA 2: $100
+ * - DCA 3: $200
+ * - DCA 4: $400
+ * - DCA 5: $800
+ * 
  * @param {number} dcaCount - Current DCA count (0 = first DCA, 1 = second DCA, etc.)
+ * @param {string} symbol - Trading symbol (e.g., 'BTC', 'ETH')
  * @returns {number} DCA size in USD
  */
-function getDCASize(dcaCount = 0) {
+function getDCASize(dcaCount = 0, symbol = '') {
+  // BTC uses fixed amounts instead of percentages
+  if (symbol === 'BTC') {
+    const btcDcaAmounts = [100, 100, 200, 400, 800]; // Fixed USD amounts for BTC
+    const dcaIndex = Math.min(dcaCount, btcDcaAmounts.length - 1);
+    const btcAmount = btcDcaAmounts[dcaIndex];
+    console.log(`💰 BTC DCA #${dcaCount + 1}: Using fixed amount $${btcAmount}`);
+    return btcAmount;
+  }
+
+  // All other coins use percentage-based DCA
   const portfolio = getPortfolio();
   const portfolioValue = portfolio.currentBalance || portfolio.initialCapital || DEFAULT_CAPITAL;
-  
+
   // DCA percentages based on count
   const dcaPercentages = [0.01, 0.02, 0.04, 0.015]; // 1%, 2%, 4%, 1.5%
-  
+
   // Get the percentage for this DCA (dcaCount 0 = first DCA = 1%, etc.)
   const dcaIndex = Math.min(dcaCount, dcaPercentages.length - 1);
   const dcaPercentage = dcaPercentages[dcaIndex];
-  
+
   // Calculate DCA size as percentage of portfolio
   const dcaSizeUSD = portfolioValue * dcaPercentage;
-  
+
   // Ensure minimum size
   return Math.max(dcaSizeUSD, 25); // Minimum $25 per DCA
 }

@@ -4113,10 +4113,10 @@ async function executeAddPosition(trade) {
   // For SELL positions: Sell more (average up)
   const side = trade.action === 'BUY' ? 'buy' : 'sell';
 
-  // Calculate quantity for DCA using portfolio service (percentage-based)
+  // Calculate quantity for DCA using portfolio service (percentage-based, except BTC uses fixed amounts)
   const { getDCASize, getPortfolio } = require('./portfolioService');
   const dcaCount = trade.dcaCount || 0; // Get current DCA count
-  const dcaSizeUSD = getDCASize(dcaCount); // Calculate DCA size based on count and portfolio value
+  const dcaSizeUSD = getDCASize(dcaCount, trade.symbol); // Calculate DCA size (BTC uses fixed amounts)
   const portfolio = getPortfolio();
   const portfolioValue = portfolio.currentBalance || portfolio.initialCapital || 5000;
   console.log(`💰 DCA #${dcaCount + 1} sizing: $${dcaSizeUSD.toFixed(2)} (${((dcaSizeUSD / portfolioValue) * 100).toFixed(2)}% of portfolio)`);
