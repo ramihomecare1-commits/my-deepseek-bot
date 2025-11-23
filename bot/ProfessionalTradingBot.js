@@ -7274,6 +7274,12 @@ IMPORTANT RULES:
 - Before recommending CLOSE on a losing trade, check if DCA is available (dcaCount < 5). DCA is often better than closing at a loss.
 - For ADJUST: You can adjust Take Profit (newTakeProfit), Stop Loss (newStopLoss), and/or DCA Price (newDcaPrice). Only provide values you want to change. Leave null if no change needed.
 - For DCA Price (newDcaPrice): This is the price level where we add to the position. For BUY trades, DCA should be BELOW current price (buy the dip). For SELL trades, DCA should be ABOVE current price (short the rally).
+  ⚠️ CRITICAL DCA CHANGE RULES:
+  - DCA price can only be changed once every 4 HOURS per trade
+  - Only suggest newDcaPrice if there's a MAJOR market change (>3% price movement or significant news)
+  - Small price movements (<3%) do NOT justify DCA changes
+  - If changing DCA, you MUST provide specific reason in 'reason' field explaining the major market change
+  - If unsure or no major change, leave newDcaPrice as null
 
 🚨 PARTIAL CLOSE RULES (CRITICAL - MUST FOLLOW):
 - DO NOT recommend CLOSE unless ONE of these conditions is met:
@@ -7435,8 +7441,33 @@ Return JSON array format:
                 return rec;
               });
 
+              // 🚨 VALIDATE DCA CHANGES - Enforce 4-hour cooldown per trade
+              const DCA_CHANGE_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
+              const validatedDCA = finalRecommendations.map(rec => {
+                if (rec.newDcaPrice && typeof rec.newDcaPrice === 'number') {
+                  const trade = batch.find(t => t.symbol === rec.symbol);
+                  if (trade) {
+                    const lastDcaChange = trade.lastDcaChangeAt || 0;
+                    const timeSinceLastChange = Date.now() - lastDcaChange;
+
+                    if (timeSinceLastChange < DCA_CHANGE_COOLDOWN_MS) {
+                      const remainingHours = ((DCA_CHANGE_COOLDOWN_MS - timeSinceLastChange) / (1000 * 60 * 60)).toFixed(1);
+                      console.log(`🚫 ${rec.symbol}: AI DCA change blocked - cooldown active (${remainingHours}h remaining)`);
+                      console.log(`   Current DCA: $${trade.addPosition || trade.dcaPrice}, AI suggested: $${rec.newDcaPrice}`);
+
+                      // Block the DCA change
+                      rec.newDcaPrice = null;
+                      rec.reason = `[DCA change blocked: 4h cooldown, ${remainingHours}h remaining] ` + rec.reason;
+                    } else {
+                      console.log(`✅ ${rec.symbol}: DCA change allowed - cooldown passed (${(timeSinceLastChange / (1000 * 60 * 60)).toFixed(1)}h since last change)`);
+                    }
+                  }
+                }
+                return rec;
+              });
+
               // Add to all recommendations
-              allRecommendations.push(...finalRecommendations);
+              allRecommendations.push(...validatedDCA);
 
             } catch (parseError) {
               console.error('❌ Failed to parse AI response:', parseError.message);
@@ -7730,6 +7761,7 @@ Return JSON array format:
 
                 trade.addPosition = finalDcaValue;
                 trade.dcaPrice = finalDcaValue; // Store in both fields for consistency
+                trade.lastDcaChangeAt = Date.now(); // Track timestamp for 4-hour cooldown
                 adjusted = true;
 
                 if (dcaAdjusted) {
