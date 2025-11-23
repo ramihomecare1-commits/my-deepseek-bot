@@ -327,51 +327,43 @@ function getPositionSize() {
 }
 
 /**
- * Get DCA position size (USD) based on DCA count and portfolio value
- * DCA plan per position (max 10% of portfolio after all DCAs):
- * - Initial position: 1.5% of portfolio
- * - DCA 1: +1% of portfolio (total: 2.5%)
- * - DCA 2: +2% of portfolio (total: 4.5%)
- * - DCA 3: +4% of portfolio (total: 8.5%)
- * - DCA 4: +1.5% of portfolio (total: 10% max)
+ * Get DCA position size (USD) based on DCA count
+ * ALL coins use FIXED amounts (not percentages):
  * 
- * EXCEPTION - BTC uses fixed amounts:
+ * BTC DCA amounts:
  * - DCA 1: $100
  * - DCA 2: $100
  * - DCA 3: $200
  * - DCA 4: $400
  * - DCA 5: $800
  * 
+ * All other coins DCA amounts:
+ * - DCA 1: $50
+ * - DCA 2: $50
+ * - DCA 3: $100
+ * - DCA 4: $200
+ * - DCA 5: $400
+ * 
  * @param {number} dcaCount - Current DCA count (0 = first DCA, 1 = second DCA, etc.)
  * @param {string} symbol - Trading symbol (e.g., 'BTC', 'ETH')
  * @returns {number} DCA size in USD
  */
 function getDCASize(dcaCount = 0, symbol = '') {
-  // BTC uses fixed amounts instead of percentages
+  // BTC uses larger fixed amounts
   if (symbol === 'BTC') {
-    const btcDcaAmounts = [100, 100, 200, 400, 800]; // Fixed USD amounts for BTC
+    const btcDcaAmounts = [100, 100, 200, 400, 800];
     const dcaIndex = Math.min(dcaCount, btcDcaAmounts.length - 1);
     const btcAmount = btcDcaAmounts[dcaIndex];
     console.log(`💰 BTC DCA #${dcaCount + 1}: Using fixed amount $${btcAmount}`);
     return btcAmount;
   }
 
-  // All other coins use percentage-based DCA
-  const portfolio = getPortfolio();
-  const portfolioValue = portfolio.currentBalance || portfolio.initialCapital || DEFAULT_CAPITAL;
-
-  // DCA percentages based on count
-  const dcaPercentages = [0.01, 0.02, 0.04, 0.015]; // 1%, 2%, 4%, 1.5%
-
-  // Get the percentage for this DCA (dcaCount 0 = first DCA = 1%, etc.)
-  const dcaIndex = Math.min(dcaCount, dcaPercentages.length - 1);
-  const dcaPercentage = dcaPercentages[dcaIndex];
-
-  // Calculate DCA size as percentage of portfolio
-  const dcaSizeUSD = portfolioValue * dcaPercentage;
-
-  // Ensure minimum size
-  return Math.max(dcaSizeUSD, 25); // Minimum $25 per DCA
+  // All other coins use smaller fixed amounts
+  const defaultDcaAmounts = [50, 50, 100, 200, 400];
+  const dcaIndex = Math.min(dcaCount, defaultDcaAmounts.length - 1);
+  const dcaAmount = defaultDcaAmounts[dcaIndex];
+  console.log(`💰 ${symbol} DCA #${dcaCount + 1}: Using fixed amount $${dcaAmount}`);
+  return dcaAmount;
 }
 
 // Note: loadPortfolio() is called explicitly in ProfessionalTradingBot.initialize()
