@@ -45,7 +45,7 @@ const DEFAULT_SETTINGS = {
         AVAX: { distance: 1.5, scanInterval: 30, enabled: true, timeframes: ['1d', '1w'] },
         DOT: { distance: 1.5, scanInterval: 30, enabled: true, timeframes: ['1d', '1w'] },
         // Tier 3 - Every 1 hour
-        MATIC: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
+        POL: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },  // Changed from MATIC to POL
         LINK: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
         UNI: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
         ATOM: { distance: 1.5, scanInterval: 60, enabled: true, timeframes: ['1d', '1w'] },
