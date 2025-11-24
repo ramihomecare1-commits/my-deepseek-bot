@@ -1067,16 +1067,40 @@ router.post('/scanner/run', async (req, res) => {
     const { fetchMexcCandlesBatch } = require('../services/mexcDataService');
     const { findSupportResistance, addVolumeConfirmation, checkProximity } = require('../utils/patternDetector');
 
-    // Fetch 2000 candles from MEXC
-    const mexcSymbol = `${symbol}USDT`; // Convert BTC -> BTCUSDT
-    const candles = await fetchMexcCandlesBatch(mexcSymbol, timeframe, 2000);
+    // Symbol mapping for rebranded/different naming on MEXC
+    const symbolMap = {
+      'MATIC': 'POL',  // Polygon rebranded from MATIC to POL
+      // Add more mappings as needed
+    };
+
+    // Apply symbol mapping if exists
+    const mappedSymbol = symbolMap[symbol] || symbol;
+    const mexcSymbol = `${mappedSymbol}USDT`; // Convert BTC -> BTCUSDT
+
+    console.log(`   Symbol mapping: ${symbol} -> ${mappedSymbol} -> ${mexcSymbol}`);
+
+    // Fetch 2000 candles from MEXC with error handling
+    let candles;
+    try {
+      candles = await fetchMexcCandlesBatch(mexcSymbol, timeframe, 2000);
+    } catch (fetchError) {
+      console.error(`❌ Error fetching candles for ${mexcSymbol}:`, fetchError.message);
+      return res.json({
+        success: false,
+        error: `Symbol ${mexcSymbol} not available on MEXC or API error: ${fetchError.message}`,
+        symbol,
+        timeframe,
+        suggestion: 'Try a different symbol or timeframe'
+      });
+    }
 
     if (!candles || candles.length === 0) {
       return res.json({
         success: false,
-        error: 'No candle data available',
+        error: `No candle data available for ${mexcSymbol}`,
         symbol,
-        timeframe
+        timeframe,
+        suggestion: 'This symbol may not be supported on MEXC'
       });
     }
 
