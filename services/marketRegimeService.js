@@ -33,16 +33,16 @@ function detectMarketRegime(priceHistory, globalMetrics = null) {
 
   const prices = priceHistory.map(p => p.price || p.close || p.c || 0);
   const recent = prices.slice(-20); // Last 20 periods
-  
+
   // Calculate trend indicators
   const trendAnalysis = analyzeTrend(recent);
   const volatilityAnalysis = analyzeVolatility(recent);
   const momentumAnalysis = analyzeMomentum(prices);
-  
+
   // Determine regime
   const regime = determineRegime(trendAnalysis, volatilityAnalysis, momentumAnalysis, globalMetrics);
 
-    return {
+  return {
     regime: regime.type,
     confidence: regime.confidence,
     indicators: {
@@ -52,9 +52,9 @@ function detectMarketRegime(priceHistory, globalMetrics = null) {
     },
     tradingStrategy: getRegimeStrategy(regime.type),
     timestamp: new Date()
-    };
-  }
-  
+  };
+}
+
 /**
  * Analyze price trend
  * @param {Array} prices - Recent price array
@@ -81,12 +81,17 @@ function analyzeTrend(prices) {
     direction = 'down';
   }
 
+  // Handle null/NaN values
+  const safeChange = isNaN(change) ? 0 : change;
+  const safeSma10 = isNaN(sma10) || sma10 === null ? 0 : sma10;
+  const safeSma20 = isNaN(sma20) || sma20 === null ? 0 : sma20;
+
   return {
     direction: direction,
-    change: Number(change.toFixed(2)),
-    sma10: Number(sma10.toFixed(2)),
-    sma20: Number(sma20.toFixed(2)),
-    sma10Above20: sma10 > sma20
+    change: Number(safeChange.toFixed(2)),
+    sma10: Number(safeSma10.toFixed(2)),
+    sma20: Number(safeSma20.toFixed(2)),
+    sma10Above20: safeSma10 > safeSma20
   };
 }
 
@@ -106,7 +111,7 @@ function analyzeVolatility(prices) {
   const squaredDiffs = returns.map(r => Math.pow(r - mean, 2));
   const variance = squaredDiffs.reduce((sum, d) => sum + d, 0) / squaredDiffs.length;
   const stdDev = Math.sqrt(variance) * 100; // As percentage
-  
+
   let level = 'medium';
   if (stdDev > 5) {
     level = 'extreme';
@@ -138,6 +143,14 @@ function analyzeMomentum(prices) {
 
   const rsi = calculateRSI(prices, 14);
 
+  // Handle null/undefined RSI (can happen with insufficient data)
+  if (rsi === null || rsi === undefined || isNaN(rsi)) {
+    return {
+      rsi: 50,
+      momentum: 'neutral'
+    };
+  }
+
   let momentum = 'neutral';
   if (rsi > 70) {
     momentum = 'overbought';
@@ -166,7 +179,7 @@ function analyzeMomentum(prices) {
 function determineRegime(trend, volatility, momentum, globalMetrics) {
   let score = 0;
   let confidence = 0;
-  
+
   // Extreme volatility overrides other factors
   if (volatility.level === 'extreme') {
     return {
@@ -232,7 +245,7 @@ function determineRegime(trend, volatility, momentum, globalMetrics) {
 
   // Clamp confidence
   confidence = Math.max(0, Math.min(1, confidence));
-  
+
   return {
     type: type,
     confidence: Number(confidence.toFixed(2))
@@ -323,7 +336,7 @@ function adjustTradeForRegime(trade, regime) {
   } else if (regime === REGIME_TYPES.BEAR && trade.direction === 'short') {
     adjustments.confidenceBoost = 0.05;
   } else if ((regime === REGIME_TYPES.BULL && trade.direction === 'short') ||
-             (regime === REGIME_TYPES.BEAR && trade.direction === 'long')) {
+    (regime === REGIME_TYPES.BEAR && trade.direction === 'long')) {
     adjustments.confidenceBoost = -0.1;
   } else {
     adjustments.confidenceBoost = 0;
