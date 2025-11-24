@@ -62,6 +62,25 @@ async function scanForAlerts(coins, settings) {
             const timeframes = coinSettings.timeframes || ['1d', '1w'];
 
             for (const timeframe of timeframes) {
+                // Weekly scans: Only run on Sunday at 10 PM (UTC+4) / 18:00 UTC
+                // This is 6 hours before the weekly candle closes (Monday 00:00 UTC)
+                if (timeframe === '1w') {
+                    const now = new Date();
+                    const dayOfWeek = now.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
+                    const hourUTC = now.getUTCHours();
+
+                    // Only scan on Sunday (day 0) at 18:00 UTC (10 PM UTC+4)
+                    // Allow a 1-hour window: 18:00-18:59 UTC
+                    const isWeeklyScanTime = dayOfWeek === 0 && hourUTC === 18;
+
+                    if (!isWeeklyScanTime) {
+                        console.log(`   ⏭️ Skipping 1W scan - only runs Sunday 18:00 UTC (10 PM UTC+4)`);
+                        continue;
+                    }
+
+                    console.log(`   ✅ Weekly scan time! Sunday 18:00 UTC (10 PM UTC+4)`);
+                }
+
                 console.log(`   📊 Timeframe: ${timeframe.toUpperCase()}`);
 
                 // Fetch candles for this timeframe
