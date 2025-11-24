@@ -3015,6 +3015,15 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       console.log(`\n📈 SCAN COMPLETE: ${opportunities.length} opportunities found`);
       console.log(`📊 API Usage: CoinGecko (primary), CoinPaprika: ${this.stats.coinpaprikaUsage}, CoinMarketCap: ${this.stats.coinmarketcapUsage}`);
 
+      // Trigger orphan cleanup 30 seconds after scan completes
+      // This gives newly placed orders time to settle and positions to update on OKX
+      console.log('⏰ Scheduling orphan cleanup in 30 seconds...');
+      setTimeout(() => {
+        this.cleanupOrphanedOrders().catch(err => {
+          console.error(`⚠️ Post-scan cleanup error: ${err.message}`);
+        });
+      }, 30000); // 30 seconds
+
       // Re-evaluate open trades with AI
       await this.reevaluateOpenTradesWithAI();
 
@@ -5534,10 +5543,14 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
     console.log('🧹 Starting 5-minute orphan order cleanup timer');
 
-    // Run immediately on start
+    // Don't run immediately on start - wait for first interval
+    // This prevents cancelling DCA orders that were just placed
+    // Cleanup will be triggered 30 seconds after each scan completes
+    /* DISABLED: Run immediately on start
     this.cleanupOrphanedOrders().catch(err => {
       console.error(`⚠️ Initial cleanup error: ${err.message}`);
     });
+    */
 
     // Then run every 5 minutes
     this.cleanupTimer = setInterval(async () => {
