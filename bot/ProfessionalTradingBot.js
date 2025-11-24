@@ -2083,6 +2083,23 @@ Reason: ${newReason?.substring(0, 200)}`);
     };
 
     try {
+      // CRITICAL FIX: Sync with OKX positions BEFORE scanning
+      // This prevents duplicate trades and ensures we have accurate position data
+      console.log('🔄 Syncing with OKX positions before scan...');
+      await this.syncWithOkxPositions();
+
+      // Get symbols with active positions to skip during scan
+      const activeSymbols = new Set(
+        this.activeTrades
+          .filter(t => ['OPEN', 'PENDING', 'DCA_HIT'].includes(t.status))
+          .map(t => t.symbol)
+      );
+
+      if (activeSymbols.size > 0) {
+        console.log(`⏭️ Skipping ${activeSymbols.size} coins with active trades: ${Array.from(activeSymbols).join(', ')}`);
+        addLogEntry(`Skipping ${activeSymbols.size} coins with active positions`, 'info');
+      }
+
       // Note: Active trades are updated by the independent timer (every 1 minute)
       // No need to update here to avoid duplicate calls
 
@@ -2170,18 +2187,18 @@ Reason: ${newReason?.substring(0, 200)}`);
       const BATCH_SIZE = 5; // Reduced from 10 to 5 to limit memory usage
 
       // Filter out coins with open trades (they're re-evaluated separately by monitoring)
+      // CRITICAL FIX: Skip coins with active positions to prevent duplicates
       const openTradeSymbols = new Set(
         this.activeTrades
           .filter(t => t.status === 'OPEN' || t.status === 'DCA_HIT' || t.status === 'PENDING')
           .map(t => t.symbol)
       );
 
-      const coinsToScan = this.trackedCoins.filter(coin => !openTradeSymbols.has(coin.symbol));
+      // Apply filter: Skip coins with active positions
+      const coinsToScan = this.trackedCoins.filter(coin => !openTradeSymbols.has(coin.symbol) && !activeSymbols.has(coin.symbol));
 
-      if (openTradeSymbols.size > 0) {
-        console.log(`⏭️ Skipping ${openTradeSymbols.size} coin(s) with open trades: ${Array.from(openTradeSymbols).join(', ')}`);
-        addLogEntry(`Skipping ${openTradeSymbols.size} coin(s) with open trades (will be re-evaluated separately)`, 'info');
-      }
+      console.log(`📊 Scanning ${coinsToScan.length}/${this.trackedCoins.length} coins (${activeSymbols.size} skipped - active positions)`);
+      addLogEntry(`Analyzing ${coinsToScan.length} coins (${activeSymbols.size} with active positions skipped)`, 'info');
 
       // Update scan progress total
       this.scanProgress.total = coinsToScan.length;
