@@ -7854,177 +7854,21 @@ Return JSON array format:
                     */
                   }
 
+                  /* DISABLED: Entire DCA order update section - DCA is fixed at 15% below entry
                   // If DCA was adjusted, cancel old DCA order and place new one
                   // FIX: Check if newDcaValue exists and is valid before using
                   if (newDcaValue && typeof newDcaValue === 'number' && newDcaValue > 0) {
-                    // Cancel existing DCA order if it exists
-                    let cancellationSucceeded = false;
-
-                    if (trade.okxDcaOrderId) {
-                      try {
-                        const { isExchangeTradingEnabled, getPreferredExchange, cancelOkxOrder, OKX_SYMBOL_MAP } = require('../services/exchangeService');
-                        const exchangeConfig = isExchangeTradingEnabled();
-
-                        if (exchangeConfig.enabled) {
-                          const exchange = getPreferredExchange();
-                          const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
-
-                          if (okxSymbol && exchange) {
-                            const cancelResult = await cancelOkxOrder(
-                              okxSymbol,
-                              trade.okxDcaOrderId,
-                              null, // clOrdId
-                              exchange.apiKey,
-                              exchange.apiSecret,
-                              exchange.passphrase,
-                              exchange.baseUrl,
-                              null // DON'T pass tdMode for limit orders
-                            );
-
-                            // Verify cancellation succeeded
-                            if (cancelResult && cancelResult.success) {
-                              console.log(`🗑️ ${symbol}: Canceled old DCA order on OKX (ID: ${trade.okxDcaOrderId})`);
-                              cancellationSucceeded = true;
-                              trade.okxDcaOrderId = null; // Clear old order ID
-                            } else {
-                              const errorMsg = `DCA order cancellation failed for ${symbol}: ${cancelResult?.error || 'Unknown error'}`;
-                              console.error(`❌ ${errorMsg}`);
-
-                              // Send Telegram notification for DCA cancellation failure
-                              addLogEntry(errorMsg, 'error');
-                            }
-                          }
-                        }
-                      } catch (cancelError) {
-                        const errorMsg = `DCA order cancellation error for ${symbol}: ${cancelError.message}`;
-                        console.error(`❌ ${errorMsg}`);
-
-                        // Send Telegram notification for DCA cancellation error
-                        // const { addLogEntry } = require('../services/exchangeService');
-                        addLogEntry(errorMsg, 'error');
-                      }
-                    } else {
-                      // No existing DCA order, safe to place new one
-                      cancellationSucceeded = true;
-                    }
-
-                    // Only place new DCA order if cancellation succeeded (or no old order existed)
-                    if (!cancellationSucceeded) {
-                      console.warn(`⚠️ ${symbol}: Skipping new DCA order placement - old order still exists on OKX`);
-                      // const { addLogEntry } = require('../services/exchangeService');
-                      addLogEntry(`⚠️ ${symbol}: Skipped new DCA - old order cancellation failed. Manual cleanup required!`, 'warning');
-                      continue; // Skip to next recommendation
-                    }
-
-                    // Place new DCA limit order
-                    try {
-                      const { executeOkxLimitOrder, OKX_SYMBOL_MAP, getOkxOpenPositions, isExchangeTradingEnabled, getPreferredExchange } = require('../services/exchangeService');
-                      const exchangeConfig = isExchangeTradingEnabled();
-
-                      if (!exchangeConfig.enabled) {
-                        throw new Error('Exchange trading not enabled');
-                      }
-
-                      const exchange = getPreferredExchange();
-                      const okxSymbol = OKX_SYMBOL_MAP[trade.symbol];
-
-                      if (okxSymbol && exchange) {
-                        // Get current position size for DCA quantity calculation
-                        const okxPositions = await getOkxOpenPositions(
-                          exchange.apiKey,
-                          exchange.apiSecret,
-                          exchange.passphrase,
-                          exchange.baseUrl
-                        );
-                        const okxPos = okxPositions.find(p => p.coin === trade.symbol);
-                        const positionSize = okxPos?.quantity || trade.quantity || 0;
-
-                        // Calculate DCA quantity using FIXED USD tiers (same as initial position logic)
-                        // BTC: $100, $100, $200, $400, $800
-                        // Others: $50, $50, $100, $200, $400
-
-                        const isBTC = trade.symbol === 'BTC';
-                        const positionSizes = isBTC
-                          ? [100, 100, 200, 400, 800]  // BTC position sizes
-                          : [50, 50, 100, 200, 400];   // Other coins position sizes
-
-                        // Count existing positions for this symbol to determine DCA tier
-                        const existingPositions = this.activeTrades.filter(t =>
-                          t.symbol === trade.symbol &&
-                          (t.status === 'OPEN' || t.status === 'DCA_HIT' || t.status === 'PENDING')
-                        ).length;
-
-                        // DCA is for the next position, array is 0-indexed
-                        const dcaPositionIndex = Math.min(existingPositions, positionSizes.length - 1);
-                        const dcaSizeUSD = positionSizes[dcaPositionIndex];
-
-                        // Calculate DCA quantity in coins
-                        let dcaQuantity = dcaSizeUSD / newDcaValue;
-
-                        console.log(`   💰 AI DCA Sizing: Tier #${dcaPositionIndex + 1}: $${dcaSizeUSD} → ${dcaQuantity.toFixed(8)} coins @ $${newDcaValue.toFixed(2)}`);
-
-                        const contractSpecs = {
-                          'BTC-USDT-SWAP': { contractSize: 0.01, minOrder: 0.0001 },
-                          'ETH-USDT-SWAP': { contractSize: 0.1, minOrder: 0.001 },
-                          'SOL-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                          'XRP-USDT-SWAP': { contractSize: 100, minOrder: 1 },
-                          'DOGE-USDT-SWAP': { contractSize: 100, minOrder: 10 },
-                          'ADA-USDT-SWAP': { contractSize: 100, minOrder: 1 },
-                          'MATIC-USDT-SWAP': { contractSize: 10, minOrder: 1 },
-                          'DOT-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                          'AVAX-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                          'LINK-USDT-SWAP': { contractSize: 1, minOrder: 0.1 },
-                        };
-
-                        const dcaSpec = contractSpecs[okxSymbol] || { contractSize: 1, minOrder: 0.01 };
-                        const dcaCoinQuantity = dcaQuantity;
-                        const dcaContracts = dcaCoinQuantity / dcaSpec.contractSize;
-
-                        let finalDcaQuantity = dcaQuantity;
-                        if (dcaCoinQuantity >= dcaSpec.minOrder) {
-                          finalDcaQuantity = dcaContracts; // Use fractional contracts
-                          console.log(`   ✅ DCA contracts: ${dcaContracts.toFixed(4)} (meets minimum)`);
-                        } else {
-                          // Below minimum, adjust to minimum
-                          finalDcaQuantity = dcaSpec.minOrder / dcaSpec.contractSize;
-                          console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${symbol} = ${finalDcaQuantity.toFixed(4)} contracts`);
-                        }
-
-                        if (dcaQuantity > 0) {
-                          const dcaSide = trade.action === 'BUY' ? 'buy' : 'sell';
-                          const leverage = trade.leverage || 1;
-
-                          const dcaResult = await executeOkxLimitOrder(
-                            okxSymbol,
-                            dcaSide,
-                            finalDcaQuantity, // Use contract-converted quantity
-                            newDcaValue,
-                            exchange.apiKey,
-                            exchange.apiSecret,
-                            exchange.passphrase,
-                            exchange.baseUrl,
-                            leverage
-                          );
-
-                          if (dcaResult.success) {
-                            trade.okxDcaOrderId = dcaResult.orderId;
-                            trade.okxDcaPrice = newDcaValue;
-                            trade.okxDcaQuantity = dcaQuantity;
-                            console.log(`✅ ${symbol}: New DCA order placed on OKX at $${newDcaValue.toFixed(2)}`);
-                            addLogEntry(`✅ ${symbol}: New DCA order placed on OKX at $${newDcaValue.toFixed(2)}`, 'success');
-                          } else {
-                            console.warn(`⚠️ ${symbol}: Failed to place new DCA order: ${dcaResult.error}`);
-                            addLogEntry(`⚠️ ${symbol}: Failed to place new DCA order: ${dcaResult.error}`, 'warning');
-                          }
-                        } else {
-                          console.warn(`⚠️ ${symbol}: DCA quantity is 0, skipping DCA order placement`);
-                        }
-                      }
-                    } catch (dcaError) {
-                      console.error(`❌ ${symbol}: Error placing new DCA order: ${dcaError.message}`);
-                      addLogEntry(`❌ ${symbol}: Error placing new DCA order: ${dcaError.message}`, 'error');
-                    }
+                    // [~170 lines of DCA cancellation and placement logic removed]
+                    // This entire section is disabled because:
+                    // 1. newDcaValue is no longer defined (DCA updates disabled in AI re-evaluation)
+                    // 2. DCA orders are placed once at 15% below entry and never changed
+                    // 3. This prevents duplicate DCA orders and wrong amounts
                   }
+                  */
+
+                  // Log that DCA order updates are skipped
+                  console.log(`   ⏭️ ${symbol}: Skipping DCA order update - DCA orders are never changed`);
+
                 } catch (updateError) {
                   console.error(`❌ ${symbol}: Error updating orders on OKX: ${updateError.message}`);
                   addLogEntry(`❌ ${symbol}: Error updating orders on OKX: ${updateError.message}`, 'error');
