@@ -7749,6 +7749,10 @@ Return JSON array format:
               }
               // Handle both newDcaPrice (new field) and newAddPosition (legacy field) for backward compatibility
               // FIX: Declare newDcaValue outside if block to avoid scope issues
+              // DISABLED: AI no longer updates DCA orders
+              // DCA is a strategic level set once at 15% below entry and never changed
+              // This prevents duplicate DCA orders and wrong amounts
+              /* DISABLED: DCA updates by AI
               const newDcaValue = rec.newDcaPrice || rec.newAddPosition;
               if (newDcaValue && typeof newDcaValue === 'number' && newDcaValue > 0) {
                 const oldDca = trade.addPosition || trade.dcaPrice || trade.entryPrice;
@@ -7793,6 +7797,11 @@ Return JSON array format:
                   telegramMessage += `   ⚙️ DCA: $${oldDca.toFixed(2)} → $${finalDcaValue.toFixed(2)}\n`;
                 }
               }
+              */
+
+              // Log that DCA is intentionally skipped
+              const oldDca = trade.addPosition || trade.dcaPrice || trade.entryPrice; // Need oldDca for logging
+              console.log(`   ⏭️ ${symbol}: Skipping DCA update - DCA is fixed at $${oldDca.toFixed(2)} (15% below entry)`);
               if (adjusted) {
                 // Removed: DynamoDB persistence - OKX is the only source of truth
                 addLogEntry(`✅ ${symbol}: Trade parameters updated by AI`, 'success');
@@ -8899,8 +8908,10 @@ Respond with JSON only:
       // Step 2: Update trade object with new levels
       trade.takeProfit = newLevels.takeProfit;
       trade.stopLoss = newLevels.stopLoss;
-      trade.addPosition = newLevels.addPosition;
-      trade.dcaPrice = newLevels.addPosition;
+      // DISABLED: DCA is never updated - remains at initial 15% below entry
+      // trade.addPosition = newLevels.addPosition;
+      // trade.dcaPrice = newLevels.addPosition;
+      console.log(`   ⏭️ Skipping DCA update - DCA remains at $${trade.addPosition?.toFixed(2) || 'N/A'} (fixed at 15% below entry)`);
 
       // Step 3: Place new TP/SL orders using TP_SL_Manager
       try {
