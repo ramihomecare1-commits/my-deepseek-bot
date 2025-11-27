@@ -23,12 +23,12 @@ const DEFAULT_SETTINGS = {
         candlestickPatterns: true
     },
     thresholds: {
-        minConfidence: 8.5,        // Increased from 7 to 8.5
+        minConfidence: 7.0,        // Decreased from 8.5 to 7.0
         maxDistance: 1.5,           // Decreased from 2.0 to 1.5%
         minStrength: 0.8,           // Increased from 0.7 to 0.8 (strong only)
         minConfluence: 3,           // NEW: Minimum 3 confluence factors
         minVolumeRatio: 1.8,        // NEW: Minimum 180% volume
-        minTouchCount: 3            // NEW: Minimum 3 historical tests
+        minTouchCount: 2            // Decreased from 3 to 2
     },
     // Top 20 coins (excluding stablecoins/wrapped)
     coinSettings: {

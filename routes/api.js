@@ -894,10 +894,12 @@ router.post('/trigger-settings', (req, res) => {
 router.get('/performance-report', async (req, res) => {
   try {
     const { generatePerformanceReport, calculatePerformanceScore, getImprovementRecommendations } = require('../services/performanceAnalyticsService');
-    const { loadClosedTrades } = require('../services/tradePersistenceService');
+    // Disabled: OKX is the only source of truth
+    // const { loadClosedTrades } = require('../services/tradePersistenceService');
     const { getPortfolioStats } = require('../services/portfolioService');
 
-    const closedTrades = await loadClosedTrades();
+    // Closed trades are no longer loaded from disk
+    const closedTrades = [];
     const portfolio = await getPortfolioStats();
     const accountBalance = portfolio.totalValue || 1000;
 

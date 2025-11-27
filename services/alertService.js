@@ -179,8 +179,9 @@ function detectBreakout(symbol, candles, levels, settings = null) {
 
             const confidence = calculateBreakoutConfidence(level, currentVolume, avgVolume);
 
-            // FINAL FILTER: Confidence must be 8.5+
-            if (confidence < 8.5) continue;
+            // FINAL FILTER: Use configured confidence (default 7.0)
+            const minConfidence = settings?.thresholds?.minConfidence || 7.0;
+            if (confidence < minConfidence) continue;
 
             return {
                 type: 'LEVEL_BREAKOUT',
@@ -238,8 +239,9 @@ function detectLevelTest(symbol, candles, levels, settings = null) {
 
             const confidence = calculateLevelTestConfidence(level);
 
-            // FINAL FILTER: Confidence must be 8.5+
-            if (confidence < 8.5) continue;
+            // FINAL FILTER: Use configured confidence (default 7.0)
+            const minConfidence = settings?.thresholds?.minConfidence || 7.0;
+            if (confidence < minConfidence) continue;
 
             return {
                 type: 'KEY_LEVEL_TEST',
@@ -291,7 +293,7 @@ function detectVolumeMomentum(symbol, candles, levels) {
             volumeRatio: parseFloat((current.volume / avgVolume).toFixed(2)),
             priceChange: parseFloat((priceMove * 100).toFixed(2)),
             direction: current.close > previous.close ? 'UP' : 'DOWN',
-            confidence: 8,
+            confidence: 9.0, // High confidence for volume + price + key level
             action: current.close > previous.close ?
                 'STRONG_MOMENTUM_UP' :
                 'STRONG_MOMENTUM_DOWN',

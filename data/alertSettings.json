@@ -1,0 +1,227 @@
+{
+  "enabled": true,
+  "alertTypes": {
+    "levelBreakout": true,
+    "keyLevelTest": true,
+    "volumeMomentum": false,
+    "headAndShoulders": true,
+    "doubleTops": true,
+    "triangles": true,
+    "candlestickPatterns": true
+  },
+  "thresholds": {
+    "minConfidence": 8.5,
+    "maxDistance": 1.5,
+    "minStrength": 0.8,
+    "minConfluence": 3,
+    "minVolumeRatio": 1.8,
+    "minTouchCount": 3
+  },
+  "coinSettings": {
+    "BTC": {
+      "distance": 1.5,
+      "scanInterval": 15,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "ETH": {
+      "distance": 1.5,
+      "scanInterval": 15,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "BNB": {
+      "distance": 1.5,
+      "scanInterval": 30,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "SOL": {
+      "distance": 1.5,
+      "scanInterval": 30,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "XRP": {
+      "distance": 1.5,
+      "scanInterval": 30,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "ADA": {
+      "distance": 1.5,
+      "scanInterval": 30,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "DOGE": {
+      "distance": 1.5,
+      "scanInterval": 30,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "TRX": {
+      "distance": 1.5,
+      "scanInterval": 30,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "AVAX": {
+      "distance": 1.5,
+      "scanInterval": 30,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "DOT": {
+      "distance": 1.5,
+      "scanInterval": 30,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "POL": {
+      "distance": 1.5,
+      "scanInterval": 60,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "LINK": {
+      "distance": 1.5,
+      "scanInterval": 60,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "UNI": {
+      "distance": 1.5,
+      "scanInterval": 60,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "ATOM": {
+      "distance": 1.5,
+      "scanInterval": 60,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "LTC": {
+      "distance": 1.5,
+      "scanInterval": 60,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "APT": {
+      "distance": 1.5,
+      "scanInterval": 60,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "ARB": {
+      "distance": 1.5,
+      "scanInterval": 60,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "OP": {
+      "distance": 1.5,
+      "scanInterval": 60,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "INJ": {
+      "distance": 1.5,
+      "scanInterval": 60,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "SUI": {
+      "distance": 1.5,
+      "scanInterval": 60,
+      "enabled": true,
+      "timeframes": [
+        "1d",
+        "1w"
+      ]
+    },
+    "default": {
+      "distance": 1.5,
+      "scanInterval": 60,
+      "enabled": false,
+      "timeframes": [
+        "1d"
+      ]
+    }
+  },
+  "quietHours": {
+    "enabled": false,
+    "start": "22:00",
+    "end": "06:00"
+  },
+  "priorityLevels": {
+    "critical": {
+      "minConfidence": 9,
+      "minVolumeRatio": 2.5,
+      "minConfluence": 4
+    },
+    "high": {
+      "minConfidence": 8.5,
+      "minVolumeRatio": 1.8,
+      "minConfluence": 3
+    }
+  }
+}

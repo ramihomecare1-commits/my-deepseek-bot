@@ -1178,8 +1178,9 @@ Respond ONLY with valid JSON.`;
 
       if (tradeIndex !== -1) {
         this.bot.activeTrades[tradeIndex].dcaPrice = recommendations.dcaPrice;
-        const { saveTrades } = require('./tradePersistenceService');
-        await saveTrades(this.bot.activeTrades);
+        // Disabled: OKX is the only source of truth
+        // const { saveTrades } = require('./tradePersistenceService');
+        // await saveTrades(this.bot.activeTrades);
         console.log(`✅ DCA price updated to $${recommendations.dcaPrice.toFixed(6)}`);
       }
     }

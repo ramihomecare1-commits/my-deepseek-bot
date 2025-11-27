@@ -79,7 +79,7 @@ function detectHeadAndShoulders(candles) {
     const volumeConfirmed = recentVolume > avgVolume * 1.5;
     if (volumeConfirmed) confidence += 1;
 
-    if (!breakout || confidence < 8.5) return null;
+    if (!breakout || confidence < 7.0) return null;
 
     const target = neckline - (head.price - neckline);
 
@@ -141,7 +141,7 @@ function detectInverseHeadAndShoulders(candles) {
     const volumeConfirmed = recentVolume > avgVolume * 1.5;
     if (volumeConfirmed) confidence += 1;
 
-    if (!breakout || confidence < 8.5) return null;
+    if (!breakout || confidence < 7.0) return null;
 
     const target = neckline + (neckline - head.price);
 
@@ -204,7 +204,7 @@ function detectDoubleTop(candles) {
     const volumeConfirmed = recentVolume > avgVolume * 1.5;
     if (volumeConfirmed) confidence += 1;
 
-    if (!breakout || confidence < 8.5) return null;
+    if (!breakout || confidence < 7.0) return null;
 
     const avgPeak = (peak1.price + peak2.price) / 2;
     const target = trough - (avgPeak - trough);
@@ -267,7 +267,7 @@ function detectDoubleBottom(candles) {
     const volumeConfirmed = recentVolume > avgVolume * 1.5;
     if (volumeConfirmed) confidence += 1;
 
-    if (!breakout || confidence < 8.5) return null;
+    if (!breakout || confidence < 7.0) return null;
 
     const avgTrough = (trough1.price + trough2.price) / 2;
     const target = peak + (peak - avgTrough);
@@ -349,7 +349,7 @@ function detectTriangle(candles) {
     const volumeConfirmed = recentVolume > avgVolume * 1.8;
     if (volumeConfirmed) confidence += 2;
 
-    if (confidence < 8.5) return null;
+    if (confidence < 7.0) return null;
 
     const height = Math.abs(recentHighs[0].price - recentLows[0].price);
     const target = direction === 'bullish' ?
