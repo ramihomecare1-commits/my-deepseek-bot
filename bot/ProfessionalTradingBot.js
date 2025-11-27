@@ -338,6 +338,13 @@ class ProfessionalTradingBot {
         console.log(`📅 Loaded unified trigger timestamp: ${elapsedHours}h ${elapsedMinutes}m ago`);
       }
 
+      // CRITICAL: Clear all trade data - OKX is the ONLY source of truth
+      // This prevents ghost trades from old sessions interfering with current positions
+      console.log('🗑️ Clearing old trade data - OKX is the only source of truth');
+      this.activeTrades = [];
+      this.closedTrades = [];
+
+
       // Load trades: OKX IS THE ONLY SOURCE OF TRUTH (no DynamoDB)
       console.log('📂 Loading active trades from OKX (only source)...');
 
