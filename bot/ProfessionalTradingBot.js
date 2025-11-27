@@ -7830,7 +7830,8 @@ Return JSON array format:
                     console.log(`⚠️ ${symbol}: AI adjusted TP/SL but automatic update is disabled`);
                     console.log(`   Manual intervention required to update TP/SL on OKX`);
                     console.log(`   New TP: $${validated.newTakeProfit || trade.takeProfit}, New SL: $${validated.newStopLoss || trade.stopLoss}`);
-                    addLogEntry(`⚠️ ${symbol}: AI adjusted TP/SL - manual update needed`, 'warning');
+                    // Suppressed Telegram warning - automatic TP/SL updates are disabled
+                    // addLogEntry(`⚠️ ${symbol}: AI adjusted TP/SL - manual update needed`, 'warning');
 
                     /* DISABLED: Creates duplicate TP/SL orders with wrong ordType
                     console.log(`🔄 ${symbol}: Using TP_SL_Recovery to safely update orders...`);
