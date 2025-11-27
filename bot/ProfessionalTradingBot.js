@@ -4398,8 +4398,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         this.activeTrades = this.activeTrades.filter(t => !tradesToRemove.includes(t));
 
         // CRITICAL: Persist changes immediately to prevent ghost trades from reappearing
-        const { saveTrades } = require('../services/tradePersistenceService');
-        await saveTrades(this.activeTrades);
+        // Disabled: OKX is the only source of truth
+        // const { saveTrades } = require('../services/tradePersistenceService');
+        // await saveTrades(this.activeTrades);
         console.log(`   💾 Persisted changes - ghost trades removed from database`);
 
         addLogEntry(`Removed ${tradesToRemove.length} ghost trade(s) not found on OKX`, 'info');
@@ -5886,8 +5887,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
           // CRITICAL: Save trades immediately to prevent race condition
           // Without this, subsequent calls to placeMissingDcaOrders() will place duplicate orders
-          const { saveTrades } = require('../services/tradePersistenceService');
-          await saveTrades(this.activeTrades);
+          // Disabled: OKX is the only source of truth
+          // const { saveTrades } = require('../services/tradePersistenceService');
+          // await saveTrades(this.activeTrades);
           console.log(`   💾 Saved trade with DCA order ID to prevent duplicates`);
 
           addLogEntry(`DCA limit order placed on OKX for ${trade.symbol} at $${dcaPrice.toFixed(2)} (will execute if price reaches this level)`, 'info');
@@ -5927,8 +5929,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     const removedCount = beforeCount - this.activeTrades.length;
     if (removedCount > 0) {
       console.log(`🗑️ Removed ${removedCount} closed trade(s) from activeTrades`);
-      const { saveTrades } = require('../services/tradePersistenceService');
-      await saveTrades(this.activeTrades); // Persist changes
+      // Disabled: OKX is the only source of truth
+      // const { saveTrades } = require('../services/tradePersistenceService');
+      // await saveTrades(this.activeTrades); // Persist changes
     }
 
     if (this.activeTrades.length === 0) {
@@ -7063,6 +7066,11 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
     // Update last evaluation timestamp BEFORE making AI calls
     this.lastOpenTradesReevalAt = now;
 
+    // CRITICAL: Sync with OKX before evaluation to get fresh positions
+    console.log('🔄 Syncing with OKX before AI re-evaluation...');
+    await this.syncWithOkxPositions();
+    console.log(`✅ Synced with OKX - ${this.activeTrades.length} total positions`);
+
     const openTrades = this.activeTrades.filter(t => t.status === 'OPEN' || t.status === 'DCA_HIT');
 
     console.log(`\n🤖 Starting AI re-evaluation for ${openTrades.length} open trades...`);
@@ -8111,8 +8119,11 @@ Return JSON array format:
     console.log('📂 Closed trades: OKX is the only source of truth (no DynamoDB persistence)');
   }
 
-  getActiveTrades() {
-    return this.activeTrades.filter(trade => trade.status === 'OPEN' || trade.status === 'DCA_HIT'); // Only show open or DCA triggered trades in dashboard
+  async getActiveTrades() {
+    // CRITICAL: Always sync with OKX before returning trades
+    // This ensures UI and API always show current OKX positions
+    await this.syncWithOkxPositions();
+    return this.activeTrades.filter(trade => trade.status === 'OPEN' || trade.status === 'DCA_HIT');
   }
 
   /**

@@ -649,7 +649,8 @@ router.post('/evaluate-trades', async (req, res) => {
       });
     }
 
-    const openTrades = tradingBot.getActiveTrades();
+    // Fetch fresh data from OKX (getActiveTrades is now async and syncs with OKX)
+    const openTrades = await tradingBot.getActiveTrades();
 
     if (!openTrades || openTrades.length === 0) {
       return res.json({
