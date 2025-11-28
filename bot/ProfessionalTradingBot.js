@@ -5856,11 +5856,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         dcaQuantity = dcaSpec.minOrder / dcaSpec.contractSize;
         console.log(`   ⚠️ DCA adjusted to minimum: ${dcaSpec.minOrder} ${trade.symbol} = ${dcaQuantity.toFixed(4)} contracts`);
       }
+      // CRITICAL FIX: executeOkxLimitOrder expects COINS, not contracts!
+      // It will convert coins to contracts internally using live OKX specs
+      const dcaOrderQuantity = dcaCoinQuantity; // Pass coins, not contracts!
 
-
-      if (dcaQuantity <= 0) {
+      if (dcaOrderQuantity <= 0) {
         console.warn(`⚠️ ${trade.symbol}: DCA quantity is 0, skipping DCA limit order`);
-        console.warn(`   Position size: ${positionSize}, Calculated DCA quantity: ${dcaQuantity}`);
+        console.warn(`   Position size: $${dcaSizeUSD}, Calculated DCA quantity: ${dcaOrderQuantity}`);
         failedCount++;
         continue;
       }
@@ -5870,12 +5872,12 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
       const dcaSide = trade.action === 'BUY' ? 'buy' : 'sell';
 
       try {
-        console.log(`📊 Placing DCA limit order for ${trade.symbol} at $${dcaPriceValue.toFixed(2)} (${dcaSide}, qty: ${dcaQuantity})...`);
+        console.log(`📊 Placing DCA limit order for ${trade.symbol} at $${dcaPriceValue.toFixed(2)} (${dcaSide}, qty: ${dcaOrderQuantity.toFixed(8)} coins)...`);
 
         const dcaOrderResult = await executeOkxLimitOrder(
           okxSymbol,
           dcaSide,
-          dcaQuantity,
+          dcaOrderQuantity, // FIXED: Pass coins, not contracts
           dcaPriceValue, // Limit price - FIXED: was using wrong dcaPrice variable
           exchange.apiKey,
           exchange.apiSecret,
