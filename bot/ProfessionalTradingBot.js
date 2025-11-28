@@ -6162,7 +6162,21 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
           if (trade.action === 'BUY') {
             // Check Take Profit for BUY (highest priority)
-            if (currentPrice >= trade.takeProfit && trade.status === 'OPEN') {
+            // DEBUG: Log TP check details with type information
+            const tpValue = trade.takeProfit;
+            const tpType = typeof tpValue;
+            const tpNum = parseFloat(tpValue);
+            const shouldTrigger = currentPrice >= tpNum;
+
+            if (trade.symbol === 'BTC') {
+              console.log(`🔍 [TP CHECK] ${trade.symbol}:`);
+              console.log(`   Current Price: $${currentPrice.toFixed(2)} (${typeof currentPrice})`);
+              console.log(`   TP Value: ${tpValue} (${tpType})`);
+              console.log(`   TP as Number: $${tpNum.toFixed(2)}`);
+              console.log(`   Should Trigger: ${shouldTrigger} (${currentPrice} >= ${tpNum})`);
+            }
+
+            if (currentPrice >= tpNum && trade.status === 'OPEN') {
               // Cancel TP/SL algo orders (they should have executed, but cancel to be safe)
               await this.cancelTradeAlgoOrders(trade);
 
