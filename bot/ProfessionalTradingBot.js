@@ -5689,17 +5689,23 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             return isActive;
           });
 
-          // Check if any limit order matches our DCA price (within 1% tolerance)
+          // Check if any limit order matches our DCA price (within 5% tolerance for safety)
           for (const order of activeLimitOrders) {
             const orderPrice = parseFloat(order.px || order.price || 0);
             const priceDiff = Math.abs(orderPrice - dcaPrice) / dcaPrice;
             const side = order.side || '';
             const expectedSide = trade.action === 'BUY' ? 'buy' : 'sell';
 
+            console.log(`   🔍 ${trade.symbol}: Checking order - Price: $${orderPrice.toFixed(2)}, DCA: $${dcaPrice.toFixed(2)}, Diff: ${(priceDiff * 100).toFixed(2)}%, Side: ${side} (expected: ${expectedSide})`);
+
             // If order price is close to DCA price and side matches, consider it a DCA order
-            if (priceDiff < 0.01 && side === expectedSide) {
+            // Increased tolerance to 5% to catch orders that might have been adjusted slightly
+            if (priceDiff < 0.05 && side === expectedSide) {
               hasDcaOrderOnOkx = true;
-              console.log(`   ✅ ${trade.symbol}: Found existing DCA limit order on OKX (Order ID: ${order.ordId || order.clOrdId || 'unknown'}, Price: $${orderPrice.toFixed(2)})`);
+              console.log(`   ✅ ${trade.symbol}: Found existing DCA limit order on OKX!`);
+              console.log(`      Order ID: ${order.ordId || order.clOrdId || 'unknown'}`);
+              console.log(`      Price: $${orderPrice.toFixed(2)} (DCA target: $${dcaPrice.toFixed(2)})`);
+              console.log(`      Side: ${side}, State: ${order.state || order.ordState}`);
 
               // Update trade object with order ID if not set
               if (!hasDcaOrderInTrade) {
