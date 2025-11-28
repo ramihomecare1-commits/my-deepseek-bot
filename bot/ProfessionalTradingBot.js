@@ -7708,7 +7708,8 @@ Return JSON array format:
                   if (newSL > maxSL) {
                     // Too high for BUY - likely wrong
                     console.warn(`⚠️ ${symbol}: AI provided suspiciously high SL value ($${newSL.toFixed(2)}) for BUY trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
-                    addLogEntry(`⚠️ ${symbol}: AI SL value $${newSL.toFixed(2)} is too high for BUY trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
+                    // Disabled: Telegram warning for AI SL rejection
+                    // addLogEntry(`⚠️ ${symbol}: AI SL value $${newSL.toFixed(2)} is too high for BUY trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
                     // Don't apply the adjustment - keep existing SL
                   } else if (newSL < minSL) {
                     // Too low - likely a percentage mistake
@@ -7752,7 +7753,8 @@ Return JSON array format:
                   if (newSL < minSL) {
                     // Too low for short - likely wrong
                     console.warn(`⚠️ ${symbol}: AI provided suspiciously low SL value ($${newSL.toFixed(2)}) for SELL trade. Entry is $${avgEntry.toFixed(2)}. Rejecting adjustment.`);
-                    addLogEntry(`⚠️ ${symbol}: AI SL value $${newSL.toFixed(2)} is too low for SELL trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
+                    // Disabled: Telegram warning for AI SL rejection
+                    // addLogEntry(`⚠️ ${symbol}: AI SL value $${newSL.toFixed(2)} is too low for SELL trade (entry: $${avgEntry.toFixed(2)}). Rejecting adjustment.`, 'warning');
                     // Don't apply the adjustment
                   } else if (newSL > maxSL) {
                     // Too high - likely a percentage mistake
