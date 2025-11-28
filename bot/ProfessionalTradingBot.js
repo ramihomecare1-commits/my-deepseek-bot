@@ -233,7 +233,7 @@ class ProfessionalTradingBot {
     // Customizable trading rules
     this.tradingRules = {
       minConfidence: 0.65,
-      defaultTakeProfit: 5.0, // 5% default TP for validation
+      defaultTakeProfit: 10.0, // 10% default TP (matches RiskManager)
       defaultStopLoss: 5.0, // 5% default SL for validation
       enabledIndicators: {
         rsi: true,
