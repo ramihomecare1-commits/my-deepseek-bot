@@ -4315,7 +4315,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
 
           console.log(`🆕 Found new position on OKX: ${okxPos.coin} ${okxPos.side} - Adding to active trades...`);
 
+          // DEBUG: Log the raw OKX position data to see what 'side' value we're getting
+          console.log(`🔍 [OKX POSITION DEBUG] ${okxPos.coin}:`);
+          console.log(`   Raw side value: "${okxPos.side}" (type: ${typeof okxPos.side})`);
+          console.log(`   Raw posSide value: "${okxPos.posSide}" (type: ${typeof okxPos.posSide})`);
+
           const action = okxPos.side === 'short' ? 'SELL' : 'BUY';
+          console.log(`   Mapped action: ${action}`);
 
           let takeProfit, stopLoss, addPosition;
           if (action === 'BUY') {
