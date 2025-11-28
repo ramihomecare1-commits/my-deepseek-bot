@@ -151,7 +151,8 @@ class TradeMonitoringService {
 
       // Check Stop Loss
       if (trade.stopLoss) {
-        const slPrice = entryPrice * (1 - trade.stopLoss / 100);
+        // trade.stopLoss is already a price (not percentage)
+        const slPrice = trade.stopLoss;
         const distancePercent = Math.abs(((currentPrice - slPrice) / slPrice) * 100);
         distances.stopLoss = distancePercent;
 
@@ -168,7 +169,8 @@ class TradeMonitoringService {
 
       // Check Take Profit
       if (trade.takeProfit) {
-        const tpPrice = entryPrice * (1 + trade.takeProfit / 100);
+        // trade.takeProfit is already a price (not percentage)
+        const tpPrice = trade.takeProfit;
         const distancePercent = Math.abs(((currentPrice - tpPrice) / tpPrice) * 100);
         distances.takeProfit = distancePercent;
 
