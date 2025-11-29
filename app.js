@@ -296,6 +296,14 @@ const server = app.listen(PORT, '0.0.0.0', () => {
       } catch (error) {
         console.error('❌ Failed to start alert scanner:', error.message);
       }
+
+      // Start news filter job (runs every 12 hours)
+      try {
+        const { startNewsFilterJob } = require('./jobs/newsFilterJob');
+        startNewsFilterJob();
+      } catch (error) {
+        console.error('❌ Failed to start news filter job:', error.message);
+      }
     }, 5000); // Wait 5 seconds for bot to initialize
   });
 

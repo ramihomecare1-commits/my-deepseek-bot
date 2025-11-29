@@ -2242,39 +2242,50 @@ Reason: ${newReason?.substring(0, 200)}`);
       console.log('📊 Step 1: Collecting technical data for all coins...');
       addLogEntry('Step 1: Collecting technical data for all coins...', 'info');
 
-      // Start news fetching early in parallel (will be awaited later)
+      // Start news fetching early in parallel (reads from DynamoDB - filtered by Free AI)
       let newsFetchPromise = null;
       const startNewsFetch = () => {
         if (allCoinsData.length > 0 && !newsFetchPromise) {
           newsFetchPromise = (async () => {
             // Wait a bit to collect more coins, then fetch news for all collected coins
-            await sleep(500); // Small delay to let more coins accumulate
+            await new Promise(resolve => setTimeout(resolve, 500));
 
-            const coinsToFetch = [...allCoinsData]; // Copy current array
-            const NEWS_BATCH_SIZE = 10;
-            for (let i = 0; i < coinsToFetch.length; i += NEWS_BATCH_SIZE) {
-              const batch = coinsToFetch.slice(i, i + NEWS_BATCH_SIZE);
+            try {
+              const { getLatestNews } = require('../services/newsStorageService');
+              const batch = allCoinsData.slice(); // Get all coins collected so far
+
               const newsPromises = batch.map(async (coin) => {
                 try {
-                  const news = await fetchCryptoNews(coin.symbol, 5);
-                  // Update the coin in allCoinsData array
+                  // Read last 3 filtered news items from DynamoDB (pre-filtered by Free AI)
+                  const news = await getLatestNews(coin.symbol, 3);
                   const coinIndex = allCoinsData.findIndex(c => c.symbol === coin.symbol);
-                  if (coinIndex >= 0) {
-                    allCoinsData[coinIndex].news = news;
+                  if (coinIndex !== -1) {
+                    // Convert DynamoDB format to expected format
+                    allCoinsData[coinIndex].news = {
+                      articles: news.map(item => ({
+                        title: item.title,
+                        summary: item.summary,
+                        url: item.url,
+                        source: { title: item.source },
+                        sentiment: item.sentiment,
+                        relevance: item.relevance
+                      })),
+                      total: news.length
+                    };
                   }
                   return news;
                 } catch (error) {
                   const coinIndex = allCoinsData.findIndex(c => c.symbol === coin.symbol);
-                  if (coinIndex >= 0) {
+                  if (coinIndex !== -1) {
                     allCoinsData[coinIndex].news = { articles: [], total: 0 };
                   }
                   return null;
                 }
               });
+
               await Promise.allSettled(newsPromises);
-              if (i + NEWS_BATCH_SIZE < coinsToFetch.length) {
-                await sleep(100);
-              }
+            } catch (error) {
+              console.error('Error fetching news from DynamoDB:', error.message);
             }
           })();
         }
