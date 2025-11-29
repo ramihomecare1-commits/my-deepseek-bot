@@ -15,7 +15,7 @@ const TABLE_NAME = TABLES.NEWS_ARTICLES; // Use existing 'newsArticles' table
 
 /**
  * Save filtered news items to DynamoDB (existing newsArticles table)
- * Schema: symbol (PK), storedAt (SK), articleId, title, description, url, source, publishedAt, ttl
+ * ACTUAL Schema: symbol (PK), url (SK), title, description, source, publishedAt, ttl
  */
 async function saveFilteredNews(symbol, newsItems) {
     if (!process.env.AWS_ACCESS_KEY_ID) {
@@ -32,10 +32,9 @@ async function saveFilteredNews(symbol, newsItems) {
                 TableName: TABLE_NAME,
                 Item: {
                     symbol,
-                    articleId: `${symbol}#${Date.now()}#${news.title.substring(0, 50)}`,
+                    url: news.url, // Sort key
                     title: news.title,
                     description: news.summary || '',
-                    url: news.url,
                     source: news.source,
                     sentiment: news.sentiment,
                     relevance: news.relevance,
@@ -53,7 +52,7 @@ async function saveFilteredNews(symbol, newsItems) {
 
 /**
  * Get existing news hashes to avoid duplicates
- * Table schema: symbol (PK only, no sort key)
+ * Table schema: symbol (PK), url (SK)
  */
 async function getExistingNewsHashes(symbol) {
     if (!process.env.AWS_ACCESS_KEY_ID) {
@@ -97,7 +96,7 @@ async function getExistingNewsHashes(symbol) {
 
 /**
  * Get latest filtered news for a coin
- * Uses storedAt as sort key
+ * Table schema: symbol (PK), url (SK)
  */
 async function getLatestNews(symbol, limit = 3) {
     if (!process.env.AWS_ACCESS_KEY_ID) {
