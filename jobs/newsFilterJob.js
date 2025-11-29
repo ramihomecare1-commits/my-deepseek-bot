@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const { getTop100Coins } = require('../utils/helpers');
-const { fetchCryptoPanicNews } = require('../services/newsService');
+const { fetchCryptoNews } = require('../services/newsService');
 const { filterNewsWithAI } = require('../services/freeAIService');
 const { saveFilteredNews, getExistingNewsHashes } = require('../services/newsStorageService');
 
@@ -24,10 +24,10 @@ function startNewsFilterJob() {
             try {
                 console.log(`   📡 Fetching news for ${symbol}...`);
 
-                // 1. Fetch news from CryptoPanic API
-                const rawNews = await fetchCryptoPanicNews(symbol, { limit: 50 });
+                // 1. Fetch news from CryptoCompare/NewsAPI
+                const rawNews = await fetchCryptoNews(symbol, 50);
 
-                if (!rawNews || rawNews.length === 0) {
+                if (!rawNews || !rawNews.articles || rawNews.articles.length === 0) {
                     console.log(`   ⏭️  ${symbol}: No news available`);
                     continue;
                 }
@@ -36,13 +36,13 @@ function startNewsFilterJob() {
                 const existingHashes = await getExistingNewsHashes(symbol);
 
                 // 3. Filter with Free AI
-                console.log(`   🤖 Filtering ${rawNews.length} news items for ${symbol}...`);
-                const filteredNews = await filterNewsWithAI(symbol, rawNews, existingHashes);
+                console.log(`   🤖 Filtering ${rawNews.articles.length} news items for ${symbol}...`);
+                const filteredNews = await filterNewsWithAI(symbol, rawNews.articles, existingHashes);
 
                 // 4. Save to DynamoDB
                 if (filteredNews.length > 0) {
                     await saveFilteredNews(symbol, filteredNews);
-                    console.log(`   ✅ ${symbol}: Filtered ${rawNews.length} → ${filteredNews.length} news items`);
+                    console.log(`   ✅ ${symbol}: Filtered ${rawNews.articles.length} → ${filteredNews.length} news items`);
                     totalFiltered += filteredNews.length;
                 } else {
                     console.log(`   ⏭️  ${symbol}: No relevant news after filtering`);
@@ -72,10 +72,10 @@ function startNewsFilterJob() {
 
             for (const symbol of coins) {
                 try {
-                    const rawNews = await fetchCryptoPanicNews(symbol, { limit: 20 });
-                    if (rawNews && rawNews.length > 0) {
+                    const rawNews = await fetchCryptoNews(symbol, 20);
+                    if (rawNews && rawNews.articles && rawNews.articles.length > 0) {
                         const existingHashes = await getExistingNewsHashes(symbol);
-                        const filteredNews = await filterNewsWithAI(symbol, rawNews, existingHashes);
+                        const filteredNews = await filterNewsWithAI(symbol, rawNews.articles, existingHashes);
                         if (filteredNews.length > 0) {
                             await saveFilteredNews(symbol, filteredNews);
                             console.log(`   ✅ ${symbol}: ${filteredNews.length} news items saved`);
