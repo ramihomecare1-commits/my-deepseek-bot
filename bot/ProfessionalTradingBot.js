@@ -28,6 +28,18 @@ const { fetchCryptoNews } = require('../services/newsService');
 const { detectTradingPatterns } = require('./patternDetection');
 const { storeAIEvaluation, retrieveRelatedData, getHistoricalWinRate } = require('../services/dataStorageService');
 const monitoringService = require('../services/monitoringService');
+
+// Pattern Scanner Integration
+const { fetchMexcCandlesBatch } = require('../services/mexcDataService');
+const { findSupportResistance, addVolumeConfirmation, checkProximity } = require('../utils/patternDetector');
+const {
+  detectHeadAndShoulders,
+  detectInverseHeadAndShoulders,
+  detectDoubleTop,
+  detectDoubleBottom,
+  detectTriangle,
+  detectCandlestickPatterns
+} = require('../services/alertService');
 const tradeMonitoringService = require('../services/tradeMonitoringService');
 const {
   isExchangeTradingEnabled,
@@ -210,6 +222,10 @@ class ProfessionalTradingBot {
       classification: null,
       timestamp: null,
     };
+
+    // Pattern Scanner Integration - Cache for chart patterns and S/R levels
+    this.patternCache = new Map(); // symbol => { patterns, levels, timestamp }
+    this.patternCacheExpiryMs = 60 * 60 * 1000; // 1 hour cache expiry
     this.latestHeatmap = [];
     this.newsCache = new Map();
     this.newsCacheMaxSize = 200; // Limit news cache to 200 entries
@@ -2068,6 +2084,77 @@ Reason: ${newReason?.substring(0, 200)}`);
     };
   }
 
+  /**
+   * Detect chart patterns and S/R levels for a coin
+   * Uses caching to avoid re-fetching patterns on every scan
+   * @param {string} symbol - Coin symbol (e.g., 'BTC')
+   * @param {Array} candles - Optional candles array (if already fetched)
+   * @returns {Promise<Object>} { patterns, levels, cached }
+   */
+  async detectPatternsForCoin(symbol, candles = null) {
+    // Check cache first
+    const cached = this.patternCache.get(symbol);
+    if (cached && (Date.now() - cached.timestamp) < this.patternCacheExpiryMs) {
+      console.log(`   📦 Using cached pattern data for ${symbol} (${Math.round((Date.now() - cached.timestamp) / 60000)}min old)`);
+      return { ...cached, cached: true };
+    }
+
+    try {
+      // Fetch candles if not provided
+      if (!candles || candles.length < 100) {
+        console.log(`   📊 Fetching 500 daily candles for ${symbol} pattern detection...`);
+        const mexcSymbol = `${symbol}USDT`;
+        candles = await fetchMexcCandlesBatch(mexcSymbol, '1d', 500);
+      }
+
+      if (!candles || candles.length < 100) {
+        console.log(`   ⚠️ Insufficient candle data for ${symbol} pattern detection`);
+        return { patterns: [], levels: { support: [], resistance: [] }, cached: false };
+      }
+
+      // Detect chart patterns
+      const patterns = [
+        detectHeadAndShoulders(candles),
+        detectInverseHeadAndShoulders(candles),
+        detectDoubleTop(candles),
+        detectDoubleBottom(candles),
+        detectTriangle(candles),
+        detectCandlestickPatterns(candles)
+      ].filter(p => p !== null);
+
+      // Detect S/R levels
+      const rawLevels = findSupportResistance(candles);
+      const currentPrice = candles[candles.length - 1].close;
+
+      // Enhance levels with volume confirmation and proximity
+      const levels = {
+        support: rawLevels.swingLevels.support
+          .filter(l => l.price < currentPrice)
+          .map(l => addVolumeConfirmation(l, candles))
+          .map(l => checkProximity(l, currentPrice))
+          .sort((a, b) => b.price - a.price) // Nearest first
+          .slice(0, 5), // Top 5
+        resistance: rawLevels.swingLevels.resistance
+          .filter(l => l.price > currentPrice)
+          .map(l => addVolumeConfirmation(l, candles))
+          .map(l => checkProximity(l, currentPrice))
+          .sort((a, b) => a.price - b.price) // Nearest first
+          .slice(0, 5) // Top 5
+      };
+
+      // Cache the results
+      const result = { patterns, levels, timestamp: Date.now(), cached: false };
+      this.patternCache.set(symbol, result);
+
+      console.log(`   ✅ Detected ${patterns.length} patterns, ${levels.support.length} support, ${levels.resistance.length} resistance for ${symbol}`);
+
+      return result;
+    } catch (error) {
+      console.error(`   ❌ Error detecting patterns for ${symbol}:`, error.message);
+      return { patterns: [], levels: { support: [], resistance: [] }, cached: false };
+    }
+  }
+
   // Main technical scan method
   async performTechnicalScan(options = {}) {
     if (this.scanInProgress) {
@@ -3752,9 +3839,9 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
             try {
               // Ensure we have the correct quantity (contracts) for TP/SL placement
               // newTrade.quantity should be in contracts from orderResult.executedQty
-
+  
               const tpSlResult = await TP_SL_Recovery.retryTP_SL_Placement(newTrade);
-
+  
               if (tpSlResult.fallback) {
                 console.log(`⚠️ Using fallback TP/SL monitoring for ${newTrade.symbol}`);
                 newTrade.tpSlAutoPlaced = false; // Mark as not auto-placed (or partially) so we monitor it
@@ -3763,13 +3850,13 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
                 console.log(`✅ TP/SL orders confirmed for ${newTrade.symbol}`);
                 console.log(`   - TP Order: ${tpSlResult.tpOrder?.ordId || 'N/A'}`);
                 console.log(`   - SL Order: ${tpSlResult.slOrder?.ordId || 'N/A'}`);
-
+  
                 newTrade.tpSlAutoPlaced = true;
                 newTrade.okxAlgoId = tpSlResult.tpOrder?.ordId; // Store one ID for reference
                 newTrade.okxTpAlgoId = tpSlResult.tpOrder?.ordId;
                 newTrade.okxSlAlgoId = tpSlResult.slOrder?.ordId;
                 newTrade.lastAlgoOrderPlacement = Date.now();
-
+  
                 addLogEntry(`TP/SL orders placed for ${newTrade.symbol} (TP: $${takeProfit}, SL: $${stopLoss})`, 'info');
               }
             } catch (finalError) {
@@ -5387,7 +5474,7 @@ Action: AI may be overly optimistic, or backtest period may not match current ma
         // Need both orders - use the full placement function (which will cancel existing ones first)
         console.log(`📊 ${trade.symbol}: No orders found, placing both TP and SL orders...`);
         console.log(`   Trade details: Entry=$${trade.entryPrice?.toFixed(2)}, TP=$${trade.takeProfit?.toFixed(2)}, SL=$${trade.stopLoss?.toFixed(2)}`);
-
+  
         try {
           const success = await this.placeTradeAlgoOrders(trade);
           if (success) {
@@ -7805,11 +7892,11 @@ Return JSON array format:
               if (newDcaValue && typeof newDcaValue === 'number' && newDcaValue > 0) {
                 const oldDca = trade.addPosition || trade.dcaPrice || trade.entryPrice;
                 const currentSL = trade.stopLoss;
-
+  
                 // FIX: Validate DCA position relative to SL before applying
                 let finalDcaValue = newDcaValue;
                 let dcaAdjusted = false;
-
+  
                 if (currentSL && currentSL > 0) {
                   if (trade.action === 'BUY') {
                     // For BUY (Long): Entry > DCA > SL
@@ -7831,12 +7918,12 @@ Return JSON array format:
                     }
                   }
                 }
-
+  
                 trade.addPosition = finalDcaValue;
                 trade.dcaPrice = finalDcaValue; // Store in both fields for consistency
                 trade.lastDcaChangeAt = Date.now(); // Track timestamp for 4-hour cooldown
                 adjusted = true;
-
+  
                 if (dcaAdjusted) {
                   addLogEntry(`🟡 ${symbol}: AI adjusted DCA Price from $${oldDca.toFixed(2)} to $${finalDcaValue.toFixed(2)} (auto-aligned with SL)`, 'info');
                   telegramMessage += `   ⚙️ DCA: $${oldDca.toFixed(2)} → $${finalDcaValue.toFixed(2)} (aligned with SL)\n`;
@@ -7883,18 +7970,18 @@ Return JSON array format:
 
                     /* DISABLED: Creates duplicate TP/SL orders with wrong ordType
                     console.log(`🔄 ${symbol}: Using TP_SL_Recovery to safely update orders...`);
-
+  
                     // Use the robust retry logic which handles cancellation and placement safely
                     // It also fetches currentPrice internally if needed
                     const updateResult = await TP_SL_Recovery.retryTP_SL_Placement(trade);
-
+  
                     if (updateResult.fallback) {
                       console.warn(`⚠️ ${symbol}: Used fallback TP/SL placement`);
                       addLogEntry(`⚠️ ${symbol}: Used fallback TP/SL placement`, 'warning');
                     } else {
                       console.log(`✅ ${symbol}: TP/SL orders successfully updated`);
                       addLogEntry(`✅ ${symbol}: TP/SL orders updated on OKX`, 'success');
-
+  
                       // Update trade object with new order IDs
                       trade.okxTpAlgoId = updateResult.tpOrder?.ordId;
                       trade.okxSlAlgoId = updateResult.slOrder?.ordId;
