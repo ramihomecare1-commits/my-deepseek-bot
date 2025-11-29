@@ -2610,6 +2610,30 @@ Reason: ${newReason?.substring(0, 200)}`);
           for (const coin of allCoinsData) {
             if (batchAIResults[coin.symbol]) {
               const aiResult = batchAIResults[coin.symbol];
+
+              // PATTERN-INDICATOR ALIGNMENT SCORING
+              // Boost confidence if chart patterns align with indicators
+              if (coin.patternData?.patterns.length > 0 && aiResult.confidence >= 0.5 && aiResult.confidence < 0.95) {
+                const bestPattern = coin.patternData.patterns.reduce((prev, current) =>
+                  (prev.confidence > current.confidence) ? prev : current
+                );
+
+                const alignment = this.calculatePatternIndicatorAlignment(coin, bestPattern);
+
+                if (alignment.score >= 7.0) {
+                  const boost = alignment.score >= 9.0 ? 0.15 : 0.10;
+                  const oldConfidence = aiResult.confidence;
+                  aiResult.confidence = Math.min(0.95, aiResult.confidence + boost);
+                  aiResult.action = aiResult.confidence > 0.8 ? 'BUY' : aiResult.action; // Upgrade to BUY if confidence is high
+
+                  console.log(`   🚀 ${coin.symbol}: Confidence boosted (+${boost.toFixed(2)}) by pattern alignment`);
+                  console.log(`      Reason: ${alignment.description} (Score: ${alignment.score}/10)`);
+
+                  // Add boost info to AI reasoning
+                  aiResult.reasoning += `\n\n[Pattern Alignment Bonus]: Confidence boosted by +${(boost * 100).toFixed(0)}% because ${alignment.description}.`;
+                }
+              }
+
               // Store AI evaluation with limited context to prevent MongoDB size issues
               storeAIEvaluation({
                 symbol: coin.symbol,
@@ -8329,6 +8353,80 @@ Return JSON array format:
    */
   getClosedTrades() {
     return this.closedTrades || [];
+  }
+
+  /**
+   * Calculate alignment score between chart pattern and technical indicators
+   * @param {Object} coin - Coin data with indicators
+   * @param {Object} pattern - Detected chart pattern
+   * @returns {Object} { score: number, description: string }
+   */
+  calculatePatternIndicatorAlignment(coin, pattern) {
+    let score = 5.0; // Base score
+    let reasons = [];
+
+    const rsi = coin.rsi || 50;
+    const price = coin.price || 0;
+    const ema200 = coin.ema200 || 0;
+    const volumeSpike = coin.volumeSpike || 1.0;
+
+    // 1. RSI Alignment
+    if (pattern.direction === 'bullish') {
+      if (rsi < 40) {
+        score += 2.0;
+        reasons.push(`RSI Oversold (${rsi.toFixed(1)})`);
+      } else if (rsi < 50) {
+        score += 1.0;
+        reasons.push(`RSI Bullish Zone (${rsi.toFixed(1)})`);
+      } else if (rsi > 70) {
+        score -= 2.0; // Divergence warning
+        reasons.push(`RSI Overbought Warning`);
+      }
+    } else if (pattern.direction === 'bearish') {
+      if (rsi > 60) {
+        score += 2.0;
+        reasons.push(`RSI Overbought (${rsi.toFixed(1)})`);
+      } else if (rsi > 50) {
+        score += 1.0;
+        reasons.push(`RSI Bearish Zone (${rsi.toFixed(1)})`);
+      } else if (rsi < 30) {
+        score -= 2.0; // Divergence warning
+        reasons.push(`RSI Oversold Warning`);
+      }
+    }
+
+    // 2. Volume Alignment
+    if (pattern.volumeConfirmed) {
+      score += 1.5;
+      reasons.push(`Volume Confirmation`);
+    }
+    if (volumeSpike > 2.0) {
+      score += 1.0;
+      reasons.push(`High Volume Spike (${volumeSpike.toFixed(1)}x)`);
+    }
+
+    // 3. Trend Alignment (EMA 200)
+    if (ema200 > 0) {
+      if (pattern.direction === 'bullish' && price > ema200) {
+        score += 1.5;
+        reasons.push(`Above EMA200 (Uptrend)`);
+      } else if (pattern.direction === 'bearish' && price < ema200) {
+        score += 1.5;
+        reasons.push(`Below EMA200 (Downtrend)`);
+      } else if (pattern.type.includes('REVERSAL')) {
+        // Reversal patterns against trend are valid but risky
+        score += 0.5;
+        reasons.push(`Counter-trend Reversal`);
+      }
+    }
+
+    // Cap score at 10
+    score = Math.min(10, score);
+
+    return {
+      score,
+      description: `${pattern.type} aligned with ${reasons.join(', ')}`
+    };
   }
 
   applyScanFilters(analysis, options) {
