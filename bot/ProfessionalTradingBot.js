@@ -1096,7 +1096,10 @@ class ProfessionalTradingBot {
 
   scheduleNextScan() {
     if (!this.isRunning) return;
-    const delay = Math.max(this.scanIntervalMs - this.stats.lastScanDuration, 5000);
+    // Use the full scan interval - don't subtract scan duration
+    // Previous bug: was doing scanIntervalMs - lastScanDuration
+    // This caused 4h scans to run every 3h if scan took 1h
+    const delay = Math.max(this.scanIntervalMs, 5000);
 
     // Store the actual scheduled time (prevents reset on page refresh)
     this.nextScanTime = new Date(Date.now() + delay);
