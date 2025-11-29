@@ -53,7 +53,7 @@ async function saveFilteredNews(symbol, newsItems) {
 
 /**
  * Get existing news hashes to avoid duplicates
- * Uses storedAt as sort key (not timestamp)
+ * Table schema: symbol (PK only, no sort key)
  */
 async function getExistingNewsHashes(symbol) {
     if (!process.env.AWS_ACCESS_KEY_ID) {
@@ -66,18 +66,24 @@ async function getExistingNewsHashes(symbol) {
     try {
         const result = await docClient.send(new QueryCommand({
             TableName: TABLE_NAME,
-            KeyConditionExpression: 'symbol = :symbol AND storedAt > :oneDayAgo',
+            KeyConditionExpression: 'symbol = :symbol',
             ExpressionAttributeNames: {
                 '#nh': 'newsHash' // Avoid 'hash' reserved keyword
             },
             ExpressionAttributeValues: {
-                ':symbol': symbol,
-                ':oneDayAgo': oneDayAgo.toISOString()
+                ':symbol': symbol
             },
-            ProjectionExpression: '#nh'
+            ProjectionExpression: '#nh, storedAt'
         }));
 
-        return result.Items?.map(item => item.newsHash).filter(Boolean) || [];
+        // Filter by date in code since storedAt is not a key
+        const recentItems = result.Items?.filter(item => {
+            if (!item.storedAt) return false;
+            const itemDate = new Date(item.storedAt);
+            return itemDate > oneDayAgo;
+        }) || [];
+
+        return recentItems.map(item => item.newsHash).filter(Boolean);
     } catch (error) {
         // Table might not exist or no data - silently return empty array
         if (error.message.includes('Requested resource not found')) {
