@@ -227,8 +227,28 @@ async function sendBatchedAlerts(alerts, settings) {
     const message = `🎨 **Pattern Scanner Alert** (${alerts.length} pattern${alerts.length > 1 ? 's' : ''} detected)\n\n` +
         alerts.map((alert, idx) => {
             const volumeTag = alert.volumeConfirmed ? ' ✓ volume' : '';
+
+            // Generate description based on pattern type
+            let description = alert.description || alert.message;
+            if (!description) {
+                // Generate description for patterns without one
+                if (alert.type === 'DOUBLE_TOP') {
+                    description = `Bearish reversal pattern - Resistance: $${alert.resistance?.toFixed(2)}`;
+                } else if (alert.type === 'DOUBLE_BOTTOM') {
+                    description = `Bullish reversal pattern - Support: $${alert.support?.toFixed(2)}`;
+                } else if (alert.type === 'HEAD_AND_SHOULDERS') {
+                    description = `Bearish reversal pattern - Neckline: $${alert.neckline?.toFixed(2)}`;
+                } else if (alert.type === 'INVERSE_HEAD_AND_SHOULDERS') {
+                    description = `Bullish reversal pattern - Neckline: $${alert.neckline?.toFixed(2)}`;
+                } else if (alert.type === 'TRIANGLE_BREAKOUT') {
+                    description = `${alert.direction === 'bullish' ? 'Bullish' : 'Bearish'} breakout pattern`;
+                } else {
+                    description = `${alert.direction || 'neutral'} pattern detected`;
+                }
+            }
+
             return `${idx + 1}. **${alert.coin}** [${alert.timeframe.toUpperCase()}] - ${alert.type}\n` +
-                `   ${alert.message}\n` +
+                `   ${description}\n` +
                 `   Confidence: ${alert.confidence}/10${volumeTag}`;
         }).join('\n\n');
 
