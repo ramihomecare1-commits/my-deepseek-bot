@@ -69,14 +69,40 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
 
         const content = response.data.choices[0].message.content;
 
-        // Extract JSON from response (handle markdown code blocks)
-        const jsonMatch = content.match(/\[[\s\S]*\]/);
+        // Extract JSON from response (handle markdown code blocks and malformed JSON)
+        let jsonMatch = content.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
             console.warn(`Free AI returned no valid JSON for ${symbol}`);
             return [];
         }
 
-        const filtered = JSON.parse(jsonMatch[0]);
+        let filtered = [];
+        try {
+            // Try to parse the JSON
+            filtered = JSON.parse(jsonMatch[0]);
+        } catch (parseError) {
+            // If parsing fails, try to clean up common issues
+            console.warn(`Free AI JSON parse error for ${symbol}, attempting cleanup...`);
+
+            try {
+                // Remove trailing commas, fix common issues
+                let cleanedJson = jsonMatch[0]
+                    .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
+                    .replace(/'/g, '"') // Replace single quotes with double quotes
+                    .replace(/(\w+):/g, '"$1":'); // Add quotes to unquoted keys
+
+                filtered = JSON.parse(cleanedJson);
+            } catch (cleanupError) {
+                console.error(`Free AI JSON cleanup failed for ${symbol}:`, cleanupError.message);
+                return []; // Give up, return empty array
+            }
+        }
+
+        // Validate that we got an array
+        if (!Array.isArray(filtered)) {
+            console.warn(`Free AI returned non-array for ${symbol}`);
+            return [];
+        }
 
         // Add missing fields from raw news if needed
         return filtered.map(item => ({
