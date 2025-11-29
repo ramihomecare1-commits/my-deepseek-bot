@@ -68,8 +68,7 @@ async function saveFilteredNews(symbol, newsItems) {
 
 /**
  * Get existing news hashes to avoid duplicates
- * Table schema: symbol (PK), url (SK)
- * Note: Querying with just partition key should work for composite key tables
+ * Uses GSI: symbol-timestamp-index (symbol + publishedAt)
  */
 async function getExistingNewsHashes(symbol) {
     if (!process.env.AWS_ACCESS_KEY_ID) {
@@ -78,34 +77,26 @@ async function getExistingNewsHashes(symbol) {
 
     const oneDayAgo = new Date();
     oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+    const oneDayAgoTimestamp = Math.floor(oneDayAgo.getTime() / 1000);
 
     try {
-        // Query with just partition key - DynamoDB allows this for composite key tables
+        // Use GSI to query by symbol and filter by publishedAt
         const result = await docClient.send(new QueryCommand({
             TableName: TABLE_NAME,
-            KeyConditionExpression: 'symbol = :symbol',
+            IndexName: 'symbol-timestamp-index', // Use the GSI
+            KeyConditionExpression: 'symbol = :symbol AND publishedAt > :oneDayAgo',
             ExpressionAttributeValues: {
-                ':symbol': symbol
+                ':symbol': symbol,
+                ':oneDayAgo': oneDayAgoTimestamp
             },
-            // Don't use ProjectionExpression with ExpressionAttributeNames if not needed
-            ProjectionExpression: 'newsHash, storedAt'
+            ProjectionExpression: 'newsHash'
         }));
 
-        // Filter by date in code since storedAt is not a key
-        const recentItems = result.Items?.filter(item => {
-            if (!item.storedAt) return false;
-            const itemDate = new Date(item.storedAt);
-            return itemDate > oneDayAgo;
-        }) || [];
-
-        return recentItems.map(item => item.newsHash).filter(Boolean);
+        return result.Items?.map(item => item.newsHash).filter(Boolean) || [];
     } catch (error) {
-        // If query fails, it might be a schema issue - just return empty array
+        // If query fails, just return empty array
         if (error.message.includes('Requested resource not found')) {
             console.log(`⚠️ newsArticles table not found, skipping duplicate check for ${symbol}`);
-        } else if (error.message.includes('Query condition missed key schema element')) {
-            // Table has different schema than expected - disable news filtering for now
-            console.log(`⚠️ newsArticles table schema mismatch, skipping duplicate check for ${symbol}`);
         } else {
             console.error(`Error fetching existing hashes for ${symbol}:`, error.message);
         }
@@ -115,7 +106,7 @@ async function getExistingNewsHashes(symbol) {
 
 /**
  * Get latest filtered news for a coin
- * Table schema: symbol (PK), url (SK)
+ * Uses GSI: symbol-timestamp-index (symbol + publishedAt)
  */
 async function getLatestNews(symbol, limit = 3) {
     if (!process.env.AWS_ACCESS_KEY_ID) {
@@ -123,8 +114,10 @@ async function getLatestNews(symbol, limit = 3) {
     }
 
     try {
+        // Use GSI to query by symbol, sorted by publishedAt
         const result = await docClient.send(new QueryCommand({
             TableName: TABLE_NAME,
+            IndexName: 'symbol-timestamp-index', // Use the GSI
             KeyConditionExpression: 'symbol = :symbol',
             ExpressionAttributeValues: { ':symbol': symbol },
             ScanIndexForward: false, // Descending order (newest first)
@@ -136,9 +129,6 @@ async function getLatestNews(symbol, limit = 3) {
         // Handle various error cases gracefully
         if (error.message.includes('Requested resource not found')) {
             console.log(`⚠️ newsArticles table not found for ${symbol}, returning empty news`);
-        } else if (error.message.includes('Query condition missed key schema element')) {
-            // Table has different schema than expected - disable news reading for now
-            console.log(`⚠️ newsArticles table schema mismatch for ${symbol}, returning empty news`);
         } else {
             console.error(`Error fetching latest news for ${symbol}:`, error.message);
         }
