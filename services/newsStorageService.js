@@ -133,9 +133,12 @@ async function getLatestNews(symbol, limit = 3) {
 
         return result.Items || [];
     } catch (error) {
-        // Table might not exist - silently return empty array
+        // Handle various error cases gracefully
         if (error.message.includes('Requested resource not found')) {
             console.log(`⚠️ newsArticles table not found for ${symbol}, returning empty news`);
+        } else if (error.message.includes('Query condition missed key schema element')) {
+            // Table has different schema than expected - disable news reading for now
+            console.log(`⚠️ newsArticles table schema mismatch for ${symbol}, returning empty news`);
         } else {
             console.error(`Error fetching latest news for ${symbol}:`, error.message);
         }
