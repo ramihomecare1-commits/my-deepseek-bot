@@ -15,10 +15,10 @@ const NEWS_ENABLED = true; // Always enabled - uses free public APIs (CryptoComp
 // Legacy: CRYPTOPANIC_API_KEY is optional and no longer required
 
 // Rate limiting
-// Increased to 3000ms (3 seconds) to avoid 429 rate limit errors
+// Increased to 4000ms (4 seconds) to avoid 429 rate limit errors with 25 coins
 // Free CoinGecko: 10-30 requests/minute = need 2-6 second delays
 // Free CoinPaprika: ~13 requests/minute sustained
-const API_DELAY = Number(process.env.API_DELAY_MS || 3000);
+const API_DELAY = Number(process.env.API_DELAY_MS || 4000);
 const NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000;
 
 // Scan intervals

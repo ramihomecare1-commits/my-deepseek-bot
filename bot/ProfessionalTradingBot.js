@@ -2521,10 +2521,64 @@ Reason: ${newReason?.substring(0, 200)}`);
             }
           }
 
+          // SMART AI FILTERING: Only evaluate top 10 + coins with strong signals
+          // This reduces AI costs while maintaining broad market coverage
+          const top10Priority = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'DOT'];
+
+          const coinsForAI = allCoinsData.filter(coin => {
+            // Always include top 10 coins
+            if (top10Priority.includes(coin.symbol)) {
+              return true;
+            }
+
+            // Include coins with strong algorithmic signals
+            const frames = coin.frames || {};
+            const daily = frames['1d'] || {};
+            const rsi = daily.rsi || 50;
+            const volumeSpike = coin.volumeSpike || 1.0;
+            const priceChange = Math.abs(coin.priceChangePercent || 0);
+
+            // Very oversold or overbought
+            if (rsi < 25 || rsi > 75) {
+              console.log(`   ✅ ${coin.symbol}: Strong RSI signal (${rsi.toFixed(1)})`);
+              return true;
+            }
+
+            // Significant volume spike
+            if (volumeSpike > 3.0) {
+              console.log(`   ✅ ${coin.symbol}: Volume spike (${volumeSpike.toFixed(1)}x)`);
+              return true;
+            }
+
+            // Large price movement
+            if (priceChange > 10) {
+              console.log(`   ✅ ${coin.symbol}: Large price move (${priceChange.toFixed(1)}%)`);
+              return true;
+            }
+
+            // Include coins with strong chart patterns
+            if (coin.patternData?.patterns.some(p =>
+              p.confidence >= 9 && p.volumeConfirmed
+            )) {
+              const strongPattern = coin.patternData.patterns.find(p => p.confidence >= 9 && p.volumeConfirmed);
+              console.log(`   ✅ ${coin.symbol}: Strong pattern (${strongPattern.type}, ${strongPattern.confidence}/10)`);
+              return true;
+            }
+
+            return false; // Skip this coin for AI evaluation
+          });
+
+          console.log(`📊 Smart filtering: ${allCoinsData.length} coins scanned → ${coinsForAI.length} selected for AI evaluation`);
+          console.log(`   Top 10: ${coinsForAI.filter(c => top10Priority.includes(c.symbol)).map(c => c.symbol).join(', ')}`);
+          const filtered = coinsForAI.filter(c => !top10Priority.includes(c.symbol));
+          if (filtered.length > 0) {
+            console.log(`   Filtered: ${filtered.map(c => c.symbol).join(', ')}`);
+          }
+
           // Update progress during AI call
           this.scanProgress.percent = 75;
 
-          batchAIResults = await getBatchAIAnalysis(allCoinsData, this.globalMetrics, options);
+          batchAIResults = await getBatchAIAnalysis(coinsForAI, this.globalMetrics, options);
           this.stats.aiCalls += 1; // Track AI API call
 
           // Log what we got back from AI

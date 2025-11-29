@@ -33,15 +33,16 @@ function getTop100Coins() {
     { symbol: 'TON', name: 'Toncoin', id: 'the-open-network', coinmarketcap_id: '11419', coinpaprika_id: 'ton-toncoin' },
     { symbol: 'SHIB', name: 'Shiba Inu', id: 'shiba-inu', coinmarketcap_id: '11974', coinpaprika_id: 'shib-shiba-inu' }
   ];
-  
-  // Return only first 10 coins to save API calls
-  return allCoins.slice(0, 10);
-  
+
+  // Return 25 coins for broader market coverage
+  // Smart AI filtering will evaluate only top 10 + strong signals (~12-18 coins)
+  return allCoins.slice(0, 25);
+
   // Note: Excludes: USDT, USDC, BUSD, DAI, TUSD (stablecoins)
   // Excludes: WETH, WBTC, WBNB (wrapped tokens)
   // Each coin makes ~3-4 API calls (price + historical data)
-  // 10 coins = ~40 requests per scan
-  // With 3-5 second delays, this stays under free tier limits
+  // 25 coins = ~100 requests per scan
+  // With 4 second delays, this stays under free tier limits
 }
 
 // Format currency
@@ -60,7 +61,7 @@ function formatPercentage(value, decimals = 2) {
 // Generate random color for charts
 function generateColor() {
   const colors = [
-    '#6366f1', '#3b82f6', '#06b6d4', '#10b981', '#84cc16', 
+    '#6366f1', '#3b82f6', '#06b6d4', '#10b981', '#84cc16',
     '#eab308', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6'
   ];
   return colors[Math.floor(Math.random() * colors.length)];
@@ -93,7 +94,7 @@ function debounce(func, wait) {
 // Throttle function
 function throttle(func, limit) {
   let inThrottle;
-  return function(...args) {
+  return function (...args) {
     if (!inThrottle) {
       func.apply(this, args);
       inThrottle = true;

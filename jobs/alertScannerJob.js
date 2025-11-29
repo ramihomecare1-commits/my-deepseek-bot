@@ -47,6 +47,8 @@ function shouldSendAlert(alert, coin, timeframe) {
  * @param {Object} settings - Alert settings
  */
 async function scanForAlerts(coins, settings) {
+    const allAlerts = []; // Collect all alerts for batching
+
     for (const coin of coins) {
         try {
             // Check if coin is enabled in settings
@@ -186,13 +188,13 @@ async function scanForAlerts(coins, settings) {
                     }
                 }
 
-                // Send alerts (with deduplication)
+                // Collect alerts (with deduplication check)
                 for (const alert of alerts) {
                     if (shouldSendAlert(alert, coin, timeframe)) {
-                        const sent = await sendAlert(alert, settings);
-                        if (sent) {
-                            lastAlertTime.set(`${coin}_${alert.type}_${timeframe}`, Date.now());
-                        }
+                        alert.coin = coin; // Add coin symbol to alert
+                        alert.timeframe = timeframe; // Add timeframe to alert
+                        allAlerts.push(alert);
+                        lastAlertTime.set(`${coin}_${alert.type}_${timeframe}`, Date.now());
                     }
                 }
 
@@ -206,6 +208,35 @@ async function scanForAlerts(coins, settings) {
         } catch (error) {
             console.error(`❌ Error scanning ${coin}:`, error.message);
         }
+    }
+
+    // Send all alerts in one batched message
+    if (allAlerts.length > 0) {
+        await sendBatchedAlerts(allAlerts, settings);
+    }
+}
+
+/**
+ * Send batched alerts in one Telegram message
+ * @param {Array} alerts - Array of alerts to send
+ * @param {Object} settings - Alert settings
+ */
+async function sendBatchedAlerts(alerts, settings) {
+    const { sendTelegramMessage } = require('../services/notificationService');
+
+    const message = `🎨 **Pattern Scanner Alert** (${alerts.length} pattern${alerts.length > 1 ? 's' : ''} detected)\n\n` +
+        alerts.map((alert, idx) => {
+            const volumeTag = alert.volumeConfirmed ? ' ✓ volume' : '';
+            return `${idx + 1}. **${alert.coin}** [${alert.timeframe.toUpperCase()}] - ${alert.type}\n` +
+                `   ${alert.message}\n` +
+                `   Confidence: ${alert.confidence}/10${volumeTag}`;
+        }).join('\n\n');
+
+    try {
+        await sendTelegramMessage(message);
+        console.log(`📤 Sent batched alert with ${alerts.length} patterns`);
+    } catch (error) {
+        console.error(`❌ Failed to send batched alerts:`, error.message);
     }
 }
 
