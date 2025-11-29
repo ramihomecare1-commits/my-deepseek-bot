@@ -1,17 +1,18 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { TABLES } = require('../config/awsConfig');
 
 const client = new DynamoDBClient({ region: 'us-east-1' });
 const docClient = DynamoDBDocumentClient.from(client);
 
-const TABLE_NAME = 'crypto-news';
+const TABLE_NAME = TABLES.NEWS_ARTICLES; // Use existing 'newsArticles' table
 
 /**
- * Save filtered news items to DynamoDB
+ * Save filtered news items to DynamoDB (existing newsArticles table)
  */
 async function saveFilteredNews(symbol, newsItems) {
-    const timestamp = Math.floor(Date.now() / 1000);
-    const expiresAt = timestamp + (7 * 24 * 60 * 60); // 7 days TTL
+    const timestamp = new Date().toISOString();
+    const ttl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days TTL
 
     for (const news of newsItems) {
         try {
@@ -19,16 +20,17 @@ async function saveFilteredNews(symbol, newsItems) {
                 TableName: TABLE_NAME,
                 Item: {
                     symbol,
-                    timestamp,
+                    articleId: `${symbol}#${Date.now()}#${news.title.substring(0, 50)}`,
                     title: news.title,
-                    summary: news.summary,
+                    description: news.summary || '',
                     url: news.url,
                     source: news.source,
                     sentiment: news.sentiment,
                     relevance: news.relevance,
                     hash: news.hash,
-                    createdAt: timestamp,
-                    expiresAt
+                    publishedAt: timestamp,
+                    storedAt: timestamp,
+                    ttl
                 }
             }));
         } catch (error) {
@@ -41,21 +43,21 @@ async function saveFilteredNews(symbol, newsItems) {
  * Get existing news hashes to avoid duplicates
  */
 async function getExistingNewsHashes(symbol) {
-    const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
+    const oneDayAgo = new Date();
+    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
     try {
         const result = await docClient.send(new QueryCommand({
             TableName: TABLE_NAME,
-            KeyConditionExpression: 'symbol = :symbol AND #ts > :oneDayAgo',
-            ExpressionAttributeNames: { '#ts': 'timestamp' },
+            KeyConditionExpression: 'symbol = :symbol AND storedAt > :oneDayAgo',
             ExpressionAttributeValues: {
                 ':symbol': symbol,
-                ':oneDayAgo': oneDayAgo
+                ':oneDayAgo': oneDayAgo.toISOString()
             },
             ProjectionExpression: 'hash'
         }));
 
-        return result.Items?.map(item => item.hash) || [];
+        return result.Items?.map(item => item.hash).filter(Boolean) || [];
     } catch (error) {
         console.error(`Error fetching existing hashes for ${symbol}:`, error.message);
         return [];
