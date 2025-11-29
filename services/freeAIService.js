@@ -87,6 +87,8 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
     } catch (error) {
         if (error.response?.status === 401) {
             console.error(`❌ Free AI authentication failed for ${symbol}: Invalid API key`);
+        } else if (error.response?.status === 429) {
+            console.warn(`⚠️ Free AI rate limited for ${symbol}, skipping filtering`);
         } else {
             console.error(`Free AI filtering failed for ${symbol}:`, error.message);
         }
@@ -95,3 +97,4 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
 }
 
 module.exports = { filterNewsWithAI };
+```

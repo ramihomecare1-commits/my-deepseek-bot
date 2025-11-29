@@ -2,16 +2,28 @@ const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
 const { TABLES } = require('../config/awsConfig');
 
-const client = new DynamoDBClient({ region: 'us-east-1' });
+const client = new DynamoDBClient({
+    region: process.env.AWS_REGION || 'us-east-1',
+    credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    } : undefined
+});
 const docClient = DynamoDBDocumentClient.from(client);
 
 const TABLE_NAME = TABLES.NEWS_ARTICLES; // Use existing 'newsArticles' table
 
 /**
  * Save filtered news items to DynamoDB (existing newsArticles table)
+ * Schema: symbol (PK), storedAt (SK), articleId, title, description, url, source, publishedAt, ttl
  */
 async function saveFilteredNews(symbol, newsItems) {
-    const timestamp = new Date().toISOString();
+    if (!process.env.AWS_ACCESS_KEY_ID) {
+        console.log('⚠️ DynamoDB not configured, skipping news storage');
+        return;
+    }
+
+    const storedAt = new Date().toISOString();
     const ttl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days TTL
 
     for (const news of newsItems) {
@@ -27,9 +39,9 @@ async function saveFilteredNews(symbol, newsItems) {
                     source: news.source,
                     sentiment: news.sentiment,
                     relevance: news.relevance,
-                    hash: news.hash,
-                    publishedAt: timestamp,
-                    storedAt: timestamp,
+                    newsHash: news.hash, // Renamed from 'hash' to avoid reserved keyword
+                    publishedAt: storedAt,
+                    storedAt: storedAt,
                     ttl
                 }
             }));
@@ -41,8 +53,13 @@ async function saveFilteredNews(symbol, newsItems) {
 
 /**
  * Get existing news hashes to avoid duplicates
+ * Uses storedAt as sort key (not timestamp)
  */
 async function getExistingNewsHashes(symbol) {
+    if (!process.env.AWS_ACCESS_KEY_ID) {
+        return [];
+    }
+
     const oneDayAgo = new Date();
     oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
@@ -51,26 +68,36 @@ async function getExistingNewsHashes(symbol) {
             TableName: TABLE_NAME,
             KeyConditionExpression: 'symbol = :symbol AND storedAt > :oneDayAgo',
             ExpressionAttributeNames: {
-                '#h': 'hash' // 'hash' is a reserved keyword in DynamoDB
+                '#nh': 'newsHash' // Avoid 'hash' reserved keyword
             },
             ExpressionAttributeValues: {
                 ':symbol': symbol,
                 ':oneDayAgo': oneDayAgo.toISOString()
             },
-            ProjectionExpression: '#h'
+            ProjectionExpression: '#nh'
         }));
 
-        return result.Items?.map(item => item.hash).filter(Boolean) || [];
+        return result.Items?.map(item => item.newsHash).filter(Boolean) || [];
     } catch (error) {
-        console.error(`Error fetching existing hashes for ${symbol}:`, error.message);
+        // Table might not exist or no data - silently return empty array
+        if (error.message.includes('Requested resource not found')) {
+            console.log(`⚠️ newsArticles table not found, skipping duplicate check for ${symbol}`);
+        } else {
+            console.error(`Error fetching existing hashes for ${symbol}:`, error.message);
+        }
         return [];
     }
 }
 
 /**
  * Get latest filtered news for a coin
+ * Uses storedAt as sort key
  */
 async function getLatestNews(symbol, limit = 3) {
+    if (!process.env.AWS_ACCESS_KEY_ID) {
+        return [];
+    }
+
     try {
         const result = await docClient.send(new QueryCommand({
             TableName: TABLE_NAME,
@@ -82,7 +109,12 @@ async function getLatestNews(symbol, limit = 3) {
 
         return result.Items || [];
     } catch (error) {
-        console.error(`Error fetching latest news for ${symbol}:`, error.message);
+        // Table might not exist - silently return empty array
+        if (error.message.includes('Requested resource not found')) {
+            console.log(`⚠️ newsArticles table not found for ${symbol}, returning empty news`);
+        } else {
+            console.error(`Error fetching latest news for ${symbol}:`, error.message);
+        }
         return [];
     }
 }
