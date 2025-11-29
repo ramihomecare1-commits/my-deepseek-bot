@@ -95,4 +95,3 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
 }
 
 module.exports = { filterNewsWithAI };
-```
