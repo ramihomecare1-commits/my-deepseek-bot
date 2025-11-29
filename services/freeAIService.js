@@ -9,6 +9,17 @@ async function filterNewsWithAI(symbol, rawNews, existingHashes) {
         return [];
     }
 
+    // Get API key with fallback
+    const apiKey = config.FREE_TIER_API_KEY ||
+        process.env.FREE_TIER_API_KEY ||
+        config.OPENROUTER_API_KEY ||
+        process.env.OPENROUTER_API_KEY;
+
+    if (!apiKey) {
+        console.warn(`⚠️ No Free AI API key configured for ${symbol}, skipping filtering`);
+        return [];
+    }
+
     const prompt = `You are a crypto news analyst. Filter and analyze these ${rawNews.length} news articles for ${symbol}.
 
 EXISTING NEWS HASHES (avoid duplicates):
@@ -48,7 +59,7 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
             messages: [{ role: 'user', content: prompt }]
         }, {
             headers: {
-                'Authorization': `Bearer ${config.FREE_TIER_API_KEY}`,
+                'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
                 'HTTP-Referer': 'https://github.com/ramihomecare1-commits/my-deepseek-bot',
                 'X-Title': 'DeepSeek Trading Bot'
@@ -74,9 +85,14 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
             source: item.source || rawNews.find(n => n.title === item.title)?.source?.title || 'Unknown'
         }));
     } catch (error) {
-        console.error(`Free AI filtering failed for ${symbol}:`, error.message);
+        if (error.response?.status === 401) {
+            console.error(`❌ Free AI authentication failed for ${symbol}: Invalid API key`);
+        } else {
+            console.error(`Free AI filtering failed for ${symbol}:`, error.message);
+        }
         return [];
     }
 }
 
 module.exports = { filterNewsWithAI };
+```

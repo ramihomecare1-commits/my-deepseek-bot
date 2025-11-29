@@ -50,11 +50,14 @@ async function getExistingNewsHashes(symbol) {
         const result = await docClient.send(new QueryCommand({
             TableName: TABLE_NAME,
             KeyConditionExpression: 'symbol = :symbol AND storedAt > :oneDayAgo',
+            ExpressionAttributeNames: {
+                '#h': 'hash' // 'hash' is a reserved keyword in DynamoDB
+            },
             ExpressionAttributeValues: {
                 ':symbol': symbol,
                 ':oneDayAgo': oneDayAgo.toISOString()
             },
-            ProjectionExpression: 'hash'
+            ProjectionExpression: '#h'
         }));
 
         return result.Items?.map(item => item.hash).filter(Boolean) || [];
