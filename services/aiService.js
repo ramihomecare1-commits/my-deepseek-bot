@@ -489,9 +489,35 @@ function createBatchAnalysisPrompt(allCoinsData, globalMetrics, options = {}) {
       historicalText = '\n   Historical Context: No previous evaluations or news found';
     }
 
-    return `${idx + 1}. ${coin.symbol} (${coin.name}) - Price: $${coin.currentPrice}
-   Daily: RSI ${frame1d.rsi || 'N/A'}, Trend ${frame1d.trend || 'N/A'}, BB ${frame1d.bollingerPosition || 'N/A'}
-   Hourly: RSI ${frame1h.rsi || 'N/A'}, Trend ${frame1h.trend || 'N/A'}, Momentum ${frame1h.momentum || 'N/A'}${newsText}${historicalText}`;
+    // PATTERN SCANNER INTEGRATION: Include chart patterns and S/R levels
+    let patternText = '';
+    if (coin.patternData && (coin.patternData.patterns.length > 0 || coin.patternData.levels.support.length > 0 || coin.patternData.levels.resistance.length > 0)) {
+      const { patterns, levels } = coin.patternData;
+
+      // Chart patterns
+      if (patterns.length > 0) {
+        const patternList = patterns
+          .slice(0, 3) // Top 3 patterns
+          .map(p => `${p.type} (${p.direction || 'neutral'}, ${p.confidence}/10${p.volumeConfirmed ? ' ✓ volume' : ''})`)
+          .join(', ');
+        patternText += `\n   Chart Patterns: ${patternList}`;
+      }
+
+      // Support/Resistance levels
+      const currentPrice = coin.currentPrice;
+      if (levels.support.length > 0) {
+        const nearestSupport = levels.support[0];
+        const distanceToSupport = ((currentPrice - nearestSupport.price) / currentPrice * 100).toFixed(2);
+        patternText += `\n   Nearest Support: $${nearestSupport.price.toFixed(2)} (${distanceToSupport}% away, ${nearestSupport.strength || 'medium'})`;
+      }
+      if (levels.resistance.length > 0) {
+        const nearestResistance = levels.resistance[0];
+        const distanceToResistance = ((nearestResistance.price - currentPrice) / currentPrice * 100).toFixed(2);
+        patternText += `\n   Nearest Resistance: $${nearestResistance.price.toFixed(2)} (${distanceToResistance}% away, ${nearestResistance.strength || 'medium'})`;
+      }
+    }
+
+    return `${idx + 1}. ${coin.symbol} (${coin.name}) - Price: $${coin.currentPrice}\n   Daily: RSI ${frame1d.rsi || 'N/A'}, Trend ${frame1d.trend || 'N/A'}, BB ${frame1d.bollingerPosition || 'N/A'}\n   Hourly: RSI ${frame1h.rsi || 'N/A'}, Trend ${frame1h.trend || 'N/A'}, Momentum ${frame1h.momentum || 'N/A'}${patternText}${newsText}${historicalText}`;
   }).join('\n\n');
 
   return `BATCH CRYPTO TECHNICAL ANALYSIS REQUEST:
@@ -501,7 +527,10 @@ ${globalMetricsText}Analyze ${allCoinsData.length} cryptocurrencies and provide 
 COINS TO ANALYZE:
 ${coinsSummary}
 
-IMPORTANT: Consider technical indicators, recent news, AND historical context when making recommendations.
+IMPORTANT: Consider technical indicators, chart patterns, support/resistance levels, recent news, AND historical context when making recommendations.
+- Chart patterns (Head & Shoulders, Double Tops/Bottoms, Triangles) provide directional bias
+- Support/Resistance levels help determine entry/exit points and risk management
+- Volume confirmation on patterns increases reliability
 - Review previous evaluations to see if patterns are consistent or changing
 - Historical news can provide context for current price movements
 - News can significantly impact price movements - factor this into your analysis
@@ -509,13 +538,13 @@ IMPORTANT: Consider technical indicators, recent news, AND historical context wh
 
 For each coin, provide:
 1. Action: BUY, SELL, or HOLD
-2. Confidence: 0.0 to 1.0
-3. Brief reason (1 sentence) - mention if news influenced the decision
-4. Top 2-3 insights (include news impact if relevant)
+2. Confidence: 0.0 to 1.0 (boost confidence when patterns + indicators align)
+3. Brief reason (1 sentence) - mention if patterns/news influenced the decision
+4. Top 2-3 insights (include pattern/news impact if relevant)
 5. RISK MANAGEMENT LEVELS:
-   - entryPrice: Best entry price
-   - takeProfit: Target profit level
-   - stopLoss: Stop loss level
+   - entryPrice: Best entry price (consider support/resistance)
+   - takeProfit: Target profit level (use resistance for BUY, support for SELL)
+   - stopLoss: Stop loss level (use support for BUY, resistance for SELL)
    - addPosition: DCA/Average down level (below entry for BUY, above for SELL)
    - expectedGainPercent: Expected gain % (positive number)
 

@@ -2509,6 +2509,18 @@ Reason: ${newReason?.substring(0, 200)}`);
 
           addLogEntry(`Calling AI API with ${allCoinsData.length} coins...`, 'info');
 
+          // PATTERN SCANNER INTEGRATION: Detect patterns for each coin before AI analysis
+          console.log(`🎨 Detecting chart patterns for ${allCoinsData.length} coins...`);
+          for (const coinData of allCoinsData) {
+            try {
+              const patternData = await this.detectPatternsForCoin(coinData.symbol);
+              coinData.patternData = patternData; // Attach to coin data for AI
+            } catch (error) {
+              console.error(`   ❌ Pattern detection failed for ${coinData.symbol}:`, error.message);
+              coinData.patternData = { patterns: [], levels: { support: [], resistance: [] }, cached: false };
+            }
+          }
+
           // Update progress during AI call
           this.scanProgress.percent = 75;
 
