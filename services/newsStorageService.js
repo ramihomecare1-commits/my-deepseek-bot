@@ -15,7 +15,8 @@ const TABLE_NAME = TABLES.NEWS_ARTICLES; // Use existing 'newsArticles' table
 
 /**
  * Save filtered news items to DynamoDB (existing newsArticles table)
- * ACTUAL Schema: symbol (PK), url (SK), title, description, source, publishedAt, ttl
+ * ACTUAL Schema: symbol (PK), url (SK), title, description, source, publishedAt (Number - Unix timestamp), ttl
+ * GSI: symbol-timestamp-index uses publishedAt as sort key (must be Number)
  */
 async function saveFilteredNews(symbol, newsItems) {
     if (!process.env.AWS_ACCESS_KEY_ID) {
@@ -24,6 +25,7 @@ async function saveFilteredNews(symbol, newsItems) {
     }
 
     const storedAt = new Date().toISOString();
+    const publishedAtTimestamp = Math.floor(Date.now() / 1000); // Unix timestamp (Number)
     const ttl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days TTL
 
     for (const news of newsItems) {
@@ -39,8 +41,8 @@ async function saveFilteredNews(symbol, newsItems) {
                     sentiment: news.sentiment,
                     relevance: news.relevance,
                     newsHash: news.hash, // Renamed from 'hash' to avoid reserved keyword
-                    publishedAt: storedAt,
-                    storedAt: storedAt,
+                    publishedAt: publishedAtTimestamp, // Number (Unix timestamp) for GSI
+                    storedAt: storedAt, // String (ISO) for display
                     ttl
                 }
             }));
