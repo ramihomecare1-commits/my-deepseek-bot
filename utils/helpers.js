@@ -18,7 +18,7 @@ function getTop100Coins() {
     { symbol: 'LINK', name: 'Chainlink', id: 'chainlink', coinmarketcap_id: '1975', coinpaprika_id: 'link-chainlink' },
     { symbol: 'DOT', name: 'Polkadot', id: 'polkadot', coinmarketcap_id: '6636', coinpaprika_id: 'dot-polkadot' },
     { symbol: 'TRX', name: 'TRON', id: 'tron', coinmarketcap_id: '1958', coinpaprika_id: 'trx-tron' },
-    { symbol: 'MATIC', name: 'Polygon', id: 'matic-network', coinmarketcap_id: '3890', coinpaprika_id: 'matic-polygon' },
+    { symbol: 'POL', name: 'Polygon', id: 'matic-network', coinmarketcap_id: '3890', coinpaprika_id: 'matic-polygon' },
     { symbol: 'LTC', name: 'Litecoin', id: 'litecoin', coinmarketcap_id: '2', coinpaprika_id: 'ltc-litecoin' },
     { symbol: 'UNI', name: 'Uniswap', id: 'uniswap', coinmarketcap_id: '7083', coinpaprika_id: 'uni-uniswap' },
     { symbol: 'ATOM', name: 'Cosmos', id: 'cosmos', coinmarketcap_id: '3794', coinpaprika_id: 'atom-cosmos' },
