@@ -28,16 +28,25 @@ async function saveFilteredNews(symbol, newsItems) {
     const publishedAtTimestamp = Math.floor(Date.now() / 1000); // Unix timestamp (Number)
     const ttl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days TTL
 
+    let savedCount = 0;
+    let skippedCount = 0;
+
     for (const news of newsItems) {
+        // Skip items without URL (url is the sort key and cannot be empty)
+        if (!news.url || news.url.trim() === '') {
+            skippedCount++;
+            continue;
+        }
+
         try {
             await docClient.send(new PutCommand({
                 TableName: TABLE_NAME,
                 Item: {
                     symbol,
-                    url: news.url, // Sort key
-                    title: news.title,
+                    url: news.url, // Sort key (required, cannot be empty)
+                    title: news.title || 'Untitled',
                     description: news.summary || '',
-                    source: news.source,
+                    source: news.source || 'Unknown',
                     sentiment: news.sentiment,
                     relevance: news.relevance,
                     newsHash: news.hash, // Renamed from 'hash' to avoid reserved keyword
@@ -46,9 +55,14 @@ async function saveFilteredNews(symbol, newsItems) {
                     ttl
                 }
             }));
+            savedCount++;
         } catch (error) {
             console.error(`Error saving news for ${symbol}:`, error.message);
         }
+    }
+
+    if (skippedCount > 0) {
+        console.log(`⚠️ ${symbol}: Skipped ${skippedCount} news items without URLs`);
     }
 }
 
