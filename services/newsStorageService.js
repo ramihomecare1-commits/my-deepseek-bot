@@ -53,6 +53,7 @@ async function saveFilteredNews(symbol, newsItems) {
 /**
  * Get existing news hashes to avoid duplicates
  * Table schema: symbol (PK), url (SK)
+ * Note: Querying with just partition key should work for composite key tables
  */
 async function getExistingNewsHashes(symbol) {
     if (!process.env.AWS_ACCESS_KEY_ID) {
@@ -63,16 +64,15 @@ async function getExistingNewsHashes(symbol) {
     oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
     try {
+        // Query with just partition key - DynamoDB allows this for composite key tables
         const result = await docClient.send(new QueryCommand({
             TableName: TABLE_NAME,
             KeyConditionExpression: 'symbol = :symbol',
-            ExpressionAttributeNames: {
-                '#nh': 'newsHash' // Avoid 'hash' reserved keyword
-            },
             ExpressionAttributeValues: {
                 ':symbol': symbol
             },
-            ProjectionExpression: '#nh, storedAt'
+            // Don't use ProjectionExpression with ExpressionAttributeNames if not needed
+            ProjectionExpression: 'newsHash, storedAt'
         }));
 
         // Filter by date in code since storedAt is not a key
@@ -84,9 +84,12 @@ async function getExistingNewsHashes(symbol) {
 
         return recentItems.map(item => item.newsHash).filter(Boolean);
     } catch (error) {
-        // Table might not exist or no data - silently return empty array
+        // If query fails, it might be a schema issue - just return empty array
         if (error.message.includes('Requested resource not found')) {
             console.log(`⚠️ newsArticles table not found, skipping duplicate check for ${symbol}`);
+        } else if (error.message.includes('Query condition missed key schema element')) {
+            // Table has different schema than expected - disable news filtering for now
+            console.log(`⚠️ newsArticles table schema mismatch, skipping duplicate check for ${symbol}`);
         } else {
             console.error(`Error fetching existing hashes for ${symbol}:`, error.message);
         }
