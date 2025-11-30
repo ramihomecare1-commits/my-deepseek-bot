@@ -51,14 +51,32 @@ function detectHeadAndShoulders(candles) {
     const recentHighs = swingHighs.slice(-3);
     const [leftShoulder, head, rightShoulder] = recentHighs;
 
-    // Head must be highest
+    // VALIDATION 1: Head must be highest
     if (head.price <= leftShoulder.price || head.price <= rightShoulder.price) {
         return null;
     }
 
-    // Shoulders should be roughly equal (within 3%)
+    // VALIDATION 2: Head must be significantly higher than shoulders (3%+)
+    const headToLeftDiff = (head.price - leftShoulder.price) / leftShoulder.price;
+    const headToRightDiff = (head.price - rightShoulder.price) / rightShoulder.price;
+    if (headToLeftDiff < 0.03 || headToRightDiff < 0.03) return null;
+
+    // VALIDATION 3: Shoulders should be roughly equal (within 5%)
     const shoulderDiff = Math.abs(leftShoulder.price - rightShoulder.price) / leftShoulder.price;
-    if (shoulderDiff > 0.03) return null;
+    if (shoulderDiff > 0.05) return null;
+
+    // VALIDATION 4: Check for uptrend BEFORE the pattern
+    // H&S should form at the END of an uptrend
+    const lookbackStart = Math.max(0, leftShoulder.index - 50);
+    const priorCandles = candles.slice(lookbackStart, leftShoulder.index);
+    if (priorCandles.length > 10) {
+        const priorLow = Math.min(...priorCandles.map(c => c.low));
+        const priorHigh = Math.max(...priorCandles.map(c => c.high));
+        const priorTrend = (priorHigh - priorLow) / priorLow;
+
+        // Require at least 5% uptrend before the pattern
+        if (priorTrend < 0.05) return null;
+    }
 
     // Find neckline (support between shoulders)
     const necklineCandles = candles.slice(leftShoulder.index, rightShoulder.index);
@@ -69,7 +87,7 @@ function detectHeadAndShoulders(candles) {
 
     // Calculate confidence
     let confidence = 5;
-    if (shoulderDiff < 0.01) confidence += 2; // Shoulders very equal
+    if (shoulderDiff < 0.02) confidence += 2; // Shoulders very equal
     if (head.price > leftShoulder.price * 1.05) confidence += 1; // Clear head
     if (breakout) confidence += 2; // Neckline broken
 
@@ -79,6 +97,7 @@ function detectHeadAndShoulders(candles) {
     const volumeConfirmed = recentVolume > avgVolume * 1.5;
     if (volumeConfirmed) confidence += 1;
 
+    // Only return if breakout occurred AND confidence is high
     if (!breakout || confidence < 7.0) return null;
 
     const target = neckline - (head.price - neckline);
@@ -113,14 +132,32 @@ function detectInverseHeadAndShoulders(candles) {
     const recentLows = swingLows.slice(-3);
     const [leftShoulder, head, rightShoulder] = recentLows;
 
-    // Head must be lowest
+    // VALIDATION 1: Head must be lowest
     if (head.price >= leftShoulder.price || head.price >= rightShoulder.price) {
         return null;
     }
 
-    // Shoulders should be roughly equal (within 3%)
+    // VALIDATION 2: Head must be significantly lower than shoulders (3%+)
+    const headToLeftDiff = (leftShoulder.price - head.price) / head.price;
+    const headToRightDiff = (rightShoulder.price - head.price) / head.price;
+    if (headToLeftDiff < 0.03 || headToRightDiff < 0.03) return null;
+
+    // VALIDATION 3: Shoulders should be roughly equal (within 5%)
     const shoulderDiff = Math.abs(leftShoulder.price - rightShoulder.price) / leftShoulder.price;
-    if (shoulderDiff > 0.03) return null;
+    if (shoulderDiff > 0.05) return null;
+
+    // VALIDATION 4: Check for downtrend BEFORE the pattern
+    // Inverse H&S should form at the END of a downtrend
+    const lookbackStart = Math.max(0, leftShoulder.index - 50);
+    const priorCandles = candles.slice(lookbackStart, leftShoulder.index);
+    if (priorCandles.length > 10) {
+        const priorHigh = Math.max(...priorCandles.map(c => c.high));
+        const priorLow = Math.min(...priorCandles.map(c => c.low));
+        const priorTrend = (priorHigh - priorLow) / priorHigh;
+
+        // Require at least 5% downtrend before the pattern
+        if (priorTrend < 0.05) return null;
+    }
 
     // Find neckline (resistance between shoulders)
     const necklineCandles = candles.slice(leftShoulder.index, rightShoulder.index);
@@ -131,9 +168,9 @@ function detectInverseHeadAndShoulders(candles) {
 
     // Calculate confidence
     let confidence = 5;
-    if (shoulderDiff < 0.01) confidence += 2;
-    if (head.price < leftShoulder.price * 0.95) confidence += 1;
-    if (breakout) confidence += 2;
+    if (shoulderDiff < 0.02) confidence += 2; // Shoulders very equal
+    if (head.price < leftShoulder.price * 0.95) confidence += 1; // Clear head
+    if (breakout) confidence += 2; // Neckline broken
 
     // Volume confirmation
     const avgVolume = candles.slice(-20).reduce((sum, c) => sum + c.volume, 0) / 20;
@@ -141,6 +178,7 @@ function detectInverseHeadAndShoulders(candles) {
     const volumeConfirmed = recentVolume > avgVolume * 1.5;
     if (volumeConfirmed) confidence += 1;
 
+    // Only return if breakout occurred AND confidence is high
     if (!breakout || confidence < 7.0) return null;
 
     const target = neckline + (neckline - head.price);
