@@ -256,25 +256,44 @@ function detectDoubleBottom(candles) {
     // Look at last 2 swing lows
     const [trough1, trough2] = swingLows.slice(-2);
 
-    // Troughs should be within 2% of each other
+    // VALIDATION 1: Troughs should be within 2% of each other
     const troughDiff = Math.abs(trough1.price - trough2.price) / trough1.price;
     if (troughDiff > 0.02) return null;
 
-    // Find peak between troughs
+    // VALIDATION 2: Check for downtrend BEFORE the pattern
+    // Double bottom should form at the END of a downtrend, not in an uptrend
+    const lookbackStart = Math.max(0, trough1.index - 50);
+    const priorCandles = candles.slice(lookbackStart, trough1.index);
+    if (priorCandles.length > 10) {
+        const priorHigh = Math.max(...priorCandles.map(c => c.high));
+        const priorLow = Math.min(...priorCandles.map(c => c.low));
+        const priorTrend = (priorHigh - priorLow) / priorHigh;
+
+        // Require at least 5% downtrend before the pattern
+        if (priorTrend < 0.05) return null;
+    }
+
+    // VALIDATION 3: Troughs should be at similar levels (support)
+    // Both troughs should be lower than the peak between them by at least 3%
     const peakCandles = candles.slice(trough1.index, trough2.index);
     if (peakCandles.length === 0) return null;
 
     const peak = Math.max(...peakCandles.map(c => c.high));
+    const avgTrough = (trough1.price + trough2.price) / 2;
+    const troughToPeakRise = (peak - avgTrough) / avgTrough;
+
+    // Require at least 3% rise between troughs
+    if (troughToPeakRise < 0.03) return null;
 
     const currentPrice = candles[candles.length - 1].close;
     const breakout = currentPrice > peak;
 
     // Calculate confidence
     let confidence = 5;
-    if (troughDiff < 0.01) confidence += 2;
-    if (breakout) confidence += 2;
+    if (troughDiff < 0.01) confidence += 2; // Troughs very equal
+    if (breakout) confidence += 2; // Resistance broken
 
-    // Volume: second trough should have lower volume (weakness)
+    // Volume: second trough should have lower volume (capitulation)
     const vol1 = candles[trough1.index].volume;
     const vol2 = candles[trough2.index].volume;
     const volumeDivergence = vol2 < vol1 * 0.8;
@@ -286,9 +305,9 @@ function detectDoubleBottom(candles) {
     const volumeConfirmed = recentVolume > avgVolume * 1.5;
     if (volumeConfirmed) confidence += 1;
 
+    // Only return if breakout occurred AND confidence is high
     if (!breakout || confidence < 7.0) return null;
 
-    const avgTrough = (trough1.price + trough2.price) / 2;
     const target = peak + (peak - avgTrough);
 
     return {
