@@ -174,15 +174,34 @@ function detectDoubleTop(candles) {
     // Look at last 2 swing highs
     const [peak1, peak2] = swingHighs.slice(-2);
 
-    // Peaks should be within 2% of each other
+    // VALIDATION 1: Peaks should be within 2% of each other
     const peakDiff = Math.abs(peak1.price - peak2.price) / peak1.price;
     if (peakDiff > 0.02) return null;
 
-    // Find trough between peaks
+    // VALIDATION 2: Check for uptrend BEFORE the pattern
+    // Double top should form at the END of an uptrend, not in a downtrend
+    const lookbackStart = Math.max(0, peak1.index - 50);
+    const priorCandles = candles.slice(lookbackStart, peak1.index);
+    if (priorCandles.length > 10) {
+        const priorLow = Math.min(...priorCandles.map(c => c.low));
+        const priorHigh = Math.max(...priorCandles.map(c => c.high));
+        const priorTrend = (priorHigh - priorLow) / priorLow;
+
+        // Require at least 5% uptrend before the pattern
+        if (priorTrend < 0.05) return null;
+    }
+
+    // VALIDATION 3: Peaks should be at similar levels (resistance)
+    // Both peaks should be higher than the trough between them by at least 3%
     const troughCandles = candles.slice(peak1.index, peak2.index);
     if (troughCandles.length === 0) return null;
 
     const trough = Math.min(...troughCandles.map(c => c.low));
+    const avgPeak = (peak1.price + peak2.price) / 2;
+    const peakToTroughDrop = (avgPeak - trough) / avgPeak;
+
+    // Require at least 3% drop between peaks
+    if (peakToTroughDrop < 0.03) return null;
 
     const currentPrice = candles[candles.length - 1].close;
     const breakout = currentPrice < trough;
@@ -204,9 +223,9 @@ function detectDoubleTop(candles) {
     const volumeConfirmed = recentVolume > avgVolume * 1.5;
     if (volumeConfirmed) confidence += 1;
 
+    // Only return if breakout occurred AND confidence is high
     if (!breakout || confidence < 7.0) return null;
 
-    const avgPeak = (peak1.price + peak2.price) / 2;
     const target = trough - (avgPeak - trough);
 
     return {
