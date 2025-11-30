@@ -70,7 +70,17 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
         const content = response.data.choices[0].message.content;
 
         // Extract JSON from response (handle markdown code blocks and malformed JSON)
-        let jsonMatch = content.match(/\[[\s\S]*\]/);
+        // Try multiple extraction methods
+        let jsonMatch = content.match(/\[[\s\S]*?\]/); // Non-greedy match
+
+        if (!jsonMatch) {
+            // Try to find JSON between code blocks
+            const codeBlockMatch = content.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/);
+            if (codeBlockMatch) {
+                jsonMatch = [codeBlockMatch[1]];
+            }
+        }
+
         if (!jsonMatch) {
             console.warn(`Free AI returned no valid JSON for ${symbol}`);
             return [];
@@ -78,22 +88,31 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
 
         let filtered = [];
         try {
-            // Try to parse the JSON
+            // Try to parse the JSON as-is first
             filtered = JSON.parse(jsonMatch[0]);
         } catch (parseError) {
             // If parsing fails, try to clean up common issues
             console.warn(`Free AI JSON parse error for ${symbol}, attempting cleanup...`);
 
             try {
-                // Remove trailing commas, fix common issues
                 let cleanedJson = jsonMatch[0]
                     .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
                     .replace(/'/g, '"') // Replace single quotes with double quotes
-                    .replace(/(\w+):/g, '"$1":'); // Add quotes to unquoted keys
+                    .replace(/(\w+):/g, '"$1":') // Add quotes to unquoted keys
+                    .replace(/\n/g, ' ') // Remove newlines
+                    .replace(/\r/g, '') // Remove carriage returns
+                    .trim();
+
+                // Remove any text after the closing bracket
+                const closingBracketIndex = cleanedJson.lastIndexOf(']');
+                if (closingBracketIndex !== -1) {
+                    cleanedJson = cleanedJson.substring(0, closingBracketIndex + 1);
+                }
 
                 filtered = JSON.parse(cleanedJson);
             } catch (cleanupError) {
                 console.error(`Free AI JSON cleanup failed for ${symbol}:`, cleanupError.message);
+                console.error(`Problematic JSON snippet:`, jsonMatch[0].substring(0, 200));
                 return []; // Give up, return empty array
             }
         }
