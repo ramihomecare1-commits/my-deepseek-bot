@@ -371,26 +371,45 @@ function detectTriangle(candles) {
     if (candles.length < 40) return null;
 
     const { swingHighs, swingLows } = findSwingPoints(candles);
-    if (swingHighs.length < 3 || swingLows.length < 3) return null;
 
-    // Get recent swings
-    const recentHighs = swingHighs.slice(-3);
-    const recentLows = swingLows.slice(-3);
+    // VALIDATION 1: Require at least 4 swing points (2 on each trendline)
+    if (swingHighs.length < 4 || swingLows.length < 4) return null;
+
+    // Get recent swings (last 4 for better validation)
+    const recentHighs = swingHighs.slice(-4);
+    const recentLows = swingLows.slice(-4);
+
+    // VALIDATION 2: Pattern duration should be reasonable (15-50 candles)
+    const patternDuration = recentHighs[3].index - recentHighs[0].index;
+    if (patternDuration < 15 || patternDuration > 50) return null;
 
     // Check for ascending triangle (higher lows, flat resistance)
     const lowsAscending = recentLows[1].price > recentLows[0].price &&
-        recentLows[2].price > recentLows[1].price;
-    const highsFlat = Math.abs(recentHighs[2].price - recentHighs[0].price) / recentHighs[0].price < 0.02;
+        recentLows[2].price > recentLows[1].price &&
+        recentLows[3].price > recentLows[2].price;
+    const highsFlat = Math.abs(recentHighs[3].price - recentHighs[0].price) / recentHighs[0].price < 0.02;
 
     // Check for descending triangle (lower highs, flat support)
     const highsDescending = recentHighs[1].price < recentHighs[0].price &&
-        recentHighs[2].price < recentHighs[1].price;
-    const lowsFlat = Math.abs(recentLows[2].price - recentLows[0].price) / recentLows[0].price < 0.02;
+        recentHighs[2].price < recentHighs[1].price &&
+        recentHighs[3].price < recentHighs[2].price;
+    const lowsFlat = Math.abs(recentLows[3].price - recentLows[0].price) / recentLows[0].price < 0.02;
 
     // Check for symmetrical triangle (converging)
     const converging = lowsAscending && highsDescending;
 
+    // VALIDATION 3: Must be one of the three triangle types
     if (!lowsAscending && !highsDescending && !converging) return null;
+
+    // VALIDATION 4: For symmetrical, ensure trendlines are actually converging
+    if (converging) {
+        const initialRange = recentHighs[0].price - recentLows[0].price;
+        const finalRange = recentHighs[3].price - recentLows[3].price;
+        const convergenceRatio = finalRange / initialRange;
+
+        // Range should narrow by at least 30%
+        if (convergenceRatio > 0.7) return null;
+    }
 
     let triangleType, breakoutLevel, direction;
 
@@ -404,14 +423,18 @@ function detectTriangle(candles) {
         direction = 'bearish';
     } else {
         triangleType = 'symmetrical';
-        breakoutLevel = (recentHighs[2].price + recentLows[2].price) / 2;
+        breakoutLevel = (recentHighs[3].price + recentLows[3].price) / 2;
         direction = 'neutral';
     }
 
     const currentPrice = candles[candles.length - 1].close;
-    const breakout = (direction === 'bullish' && currentPrice > breakoutLevel) ||
-        (direction === 'bearish' && currentPrice < breakoutLevel);
 
+    // VALIDATION 5: Breakout must be significant (2%+ from boundary)
+    const breakoutDistance = direction === 'bullish' ?
+        (currentPrice - breakoutLevel) / breakoutLevel :
+        (breakoutLevel - currentPrice) / breakoutLevel;
+
+    const breakout = breakoutDistance > 0.02;
     if (!breakout) return null;
 
     // Calculate confidence
@@ -419,12 +442,13 @@ function detectTriangle(candles) {
     if (triangleType === 'ascending' || triangleType === 'descending') confidence += 1;
     if (breakout) confidence += 2;
 
-    // Volume confirmation
+    // Volume confirmation (higher threshold for triangles)
     const avgVolume = candles.slice(-20).reduce((sum, c) => sum + c.volume, 0) / 20;
     const recentVolume = candles.slice(-3).reduce((sum, c) => sum + c.volume, 0) / 3;
     const volumeConfirmed = recentVolume > avgVolume * 1.8;
     if (volumeConfirmed) confidence += 2;
 
+    // Only return if confidence is high
     if (confidence < 7.0) return null;
 
     const height = Math.abs(recentHighs[0].price - recentLows[0].price);
