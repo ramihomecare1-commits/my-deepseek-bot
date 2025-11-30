@@ -475,7 +475,7 @@ function detectTriangle(candles) {
  * @returns {Object|null} Pattern or null
  */
 function detectCandlestickPatterns(candles) {
-    if (candles.length < 3) return null;
+    if (candles.length < 10) return null; // Need more candles for trend context
 
     const [c1, c2, c3] = candles.slice(-3);
     const current = c3;
@@ -485,69 +485,108 @@ function detectCandlestickPatterns(candles) {
     const upperWick = current.high - Math.max(current.open, current.close);
     const lowerWick = Math.min(current.open, current.close) - current.low;
 
-    // Hammer (Bullish reversal)
+    // VALIDATION: Check prior trend (last 5 candles before current)
+    const priorCandles = candles.slice(-8, -3);
+    const priorTrendBullish = priorCandles.filter(c => c.close > c.open).length >= 3;
+    const priorTrendBearish = priorCandles.filter(c => c.close < c.open).length >= 3;
+
+    // Hammer (Bullish reversal) - requires prior downtrend
     if (lowerWick > body * 2 && upperWick < body * 0.3 && current.close > current.open) {
+        // VALIDATION: Hammer should appear after downtrend
+        if (!priorTrendBearish) return null;
+
         return {
             type: 'CANDLESTICK_PATTERN',
             pattern: 'hammer',
             direction: 'bullish',
             currentPrice: current.close,
-            confidence: 8.5,
-            description: 'Hammer - Bullish reversal'
+            confidence: 8.0, // Slightly lower, needs confirmation
+            description: 'Hammer - Bullish reversal (needs confirmation)',
+            needsConfirmation: true
         };
     }
 
-    // Shooting Star (Bearish reversal)
+    // Shooting Star (Bearish reversal) - requires prior uptrend
     if (upperWick > body * 2 && lowerWick < body * 0.3 && current.close < current.open) {
+        // VALIDATION: Shooting star should appear after uptrend
+        if (!priorTrendBullish) return null;
+
         return {
             type: 'CANDLESTICK_PATTERN',
             pattern: 'shooting_star',
             direction: 'bearish',
             currentPrice: current.close,
-            confidence: 8.5,
-            description: 'Shooting Star - Bearish reversal'
+            confidence: 8.0, // Slightly lower, needs confirmation
+            description: 'Shooting Star - Bearish reversal (needs confirmation)',
+            needsConfirmation: true
         };
     }
 
-    // Bullish Engulfing
+    // Bullish Engulfing - requires prior downtrend
     if (c2.close < c2.open && // Previous red
         current.close > current.open && // Current green
         current.open < c2.close && // Opens below previous close
         current.close > c2.open) { // Closes above previous open
+
+        // VALIDATION: Should appear after downtrend
+        if (!priorTrendBearish) return null;
+
+        // VALIDATION: Engulfing should be significant (>1% range)
+        const engulfingSize = (current.close - current.open) / current.open;
+        if (engulfingSize < 0.01) return null;
+
         return {
             type: 'CANDLESTICK_PATTERN',
             pattern: 'bullish_engulfing',
             direction: 'bullish',
             currentPrice: current.close,
-            confidence: 9.0,
-            description: 'Bullish Engulfing - Strong reversal'
+            confidence: 8.5,
+            description: 'Bullish Engulfing - Strong reversal',
+            needsConfirmation: false
         };
     }
 
-    // Bearish Engulfing
+    // Bearish Engulfing - requires prior uptrend
     if (c2.close > c2.open && // Previous green
         current.close < current.open && // Current red
         current.open > c2.close && // Opens above previous close
         current.close < c2.open) { // Closes below previous open
+
+        // VALIDATION: Should appear after uptrend
+        if (!priorTrendBullish) return null;
+
+        // VALIDATION: Engulfing should be significant (>1% range)
+        const engulfingSize = (current.open - current.close) / current.open;
+        if (engulfingSize < 0.01) return null;
+
         return {
             type: 'CANDLESTICK_PATTERN',
             pattern: 'bearish_engulfing',
             direction: 'bearish',
             currentPrice: current.close,
-            confidence: 9.0,
-            description: 'Bearish Engulfing - Strong reversal'
+            confidence: 8.5,
+            description: 'Bearish Engulfing - Strong reversal',
+            needsConfirmation: false
         };
     }
 
-    // Doji (Indecision)
+    // Doji (Indecision) - only at extremes
     if (body < range * 0.1) {
+        // VALIDATION: Doji should appear at trend extremes
+        const priorRange = Math.max(...priorCandles.map(c => c.high)) - Math.min(...priorCandles.map(c => c.low));
+        const priorRangePercent = priorRange / priorCandles[0].close;
+
+        // Only alert if there was significant prior movement (5%+)
+        if (priorRangePercent < 0.05) return null;
+
         return {
             type: 'CANDLESTICK_PATTERN',
             pattern: 'doji',
             direction: 'neutral',
             currentPrice: current.close,
-            confidence: 7.5, // Lower confidence - needs confirmation
-            description: 'Doji - Indecision, watch for next candle'
+            confidence: 7.0, // Lower confidence - needs confirmation
+            description: 'Doji - Indecision at trend extreme (watch next candle)',
+            needsConfirmation: true
         };
     }
 
