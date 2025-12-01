@@ -81,17 +81,17 @@ async function initDynamoDB() {
  */
 function convertDatesToTimestamps(obj) {
   if (obj === null || obj === undefined) return obj;
-  
+
   // Handle Date objects
   if (obj instanceof Date) {
     return obj.getTime();
   }
-  
+
   // Handle arrays
   if (Array.isArray(obj)) {
     return obj.map(item => convertDatesToTimestamps(item));
   }
-  
+
   // Handle objects
   if (typeof obj === 'object') {
     const converted = {};
@@ -100,7 +100,7 @@ function convertDatesToTimestamps(obj) {
     }
     return converted;
   }
-  
+
   // Return primitives as-is
   return obj;
 }
@@ -126,30 +126,30 @@ async function storeAIEvaluation(evaluation) {
     }
 
     const timestamp = evaluation.timestamp ? new Date(evaluation.timestamp).getTime() : Date.now();
-    
+
     // NEW: Deduplicate evaluation data using Free Tier AI (optional)
     let dataToStore = evaluation.data;
     if (config.ENABLE_EVALUATION_DEDUPLICATION && evaluation.symbol) {
       try {
         const { compareAndExtractNewInfo } = getComparisonService();
         const comparison = await compareAndExtractNewInfo(evaluation.data, evaluation.symbol);
-        
+
         if (!comparison.isNew) {
           // Evaluation is duplicate, skip storage
           return true; // Return success but don't actually store
         }
-        
+
         dataToStore = comparison.newData || evaluation.data;
       } catch (dedupeError) {
         console.error(`⚠️ Evaluation deduplication failed for ${evaluation.symbol}:`, dedupeError.message);
         // Continue with original data on error
       }
     }
-    
+
     // Limit context data to prevent large items (DynamoDB item limit is 400KB)
     const MAX_NEWS_ARTICLES = 5;
     const MAX_CONTEXT_SIZE = 10000;
-    
+
     let limitedContext = {};
     if (evaluation.context) {
       // Limit news articles
@@ -162,7 +162,7 @@ async function storeAIEvaluation(evaluation) {
             publishedAt: article.publishedAt || null
           }));
       }
-      
+
       // Don't store full historical data - it's too large
       if (evaluation.context.historicalData) {
         limitedContext.historicalData = {
@@ -170,7 +170,7 @@ async function storeAIEvaluation(evaluation) {
           summary: 'Historical data available'
         };
       }
-      
+
       // Limit total context size
       const contextString = JSON.stringify(limitedContext);
       if (contextString.length > MAX_CONTEXT_SIZE) {
@@ -180,7 +180,7 @@ async function storeAIEvaluation(evaluation) {
         };
       }
     }
-    
+
     // Convert all Date objects to timestamps before storing
     const item = {
       symbol: evaluation.symbol,
@@ -273,7 +273,7 @@ async function storeNews(news) {
     }
 
     const publishedAt = news.publishedAt ? new Date(news.publishedAt).getTime() : Date.now();
-    
+
     // Check if article already exists
     try {
       const existing = await docClient.send(new GetCommand({
@@ -282,7 +282,7 @@ async function storeNews(news) {
       }));
 
       if (existing.Item) {
-      // Update existing article to add new links
+        // Update existing article to add new links
         const tradeIds = existing.Item.tradeIds || [];
         if (news.tradeId && !tradeIds.includes(news.tradeId)) {
           tradeIds.push(news.tradeId);
@@ -295,13 +295,13 @@ async function storeNews(news) {
               ':now': Date.now()
             }
           }));
-      }
-      return true;
+        }
+        return true;
       }
     } catch (getError) {
       // If get fails, continue to insert
     }
-    
+
     const item = {
       url: news.url,
       symbol: news.symbol,
@@ -341,7 +341,7 @@ async function storeNewsBatch(newsArray) {
       const connected = await initDynamoDB();
       if (!connected) return;
     }
-    
+
     // Group by symbol for deduplication
     const groupedBySymbol = {};
     for (const news of newsArray) {
@@ -359,18 +359,18 @@ async function storeNewsBatch(newsArray) {
     for (const [symbol, articles] of Object.entries(groupedBySymbol)) {
       let finalArticles = articles;
 
-      // NEW: Deduplicate with Free Tier AI
-      if (config.ENABLE_NEWS_DEDUPLICATION) {
-        try {
-          const { compareAndExtractNewNews } = getComparisonService();
-          const comparison = await compareAndExtractNewNews(articles, symbol);
-          finalArticles = comparison.newArticles || [];
-          totalSkipped += comparison.duplicateCount || 0;
-        } catch (dedupeError) {
-          console.error(`⚠️ News deduplication failed for ${symbol}:`, dedupeError.message);
-          // Continue with original articles on error
-        }
-      }
+      // DISABLED: Free AI deduplication (now using simple date+title matching in newsStorageService)
+      // if (config.ENABLE_NEWS_DEDUPLICATION) {
+      //   try {
+      //     const { compareAndExtractNewNews } = getComparisonService();
+      //     const comparison = await compareAndExtractNewNews(articles, symbol);
+      //     finalArticles = comparison.newArticles || [];
+      //     totalSkipped += comparison.duplicateCount || 0;
+      //   } catch (dedupeError) {
+      //     console.error(`⚠️ News deduplication failed for ${symbol}:`, dedupeError.message);
+      //     // Continue with original articles on error
+      //   }
+      // }
 
       // DynamoDB batch write (max 25 items per batch)
       const batches = [];
@@ -383,13 +383,13 @@ async function storeNewsBatch(newsArray) {
           PutRequest: {
             Item: {
               url: news.url,
-          symbol: news.symbol,
-          symbols: news.symbol ? [news.symbol] : [],
-          tradeIds: news.tradeId ? [news.tradeId] : [],
-          title: news.title,
-          source: news.source,
+              symbol: news.symbol,
+              symbols: news.symbol ? [news.symbol] : [],
+              tradeIds: news.tradeId ? [news.tradeId] : [],
+              title: news.title,
+              source: news.source,
               publishedAt: news.publishedAt ? new Date(news.publishedAt).getTime() : Date.now(),
-          content: news.content || '',
+              content: news.content || '',
               storedAt: Date.now(),
               createdAt: Date.now()
             }
@@ -543,13 +543,13 @@ async function getStorageStats() {
     // Note: DynamoDB scan with COUNT is expensive for large tables
     // For production, consider using CloudWatch metrics or maintaining a counter
     const [evalResult, newsResult] = await Promise.all([
-      docClient.send(new ScanCommand({ 
-        TableName: TABLES.AI_EVALUATIONS, 
-        Select: 'COUNT' 
+      docClient.send(new ScanCommand({
+        TableName: TABLES.AI_EVALUATIONS,
+        Select: 'COUNT'
       })).catch(() => ({ Count: 0 })),
-      docClient.send(new ScanCommand({ 
-        TableName: TABLES.NEWS_ARTICLES, 
-        Select: 'COUNT' 
+      docClient.send(new ScanCommand({
+        TableName: TABLES.NEWS_ARTICLES,
+        Select: 'COUNT'
       })).catch(() => ({ Count: 0 }))
     ]);
 
@@ -575,8 +575,8 @@ function getHistoricalWinRate(symbol, closedTrades = []) {
   }
 
   // Filter trades for this symbol
-  const symbolTrades = closedTrades.filter(t => 
-    t.symbol === symbol && 
+  const symbolTrades = closedTrades.filter(t =>
+    t.symbol === symbol &&
     t.status === 'CLOSED' &&
     typeof t.profitLoss !== 'undefined'
   );
@@ -603,8 +603,8 @@ function getCoinPerformanceMetrics(symbol, closedTrades = []) {
     return null;
   }
 
-  const symbolTrades = closedTrades.filter(t => 
-    t.symbol === symbol && 
+  const symbolTrades = closedTrades.filter(t =>
+    t.symbol === symbol &&
     t.status === 'CLOSED' &&
     typeof t.profitLoss !== 'undefined'
   );
@@ -616,10 +616,10 @@ function getCoinPerformanceMetrics(symbol, closedTrades = []) {
   const wins = symbolTrades.filter(t => (t.profitLoss || 0) > 0);
   const losses = symbolTrades.filter(t => (t.profitLoss || 0) <= 0);
 
-  const avgWin = wins.length > 0 
-    ? wins.reduce((sum, t) => sum + (t.profitLoss || 0), 0) / wins.length 
+  const avgWin = wins.length > 0
+    ? wins.reduce((sum, t) => sum + (t.profitLoss || 0), 0) / wins.length
     : 0;
-  const avgLoss = losses.length > 0 
+  const avgLoss = losses.length > 0
     ? Math.abs(losses.reduce((sum, t) => sum + (t.profitLoss || 0), 0) / losses.length)
     : 0;
   const winRate = wins.length / symbolTrades.length;
