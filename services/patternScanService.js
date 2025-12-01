@@ -96,7 +96,7 @@ async function scanCoinForPatterns(symbol) {
                     type: 'PROXIMITY',
                     timeframe,
                     severity: levelWithProximity.distancePercent < 1 ? 'critical' : 'watch',
-                    message: `Near ${level.type} at $${level.price.toFixed(2)} (${levelWithProximity.distancePercent}% away)`,
+                    message: `Near ${level.type || 'level'} at $${level.price.toFixed(2)} (${levelWithProximity.distancePercent.toFixed(2)}% away)`,
                     price: level.price,
                     distance: levelWithProximity.distancePercent
                 });
