@@ -1143,8 +1143,8 @@ class ProfessionalTradingBot {
 
     // Start background news filter job (saves premium AI costs)
     try {
-      const newsFilterJob = require('../jobs/newsFilterJob');
-      await newsFilterJob.start();
+      const { startNewsFilterJob } = require('../jobs/newsFilterJob');
+      await startNewsFilterJob();
     } catch (error) {
       console.error('⚠️ Failed to start news filter job:', error.message);
       console.error('   Bot will continue without background news filtering');
