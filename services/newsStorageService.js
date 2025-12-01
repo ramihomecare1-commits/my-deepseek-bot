@@ -1,5 +1,5 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, QueryCommand, BatchWriteCommand } = require('@aws-sdk/lib-dynamodb');
 const { TABLES } = require('../config/awsConfig');
 
 const client = new DynamoDBClient({
@@ -12,6 +12,44 @@ const client = new DynamoDBClient({
 const docClient = DynamoDBDocumentClient.from(client);
 
 const TABLE_NAME = TABLES.NEWS_ARTICLES; // Use existing 'newsArticles' table
+
+/**
+ * Simple date-based deduplication (no AI required)
+ * Filters out articles that are within 24 hours of existing articles
+ * @param {Array} newArticles - New articles to check
+ * @param {Array} existingArticles - Already stored articles
+ * @returns {Array} Filtered unique articles
+ */
+function filterDuplicatesByDate(newArticles, existingArticles) {
+    if (!existingArticles || existingArticles.length === 0) {
+        return newArticles;
+    }
+
+    const uniqueArticles = [];
+    const DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+    for (const newArticle of newArticles) {
+        let isDuplicate = false;
+        const newDate = new Date(newArticle.publishedAt || newArticle.timestamp || Date.now());
+
+        for (const existing of existingArticles) {
+            const existingDate = new Date(existing.publishedAt ? existing.publishedAt * 1000 : existing.timestamp);
+            const timeDiff = Math.abs(newDate - existingDate);
+
+            // If within 24 hours, consider duplicate
+            if (timeDiff < DUPLICATE_WINDOW_MS) {
+                isDuplicate = true;
+                break;
+            }
+        }
+
+        if (!isDuplicate) {
+            uniqueArticles.push(newArticle);
+        }
+    }
+
+    return uniqueArticles;
+}
 
 /**
  * Save filtered news items to DynamoDB (existing newsArticles table)
