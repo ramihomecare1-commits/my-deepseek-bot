@@ -95,7 +95,7 @@ async function saveFilteredNews(symbol, newsItems) {
 
     const storedAt = new Date().toISOString();
     const publishedAtTimestamp = Math.floor(Date.now() / 1000); // Unix timestamp (Number)
-    if (!articles || articles.length === 0) return;
+    if (!newsItems || newsItems.length === 0) return;
 
     try {
         // Get existing articles for date-based deduplication
@@ -103,16 +103,16 @@ async function saveFilteredNews(symbol, newsItems) {
         const existingArticles = await getLatestNews(symbol, 30);
 
         // Simple date-based deduplication (no AI)
-        const uniqueArticles = filterDuplicatesByDate(articles, existingArticles);
+        const uniqueArticles = filterDuplicatesByDate(newsItems, existingArticles);
 
         if (uniqueArticles.length === 0) {
-            console.log(`📰 ${symbol}: All ${articles.length} articles are duplicates (within 24h of existing)`);
+            console.log(`📰 ${symbol}: All ${newsItems.length} articles are duplicates (within 24h of existing)`);
             return;
         }
 
-        const duplicateCount = articles.length - uniqueArticles.length;
+        const duplicateCount = newsItems.length - uniqueArticles.length;
         if (duplicateCount > 0) {
-            console.log(`📰 ${symbol}: ${articles.length} articles → ${uniqueArticles.length} unique (skipped ${duplicateCount} within 24h)`);
+            console.log(`📰 ${symbol}: ${newsItems.length} articles → ${uniqueArticles.length} unique (skipped ${duplicateCount} within 24h)`);
         }
 
         // Prepare items for BatchWriteCommand
