@@ -1141,14 +1141,7 @@ class ProfessionalTradingBot {
     this.isRunning = true;
     console.log('🚀 Starting automated technical analysis scan');
 
-    // Start background news filter job (saves premium AI costs)
-    try {
-      const { startNewsFilterJob } = require('../jobs/newsFilterJob');
-      await startNewsFilterJob();
-    } catch (error) {
-      console.error('⚠️ Failed to start news filter job:', error.message);
-      console.error('   Bot will continue without background news filtering');
-    }
+    // News filter job is started in app.js, no need to start it here
 
     await this.performTechnicalScan();
     this.scheduleNextScan();
