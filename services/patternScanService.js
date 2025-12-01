@@ -72,15 +72,15 @@ async function scanCoinForPatterns(symbol) {
     const timeframes = ['1D', '1W'];
 
     for (const timeframe of timeframes) {
-        const candles = await fetchMexcCandlesBatch([symbol], timeframe);
-        const coinCandles = candles[symbol];
+        // Fetch candles for this symbol and timeframe
+        const candles = await fetchMexcCandlesBatch(`${symbol}USDT`, timeframe, 2000);
 
-        if (!coinCandles || coinCandles.length < 50) continue;
+        if (!candles || candles.length < 50) continue;
 
-        const currentPrice = coinCandles[coinCandles.length - 1].close;
+        const currentPrice = candles[candles.length - 1].close;
 
         // 1. Check Support/Resistance Proximity
-        const srLevels = findSupportResistance(coinCandles);
+        const srLevels = findSupportResistance(candles);
         const allLevels = [
             ...(srLevels.swingLevels?.resistance || []),
             ...(srLevels.swingLevels?.support || [])
@@ -102,12 +102,12 @@ async function scanCoinForPatterns(symbol) {
 
         // 2. Check Chart Patterns
         const patterns = [
-            detectDoubleTop(coinCandles),
-            detectDoubleBottom(coinCandles),
-            detectHeadAndShoulders(coinCandles),
-            detectInverseHeadAndShoulders(coinCandles),
-            detectTriangle(coinCandles),
-            detectCandlestickPatterns(coinCandles)
+            detectDoubleTop(candles),
+            detectDoubleBottom(candles),
+            detectHeadAndShoulders(candles),
+            detectInverseHeadAndShoulders(candles),
+            detectTriangle(candles),
+            detectCandlestickPatterns(candles)
         ].filter(Boolean);
 
         for (const pattern of patterns) {
