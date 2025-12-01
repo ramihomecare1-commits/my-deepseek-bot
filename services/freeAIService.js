@@ -96,11 +96,22 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
 
             try {
                 let cleanedJson = jsonMatch[0]
-                    .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
-                    .replace(/'/g, '"') // Replace single quotes with double quotes
-                    .replace(/(\w+):/g, '"$1":') // Add quotes to unquoted keys
-                    .replace(/\n/g, ' ') // Remove newlines
-                    .replace(/\r/g, '') // Remove carriage returns
+                    // Remove newlines and carriage returns first
+                    .replace(/\r\n/g, ' ')
+                    .replace(/\n/g, ' ')
+                    .replace(/\r/g, '')
+                    // Fix unescaped quotes inside string values (common issue)
+                    // This regex finds quotes that are not preceded by backslash and are inside string values
+                    .replace(/"([^"]*)":\s*"([^"]*)"/g, (match, key, value) => {
+                        // Escape any unescaped quotes in the value
+                        const escapedValue = value.replace(/(?<!\\)"/g, '\\"');
+                        return `"${key}": "${escapedValue}"`;
+                    })
+                    // Remove trailing commas
+                    .replace(/,(\s*[}\]])/g, '$1')
+                    // Replace single quotes with double quotes (if any)
+                    .replace(/'/g, '"')
+                    // Trim whitespace
                     .trim();
 
                 // Remove any text after the closing bracket
@@ -113,7 +124,34 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
             } catch (cleanupError) {
                 console.error(`Free AI JSON cleanup failed for ${symbol}:`, cleanupError.message);
                 console.error(`Problematic JSON snippet:`, jsonMatch[0].substring(0, 200));
-                return []; // Give up, return empty array
+
+                // Last resort: try to extract individual objects manually
+                try {
+                    const objects = [];
+                    const objectRegex = /\{[^{}]*\}/g;
+                    const matches = jsonMatch[0].match(objectRegex);
+
+                    if (matches) {
+                        for (const objStr of matches) {
+                            try {
+                                const obj = JSON.parse(objStr);
+                                objects.push(obj);
+                            } catch (e) {
+                                // Skip malformed objects
+                            }
+                        }
+                    }
+
+                    if (objects.length > 0) {
+                        console.log(`✅ Recovered ${objects.length} objects from malformed JSON`);
+                        filtered = objects;
+                    } else {
+                        return []; // Give up
+                    }
+                } catch (lastResortError) {
+                    console.error(`All JSON recovery attempts failed for ${symbol}`);
+                    return [];
+                }
             }
         }
 
