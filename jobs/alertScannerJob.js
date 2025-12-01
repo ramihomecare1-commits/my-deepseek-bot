@@ -276,33 +276,26 @@ function startAlertScanner() {
     console.log('   📊 Timeframes: 1D + 1W');
     console.log('   🎨 Patterns: H&S, Double Tops/Bottoms, Triangles, Candlesticks');
     console.log('   📊 Filters: Confidence 8.5+, Volume 180%+, 3+ confluence');
+    console.log('   ⏰ Schedule: Daily at 23:40 UTC (20min before candle close)');
     console.log('');
 
-    // Tier 1: BTC/ETH - Every 15 minutes
-    cron.schedule('*/15 * * * *', () => {
+    // All top 20 coins - Once daily at 23:40 UTC (20 minutes before daily candle closes)
+    cron.schedule('40 23 * * *', () => {
         console.log('');
-        console.log('🔍 [15min] Scanning Tier 1 (BTC/ETH)...');
-        scanForAlerts(['BTC', 'ETH'], settings);
-    });
-
-    // Tier 2: Major altcoins - Every 30 minutes
-    cron.schedule('*/30 * * * *', () => {
-        console.log('');
-        console.log('🔍 [30min] Scanning Tier 2 (BNB/SOL/XRP/ADA/DOGE/TRX/AVAX/DOT)...');
-        scanForAlerts(['BNB', 'SOL', 'XRP', 'ADA', 'DOGE', 'TRX', 'AVAX', 'DOT'], settings);
-    });
-
-    // Tier 3: Other top 20 - Every 1 hour
-    cron.schedule('0 * * * *', () => {
-        console.log('');
-        console.log('🔍 [1hr] Scanning Tier 3 (MATIC/LINK/UNI/ATOM/LTC/APT/ARB/OP/INJ/SUI)...');
-        scanForAlerts(['MATIC', 'LINK', 'UNI', 'ATOM', 'LTC', 'APT', 'ARB', 'OP', 'INJ', 'SUI'], settings);
+        console.log('🔍 [DAILY] Scanning all top 20 coins for daily candle patterns...');
+        console.log('   ⏰ Time: 23:40 UTC (20min before daily candle close)');
+        const allCoins = [
+            'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'DOGE', 'TRX', 'AVAX', 'DOT',
+            'MATIC', 'LINK', 'UNI', 'ATOM', 'LTC', 'APT', 'ARB', 'OP', 'INJ', 'SUI'
+        ];
+        scanForAlerts(allCoins, settings);
+    }, {
+        timezone: 'UTC'
     });
 
     console.log('✅ ULTRA-FILTERED alert scanner started!');
-    console.log('   📊 Tier 1 (BTC/ETH): Every 15 minutes');
-    console.log('   📊 Tier 2 (8 coins): Every 30 minutes');
-    console.log('   📊 Tier 3 (10 coins): Every hour');
+    console.log('   📊 All 20 coins: Daily at 23:40 UTC');
+    console.log('   ⏰ Scans 20min before daily candle close (00:00 UTC)');
     console.log('   ⚡ Only CRITICAL and HIGH priority alerts');
     console.log('   🎨 Chart patterns + Level breakouts/tests');
     console.log('');
