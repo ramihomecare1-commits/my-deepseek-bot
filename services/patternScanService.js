@@ -72,8 +72,11 @@ async function scanCoinForPatterns(symbol) {
     const timeframes = ['1D', '1W'];
 
     for (const timeframe of timeframes) {
+        // Map MATIC to POL (MEXC rebrand)
+        const mexcSymbol = symbol === 'MATIC' ? 'POL' : symbol;
+
         // Fetch candles for this symbol and timeframe
-        const candles = await fetchMexcCandlesBatch(`${symbol}USDT`, timeframe, 2000);
+        const candles = await fetchMexcCandlesBatch(`${mexcSymbol}USDT`, timeframe, 2000);
 
         if (!candles || candles.length < 50) continue;
 
