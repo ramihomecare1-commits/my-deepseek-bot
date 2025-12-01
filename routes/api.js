@@ -242,6 +242,54 @@ router.post('/manual-pattern-scan', async (req, res) => {
   }
 });
 
+// Save pattern scan schedule
+router.post('/pattern-scan-schedule', (req, res) => {
+  try {
+    const { frequency, time } = req.body;
+
+    if (!frequency) {
+      return res.status(400).json({
+        success: false,
+        message: 'Frequency is required'
+      });
+    }
+
+    // Save schedule to file (simple JSON storage)
+    const fs = require('fs');
+    const path = require('path');
+    const scheduleFile = path.join(__dirname, '../data/pattern-scan-schedule.json');
+
+    // Ensure data directory exists
+    const dataDir = path.join(__dirname, '../data');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+
+    const schedule = {
+      frequency,
+      time: time || '23:40',
+      enabled: frequency !== 'disabled',
+      updatedAt: new Date().toISOString()
+    };
+
+    fs.writeFileSync(scheduleFile, JSON.stringify(schedule, null, 2));
+
+    console.log(`📊 Pattern scan schedule updated: ${frequency}${time ? ' at ' + time : ''}`);
+
+    res.json({
+      success: true,
+      message: 'Pattern scan schedule saved',
+      schedule
+    });
+  } catch (error) {
+    console.error('Error saving pattern scan schedule:', error);
+    res.status(500).json({
+      success: false,
+      message: `Error saving schedule: ${error.message}`
+    });
+  }
+});
+
 // Add a new endpoint to check Telegram configuration
 router.get('/telegram-status', (req, res) => {
   const config = require('../config/config');
