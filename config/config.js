@@ -129,7 +129,7 @@ const PERFORMANCE_REPORT_INTERVAL = Number(process.env.PERFORMANCE_REPORT_INTERV
 
 // Evaluation / News Deduplication Configuration
 const ENABLE_EVALUATION_DEDUPLICATION = (process.env.ENABLE_EVALUATION_DEDUPLICATION || 'false').toLowerCase() === 'true';
-const ENABLE_NEWS_DEDUPLICATION = (process.env.ENABLE_NEWS_DEDUPLICATION || 'true').toLowerCase() === 'true';
+const ENABLE_NEWS_DEDUPLICATION = (process.env.ENABLE_NEWS_DEDUPLICATION || 'false').toLowerCase() === 'true';
 const EVALUATION_DEDUPLICATION_THRESHOLD = Number(process.env.EVALUATION_DEDUPLICATION_THRESHOLD || 50); // % duplicate to skip
 const NEWS_DEDUPLICATION_THRESHOLD = Number(process.env.NEWS_DEDUPLICATION_THRESHOLD || 70); // % similarity to skip
 
