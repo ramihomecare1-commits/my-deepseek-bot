@@ -72,7 +72,7 @@ function startNewsFilterJob() {
 
             for (const symbol of coins) {
                 try {
-                    const rawNews = await fetchCryptoNews(symbol, 20);
+                    const rawNews = await fetchCryptoNews(symbol, 10);
                     if (rawNews && rawNews.articles && rawNews.articles.length > 0) {
                         const existingHashes = await getExistingNewsHashes(symbol);
                         const filteredNews = await filterNewsWithAI(symbol, rawNews.articles, existingHashes);
