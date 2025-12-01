@@ -26,43 +26,77 @@ async function saveFilteredNews(symbol, newsItems) {
 
     const storedAt = new Date().toISOString();
     const publishedAtTimestamp = Math.floor(Date.now() / 1000); // Unix timestamp (Number)
-    const ttl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days TTL
+    if (!articles || articles.length === 0) return;
 
-    let savedCount = 0;
-    let skippedCount = 0;
+    try {
+        // Get existing articles for date-based deduplication
+        // Fetch more than just the limit for deduplication purposes
+        const existingArticles = await getLatestNews(symbol, 30);
 
-    for (const news of newsItems) {
-        // Skip items without URL (url is the sort key and cannot be empty)
-        if (!news.url || news.url.trim() === '') {
-            skippedCount++;
-            continue;
+        // Simple date-based deduplication (no AI)
+        const uniqueArticles = filterDuplicatesByDate(articles, existingArticles);
+
+        if (uniqueArticles.length === 0) {
+            console.log(`📰 ${symbol}: All ${articles.length} articles are duplicates (within 24h of existing)`);
+            return;
         }
 
-        try {
-            await docClient.send(new PutCommand({
-                TableName: TABLE_NAME,
-                Item: {
-                    symbol,
-                    url: news.url, // Sort key (required, cannot be empty)
-                    title: news.title || 'Untitled',
-                    description: news.summary || '',
-                    source: news.source || 'Unknown',
-                    sentiment: news.sentiment,
-                    relevance: news.relevance,
-                    newsHash: news.hash, // Renamed from 'hash' to avoid reserved keyword
-                    publishedAt: publishedAtTimestamp, // Number (Unix timestamp) for GSI
-                    storedAt: storedAt, // String (ISO) for display
-                    ttl
+        const duplicateCount = articles.length - uniqueArticles.length;
+        if (duplicateCount > 0) {
+            console.log(`📰 ${symbol}: ${articles.length} articles → ${uniqueArticles.length} unique (skipped ${duplicateCount} within 24h)`);
+        }
+
+        // Prepare items for BatchWriteCommand
+        const putRequests = uniqueArticles.map(article => {
+            // Ensure publishedAt is a number (Unix timestamp) for GSI
+            let publishedAtTimestamp;
+            if (article.publishedAt) {
+                const date = new Date(article.publishedAt);
+                publishedAtTimestamp = Math.floor(date.getTime() / 1000);
+            } else {
+                publishedAtTimestamp = Math.floor(Date.now() / 1000);
+            }
+
+            // Ensure URL is present for SK
+            if (!article.url || article.url.trim() === '') {
+                console.warn(`Skipping article for ${symbol} due to missing URL: ${article.title}`);
+                return null; // Skip this item
+            }
+
+            return {
+                PutRequest: {
+                    Item: {
+                        symbol: symbol, // PK
+                        url: article.url, // SK
+                        title: article.title || 'Untitled',
+                        description: article.summary || article.description || '',
+                        source: article.source?.title || article.source || 'Unknown',
+                        sentiment: article.sentiment || 'neutral',
+                        relevance: article.relevanceScore || 0.5, // Renamed from 'relevance' to 'relevanceScore'
+                        newsHash: article.hash, // Assuming 'hash' is available in the incoming article
+                        publishedAt: publishedAtTimestamp, // Number (Unix timestamp) for GSI
+                        storedAt: new Date().toISOString(), // String (ISO) for display
+                        ttl: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60) // 30 days TTL
+                    }
                 }
-            }));
-            savedCount++;
-        } catch (error) {
-            console.error(`Error saving news for ${symbol}:`, error.message);
-        }
-    }
+            };
+        }).filter(Boolean); // Remove nulls from skipped items
 
-    if (skippedCount > 0) {
-        console.log(`⚠️ ${symbol}: Skipped ${skippedCount} news items without URLs`);
+        if (putRequests.length === 0) {
+            console.log(`📰 ${symbol}: No valid articles to save after URL check.`);
+            return;
+        }
+
+        const params = {
+            RequestItems: {
+                [TABLE_NAME]: putRequests
+            }
+        };
+
+        await docClient.send(new BatchWriteCommand(params));
+        console.log(`💾 Stored ${putRequests.length} news articles for ${symbol}`);
+    } catch (error) {
+        console.error(`Error saving news for ${symbol}:`, error.message);
     }
 }
 
