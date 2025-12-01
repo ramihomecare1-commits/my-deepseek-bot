@@ -224,6 +224,24 @@ router.post('/trigger-news-filter', async (req, res) => {
   }
 });
 
+// Manual pattern scan with Telegram report
+router.post('/manual-pattern-scan', async (req, res) => {
+  try {
+    const { executeManualPatternScan } = require('../services/patternScanService');
+
+    console.log('📊 Manual pattern scan requested via API');
+    const result = await executeManualPatternScan();
+
+    res.json(result);
+  } catch (error) {
+    console.error('Pattern scan error:', error);
+    res.status(500).json({
+      success: false,
+      message: `Error running pattern scan: ${error.message}`,
+    });
+  }
+});
+
 // Add a new endpoint to check Telegram configuration
 router.get('/telegram-status', (req, res) => {
   const config = require('../config/config');
