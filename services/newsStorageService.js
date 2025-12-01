@@ -14,8 +14,30 @@ const docClient = DynamoDBDocumentClient.from(client);
 const TABLE_NAME = TABLES.NEWS_ARTICLES; // Use existing 'newsArticles' table
 
 /**
- * Simple date-based deduplication (no AI required)
- * Filters out articles that are within 24 hours of existing articles
+ * Calculate similarity between two strings (0-1, where 1 is identical)
+ * Uses simple character-based comparison
+ */
+function calculateSimilarity(str1, str2) {
+    if (!str1 || !str2) return 0;
+
+    const s1 = str1.toLowerCase().trim();
+    const s2 = str2.toLowerCase().trim();
+
+    if (s1 === s2) return 1;
+
+    // Simple word-based similarity
+    const words1 = new Set(s1.split(/\s+/));
+    const words2 = new Set(s2.split(/\s+/));
+
+    const intersection = new Set([...words1].filter(x => words2.has(x)));
+    const union = new Set([...words1, ...words2]);
+
+    return intersection.size / union.size;
+}
+
+/**
+ * Enhanced date + title similarity deduplication (no AI required)
+ * Filters out articles that are within 24 hours AND have similar titles (>70% match)
  * @param {Array} newArticles - New articles to check
  * @param {Array} existingArticles - Already stored articles
  * @returns {Array} Filtered unique articles
@@ -27,19 +49,28 @@ function filterDuplicatesByDate(newArticles, existingArticles) {
 
     const uniqueArticles = [];
     const DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+    const TITLE_SIMILARITY_THRESHOLD = 0.7; // 70% similar = duplicate
 
     for (const newArticle of newArticles) {
         let isDuplicate = false;
         const newDate = new Date(newArticle.publishedAt || newArticle.timestamp || Date.now());
+        const newTitle = newArticle.title || '';
 
         for (const existing of existingArticles) {
             const existingDate = new Date(existing.publishedAt ? existing.publishedAt * 1000 : existing.timestamp);
             const timeDiff = Math.abs(newDate - existingDate);
 
-            // If within 24 hours, consider duplicate
+            // Check if within 24 hours
             if (timeDiff < DUPLICATE_WINDOW_MS) {
-                isDuplicate = true;
-                break;
+                // Within time window - now check title similarity
+                const similarity = calculateSimilarity(newTitle, existing.title || '');
+
+                if (similarity >= TITLE_SIMILARITY_THRESHOLD) {
+                    // Same time window + similar title = duplicate
+                    isDuplicate = true;
+                    break;
+                }
+                // Different titles within 24h = keep both (different news events)
             }
         }
 
