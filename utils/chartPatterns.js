@@ -212,6 +212,15 @@ function detectDoubleTop(candles) {
     // Look at last 2 swing highs
     const [peak1, peak2] = swingHighs.slice(-2);
 
+    // VALIDATION 0: Second peak must be recent (within last 20% of candles)
+    // This prevents detecting old historical patterns
+    const recentThreshold = candles.length - Math.floor(candles.length * 0.2);
+    if (peak2.index < recentThreshold) return null;
+
+    // VALIDATION 0.5: Peaks should be separated by at least 5 candles
+    // Prevents detecting noise as double tops
+    if (Math.abs(peak2.index - peak1.index) < 5) return null;
+
     // VALIDATION 1: Peaks should be within 2% of each other
     const peakDiff = Math.abs(peak1.price - peak2.price) / peak1.price;
     if (peakDiff > 0.02) return null;
