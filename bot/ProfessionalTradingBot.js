@@ -130,8 +130,23 @@ console.error = function (...args) {
       return String(arg);
     }).join(' ');
 
-    // Only send if it looks like a real error (not just warnings)
-    if (errorMessage && errorMessage.length > 0) {
+    // Filter out temporary/expected errors that shouldn't spam Telegram
+    const shouldSkipTelegram =
+      // Temporary API errors (502, 503, 504)
+      /status code 50[234]/.test(errorMessage) ||
+      /temporarily unavailable/.test(errorMessage) ||
+      // Timeouts
+      /timeout/i.test(errorMessage) ||
+      /ETIMEDOUT/.test(errorMessage) ||
+      /ECONNABORTED/.test(errorMessage) ||
+      // Rate limits (expected behavior)
+      /rate limit/i.test(errorMessage) ||
+      /429/.test(errorMessage) ||
+      // Warning-level messages (not actual errors)
+      errorMessage.startsWith('⚠️');
+
+    // Only send if it looks like a real error (not warnings or temporary issues)
+    if (errorMessage && errorMessage.length > 0 && !shouldSkipTelegram) {
       // Use addLogEntry which handles Telegram notifications
       addLogEntry(errorMessage, 'error').catch(err => {
         // Silently fail - don't break console.error

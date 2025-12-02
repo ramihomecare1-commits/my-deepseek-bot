@@ -172,8 +172,14 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
             console.error(`❌ Free AI authentication failed for ${symbol}: Invalid API key`);
         } else if (error.response?.status === 429) {
             console.warn(`⚠️ Free AI rate limited for ${symbol}, skipping filtering`);
+        } else if (error.response?.status === 502 || error.response?.status === 503 || error.response?.status === 504) {
+            // Temporary server errors - don't spam notifications
+            console.warn(`⚠️ Free AI service temporarily unavailable for ${symbol} (${error.response.status}), will retry later`);
+        } else if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+            console.warn(`⚠️ Free AI request timeout for ${symbol}, skipping`);
         } else {
-            console.error(`Free AI filtering failed for ${symbol}:`, error.message);
+            // Only log unexpected errors
+            console.error(`⚠️ Free AI filtering failed for ${symbol}:`, error.message);
         }
         return [];
     }
