@@ -92,8 +92,22 @@ async function scanCoinForPatterns(symbol) {
         for (const level of allLevels) {
             const levelWithProximity = checkProximity(level, currentPrice);
             if (levelWithProximity.isNear) {
-                // Determine if it's support or resistance based on price position
-                const levelType = currentPrice > level.price ? 'support' : 'resistance';
+                // Determine if it's support or resistance based on approach direction
+                // Look at last 5 candles to determine trend direction
+                const recentCandles = candles.slice(-5);
+                const priceChange = recentCandles[recentCandles.length - 1].close - recentCandles[0].close;
+                const isMovingUp = priceChange > 0;
+
+                // If moving UP towards a level ABOVE current price → resistance
+                // If moving DOWN towards a level BELOW current price → support
+                let levelType;
+                if (currentPrice < level.price) {
+                    // Level is above current price
+                    levelType = isMovingUp ? 'resistance' : 'resistance'; // Always resistance if above
+                } else {
+                    // Level is below current price
+                    levelType = 'support'; // Always support if below
+                }
 
                 findings.alerts.push({
                     type: 'PROXIMITY',
