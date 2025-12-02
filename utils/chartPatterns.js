@@ -620,6 +620,114 @@ function detectCandlestickPatterns(candles) {
     return null;
 }
 
+/**
+ * Get swing window size based on timeframe
+ * @param {string} timeframe - Timeframe (1D, 1W, 4H, etc.)
+ * @returns {number} Lookback period
+ */
+function getSwingWindow(timeframe) {
+    const windows = {
+        '1D': 20,  // 20 trading days (~1 month)
+        '1W': 8,   // 8 weeks (~2 months)
+        '4H': 30,  // 30 periods
+        '1H': 40   // 40 periods
+    };
+    return windows[timeframe] || 14; // Default to 14
+}
+
+/**
+ * Calculate RSI using Wilder's smoothing method
+ * @param {Array} candles - Historical candles
+ * @param {number} period - RSI period (default 14)
+ * @returns {Array} RSI values with timestamps
+ */
+function calculateRSI(candles, period = 14) {
+    if (candles.length < period + 10) return [];
+
+    const rsiValues = [];
+    let gains = 0;
+    let losses = 0;
+
+    // Calculate initial average gain/loss
+    for (let i = 1; i <= period; i++) {
+        const change = candles[i].close - candles[i - 1].close;
+        if (change > 0) {
+            gains += change;
+        } else {
+            losses += Math.abs(change);
+        }
+    }
+
+    let avgGain = gains / period;
+    let avgLoss = losses / period;
+
+    // Calculate RSI for subsequent candles using Wilder's smoothing
+    for (let i = period; i < candles.length; i++) {
+        const change = candles[i].close - candles[i - 1].close;
+        const currentGain = change > 0 ? change : 0;
+        const currentLoss = change < 0 ? Math.abs(change) : 0;
+
+        // Wilder's smoothing: (previous avg * (period - 1) + current) / period
+        avgGain = ((avgGain * (period - 1)) + currentGain) / period;
+        avgLoss = ((avgLoss * (period - 1)) + currentLoss) / period;
+
+        // Calculate RS and RSI
+        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+        const rsi = 100 - (100 / (1 + rs));
+
+        rsiValues.push({
+            index: i,
+            value: rsi,
+            timestamp: candles[i].timestamp || candles[i].time
+        });
+    }
+
+    return rsiValues;
+}
+
+/**
+ * Find swing points in RSI values
+ * @param {Array} rsiValues - RSI values from calculateRSI
+ * @param {number} window - Lookback window
+ * @returns {Object} RSI swing highs and lows
+ */
+function findRSISwingPoints(rsiValues, window = 10) {
+    const swingHighs = [];
+    const swingLows = [];
+
+    for (let i = window; i < rsiValues.length - window; i++) {
+        const current = rsiValues[i];
+        let isSwingHigh = true;
+        let isSwingLow = true;
+
+        // Check if current is higher/lower than surrounding RSI values
+        for (let j = i - window; j <= i + window; j++) {
+            if (j === i) continue;
+            if (rsiValues[j].value >= current.value) isSwingHigh = false;
+            if (rsiValues[j].value <= current.value) isSwingLow = false;
+        }
+
+        if (isSwingHigh) {
+            swingHighs.push({
+                index: current.index,
+                value: current.value,
+                timestamp: current.timestamp,
+                type: 'high'
+            });
+        }
+        if (isSwingLow) {
+            swingLows.push({
+                index: current.index,
+                value: current.value,
+                timestamp: current.timestamp,
+                type: 'low'
+            });
+        }
+    }
+
+    return { swingHighs, swingLows };
+}
+
 module.exports = {
     detectHeadAndShoulders,
     detectInverseHeadAndShoulders,
@@ -627,5 +735,10 @@ module.exports = {
     detectDoubleBottom,
     detectTriangle,
     detectCandlestickPatterns,
-    findSwingPoints
+    findSwingPoints,
+    findSupportResistance,
+    getSwingWindow,
+    calculateRSI,
+    findRSISwingPoints
 };
+

@@ -8,6 +8,7 @@ const {
     detectTriangle,
     detectCandlestickPatterns
 } = require('./alertService');
+const { detectRSIDivergence } = require('../utils/rsiDivergence');
 const { sendTelegramMessage } = require('./notificationService');
 
 /**
@@ -131,16 +132,38 @@ async function scanCoinForPatterns(symbol) {
             detectCandlestickPatterns(candles)
         ].filter(Boolean);
 
+        // 3. Check RSI Divergence
+        const rsiDivergences = detectRSIDivergence(candles, timeframe);
+        if (rsiDivergences && rsiDivergences.length > 0) {
+            patterns.push(...rsiDivergences);
+        }
+
         for (const pattern of patterns) {
             // Use specific pattern name (e.g., "hammer", "bullish_engulfing") instead of generic "CANDLESTICK_PATTERN"
             const patternName = pattern.pattern || pattern.type;
             const formattedName = patternName.replace(/_/g, ' ').toUpperCase();
 
+            // Format message based on pattern type
+            let message;
+            if (pattern.type === 'RSI_DIVERGENCE') {
+                // RSI divergence: include RSI value and invalidation level
+                message = `RSI ${pattern.direction.toUpperCase()} DIVERGENCE (RSI: ${pattern.currentRSI.toFixed(1)})`;
+                if (pattern.invalidationLevel) {
+                    message += ` - Stop: $${pattern.invalidationLevel.toFixed(2)}`;
+                }
+            } else {
+                // Regular patterns
+                message = `${formattedName} (${pattern.direction})`;
+                if (pattern.invalidationLevel) {
+                    message += ` - Stop: $${pattern.invalidationLevel.toFixed(2)}`;
+                }
+            }
+
             findings.alerts.push({
                 type: 'PATTERN',
                 timeframe,
                 severity: pattern.confidence >= 8.5 ? 'critical' : 'watch',
-                message: `${formattedName} (${pattern.direction})`,
+                message: message,
                 pattern: pattern.type,
                 confidence: pattern.confidence
             });
