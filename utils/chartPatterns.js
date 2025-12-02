@@ -736,7 +736,6 @@ module.exports = {
     detectTriangle,
     detectCandlestickPatterns,
     findSwingPoints,
-    findSupportResistance,
     getSwingWindow,
     calculateRSI,
     findRSISwingPoints

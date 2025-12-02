@@ -1,13 +1,13 @@
 const { fetchMexcCandlesBatch } = require('./mexcDataService');
-const { findSupportResistance, addVolumeConfirmation, checkProximity } = require('../utils/patternDetector');
+const { addVolumeConfirmation, checkProximity, findSupportResistance } = require('../utils/patternDetector');
 const {
-    detectHeadAndShoulders,
-    detectInverseHeadAndShoulders,
     detectDoubleTop,
     detectDoubleBottom,
+    detectHeadAndShoulders,
+    detectInverseHeadAndShoulders,
     detectTriangle,
     detectCandlestickPatterns
-} = require('./alertService');
+} = require('../utils/chartPatterns');
 const { detectRSIDivergence } = require('../utils/rsiDivergence');
 const { sendTelegramMessage } = require('./notificationService');
 
