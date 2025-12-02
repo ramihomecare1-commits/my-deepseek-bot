@@ -92,13 +92,17 @@ async function scanCoinForPatterns(symbol) {
         for (const level of allLevels) {
             const levelWithProximity = checkProximity(level, currentPrice);
             if (levelWithProximity.isNear) {
+                // Determine if it's support or resistance based on price position
+                const levelType = currentPrice > level.price ? 'support' : 'resistance';
+
                 findings.alerts.push({
                     type: 'PROXIMITY',
                     timeframe,
                     severity: levelWithProximity.distancePercent < 1 ? 'critical' : 'watch',
-                    message: `Near ${level.type || 'level'} at $${level.price.toFixed(2)} (${levelWithProximity.distancePercent.toFixed(2)}% away)`,
+                    message: `Near ${levelType} at $${level.price.toFixed(2)} (${levelWithProximity.distancePercent.toFixed(2)}% away)`,
                     price: level.price,
-                    distance: levelWithProximity.distancePercent
+                    distance: levelWithProximity.distancePercent,
+                    levelType: levelType
                 });
             }
         }
