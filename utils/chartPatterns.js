@@ -253,10 +253,18 @@ function detectDoubleTop(candles) {
     const currentPrice = candles[candles.length - 1].close;
     const breakout = currentPrice < trough;
 
+    // VALIDATION 4: Pattern must be forming NOW (not already broken down)
+    // Current price should be near the resistance (within 5% of peaks) or just starting to break
+    const distanceFromPeaks = Math.abs(currentPrice - avgPeak) / avgPeak;
+    if (distanceFromPeaks > 0.05 && !breakout) return null; // Too far from pattern
+
+    // If already broken down significantly (>3% below trough), pattern is old news
+    if (currentPrice < trough * 0.97) return null;
+
     // Calculate confidence
-    let confidence = 5;
-    if (peakDiff < 0.01) confidence += 2; // Peaks very equal
-    if (breakout) confidence += 2; // Support broken
+    let confidence = 6;
+    if (peakDiff < 0.01) confidence += 1; // Peaks very equal
+    if (breakout) confidence += 2; // Support broken (confirmed pattern)
 
     // Volume: second peak should have lower volume (weakness)
     const vol1 = candles[peak1.index].volume;
@@ -268,10 +276,10 @@ function detectDoubleTop(candles) {
     const avgVolume = candles.slice(-20).reduce((sum, c) => sum + c.volume, 0) / 20;
     const recentVolume = candles.slice(-3).reduce((sum, c) => sum + c.volume, 0) / 3;
     const volumeConfirmed = recentVolume > avgVolume * 1.5;
-    if (volumeConfirmed) confidence += 1;
+    if (volumeConfirmed && breakout) confidence += 1;
 
-    // Only return if breakout occurred AND confidence is high
-    if (!breakout || confidence < 7.0) return null;
+    // Require minimum confidence
+    if (confidence < 7.0) return null;
 
     const target = trough - (avgPeak - trough);
 
@@ -285,7 +293,8 @@ function detectDoubleTop(candles) {
         confidence: Math.min(confidence, 10),
         volumeConfirmed,
         volumeDivergence,
-        volumeRatio: parseFloat((recentVolume / avgVolume).toFixed(2))
+        volumeRatio: parseFloat((recentVolume / avgVolume).toFixed(2)),
+        breakoutConfirmed: breakout
     };
 }
 
