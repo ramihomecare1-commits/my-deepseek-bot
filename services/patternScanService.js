@@ -114,11 +114,15 @@ async function scanCoinForPatterns(symbol) {
         ].filter(Boolean);
 
         for (const pattern of patterns) {
+            // Use specific pattern name (e.g., "hammer", "bullish_engulfing") instead of generic "CANDLESTICK_PATTERN"
+            const patternName = pattern.pattern || pattern.type;
+            const formattedName = patternName.replace(/_/g, ' ').toUpperCase();
+
             findings.alerts.push({
                 type: 'PATTERN',
                 timeframe,
                 severity: pattern.confidence >= 8.5 ? 'critical' : 'watch',
-                message: `${pattern.type.replace(/_/g, ' ')} (${pattern.direction})`,
+                message: `${formattedName} (${pattern.direction})`,
                 pattern: pattern.type,
                 confidence: pattern.confidence
             });

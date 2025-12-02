@@ -141,8 +141,8 @@ async function saveFilteredNews(symbol, newsItems) {
                         description: article.summary || article.description || '',
                         source: article.source?.title || article.source || 'Unknown',
                         sentiment: article.sentiment || 'neutral',
-                        relevance: article.relevanceScore || 0.5, // Renamed from 'relevance' to 'relevanceScore'
-                        newsHash: article.hash, // Assuming 'hash' is available in the incoming article
+                        relevance: article.relevanceScore || 0.5,
+                        newsHash: article.hash,
                         publishedAt: publishedAtTimestamp, // Number (Unix timestamp) for GSI
                         storedAt: new Date().toISOString(), // String (ISO) for display
                         ttl: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60) // 30 days TTL
@@ -151,19 +151,31 @@ async function saveFilteredNews(symbol, newsItems) {
             };
         }).filter(Boolean); // Remove nulls from skipped items
 
-        if (putRequests.length === 0) {
+        // Remove duplicates by URL (DynamoDB will reject duplicate keys in batch)
+        const seenUrls = new Set();
+        const deduplicatedRequests = putRequests.filter(req => {
+            const url = req.PutRequest.Item.url;
+            if (seenUrls.has(url)) {
+                console.warn(`Skipping duplicate URL in batch: ${url}`);
+                return false;
+            }
+            seenUrls.add(url);
+            return true;
+        });
+
+        if (deduplicatedRequests.length === 0) {
             console.log(`📰 ${symbol}: No valid articles to save after URL check.`);
             return;
         }
 
         const params = {
             RequestItems: {
-                [TABLE_NAME]: putRequests
+                [TABLE_NAME]: deduplicatedRequests
             }
         };
 
         await docClient.send(new BatchWriteCommand(params));
-        console.log(`💾 Stored ${putRequests.length} news articles for ${symbol}`);
+        console.log(`💾 Stored ${deduplicatedRequests.length} news articles for ${symbol}`);
     } catch (error) {
         console.error(`Error saving news for ${symbol}:`, error.message);
     }
