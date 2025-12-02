@@ -254,12 +254,21 @@ function detectDoubleTop(candles) {
     const breakout = currentPrice < trough;
 
     // VALIDATION 4: Pattern must be forming NOW (not already broken down)
-    // Current price should be near the resistance (within 5% of peaks) or just starting to break
+    // Reject if price has moved too far from the pattern area
     const distanceFromPeaks = Math.abs(currentPrice - avgPeak) / avgPeak;
-    if (distanceFromPeaks > 0.05 && !breakout) return null; // Too far from pattern
+    const distanceFromTrough = currentPrice < trough ? (trough - currentPrice) / trough : 0;
 
-    // If already broken down significantly (>3% below trough), pattern is old news
-    if (currentPrice < trough * 0.97) return null;
+    // If price is far from the pattern zone, it's old news
+    if (distanceFromPeaks > 0.10) return null; // More than 10% away from peaks
+    if (distanceFromTrough > 0.01) return null; // More than 1% below trough (already broken down)
+
+    // Pattern must be either:
+    // 1. Still forming (price near peaks, within 5%)
+    // 2. Just starting to break (price at or just below trough, within 1%)
+    const isForming = distanceFromPeaks <= 0.05;
+    const isJustBreaking = breakout && distanceFromTrough <= 0.01;
+
+    if (!isForming && !isJustBreaking) return null;
 
     // Calculate confidence
     let confidence = 6;
