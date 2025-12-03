@@ -237,38 +237,79 @@ function generateTelegramReport(results) {
             report += `🤖 AI MARKET ANALYSIS: \n\n`;
             report += `${results.aiSummary} \n\n`;
         } else {
-            // Fallback to basic format if AI fails
+            // Fallback to basic format if AI fails (with metadata)
             report += `🔴 CRITICAL ALERTS(${results.critical.length}): \n`;
             for (const coin of results.critical) {
                 const priceStr = coin.currentPrice ? ` @$${coin.currentPrice.toFixed(2)} ` : '';
                 report += `\n💎 ${coin.symbol}${priceStr}: \n`;
                 for (const alert of coin.alerts.filter(a => a.severity === 'critical')) {
-                    report += `  •[${alert.timeframe}] ${alert.message} \n`;
+                    let alertLine = `  [${alert.timeframe}] ${alert.message}`;
+
+                    if (alert.confidence) {
+                        alertLine += ` (Conf: ${alert.confidence.toFixed(1)})`;
+                    }
+
+                    if (alert.volumeConfirmed) {
+                        alertLine += ` | Vol: ✓`;
+                        if (alert.volumeRatio) alertLine += ` ${alert.volumeRatio.toFixed(1)}x`;
+                    }
+
+                    if (alert.marketStructure && alert.marketStructure.trend !== 'ranging') {
+                        const { trend, strength, aligned } = alert.marketStructure;
+                        const symbol = aligned ? '✓' : '✗';
+                        alertLine += ` | ${trend.toUpperCase()} ${symbol} (${strength}/10)`;
+                    }
+
+                    if (alert.confluence && alert.confluence.hasConfluence) {
+                        alertLine += ` | Confluence: ${alert.confluence.direction.toUpperCase()} ✓✓`;
+                    }
+
+                    report += `${alertLine} \n`;
                 }
             }
             report += `\n`;
         }
     }
 
-    // Watch List - Group by coin with better formatting
+    // Watch List - Show all metadata
     if (results.watchList.length > 0) {
         report += `⚠️ WATCH LIST(${results.watchList.length}): \n\n`;
         for (const coin of results.watchList) {
             const priceStr = coin.currentPrice ? ` @$${coin.currentPrice.toFixed(2)} ` : '';
             report += `💎 ${coin.symbol}${priceStr}: \n`;
 
-            // Group alerts by timeframe for clarity
-            const alertsByTimeframe = {};
+            // Show each alert with full details
             for (const alert of coin.alerts) {
-                if (!alertsByTimeframe[alert.timeframe]) {
-                    alertsByTimeframe[alert.timeframe] = [];
-                }
-                alertsByTimeframe[alert.timeframe].push(alert.message);
-            }
+                let alertLine = `  [${alert.timeframe}] ${alert.message}`;
 
-            // Display grouped alerts
-            for (const [timeframe, messages] of Object.entries(alertsByTimeframe)) {
-                report += `  [${timeframe}] ${messages.join(', ')} \n`;
+                // Add confidence if available
+                if (alert.confidence) {
+                    alertLine += ` (Conf: ${alert.confidence.toFixed(1)})`;
+                }
+
+                // Add volume info
+                if (alert.volumeConfirmed) {
+                    alertLine += ` | Vol: ✓`;
+                    if (alert.volumeRatio) {
+                        alertLine += ` ${alert.volumeRatio.toFixed(1)}x`;
+                    }
+                } else if (alert.volumeRatio) {
+                    alertLine += ` | Vol: ${alert.volumeRatio.toFixed(1)}x`;
+                }
+
+                // Add market structure
+                if (alert.marketStructure && alert.marketStructure.trend !== 'ranging') {
+                    const { trend, strength, aligned } = alert.marketStructure;
+                    const symbol = aligned ? '✓' : '✗';
+                    alertLine += ` | ${trend.toUpperCase()} ${symbol} (${strength}/10)`;
+                }
+
+                // Add confluence
+                if (alert.confluence && alert.confluence.hasConfluence) {
+                    alertLine += ` | Confluence: ${alert.confluence.direction.toUpperCase()} ✓✓`;
+                }
+
+                report += `${alertLine} \n`;
             }
             report += `\n`;
         }
