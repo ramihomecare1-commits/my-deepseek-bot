@@ -70,7 +70,6 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
         const content = response.data.choices[0].message.content;
 
         // Extract JSON from response (handle markdown code blocks and malformed JSON)
-        // Try multiple extraction methods
         let jsonMatch = content.match(/\[[\s\S]*?\]/); // Non-greedy match
 
         if (!jsonMatch) {
@@ -82,68 +81,112 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
         }
 
         if (!jsonMatch) {
-            console.warn(`Free AI returned no valid JSON for ${symbol}`);
+            console.warn(`No JSON array found in Free AI response for ${symbol}`);
             return [];
         }
 
         let filtered = [];
+
         try {
-            // Try to parse the JSON as-is first
-            filtered = JSON.parse(jsonMatch[0]);
+            // Clean up common JSON issues
+            let cleanedJson = jsonMatch[0]
+                // Remove newlines and carriage returns
+                .replace(/\r\n/g, ' ')
+                .replace(/\n/g, ' ')
+                .replace(/\r/g, ' ')
+                // Fix unterminated strings by closing them before special chars
+                .replace(/"([^"]*?)$/gm, '"$1"')
+                // Remove trailing commas before closing brackets
+                .replace(/,(\s*[\]}])/g, '$1')
+                // Trim whitespace
+                .trim();
+
+            // If JSON is truncated (doesn't end with ]), try to fix it
+            if (!cleanedJson.endsWith(']')) {
+                // Find the last complete object
+                const lastCompleteObject = cleanedJson.lastIndexOf('}');
+                if (lastCompleteObject !== -1) {
+                    cleanedJson = cleanedJson.substring(0, lastCompleteObject + 1) + ']';
+                } else {
+                    // If no complete objects, return empty
+                    console.warn(`Truncated JSON with no complete objects for ${symbol}`);
+                    return [];
+                }
+            }
+
+            // Remove any text after the closing bracket
+            const closingBracketIndex = cleanedJson.lastIndexOf(']');
+            if (closingBracketIndex !== -1) {
+                cleanedJson = cleanedJson.substring(0, closingBracketIndex + 1);
+            }
+
+            filtered = JSON.parse(cleanedJson);
         } catch (parseError) {
-            // If parsing fails, try to clean up common issues
             console.warn(`Free AI JSON parse error for ${symbol}, attempting cleanup...`);
 
             try {
-                // Clean up common JSON issues
+                // More aggressive cleanup
                 let cleanedJson = jsonMatch[0]
-                    // Remove newlines and carriage returns
                     .replace(/\r\n/g, ' ')
                     .replace(/\n/g, ' ')
                     .replace(/\r/g, ' ')
-                    // Remove trailing commas
-                    .replace(/,(\s*[}\]])/g, '$1')
-                    // Trim whitespace
+                    .replace(/,(\s*[\]}])/g, '$1')
                     .trim();
 
-                // Remove any text after the closing bracket
-                const closingBracketIndex = cleanedJson.lastIndexOf(']');
-                if (closingBracketIndex !== -1) {
-                    cleanedJson = cleanedJson.substring(0, closingBracketIndex + 1);
-                }
+                // Find last complete object and close the array
+                const objects = [];
+                let depth = 0;
+                let currentObj = '';
+                let inString = false;
+                let escapeNext = false;
 
-                filtered = JSON.parse(cleanedJson);
-            } catch (cleanupError) {
-                console.error(`Free AI JSON cleanup failed for ${symbol}:`, cleanupError.message);
-                console.error(`Problematic JSON snippet:`, jsonMatch[0].substring(0, 200));
+                for (let i = 0; i < cleanedJson.length; i++) {
+                    const char = cleanedJson[i];
 
-                // Last resort: try to extract individual objects manually
-                try {
-                    const objects = [];
-                    const objectRegex = /\{[^{}]*\}/g;
-                    const matches = jsonMatch[0].match(objectRegex);
+                    if (escapeNext) {
+                        currentObj += char;
+                        escapeNext = false;
+                        continue;
+                    }
 
-                    if (matches) {
-                        for (const objStr of matches) {
-                            try {
-                                const obj = JSON.parse(objStr);
-                                objects.push(obj);
-                            } catch (e) {
-                                // Skip malformed objects
+                    if (char === '\\') {
+                        escapeNext = true;
+                        currentObj += char;
+                        continue;
+                    }
+
+                    if (char === '"') {
+                        inString = !inString;
+                    }
+
+                    if (!inString) {
+                        if (char === '{') depth++;
+                        if (char === '}') {
+                            depth--;
+                            if (depth === 0 && currentObj.includes('{')) {
+                                currentObj += char;
+                                try {
+                                    const obj = JSON.parse(currentObj);
+                                    objects.push(obj);
+                                    currentObj = '';
+                                } catch (e) {
+                                    // Skip malformed object
+                                    currentObj = '';
+                                }
+                                continue;
                             }
                         }
                     }
 
-                    if (objects.length > 0) {
-                        console.log(`✅ Recovered ${objects.length} objects from malformed JSON`);
-                        filtered = objects;
-                    } else {
-                        return []; // Give up
-                    }
-                } catch (lastResortError) {
-                    console.error(`All JSON recovery attempts failed for ${symbol}`);
-                    return [];
+                    currentObj += char;
                 }
+
+                filtered = objects;
+
+            } catch (cleanupError) {
+                console.error(`Free AI JSON cleanup failed for ${symbol}:`, cleanupError.message);
+                console.error(`Problematic JSON snippet:`, jsonMatch[0].substring(0, 200));
+                return [];
             }
         }
 
