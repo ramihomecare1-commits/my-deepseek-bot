@@ -15,8 +15,11 @@ const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
  */
 async function generateCriticalAlertSummary(criticalAlerts) {
     if (!criticalAlerts || criticalAlerts.length === 0) {
+        console.log('⚠️  No critical alerts to summarize');
         return null;
     }
+
+    console.log(`🤖 Generating AI summary for ${criticalAlerts.length} critical alert(s)...`);
 
     try {
         // Format alerts for AI prompt
@@ -32,6 +35,8 @@ async function generateCriticalAlertSummary(criticalAlerts) {
 
             return `${alert.symbol}:\n  ${alertList}`;
         }).join('\n\n');
+
+        console.log('📝 Alert data formatted for AI prompt');
 
         const prompt = `You are a crypto trading analyst. Analyze these critical pattern alerts and provide a concise market summary.
 
@@ -69,10 +74,17 @@ Keep response under 400 words. Be specific and actionable. Focus on the most imp
         );
 
         const aiSummary = response.data.choices[0].message.content.trim();
+        console.log('✅ AI summary generated successfully');
         return formatAISummary(aiSummary);
 
     } catch (error) {
-        console.error('Error generating AI summary:', error.message);
+        console.error('❌ Error generating AI summary:');
+        console.error('  Message:', error.message);
+        if (error.response) {
+            console.error('  Status:', error.response.status);
+            console.error('  Data:', JSON.stringify(error.response.data, null, 2));
+        }
+        console.error('  Falling back to basic alert format');
         return null;
     }
 }
