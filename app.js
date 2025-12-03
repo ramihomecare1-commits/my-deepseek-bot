@@ -291,8 +291,13 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     // Start alert scanner after bot initialization
     setTimeout(() => {
       try {
+        // Start alert scanner job (daily at 23:40 UTC)
         const { startAlertScanner } = require('./jobs/alertScannerJob');
         startAlertScanner();
+
+        // Start pattern scanner job (configurable interval)
+        const { startPatternScannerJob } = require('./jobs/patternScannerJob');
+        startPatternScannerJob();
       } catch (error) {
         console.error('❌ Failed to start alert scanner:', error.message);
       }
