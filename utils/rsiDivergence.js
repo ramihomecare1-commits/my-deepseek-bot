@@ -97,6 +97,70 @@ function detectRSIDivergence(candles, timeframe = '1D') {
         }
     }
 
+    // HIDDEN BULLISH DIVERGENCE: Price higher low, RSI lower low (uptrend continuation)
+    if (priceLows.length >= 2 && rsiLows.length >= 2) {
+        const [pLow1, pLow2] = priceLows.slice(-2);
+        const [rLow1, rLow2] = rsiLows.slice(-2);
+
+        const recentThreshold = candles.length * 0.7;
+        if (pLow2.index > recentThreshold && rLow2.index > recentThreshold) {
+            // Price making higher low, RSI making lower low (continuation)
+            if (pLow2.price > pLow1.price && rLow2.value < rLow1.value) {
+                let confidence = 8.5; // Higher base confidence for hidden divergences
+
+                // Increase confidence if in strong uptrend
+                if (currentPrice > pLow2.price * 1.05) confidence = 9.0;
+                if (currentPrice > pLow2.price * 1.10) confidence = 9.5;
+
+                divergences.push({
+                    type: 'RSI_DIVERGENCE',
+                    divergenceType: 'hidden',
+                    direction: 'bullish',
+                    confidence: confidence,
+                    pricePoints: [pLow1, pLow2],
+                    rsiPoints: [rLow1, rLow2],
+                    currentRSI: currentRSI,
+                    currentPrice: currentPrice,
+                    isOversold: currentRSI < 30,
+                    invalidationLevel: pLow2.price * 0.98, // 2% below recent low
+                    description: `Hidden Bullish RSI Divergence - Price higher low (${pLow2.price.toFixed(2)}), RSI lower low (${rLow2.value.toFixed(1)}) - Uptrend continuation`
+                });
+            }
+        }
+    }
+
+    // HIDDEN BEARISH DIVERGENCE: Price lower high, RSI higher high (downtrend continuation)
+    if (priceHighs.length >= 2 && rsiHighs.length >= 2) {
+        const [pHigh1, pHigh2] = priceHighs.slice(-2);
+        const [rHigh1, rHigh2] = rsiHighs.slice(-2);
+
+        const recentThreshold = candles.length * 0.7;
+        if (pHigh2.index > recentThreshold && rHigh2.index > recentThreshold) {
+            // Price making lower high, RSI making higher high (continuation)
+            if (pHigh2.price < pHigh1.price && rHigh2.value > rHigh1.value) {
+                let confidence = 8.5; // Higher base confidence for hidden divergences
+
+                // Increase confidence if in strong downtrend
+                if (currentPrice < pHigh2.price * 0.95) confidence = 9.0;
+                if (currentPrice < pHigh2.price * 0.90) confidence = 9.5;
+
+                divergences.push({
+                    type: 'RSI_DIVERGENCE',
+                    divergenceType: 'hidden',
+                    direction: 'bearish',
+                    confidence: confidence,
+                    pricePoints: [pHigh1, pHigh2],
+                    rsiPoints: [rHigh1, rHigh2],
+                    currentRSI: currentRSI,
+                    currentPrice: currentPrice,
+                    isOverbought: currentRSI > 70,
+                    invalidationLevel: pHigh2.price * 1.02, // 2% above recent high
+                    description: `Hidden Bearish RSI Divergence - Price lower high (${pHigh2.price.toFixed(2)}), RSI higher high (${rHigh2.value.toFixed(1)}) - Downtrend continuation`
+                });
+            }
+        }
+    }
+
     return divergences.length > 0 ? divergences : null;
 }
 

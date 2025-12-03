@@ -171,8 +171,9 @@ async function scanCoinForPatterns(symbol) {
             // Format message based on pattern type
             let message;
             if (pattern.type === 'RSI_DIVERGENCE') {
-                // RSI divergence: include RSI value and invalidation level
-                message = `RSI ${pattern.direction.toUpperCase()} DIVERGENCE (RSI: ${pattern.currentRSI.toFixed(1)})`;
+                // RSI divergence: include type (hidden vs regular), RSI value and invalidation level
+                const divType = pattern.divergenceType === 'hidden' ? 'HIDDEN ' : '';
+                message = `${divType}RSI ${pattern.direction.toUpperCase()} DIVERGENCE (RSI: ${pattern.currentRSI.toFixed(1)})`;
                 if (pattern.invalidationLevel) {
                     message += ` - Stop: $${pattern.invalidationLevel.toFixed(2)}`;
                 }
