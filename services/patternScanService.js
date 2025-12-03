@@ -9,6 +9,7 @@ const {
     detectCandlestickPatterns
 } = require('../utils/chartPatterns');
 const { detectRSIDivergence } = require('../utils/rsiDivergence');
+const { analyzeMarketStructure, isPatternAlignedWithStructure } = require('../utils/marketStructure');
 const { generateCriticalAlertSummary } = require('./aiAlertSummary');
 const { sendTelegramMessage } = require('./notificationService');
 
@@ -50,7 +51,7 @@ async function scanAllCoinsForPatterns() {
             // Small delay to avoid rate limiting
             await new Promise(resolve => setTimeout(resolve, 500));
         } catch (error) {
-            console.error(`   ❌ ${symbol}: ${error.message}`);
+            console.error(`   ❌ ${symbol}: ${error.message} `);
             results.noSignals.push(symbol);
         }
     }
@@ -86,7 +87,7 @@ async function scanCoinForPatterns(symbol) {
         const mexcSymbol = symbol === 'MATIC' ? 'POL' : symbol;
 
         // Fetch candles for this symbol and timeframe
-        const candles = await fetchMexcCandlesBatch(`${mexcSymbol}USDT`, timeframe, 2000);
+        const candles = await fetchMexcCandlesBatch(`${mexcSymbol} USDT`, timeframe, 2000);
 
         if (!candles || candles.length < 50) continue;
 
@@ -96,6 +97,9 @@ async function scanCoinForPatterns(symbol) {
         if (!findings.currentPrice) {
             findings.currentPrice = currentPrice;
         }
+
+        // Analyze market structure FIRST (provides context for patterns)
+        const marketStructure = analyzeMarketStructure(candles);
 
         // 1. Check Support/Resistance Proximity
         const srLevels = findSupportResistance(candles);
@@ -161,15 +165,15 @@ async function scanCoinForPatterns(symbol) {
             let message;
             if (pattern.type === 'RSI_DIVERGENCE') {
                 // RSI divergence: include RSI value and invalidation level
-                message = `RSI ${pattern.direction.toUpperCase()} DIVERGENCE (RSI: ${pattern.currentRSI.toFixed(1)})`;
+                message = `RSI ${pattern.direction.toUpperCase()} DIVERGENCE(RSI: ${pattern.currentRSI.toFixed(1)})`;
                 if (pattern.invalidationLevel) {
-                    message += ` - Stop: $${pattern.invalidationLevel.toFixed(2)}`;
+                    message += ` - Stop: $${pattern.invalidationLevel.toFixed(2)} `;
                 }
             } else {
                 // Regular patterns
                 message = `${formattedName} (${pattern.direction})`;
                 if (pattern.invalidationLevel) {
-                    message += ` - Stop: $${pattern.invalidationLevel.toFixed(2)}`;
+                    message += ` - Stop: $${pattern.invalidationLevel.toFixed(2)} `;
                 }
             }
 
@@ -206,22 +210,22 @@ function generateTelegramReport(results) {
     });
 
     let report = `📊 PATTERN SCAN REPORT\n`;
-    report += `🕐 ${timestamp}\n\n`;
+    report += `🕐 ${timestamp} \n\n`;
     report += `📈 SCANNED: ${results.totalCoins} coins\n\n`;
 
     // AI-Enhanced Critical Alerts
     if (results.critical.length > 0) {
         if (results.aiSummary) {
-            report += `🤖 AI MARKET ANALYSIS:\n\n`;
-            report += `${results.aiSummary}\n\n`;
+            report += `🤖 AI MARKET ANALYSIS: \n\n`;
+            report += `${results.aiSummary} \n\n`;
         } else {
             // Fallback to basic format if AI fails
-            report += `🔴 CRITICAL ALERTS (${results.critical.length}):\n`;
+            report += `🔴 CRITICAL ALERTS(${results.critical.length}): \n`;
             for (const coin of results.critical) {
-                const priceStr = coin.currentPrice ? ` @ $${coin.currentPrice.toFixed(2)}` : '';
-                report += `\n💎 ${coin.symbol}${priceStr}:\n`;
+                const priceStr = coin.currentPrice ? ` @$${coin.currentPrice.toFixed(2)} ` : '';
+                report += `\n💎 ${coin.symbol}${priceStr}: \n`;
                 for (const alert of coin.alerts.filter(a => a.severity === 'critical')) {
-                    report += `  • [${alert.timeframe}] ${alert.message}\n`;
+                    report += `  •[${alert.timeframe}] ${alert.message} \n`;
                 }
             }
             report += `\n`;
@@ -230,10 +234,10 @@ function generateTelegramReport(results) {
 
     // Watch List - Group by coin with better formatting
     if (results.watchList.length > 0) {
-        report += `⚠️ WATCH LIST (${results.watchList.length}):\n\n`;
+        report += `⚠️ WATCH LIST(${results.watchList.length}): \n\n`;
         for (const coin of results.watchList) {
-            const priceStr = coin.currentPrice ? ` @ $${coin.currentPrice.toFixed(2)}` : '';
-            report += `💎 ${coin.symbol}${priceStr}:\n`;
+            const priceStr = coin.currentPrice ? ` @$${coin.currentPrice.toFixed(2)} ` : '';
+            report += `💎 ${coin.symbol}${priceStr}: \n`;
 
             // Group alerts by timeframe for clarity
             const alertsByTimeframe = {};
@@ -246,7 +250,7 @@ function generateTelegramReport(results) {
 
             // Display grouped alerts
             for (const [timeframe, messages] of Object.entries(alertsByTimeframe)) {
-                report += `  [${timeframe}] ${messages.join(', ')}\n`;
+                report += `  [${timeframe}] ${messages.join(', ')} \n`;
             }
             report += `\n`;
         }
@@ -254,7 +258,7 @@ function generateTelegramReport(results) {
 
     // No Signals
     if (results.noSignals.length > 0) {
-        report += `✅ NO SIGNALS (${results.noSignals.length}):\n`;
+        report += `✅ NO SIGNALS(${results.noSignals.length}): \n`;
         report += results.noSignals.join(', ');
     }
 
