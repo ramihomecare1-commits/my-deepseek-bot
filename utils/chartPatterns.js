@@ -111,7 +111,9 @@ function detectHeadAndShoulders(candles) {
         rightShoulder: rightShoulder.price,
         target,
         currentPrice,
+        breakout,
         confidence: Math.min(confidence, 10),
+        invalidationLevel: head.price * 1.02, // Stop loss 2% above head
         volumeConfirmed,
         volumeRatio: parseFloat((recentVolume / avgVolume).toFixed(2))
     };
@@ -192,7 +194,9 @@ function detectInverseHeadAndShoulders(candles) {
         rightShoulder: rightShoulder.price,
         target,
         currentPrice,
+        breakout,
         confidence: Math.min(confidence, 10),
+        invalidationLevel: head.price * 0.98, // Stop loss 2% below head
         volumeConfirmed,
         volumeRatio: parseFloat((recentVolume / avgVolume).toFixed(2))
     };
@@ -299,8 +303,11 @@ function detectDoubleTop(candles) {
         support: trough,
         target,
         currentPrice,
+        breakout,
         confidence: Math.min(confidence, 10),
         volumeConfirmed,
+        invalidationLevel: avgPeak * 1.02, // Stop loss 2% above resistance
+        description: `Double Top at $${avgPeak.toFixed(2)} with support at $${trough.toFixed(2)}`,
         volumeDivergence,
         volumeRatio: parseFloat((recentVolume / avgVolume).toFixed(2)),
         breakoutConfirmed: breakout
@@ -382,8 +389,11 @@ function detectDoubleBottom(candles) {
         resistance: peak,
         target,
         currentPrice,
+        breakout,
         confidence: Math.min(confidence, 10),
         volumeConfirmed,
+        invalidationLevel: avgTrough * 0.98, // Stop loss 2% below support
+        description: `Double Bottom at $${avgTrough.toFixed(2)} with resistance at $${peak.toFixed(2)}`,
         volumeDivergence,
         volumeRatio: parseFloat((recentVolume / avgVolume).toFixed(2))
     };
@@ -469,22 +479,30 @@ function detectTriangle(candles) {
     if (triangleType === 'ascending' || triangleType === 'descending') confidence += 1;
     if (breakout) confidence += 2;
 
-    // Volume confirmation (higher threshold for triangles)
+    // Volume confirmation
     const avgVolume = candles.slice(-20).reduce((sum, c) => sum + c.volume, 0) / 20;
     const recentVolume = candles.slice(-3).reduce((sum, c) => sum + c.volume, 0) / 3;
-    const volumeConfirmed = recentVolume > avgVolume * 1.8;
-    if (volumeConfirmed) confidence += 2;
+    const volumeConfirmed = recentVolume > avgVolume * 1.5;
+    if (volumeConfirmed) confidence += 1;
 
     // Only return if confidence is high
     if (confidence < 7.0) return null;
 
-    const height = Math.abs(recentHighs[0].price - recentLows[0].price);
-    const target = direction === 'bullish' ?
-        breakoutLevel + height :
-        breakoutLevel - height;
+    // Calculate invalidation level based on direction
+    let invalidationLevel;
+    if (direction === 'bullish') {
+        // For bullish triangles, stop below the support (ascending lows)
+        invalidationLevel = recentLows[recentLows.length - 1].price * 0.98;
+    } else if (direction === 'bearish') {
+        // For bearish triangles, stop above the resistance (descending highs)
+        invalidationLevel = recentHighs[recentHighs.length - 1].price * 1.02;
+    } else {
+        // For symmetrical, use the midpoint with 2% buffer
+        invalidationLevel = breakoutLevel * (currentPrice > breakoutLevel ? 0.98 : 1.02);
+    }
 
     return {
-        type: 'TRIANGLE_BREAKOUT',
+        type: 'TRIANGLE',
         triangleType,
         direction,
         breakoutLevel,
