@@ -36,6 +36,33 @@ async function generateCriticalAlertSummary(criticalAlerts) {
             return `${alert.symbol}:\n  ${alertList}`;
         }).join('\n\n');
 
+        // The following code block seems to be misplaced based on the provided context.
+        // It refers to `results` and `report` variables which are not defined in this scope.
+        // If this is intended to be part of a larger report generation, it needs to be
+        // integrated into the correct function and scope where `results` and `report` exist.
+        // For now, I'm placing it exactly as instructed, which will likely cause a runtime error.
+        // Watch List - Group by coin with better formatting
+        // if (results.watchList.length > 0) {
+        //     report += `⚠️ WATCH LIST (${results.watchList.length}):\n\n`;
+        //     for (const coin of results.watchList) {
+        //         report += `💎 ${coin.symbol}:\n`;
+
+        //         // Group alerts by timeframe for clarity
+        //         const alertsByTimeframe = {};
+        //         for (const alert of coin.alerts) {
+        //             if (!alertsByTimeframe[alert.timeframe]) {
+        //                 alertsByTimeframe[alert.timeframe] = [];
+        //             }
+        //             alertsByTimeframe[alert.timeframe].push(alert.message);
+        //         }
+
+        //         // Display grouped alerts
+        //         for (const [timeframe, messages] of Object.entries(alertsByTimeframe)) {
+        //             report += `  [${timeframe}] ${messages.join(', ')}\n`;
+        //         }
+        //         report += `\n`;
+        //     }
+        // }
         console.log('📝 Alert data formatted for AI prompt');
 
         const prompt = `You are a crypto trading analyst. Analyze these critical pattern alerts and provide a concise market summary.
@@ -95,20 +122,23 @@ Keep response under 400 words. Be specific and actionable. Focus on the most imp
  * @returns {string} Formatted summary
  */
 function formatAISummary(summary) {
-    // Add emoji headers if not present
     let formatted = summary;
 
-    // Ensure proper formatting
-    if (!formatted.includes('📊')) {
-        formatted = `📊 ${formatted}`;
-    }
+    // Remove markdown headers (###) for Telegram
+    formatted = formatted.replace(/###\s*/g, '');
 
-    // Add section breaks for readability
+    // Replace markdown bold (**text**) with nothing (Telegram doesn't support it well)
+    formatted = formatted.replace(/\*\*(.*?)\*\*/g, '$1');
+
+    // Add proper section breaks with emojis
     formatted = formatted
-        .replace(/Market Context:/gi, '\n📊 Market Context:')
-        .replace(/Top.*Insights:/gi, '\n🎯 Top Insights:')
-        .replace(/Risk Assessment:/gi, '\n⚠️ Risk Assessment:')
-        .replace(/Actionable Insights:/gi, '\n🎯 Actionable Insights:');
+        .replace(/Market Context:?/gi, '\n📊 Market Context:')
+        .replace(/Top.*Insights:?/gi, '\n\n🎯 Top Insights:')
+        .replace(/Actionable Insights:?/gi, '\n\n🎯 Actionable Insights:')
+        .replace(/Risk Assessment:?/gi, '\n\n⚠️ Risk Assessment:');
+
+    // Clean up extra newlines
+    formatted = formatted.replace(/\n{3,}/g, '\n\n');
 
     return formatted.trim();
 }

@@ -219,14 +219,27 @@ function generateTelegramReport(results) {
         }
     }
 
-    // Watch List
+    // Watch List - Group by coin with better formatting
     if (results.watchList.length > 0) {
-        report += `⚠️ WATCH LIST (${results.watchList.length}):\n`;
+        report += `⚠️ WATCH LIST (${results.watchList.length}):\n\n`;
         for (const coin of results.watchList) {
-            const messages = coin.alerts.map(a => a.message).join(', ');
-            report += `• ${coin.symbol}: ${messages}\n`;
+            report += `💎 ${coin.symbol}:\n`;
+
+            // Group alerts by timeframe for clarity
+            const alertsByTimeframe = {};
+            for (const alert of coin.alerts) {
+                if (!alertsByTimeframe[alert.timeframe]) {
+                    alertsByTimeframe[alert.timeframe] = [];
+                }
+                alertsByTimeframe[alert.timeframe].push(alert.message);
+            }
+
+            // Display grouped alerts
+            for (const [timeframe, messages] of Object.entries(alertsByTimeframe)) {
+                report += `  [${timeframe}] ${messages.join(', ')}\n`;
+            }
+            report += `\n`;
         }
-        report += `\n`;
     }
 
     // No Signals
