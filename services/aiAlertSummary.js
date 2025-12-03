@@ -36,33 +36,6 @@ async function generateCriticalAlertSummary(criticalAlerts) {
             return `${alert.symbol}:\n  ${alertList}`;
         }).join('\n\n');
 
-        // The following code block seems to be misplaced based on the provided context.
-        // It refers to `results` and `report` variables which are not defined in this scope.
-        // If this is intended to be part of a larger report generation, it needs to be
-        // integrated into the correct function and scope where `results` and `report` exist.
-        // For now, I'm placing it exactly as instructed, which will likely cause a runtime error.
-        // Watch List - Group by coin with better formatting
-        // if (results.watchList.length > 0) {
-        //     report += `⚠️ WATCH LIST (${results.watchList.length}):\n\n`;
-        //     for (const coin of results.watchList) {
-        //         report += `💎 ${coin.symbol}:\n`;
-
-        //         // Group alerts by timeframe for clarity
-        //         const alertsByTimeframe = {};
-        //         for (const alert of coin.alerts) {
-        //             if (!alertsByTimeframe[alert.timeframe]) {
-        //                 alertsByTimeframe[alert.timeframe] = [];
-        //             }
-        //             alertsByTimeframe[alert.timeframe].push(alert.message);
-        //         }
-
-        //         // Display grouped alerts
-        //         for (const [timeframe, messages] of Object.entries(alertsByTimeframe)) {
-        //             report += `  [${timeframe}] ${messages.join(', ')}\n`;
-        //         }
-        //         report += `\n`;
-        //     }
-        // }
         console.log('📝 Alert data formatted for AI prompt');
 
         const prompt = `You are a crypto trading analyst. Analyze these critical pattern alerts and provide a concise market summary.
