@@ -179,7 +179,9 @@ async function scanCoinForPatterns(symbol) {
                 severity: pattern.confidence >= 8.5 ? 'critical' : 'watch',
                 message: message,
                 pattern: pattern.type,
-                confidence: pattern.confidence
+                confidence: pattern.confidence,
+                volumeConfirmed: pattern.volumeConfirmed || false,
+                volumeRatio: pattern.volumeRatio || null
             });
         }
     }

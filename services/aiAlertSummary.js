@@ -29,6 +29,17 @@ async function generateCriticalAlertSummary(criticalAlerts) {
                 .map(a => {
                     let details = `[${a.timeframe}] ${a.message}`;
                     if (a.confidence) details += ` (Confidence: ${a.confidence.toFixed(1)})`;
+
+                    // Add volume information if available
+                    if (a.volumeConfirmed) {
+                        details += ` | Volume: ✓`;
+                        if (a.volumeRatio) {
+                            details += ` ${a.volumeRatio.toFixed(1)}x`;
+                        }
+                    } else if (a.volumeRatio) {
+                        details += ` | Volume: ${a.volumeRatio.toFixed(1)}x`;
+                    }
+
                     return details;
                 })
                 .join('\n  ');
