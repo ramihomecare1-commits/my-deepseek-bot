@@ -1255,7 +1255,45 @@ router.post('/scanner/run', async (req, res) => {
   }
 });
 
+// Pattern Scanner Settings Endpoints
+const { loadPatternScanSettings, savePatternScanSettings, updateInterval, setEnabled, restartPatternScannerJob } = require('../models/patternScanSettings');
+const { restartPatternScannerJob: restartJob } = require('../jobs/patternScannerJob');
+
+router.get('/pattern-scanner/settings', (req, res) => {
+  try {
+    const settings = loadPatternScanSettings();
+    res.json(settings);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/pattern-scanner/settings', (req, res) => {
+  try {
+    const { enabled, interval } = req.body;
+    let settings = loadPatternScanSettings();
+
+    if (typeof enabled === 'boolean') {
+      settings.enabled = enabled;
+    }
+
+    if (interval) {
+      settings.interval = interval;
+    }
+
+    savePatternScanSettings(settings);
+
+    // Restart job to apply changes
+    restartJob();
+
+    res.json({ success: true, settings });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
 module.exports.addLogEntry = addLogEntry;
+
 module.exports.addMonitoringActivity = addMonitoringActivity;
 module.exports.setMonitoringActive = setMonitoringActive;

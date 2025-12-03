@@ -850,6 +850,52 @@
       color: #f48771;
     }
 
+    /* Toggle Switch Styles */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 24px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #cbd5e1;
+      transition: .4s;
+      border-radius: 24px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+
+    input:checked+.slider {
+      background-color: #22c55e;
+    }
+
+    input:checked+.slider:before {
+      transform: translateX(26px);
+    }
+
     /* Active Trades Dashboard Styles - List View */
     .active-trades-container {
       background: white;
@@ -1156,6 +1202,35 @@
                 <span id="current-mode-pill">AI Mode</span>
                 <span>RSI + Bollinger</span>
                 <span>Multi-Timeframe</span>
+              </div>
+            </div>
+
+            <!-- Pattern Scanner Auto-Schedule Settings -->
+            <div class="action-card" style="margin-top: 16px;">
+              <h4>⏰ Pattern Scanner Auto-Schedule</h4>
+              <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <label style="font-weight: 600; color: #475569;">Enable Auto-Scan</label>
+                  <label class="switch">
+                    <input type="checkbox" id="patternScannerEnabled" onchange="updatePatternScannerSettings()">
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <label style="font-weight: 600; color: #475569; white-space: nowrap;">Interval:</label>
+                  <select id="patternScannerInterval" onchange="updatePatternScannerSettings()"
+                    style="flex: 1; padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(148,163,184,0.4); background: white; color: #0f172a; font-weight: 600;">
+                    <option value="1H">Every 1 Hour</option>
+                    <option value="4H" selected>Every 4 Hours</option>
+                    <option value="6H">Every 6 Hours</option>
+                    <option value="12H">Every 12 Hours</option>
+                    <option value="1D">Daily</option>
+                  </select>
+                </div>
+                <div id="patternScannerStatus"
+                  style="font-size: 0.85em; color: #64748b; text-align: center; padding: 8px; background: rgba(148,163,184,0.1); border-radius: 8px;">
+                  Loading settings...
+                </div>
               </div>
             </div>
           </div>
@@ -1610,6 +1685,65 @@
   </div>
 
   <script>
+    // ===== Pattern Scanner Auto-Schedule Settings =====
+    async function loadPatternScannerSettings() {
+      try {
+        const response = await fetch('/api/pattern-scanner/settings');
+        const settings = await response.json();
+
+        document.getElementById('patternScannerEnabled').checked = settings.enabled;
+        document.getElementById('patternScannerInterval').value = settings.interval;
+
+        updatePatternScannerStatusDisplay(settings);
+      } catch (error) {
+        console.error('Error loading pattern scanner settings:', error);
+        document.getElementById('patternScannerStatus').innerHTML =
+          '<span style="color: #ef4444;">❌ Error loading settings</span>';
+      }
+    }
+
+    async function updatePatternScannerSettings() {
+      const enabled = document.getElementById('patternScannerEnabled').checked;
+      const interval = document.getElementById('patternScannerInterval').value;
+
+      try {
+        const response = await fetch('/api/pattern-scanner/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled, interval })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          updatePatternScannerStatusDisplay(result.settings);
+        } else {
+          throw new Error('Failed to update settings');
+        }
+      } catch (error) {
+        console.error('Error updating pattern scanner settings:', error);
+        document.getElementById('patternScannerStatus').innerHTML =
+          '<span style="color: #ef4444;">❌ Error updating settings</span>';
+      }
+    }
+
+    function updatePatternScannerStatusDisplay(settings) {
+      const statusDiv = document.getElementById('patternScannerStatus');
+
+      if (settings.enabled) {
+        statusDiv.innerHTML = `
+          <span style="color: #22c55e; font-weight: 600;">✅ Enabled</span>
+          <span style="color: #64748b;"> · Runs every ${settings.interval}</span>
+        `;
+      } else {
+        statusDiv.innerHTML = '<span style="color: #94a3b8;">⏸️ Disabled</span>';
+      }
+    }
+
+    // Load settings on page load
+    document.addEventListener('DOMContentLoaded', loadPatternScannerSettings);
+
+    // ===== Existing Code Below =====
     // JavaScript code from the original file would go here
     // For brevity, including the main structure
     let analysisUpdateInterval = null;
