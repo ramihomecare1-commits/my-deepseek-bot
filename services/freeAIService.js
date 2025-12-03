@@ -95,22 +95,14 @@ Return top 10 most relevant, non-duplicate articles. If no relevant news, return
             console.warn(`Free AI JSON parse error for ${symbol}, attempting cleanup...`);
 
             try {
+                // Clean up common JSON issues
                 let cleanedJson = jsonMatch[0]
-                    // Remove newlines and carriage returns first
+                    // Remove newlines and carriage returns
                     .replace(/\r\n/g, ' ')
                     .replace(/\n/g, ' ')
-                    .replace(/\r/g, '')
-                    // Fix unescaped quotes inside string values (common issue)
-                    // This regex finds quotes that are not preceded by backslash and are inside string values
-                    .replace(/"([^"]*)":\s*"([^"]*)"/g, (match, key, value) => {
-                        // Escape any unescaped quotes in the value
-                        const escapedValue = value.replace(/(?<!\\)"/g, '\\"');
-                        return `"${key}": "${escapedValue}"`;
-                    })
+                    .replace(/\r/g, ' ')
                     // Remove trailing commas
                     .replace(/,(\s*[}\]])/g, '$1')
-                    // Replace single quotes with double quotes (if any)
-                    .replace(/'/g, '"')
                     // Trim whitespace
                     .trim();
 
