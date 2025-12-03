@@ -74,7 +74,8 @@ async function scanAllCoinsForPatterns() {
 async function scanCoinForPatterns(symbol) {
     const findings = {
         symbol,
-        alerts: []
+        alerts: [],
+        currentPrice: null
     };
 
     // Fetch candles for 1D and 1W timeframes
@@ -90,6 +91,11 @@ async function scanCoinForPatterns(symbol) {
         if (!candles || candles.length < 50) continue;
 
         const currentPrice = candles[candles.length - 1].close;
+
+        // Store current price (use latest from any timeframe)
+        if (!findings.currentPrice) {
+            findings.currentPrice = currentPrice;
+        }
 
         // 1. Check Support/Resistance Proximity
         const srLevels = findSupportResistance(candles);
@@ -210,7 +216,8 @@ function generateTelegramReport(results) {
             // Fallback to basic format if AI fails
             report += `🔴 CRITICAL ALERTS (${results.critical.length}):\n`;
             for (const coin of results.critical) {
-                report += `\n💎 ${coin.symbol}:\n`;
+                const priceStr = coin.currentPrice ? ` @ $${coin.currentPrice.toFixed(2)}` : '';
+                report += `\n💎 ${coin.symbol}${priceStr}:\n`;
                 for (const alert of coin.alerts.filter(a => a.severity === 'critical')) {
                     report += `  • [${alert.timeframe}] ${alert.message}\n`;
                 }
@@ -223,7 +230,8 @@ function generateTelegramReport(results) {
     if (results.watchList.length > 0) {
         report += `⚠️ WATCH LIST (${results.watchList.length}):\n\n`;
         for (const coin of results.watchList) {
-            report += `💎 ${coin.symbol}:\n`;
+            const priceStr = coin.currentPrice ? ` @ $${coin.currentPrice.toFixed(2)}` : '';
+            report += `💎 ${coin.symbol}${priceStr}:\n`;
 
             // Group alerts by timeframe for clarity
             const alertsByTimeframe = {};
