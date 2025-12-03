@@ -501,6 +501,14 @@ function detectTriangle(candles) {
         invalidationLevel = breakoutLevel * (currentPrice > breakoutLevel ? 0.98 : 1.02);
     }
 
+    // Calculate target based on triangle height
+    const height = Math.abs(recentHighs[0].price - recentLows[0].price);
+    const target = direction === 'bullish' ?
+        breakoutLevel + height :
+        direction === 'bearish' ?
+            breakoutLevel - height :
+            currentPrice; // Neutral symmetrical
+
     return {
         type: 'TRIANGLE',
         triangleType,
@@ -508,8 +516,11 @@ function detectTriangle(candles) {
         breakoutLevel,
         target,
         currentPrice,
+        breakout,
         confidence: Math.min(confidence, 10),
         volumeConfirmed,
+        invalidationLevel,
+        description: `${triangleType.charAt(0).toUpperCase() + triangleType.slice(1)} Triangle breakout`,
         volumeRatio: parseFloat((recentVolume / avgVolume).toFixed(2))
     };
 }
