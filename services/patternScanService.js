@@ -9,6 +9,7 @@ const {
     detectCandlestickPatterns
 } = require('../utils/chartPatterns');
 const { detectRSIDivergence } = require('../utils/rsiDivergence');
+const { generateCriticalAlertSummary } = require('./aiAlertSummary');
 const { sendTelegramMessage } = require('./notificationService');
 
 /**
@@ -55,6 +56,13 @@ async function scanAllCoinsForPatterns() {
     }
 
     console.log(`✅ Scan complete: ${results.critical.length} critical, ${results.watchList.length} watch, ${results.noSignals.length} no signals`);
+
+    // Generate AI summary for critical alerts
+    if (results.critical.length > 0) {
+        console.log('🤖 Generating AI summary for critical alerts...');
+        results.aiSummary = await generateCriticalAlertSummary(results.critical);
+    }
+
     return results;
 }
 
@@ -193,16 +201,22 @@ function generateTelegramReport(results) {
     report += `🕐 ${timestamp}\n\n`;
     report += `📈 SCANNED: ${results.totalCoins} coins\n\n`;
 
-    // Critical Alerts
+    // AI-Enhanced Critical Alerts
     if (results.critical.length > 0) {
-        report += `🔴 CRITICAL ALERTS (${results.critical.length}):\n`;
-        for (const coin of results.critical) {
-            report += `\n💎 ${coin.symbol}:\n`;
-            for (const alert of coin.alerts.filter(a => a.severity === 'critical')) {
-                report += `  • [${alert.timeframe}] ${alert.message}\n`;
+        if (results.aiSummary) {
+            report += `🤖 AI MARKET ANALYSIS:\n\n`;
+            report += `${results.aiSummary}\n\n`;
+        } else {
+            // Fallback to basic format if AI fails
+            report += `🔴 CRITICAL ALERTS (${results.critical.length}):\n`;
+            for (const coin of results.critical) {
+                report += `\n💎 ${coin.symbol}:\n`;
+                for (const alert of coin.alerts.filter(a => a.severity === 'critical')) {
+                    report += `  • [${alert.timeframe}] ${alert.message}\n`;
+                }
             }
+            report += `\n`;
         }
-        report += `\n`;
     }
 
     // Watch List
