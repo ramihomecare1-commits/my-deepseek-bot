@@ -49,6 +49,11 @@ async function generateCriticalAlertSummary(criticalAlerts) {
                         }
                     }
 
+                    // Add confluence information
+                    if (a.confluence && a.confluence.hasConfluence) {
+                        details += ` | Confluence: ${a.confluence.direction.toUpperCase()} ✓✓`;
+                    }
+
                     return details;
                 })
                 .join('\n  ');

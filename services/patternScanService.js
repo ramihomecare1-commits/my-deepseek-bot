@@ -58,9 +58,13 @@ async function scanAllCoinsForPatterns() {
 
     console.log(`✅ Scan complete: ${results.critical.length} critical, ${results.watchList.length} watch, ${results.noSignals.length} no signals`);
 
+    // Calculate multi-timeframe confluence
+    results.critical = calculateTimeframeConfluence(results.critical);
+    results.watchList = calculateTimeframeConfluence(results.watchList);
+
     // Generate AI summary for critical alerts
     if (results.critical.length > 0) {
-        console.log('🤖 Generating AI summary for critical alerts...');
+        console.log(`🤖 Generating AI summary for ${results.critical.length} critical alert(s)...`);
         results.aiSummary = await generateCriticalAlertSummary(results.critical);
     }
 
@@ -322,9 +326,76 @@ async function executeManualPatternScan() {
     }
 }
 
+/**
+ * Calculate multi-timeframe confluence
+ * Detects when patterns align across timeframes and boosts confidence
+ * @param {Array} coinAlerts - Array of coin alert objects
+ * @returns {Array} Updated coin alerts with confluence data
+ */
+function calculateTimeframeConfluence(coinAlerts) {
+    return coinAlerts.map(coinAlert => {
+        const { symbol, alerts } = coinAlert;
+
+        // Group alerts by timeframe
+        const dailyAlerts = alerts.filter(a => a.timeframe === '1D');
+        const weeklyAlerts = alerts.filter(a => a.timeframe === '1W');
+
+        if (dailyAlerts.length === 0 || weeklyAlerts.length === 0) {
+            return coinAlert; // No confluence possible
+        }
+
+        // Check for directional alignment
+        const dailyBullish = dailyAlerts.some(a => a.pattern && a.message &&
+            (a.message.toLowerCase().includes('bullish') || a.message.toLowerCase().includes('bottom')));
+        const dailyBearish = dailyAlerts.some(a => a.pattern && a.message &&
+            (a.message.toLowerCase().includes('bearish') || a.message.toLowerCase().includes('top')));
+
+        const weeklyBullish = weeklyAlerts.some(a => a.pattern && a.message &&
+            (a.message.toLowerCase().includes('bullish') || a.message.toLowerCase().includes('bottom')));
+        const weeklyBearish = weeklyAlerts.some(a => a.pattern && a.message &&
+            (a.message.toLowerCase().includes('bearish') || a.message.toLowerCase().includes('top')));
+
+        // Determine confluence
+        let hasConfluence = false;
+        let confluenceDirection = null;
+        let confluenceBoost = 0;
+
+        if (dailyBullish && weeklyBullish) {
+            hasConfluence = true;
+            confluenceDirection = 'bullish';
+            confluenceBoost = 2.0;
+        } else if (dailyBearish && weeklyBearish) {
+            hasConfluence = true;
+            confluenceDirection = 'bearish';
+            confluenceBoost = 2.0;
+        } else if ((dailyBullish && weeklyBearish) || (dailyBearish && weeklyBullish)) {
+            // Conflicting signals - reduce confidence
+            confluenceBoost = -1.0;
+        }
+
+        // Apply confluence boost to all alerts
+        if (hasConfluence || confluenceBoost !== 0) {
+            alerts.forEach(alert => {
+                if (alert.confidence) {
+                    alert.confidence = Math.max(0, Math.min(10, alert.confidence + confluenceBoost));
+                    alert.confluence = {
+                        hasConfluence,
+                        direction: confluenceDirection,
+                        boost: confluenceBoost
+                    };
+                }
+            });
+        }
+
+        return { ...coinAlert, alerts };
+    });
+}
+
 module.exports = {
     scanAllCoinsForPatterns,
     scanCoinForPatterns,
     generateTelegramReport,
-    executeManualPatternScan
+    executeManualPatternScan,
+    calculateTimeframeConfluence
 };
+```
