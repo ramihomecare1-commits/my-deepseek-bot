@@ -40,6 +40,15 @@ async function generateCriticalAlertSummary(criticalAlerts) {
                         details += ` | Volume: ${a.volumeRatio.toFixed(1)}x`;
                     }
 
+                    // Add market structure context
+                    if (a.marketStructure) {
+                        const { trend, strength, aligned } = a.marketStructure;
+                        if (trend !== 'ranging') {
+                            const alignmentSymbol = aligned ? '✓' : '✗';
+                            details += ` | Structure: ${trend.toUpperCase()} ${alignmentSymbol} (${strength}/10)`;
+                        }
+                    }
+
                     return details;
                 })
                 .join('\n  ');

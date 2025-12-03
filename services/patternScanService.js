@@ -157,6 +157,13 @@ async function scanCoinForPatterns(symbol) {
         }
 
         for (const pattern of patterns) {
+            // Check pattern alignment with market structure
+            const structureAlignment = isPatternAlignedWithStructure(pattern, marketStructure);
+
+            // Adjust confidence based on structure
+            let adjustedConfidence = pattern.confidence + structureAlignment.confidenceAdjustment;
+            adjustedConfidence = Math.max(0, Math.min(10, adjustedConfidence)); // Clamp to 0-10
+
             // Use specific pattern name (e.g., "hammer", "bullish_engulfing") instead of generic "CANDLESTICK_PATTERN"
             const patternName = pattern.pattern || pattern.type;
             const formattedName = patternName.replace(/_/g, ' ').toUpperCase();
@@ -165,27 +172,33 @@ async function scanCoinForPatterns(symbol) {
             let message;
             if (pattern.type === 'RSI_DIVERGENCE') {
                 // RSI divergence: include RSI value and invalidation level
-                message = `RSI ${pattern.direction.toUpperCase()} DIVERGENCE(RSI: ${pattern.currentRSI.toFixed(1)})`;
+                message = `RSI ${pattern.direction.toUpperCase()} DIVERGENCE (RSI: ${pattern.currentRSI.toFixed(1)})`;
                 if (pattern.invalidationLevel) {
-                    message += ` - Stop: $${pattern.invalidationLevel.toFixed(2)} `;
+                    message += ` - Stop: $${pattern.invalidationLevel.toFixed(2)}`;
                 }
             } else {
                 // Regular patterns
                 message = `${formattedName} (${pattern.direction})`;
                 if (pattern.invalidationLevel) {
-                    message += ` - Stop: $${pattern.invalidationLevel.toFixed(2)} `;
+                    message += ` - Stop: $${pattern.invalidationLevel.toFixed(2)}`;
                 }
             }
 
             findings.alerts.push({
                 type: 'PATTERN',
                 timeframe,
-                severity: pattern.confidence >= 8.5 ? 'critical' : 'watch',
+                severity: adjustedConfidence >= 8.5 ? 'critical' : 'watch',
                 message: message,
                 pattern: pattern.type,
-                confidence: pattern.confidence,
+                confidence: adjustedConfidence,
                 volumeConfirmed: pattern.volumeConfirmed || false,
-                volumeRatio: pattern.volumeRatio || null
+                volumeRatio: pattern.volumeRatio || null,
+                // Add market structure context
+                marketStructure: {
+                    trend: marketStructure.trend,
+                    strength: marketStructure.strength,
+                    aligned: structureAlignment.aligned
+                }
             });
         }
     }
