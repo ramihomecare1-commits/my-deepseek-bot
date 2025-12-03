@@ -394,7 +394,6 @@ function calculateTimeframeConfluence(coinAlerts) {
 module.exports = {
     scanAllCoinsForPatterns,
     scanCoinForPatterns,
-    generateTelegramReport,
     executeManualPatternScan,
     calculateTimeframeConfluence
 };
