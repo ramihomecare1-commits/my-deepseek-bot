@@ -70,12 +70,14 @@ async function generateCriticalAlertSummary(criticalAlerts) {
 CRITICAL ALERTS:
 ${alertsText}
 
+IMPORTANT: Each coin shows its CURRENT PRICE in parentheses. Always reference current prices in your analysis, NOT the invalidation/stop levels.
+
 Provide:
-1. Market Context (2-3 sentences about overall market state)
-2. Top 3 Actionable Insights (specific trading recommendations)
+1. Market Context (2-3 sentences about overall market state - mention current prices)
+2. Top 3 Actionable Insights (specific trading recommendations with current price context)
 3. Risk Assessment (key invalidation levels and warnings)
 
-Keep response under 400 words. Be specific and actionable. Focus on the most important patterns.`;
+Keep response under 400 words. Be specific and actionable. Always mention current prices when discussing coins.`;
 
         const response = await axios.post(
             OPENROUTER_API_URL,
