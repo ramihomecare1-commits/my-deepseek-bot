@@ -3,28 +3,27 @@
  * Automatic scheduled pattern scanning with configurable intervals
  */
 
-const cron = require('node-cron');
 const { scanAllCoinsForPatterns, generateTelegramReport } = require('../services/patternScanService');
 const { sendTelegramMessage } = require('../services/notificationService');
 const { loadPatternScanSettings, updateLastRun } = require('../models/patternScanSettings');
 
-let activeJob = null;
+let activeInterval = null;
 
 /**
- * Get cron expression for interval
+ * Get interval in milliseconds
  * @param {string} interval - Interval ('1H', '4H', '6H', '12H', '1D')
- * @returns {string} Cron expression
+ * @returns {number} Interval in milliseconds
  */
-function getCronExpression(interval) {
-    const expressions = {
-        '1H': '0 * * * *',      // Every hour at :00
-        '4H': '0 */4 * * *',    // Every 4 hours
-        '6H': '0 */6 * * *',    // Every 6 hours
-        '12H': '0 */12 * * *',  // Every 12 hours
-        '1D': '0 0 * * *'       // Daily at midnight UTC
+function getIntervalMs(interval) {
+    const intervals = {
+        '1H': 60 * 60 * 1000,           // 1 hour
+        '4H': 4 * 60 * 60 * 1000,       // 4 hours
+        '6H': 6 * 60 * 60 * 1000,       // 6 hours
+        '12H': 12 * 60 * 60 * 1000,     // 12 hours
+        '1D': 24 * 60 * 60 * 1000       // 24 hours
     };
 
-    return expressions[interval] || expressions['4H'];
+    return intervals[interval] || intervals['4H'];
 }
 
 /**
@@ -74,21 +73,21 @@ function startPatternScannerJob() {
         return;
     }
 
-    // Stop existing job if any
-    if (activeJob) {
+    // Stop existing interval if any
+    if (activeInterval) {
         console.log('🔄 Stopping existing pattern scanner job...');
-        activeJob.stop();
-        activeJob = null;
+        clearInterval(activeInterval);
+        activeInterval = null;
     }
 
-    const cronExpression = getCronExpression(settings.interval);
+    const intervalMs = getIntervalMs(settings.interval);
+    const intervalHours = intervalMs / (60 * 60 * 1000);
 
     console.log('');
     console.log('🔍 PATTERN SCANNER SCHEDULER');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`   ✅ Status: ENABLED`);
-    console.log(`   ⏰ Interval: ${settings.interval}`);
-    console.log(`   📊 Cron: ${cronExpression}`);
+    console.log(`   ⏰ Interval: ${settings.interval} (${intervalHours}h)`);
     console.log(`   📊 Coins: ${settings.coins}`);
     console.log(`   🎯 Patterns: RSI Divergence, Double Top/Bottom, H&S, Triangles`);
     console.log(`   📈 Timeframes: 1D + 1W`);
@@ -96,17 +95,20 @@ function startPatternScannerJob() {
     console.log('');
 
     try {
-        activeJob = cron.schedule(cronExpression, () => {
-            console.log(`⏰ [CRON] Pattern scanner triggered at ${new Date().toISOString()}`);
-            runPatternScan();
-        }, {
-            timezone: 'UTC',
-            scheduled: true
-        });
+        // Run immediately on start
+        console.log('🚀 Running initial scan...');
+        runPatternScan();
 
+        // Then run on interval
+        activeInterval = setInterval(() => {
+            console.log(`⏰ [INTERVAL] Pattern scanner triggered at ${new Date().toISOString()}`);
+            runPatternScan();
+        }, intervalMs);
+
+        const nextRun = new Date(Date.now() + intervalMs);
         console.log('✅ Pattern scanner job started!');
-        console.log(`   Next run: ${getNextRunTime(settings.interval)}`);
-        console.log(`   Cron active: ${activeJob ? 'YES' : 'NO'}`);
+        console.log(`   Next run: ${nextRun.toISOString()}`);
+        console.log(`   Interval active: ${activeInterval ? 'YES' : 'NO'}`);
         console.log('');
     } catch (error) {
         console.error('❌ Failed to start pattern scanner job:', error.message);
@@ -117,9 +119,9 @@ function startPatternScannerJob() {
  * Stop pattern scanner job
  */
 function stopPatternScannerJob() {
-    if (activeJob) {
-        activeJob.stop();
-        activeJob = null;
+    if (activeInterval) {
+        clearInterval(activeInterval);
+        activeInterval = null;
         console.log('⏸️  Pattern scanner job stopped');
     }
 }
@@ -130,37 +132,6 @@ function stopPatternScannerJob() {
 function restartPatternScannerJob() {
     stopPatternScannerJob();
     startPatternScannerJob();
-}
-
-/**
- * Get next run time estimate
- * @param {string} interval - Interval setting
- * @returns {string} Next run time
- */
-function getNextRunTime(interval) {
-    const now = new Date();
-    const next = new Date(now);
-
-    switch (interval) {
-        case '1H':
-            next.setHours(next.getHours() + 1, 0, 0, 0);
-            break;
-        case '4H':
-            next.setHours(Math.ceil(next.getHours() / 4) * 4, 0, 0, 0);
-            break;
-        case '6H':
-            next.setHours(Math.ceil(next.getHours() / 6) * 6, 0, 0, 0);
-            break;
-        case '12H':
-            next.setHours(Math.ceil(next.getHours() / 12) * 12, 0, 0, 0);
-            break;
-        case '1D':
-            next.setDate(next.getDate() + 1);
-            next.setHours(0, 0, 0, 0);
-            break;
-    }
-
-    return next.toISOString();
 }
 
 module.exports = {
