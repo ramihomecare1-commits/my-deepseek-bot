@@ -76,7 +76,9 @@ function startPatternScannerJob() {
 
     // Stop existing job if any
     if (activeJob) {
+        console.log('🔄 Stopping existing pattern scanner job...');
         activeJob.stop();
+        activeJob = null;
     }
 
     const cronExpression = getCronExpression(settings.interval);
@@ -86,19 +88,29 @@ function startPatternScannerJob() {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`   ✅ Status: ENABLED`);
     console.log(`   ⏰ Interval: ${settings.interval}`);
+    console.log(`   📊 Cron: ${cronExpression}`);
     console.log(`   📊 Coins: ${settings.coins}`);
     console.log(`   🎯 Patterns: RSI Divergence, Double Top/Bottom, H&S, Triangles`);
     console.log(`   📈 Timeframes: 1D + 1W`);
     console.log(`   🤖 AI Analysis: Enabled for critical alerts`);
     console.log('');
 
-    activeJob = cron.schedule(cronExpression, runPatternScan, {
-        timezone: 'UTC'
-    });
+    try {
+        activeJob = cron.schedule(cronExpression, () => {
+            console.log(`⏰ [CRON] Pattern scanner triggered at ${new Date().toISOString()}`);
+            runPatternScan();
+        }, {
+            timezone: 'UTC',
+            scheduled: true
+        });
 
-    console.log('✅ Pattern scanner job started!');
-    console.log(`   Next run: ${getNextRunTime(settings.interval)}`);
-    console.log('');
+        console.log('✅ Pattern scanner job started!');
+        console.log(`   Next run: ${getNextRunTime(settings.interval)}`);
+        console.log(`   Cron active: ${activeJob ? 'YES' : 'NO'}`);
+        console.log('');
+    } catch (error) {
+        console.error('❌ Failed to start pattern scanner job:', error.message);
+    }
 }
 
 /**
