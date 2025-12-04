@@ -64,8 +64,9 @@ async function runPatternScan() {
 
 /**
  * Start pattern scanner job
+ * @param {boolean} runImmediately - Whether to run scan immediately (default: true)
  */
-function startPatternScannerJob() {
+function startPatternScannerJob(runImmediately = true) {
     const settings = loadPatternScanSettings();
 
     if (!settings.enabled) {
@@ -95,9 +96,11 @@ function startPatternScannerJob() {
     console.log('');
 
     try {
-        // Run immediately on start
-        console.log('🚀 Running initial scan...');
-        runPatternScan();
+        // Run immediately only if requested (not on restart)
+        if (runImmediately) {
+            console.log('🚀 Running initial scan...');
+            runPatternScan();
+        }
 
         // Then run on interval
         activeInterval = setInterval(() => {
@@ -128,10 +131,12 @@ function stopPatternScannerJob() {
 
 /**
  * Restart pattern scanner job (reload settings)
+ * @param {boolean} runImmediately - Whether to run scan immediately (default: false for restart)
  */
-function restartPatternScannerJob() {
+function restartPatternScannerJob(runImmediately = false) {
+    console.log('🔄 Restarting pattern scanner job...');
     stopPatternScannerJob();
-    startPatternScannerJob();
+    startPatternScannerJob(runImmediately);
 }
 
 module.exports = {
