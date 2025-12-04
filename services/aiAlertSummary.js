@@ -58,7 +58,9 @@ async function generateCriticalAlertSummary(criticalAlerts) {
                 })
                 .join('\n  ');
 
-            return `${alert.symbol}:\n  ${alertList}`;
+            // Add current price for context
+            const priceInfo = alert.currentPrice ? ` (Current Price: $${alert.currentPrice.toFixed(2)})` : '';
+            return `${alert.symbol}${priceInfo}:\n  ${alertList}`;
         }).join('\n\n');
 
         console.log('📝 Alert data formatted for AI prompt');
