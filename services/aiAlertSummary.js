@@ -121,7 +121,7 @@ Keep response under 500 words. Be specific with prices and dates (use ${currentD
         const response = await axios.post(
             OPENROUTER_API_URL,
             {
-                model: 'deepseek/deepseek-r1',  // Upgraded to R1 reasoning model
+                model: 'anthropic/claude-3.5-sonnet',  // Switched to Claude 3.5 Sonnet for better quality
                 messages: [
                     {
                         role: 'user',
