@@ -11,6 +11,7 @@ const {
 const { detectRSIDivergence } = require('../utils/rsiDivergence');
 const { analyzeMarketStructure, isPatternAlignedWithStructure } = require('../utils/marketStructure');
 const { detectWyckoffPatterns } = require('../utils/wyckoffPatterns');
+const { detectHarmonicPatterns } = require('../utils/harmonicPatterns');
 const { generateCriticalAlertSummary } = require('./aiAlertSummary');
 const { sendTelegramMessage } = require('./notificationService');
 
@@ -165,6 +166,12 @@ async function scanCoinForPatterns(symbol) {
         const wyckoffPatterns = detectWyckoffPatterns(candles);
         if (wyckoffPatterns && wyckoffPatterns.length > 0) {
             patterns.push(...wyckoffPatterns);
+        }
+
+        // 5. Check Harmonic Patterns (Gartley, Butterfly, Bat)
+        const harmonicPatterns = detectHarmonicPatterns(candles);
+        if (harmonicPatterns && harmonicPatterns.length > 0) {
+            patterns.push(...harmonicPatterns);
         }
 
         for (const pattern of patterns) {
