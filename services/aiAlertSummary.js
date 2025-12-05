@@ -125,13 +125,22 @@ Provide a comprehensive analysis with:
    - Warning signs to watch (volume, momentum, key level breaks)
    - Position sizing recommendations (% of portfolio per trade)
 
-Keep response under 500 words. Be specific with prices and dates (use ${currentDate} as reference). Focus on the most important patterns and forecasts.`;
+**WRITING STYLE:**
+- Use simple, clear language (avoid jargon like "confluence", "invalidation", "retracement")
+- Instead of "confluence" say "multiple signals agree"
+- Instead of "invalidation level" say "stop loss" or "pattern fails if price goes below"
+- Instead of "retracement" say "pullback"
+- Write like you're explaining to a friend, not a textbook
+- Be direct and conversational
+
+Keep response under 600 words (was 500). Be specific with prices and dates (use ${currentDate} as reference). Focus on the most important patterns and forecasts.`;
 
         const response = await axios.post(
             OPENROUTER_API_URL,
             {
                 model: 'anthropic/claude-3.5-sonnet',  // Switched to Claude 3.5 Sonnet for better quality
                 route: 'fallback',  // Prevent trying free models first
+                max_tokens: 800,  // Increased from default to prevent truncation
                 messages: [
                     {
                         role: 'user',
