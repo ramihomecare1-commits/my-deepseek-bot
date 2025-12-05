@@ -111,9 +111,10 @@ Provide a comprehensive analysis with:
    - Use realistic targets based on pattern measurements
 
 4. **Risk Assessment**
-   - Key invalidation levels (the "Stop:" prices from patterns)
-   - Warning signs to watch
-   - Position sizing recommendations
+   - Pattern Invalidation Levels: Explain these are technical pattern failure points (the "Stop:" prices), not necessarily your recommended trade stops
+   - Recommended Trade Stops: Provide realistic stop-loss levels based on current price context (typically 3-5% from entry)
+   - Warning signs to watch (volume, momentum, key level breaks)
+   - Position sizing recommendations (% of portfolio per trade)
 
 Keep response under 500 words. Be specific with prices and dates (use ${currentDate} as reference). Focus on the most important patterns and forecasts.`;
 
