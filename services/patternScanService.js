@@ -319,42 +319,13 @@ function generateTelegramReport(results) {
         }
     }
 
-    alertLine += ` ${alert.volumeRatio.toFixed(1)}x`;
-}
-    } else if (alert.volumeRatio) {
-    alertLine += ` | Vol: ${alert.volumeRatio.toFixed(1)}x`;
-}
-
-// Add market structure
-if (alert.marketStructure && alert.marketStructure.trend !== 'ranging') {
-    const { trend, strength, aligned } = alert.marketStructure;
-    const symbol = aligned ? '✓' : '✗';
-    alertLine += ` | ${trend.toUpperCase()} ${symbol} (${strength}/10)`;
-}
-
-// Add confluence
-if (alert.confluence && alert.confluence.hasConfluence) {
-    alertLine += ` | Confluence: ${alert.confluence.direction.toUpperCase()} ✓✓`;
-}
-
-report += `${alertLine} \n`;
-}
-report += `\n`;
-        }
+    // No Signals section (watch list removed for cleaner reports)
+    if (results.noSignals.length > 0) {
+        report += `✅ NO SIGNALS(${results.noSignals.length}): \n`;
+        report += results.noSignals.join(', ');
     }
 
-// No Signals
-if (results.noSignals.length > 0) {
-    report += `✅ NO SIGNALS(${results.noSignals.length}): \n`;
-    report += results.noSignals.join(', ');
-}
-
-// Truncate if too long (Telegram limit is 4096 chars)
-if (report.length > 4000) {
-    report = report.substring(0, 3950) + '\n\n... (Report truncated)';
-}
-
-return report;
+    return report;
 }
 
 /**
