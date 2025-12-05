@@ -83,6 +83,14 @@ IMPORTANT CONTEXT:
 - "Stop:" levels are INVALIDATION points where the pattern fails - these are NOT price targets
 - Use realistic price targets based on pattern structure, not invalidation levels
 - All forecasts must use dates relative to today (e.g., "by Dec 12" not generic dates)
+- **TIMEFRAME CONFLICTS:** When daily and weekly patterns disagree, LOWER confidence and note the conflict
+  * Example: Daily bullish + Weekly bearish = MEDIUM confidence (not High)
+  * Always mention timeframe conflicts in risk assessment
+- **RSI CONTEXT:** 
+  * Daily RSI < 30 = oversold (bullish for bounce)
+  * Weekly RSI < 40 = oversold (bullish for reversal)
+  * If BOTH oversold = HIGH confidence for reversal
+  * If only daily oversold = MEDIUM confidence (short-term bounce only)
 
 Provide a comprehensive analysis with:
 
@@ -113,6 +121,7 @@ Provide a comprehensive analysis with:
 4. **Risk Assessment**
    - Pattern Invalidation Levels: Explain these are technical pattern failure points (the "Stop:" prices), not necessarily your recommended trade stops
    - Recommended Trade Stops: Provide realistic stop-loss levels based on current price context (typically 3-5% from entry)
+   - **Timeframe Conflicts:** Flag any coins where daily and weekly signals disagree (e.g., "BTC: Daily bullish but weekly bearish - trade with caution")
    - Warning signs to watch (volume, momentum, key level breaks)
    - Position sizing recommendations (% of portfolio per trade)
 
