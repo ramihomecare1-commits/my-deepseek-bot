@@ -311,62 +311,51 @@ function generateTelegramReport(results) {
         }
     }
 
-    // Watch List - Show all metadata
-    if (results.watchList.length > 0) {
-        report += `⚠️ WATCH LIST(${results.watchList.length}): \n\n`;
-        for (const coin of results.watchList) {
-            const priceStr = coin.currentPrice ? ` @$${coin.currentPrice.toFixed(2)} ` : '';
-            report += `💎 ${coin.symbol}${priceStr}: \n`;
+    // Add confidence if available
+    if (alert.confidence) {
+        alertLine += ` (Conf: ${alert.confidence.toFixed(1)})`;
+    }
 
-            // Show each alert with full details
-            for (const alert of coin.alerts) {
-                let alertLine = `  [${alert.timeframe}] ${alert.message}`;
+    // Add volume info
+    if (alert.volumeConfirmed) {
+        alertLine += ` | Vol: ✓`;
+        if (alert.volumeRatio) {
+            alertLine += ` ${alert.volumeRatio.toFixed(1)}x`;
+        }
+    } else if (alert.volumeRatio) {
+        alertLine += ` | Vol: ${alert.volumeRatio.toFixed(1)}x`;
+    }
 
-                // Add confidence if available
-                if (alert.confidence) {
-                    alertLine += ` (Conf: ${alert.confidence.toFixed(1)})`;
-                }
+    // Add market structure
+    if (alert.marketStructure && alert.marketStructure.trend !== 'ranging') {
+        const { trend, strength, aligned } = alert.marketStructure;
+        const symbol = aligned ? '✓' : '✗';
+        alertLine += ` | ${trend.toUpperCase()} ${symbol} (${strength}/10)`;
+    }
 
-                // Add volume info
-                if (alert.volumeConfirmed) {
-                    alertLine += ` | Vol: ✓`;
-                    if (alert.volumeRatio) {
-                        alertLine += ` ${alert.volumeRatio.toFixed(1)}x`;
-                    }
-                } else if (alert.volumeRatio) {
-                    alertLine += ` | Vol: ${alert.volumeRatio.toFixed(1)}x`;
-                }
+    // Add confluence
+    if (alert.confluence && alert.confluence.hasConfluence) {
+        alertLine += ` | Confluence: ${alert.confluence.direction.toUpperCase()} ✓✓`;
+    }
 
-                // Add market structure
-                if (alert.marketStructure && alert.marketStructure.trend !== 'ranging') {
-                    const { trend, strength, aligned } = alert.marketStructure;
-                    const symbol = aligned ? '✓' : '✗';
-                    alertLine += ` | ${trend.toUpperCase()} ${symbol} (${strength}/10)`;
-                }
-
-                // Add confluence
-                if (alert.confluence && alert.confluence.hasConfluence) {
-                    alertLine += ` | Confluence: ${alert.confluence.direction.toUpperCase()} ✓✓`;
-                }
-
-                report += `${alertLine} \n`;
-            }
-            report += `\n`;
+    report += `${alertLine} \n`;
+}
+report += `\n`;
         }
     }
 
-    // No Signals
-    if (results.noSignals.length > 0) {
-        report += `✅ NO SIGNALS(${results.noSignals.length}): \n`;
-        report += results.noSignals.join(', ');
-    }
+// No Signals
+if (results.noSignals.length > 0) {
+    report += `✅ NO SIGNALS(${results.noSignals.length}): \n`;
+    report += results.noSignals.join(', ');
+}
 
-    // Truncate if too long (Telegram limit is 4096 chars)
-    if (report.length > 4000) {
-        report = report.substring(0, 3950) + '\n\n... (Report truncated)';
-    }
+// Truncate if too long (Telegram limit is 4096 chars)
+if (report.length > 4000) {
+    report = report.substring(0, 3950) + '\n\n... (Report truncated)';
+}
 
-    return report;
+return report;
 }
 
 /**
