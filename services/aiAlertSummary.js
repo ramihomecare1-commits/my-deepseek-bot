@@ -65,41 +65,68 @@ async function generateCriticalAlertSummary(criticalAlerts) {
 
         console.log('📝 Alert data formatted for AI prompt');
 
-        const prompt = `You are a crypto trading analyst. Analyze these critical pattern alerts and provide a concise market summary.
+        const prompt = `You are an expert crypto trading analyst with deep market insight. Analyze these critical pattern alerts and provide actionable intelligence.
 
 CRITICAL ALERTS:
 ${alertsText}
 
 IMPORTANT: Each coin shows its CURRENT PRICE in parentheses. Always reference current prices in your analysis, NOT the invalidation/stop levels.
 
-Provide:
-1. Market Context (2-3 sentences about overall market state - mention current prices)
-2. Top 3 Actionable Insights (specific trading recommendations with current price context)
-3. Risk Assessment (key invalidation levels and warnings)
+Provide a comprehensive analysis with:
 
-Keep response under 400 words. Be specific and actionable. Always mention current prices when discussing coins.`;
+1. **Market Context** (2-3 sentences)
+   - Overall market state and sentiment
+   - Key trends across major assets
+   - Mention current prices
+
+2. **Top 3 Actionable Insights**
+   - Specific entry/exit recommendations with current prices
+   - Risk/reward ratios
+   - Timeframe for each trade
+
+3. **Weekly Forecast** (NEW - Most Important)
+   - Based on current patterns, volume trends, and market structure:
+     * Expected price movements for next 7 days
+     * Key levels to watch (support/resistance)
+     * Potential breakout/breakdown scenarios
+     * Volume expectations and what they signal
+   - For each major coin, provide:
+     * Bullish scenario: "If BTC holds $X, target $Y by [date]"
+     * Bearish scenario: "If BTC breaks $X, expect $Y by [date]"
+     * Probability assessment (High/Medium/Low confidence)
+
+4. **Risk Assessment**
+   - Key invalidation levels
+   - Warning signs to watch
+   - Position sizing recommendations
+
+Keep response under 500 words. Be specific with prices and dates. Focus on the most important patterns and forecasts.`;
 
         const response = await axios.post(
             OPENROUTER_API_URL,
             {
-                model: 'deepseek/deepseek-chat',
+                model: 'deepseek/deepseek-r1',  // Upgraded to R1 reasoning model
                 messages: [
                     {
                         role: 'user',
                         content: prompt
+                messages: [
+                            {
+                                role: 'user',
+                                content: prompt
+                            }
+                        ],
+                        max_tokens: 500,
+                        temperature: 0.3
+                    },
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+                            'Content-Type': 'application/json',
+                            'HTTP-Referer': 'https://github.com/ramihomecare1-commits/my-deepseek-bot',
+                            'X-Title': 'Pattern Scanner AI Summary'
+                        }
                     }
-                ],
-                max_tokens: 500,
-                temperature: 0.3
-            },
-            {
-                headers: {
-                    'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-                    'Content-Type': 'application/json',
-                    'HTTP-Referer': 'https://github.com/ramihomecare1-commits/my-deepseek-bot',
-                    'X-Title': 'Pattern Scanner AI Summary'
-                }
-            }
         );
 
         const aiSummary = response.data.choices[0].message.content.trim();
