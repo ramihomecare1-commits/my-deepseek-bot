@@ -285,21 +285,29 @@ function generateTelegramReport(results) {
                 for (const alert of coin.alerts.filter(a => a.severity === 'critical')) {
                     let alertLine = `  [${alert.timeframe}] ${alert.message}`;
 
+                    // Add confidence if available
                     if (alert.confidence) {
                         alertLine += ` (Conf: ${alert.confidence.toFixed(1)})`;
                     }
 
+                    // Add volume info
                     if (alert.volumeConfirmed) {
                         alertLine += ` | Vol: ✓`;
-                        if (alert.volumeRatio) alertLine += ` ${alert.volumeRatio.toFixed(1)}x`;
+                        if (alert.volumeRatio) {
+                            alertLine += ` ${alert.volumeRatio.toFixed(1)}x`;
+                        }
+                    } else if (alert.volumeRatio) {
+                        alertLine += ` | Vol: ${alert.volumeRatio.toFixed(1)}x`;
                     }
 
+                    // Add market structure
                     if (alert.marketStructure && alert.marketStructure.trend !== 'ranging') {
                         const { trend, strength, aligned } = alert.marketStructure;
                         const symbol = aligned ? '✓' : '✗';
                         alertLine += ` | ${trend.toUpperCase()} ${symbol} (${strength}/10)`;
                     }
 
+                    // Add confluence
                     if (alert.confluence && alert.confluence.hasConfluence) {
                         alertLine += ` | Confluence: ${alert.confluence.direction.toUpperCase()} ✓✓`;
                     }
@@ -311,34 +319,25 @@ function generateTelegramReport(results) {
         }
     }
 
-    // Add confidence if available
-    if (alert.confidence) {
-        alertLine += ` (Conf: ${alert.confidence.toFixed(1)})`;
-    }
-
-    // Add volume info
-    if (alert.volumeConfirmed) {
-        alertLine += ` | Vol: ✓`;
-        if (alert.volumeRatio) {
-            alertLine += ` ${alert.volumeRatio.toFixed(1)}x`;
-        }
+    alertLine += ` ${alert.volumeRatio.toFixed(1)}x`;
+}
     } else if (alert.volumeRatio) {
-        alertLine += ` | Vol: ${alert.volumeRatio.toFixed(1)}x`;
-    }
+    alertLine += ` | Vol: ${alert.volumeRatio.toFixed(1)}x`;
+}
 
-    // Add market structure
-    if (alert.marketStructure && alert.marketStructure.trend !== 'ranging') {
-        const { trend, strength, aligned } = alert.marketStructure;
-        const symbol = aligned ? '✓' : '✗';
-        alertLine += ` | ${trend.toUpperCase()} ${symbol} (${strength}/10)`;
-    }
+// Add market structure
+if (alert.marketStructure && alert.marketStructure.trend !== 'ranging') {
+    const { trend, strength, aligned } = alert.marketStructure;
+    const symbol = aligned ? '✓' : '✗';
+    alertLine += ` | ${trend.toUpperCase()} ${symbol} (${strength}/10)`;
+}
 
-    // Add confluence
-    if (alert.confluence && alert.confluence.hasConfluence) {
-        alertLine += ` | Confluence: ${alert.confluence.direction.toUpperCase()} ✓✓`;
-    }
+// Add confluence
+if (alert.confluence && alert.confluence.hasConfluence) {
+    alertLine += ` | Confluence: ${alert.confluence.direction.toUpperCase()} ✓✓`;
+}
 
-    report += `${alertLine} \n`;
+report += `${alertLine} \n`;
 }
 report += `\n`;
         }
