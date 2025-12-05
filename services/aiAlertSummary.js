@@ -122,6 +122,7 @@ Keep response under 500 words. Be specific with prices and dates (use ${currentD
             OPENROUTER_API_URL,
             {
                 model: 'anthropic/claude-3.5-sonnet',  // Switched to Claude 3.5 Sonnet for better quality
+                route: 'fallback',  // Prevent trying free models first
                 messages: [
                     {
                         role: 'user',
