@@ -1,8 +1,36 @@
 /**
- * Wyckoff Pattern Detection
+ * Wyckoff Pattern Detection - Enhanced Version
  * Detects accumulation and distribution phases based on Wyckoff methodology
- * Uses volume and price action to identify major market turning points
+ * Uses precise volume thresholds and price action to identify major market turning points
+ * 
+ * Enhancements:
+ * - 2.5x volume threshold for climax detection (was 2x)
+ * - Candle color confirmation (red for selling, green for buying)
+ * - 0.7x volume threshold for secondary tests (more precise)
  */
+
+/**
+ * Check if volume qualifies as climax (high volume spike)
+ * @param {number} volume - Current volume
+ * @param {Array} previousVolumes - Array of previous volumes
+ * @param {number} multiplier - Volume multiplier threshold (default 2.5)
+ * @returns {boolean}
+ */
+function isClimaxVolume(volume, previousVolumes, multiplier = 2.5) {
+    const avgVolume = previousVolumes.reduce((a, b) => a + b, 0) / previousVolumes.length;
+    return volume > avgVolume * multiplier;
+}
+
+/**
+ * Check if volume qualifies as test (lower volume)
+ * @param {number} volume - Current volume
+ * @param {number} climaxVolume - Volume of the climax candle
+ * @param {number} multiplier - Volume multiplier threshold (default 0.7)
+ * @returns {boolean}
+ */
+function isTestVolume(volume, climaxVolume, multiplier = 0.7) {
+    return volume < climaxVolume * multiplier;
+}
 
 /**
  * Detect Wyckoff accumulation pattern
@@ -21,12 +49,17 @@ function detectAccumulation(candles) {
     let maxVolume = 0;
 
     for (let i = 20; i < candles.length - 20; i++) {
-        if (candles[i].volume > maxVolume && candles[i].volume > avgVolume * 2) {
+        const previousVolumes = candles.slice(i - 20, i).map(c => c.volume);
+
+        // Enhanced: 2.5x volume threshold + red candle confirmation
+        if (isClimaxVolume(candles[i].volume, previousVolumes, 2.5) &&
+            candles[i].close < candles[i].open) { // Red candle (selling)
+
             // Check if in downtrend (price declining before this point)
             const prevTrend = candles.slice(i - 10, i);
             const isDowntrend = prevTrend[0].close > prevTrend[prevTrend.length - 1].close;
 
-            if (isDowntrend) {
+            if (isDowntrend && candles[i].volume > maxVolume) {
                 maxVolume = candles[i].volume;
                 scIndex = i;
             }
@@ -56,7 +89,7 @@ function detectAccumulation(candles) {
 
     for (let i = arIndex + 1; i < Math.min(arIndex + 20, candles.length); i++) {
         const nearSCLow = Math.abs(candles[i].low - scLow) / scLow < 0.03; // Within 3%
-        const lowerVolume = candles[i].volume < sc.volume * 0.7;
+        const lowerVolume = isTestVolume(candles[i].volume, sc.volume, 0.7); // Enhanced: precise test volume
 
         if (nearSCLow && lowerVolume) {
             stIndex = i;
@@ -132,12 +165,17 @@ function detectDistribution(candles) {
     let maxVolume = 0;
 
     for (let i = 20; i < candles.length - 20; i++) {
-        if (candles[i].volume > maxVolume && candles[i].volume > avgVolume * 2) {
+        const previousVolumes = candles.slice(i - 20, i).map(c => c.volume);
+
+        // Enhanced: 2.5x volume threshold + green candle confirmation
+        if (isClimaxVolume(candles[i].volume, previousVolumes, 2.5) &&
+            candles[i].close > candles[i].open) { // Green candle (buying)
+
             // Check if in uptrend (price rising before this point)
             const prevTrend = candles.slice(i - 10, i);
             const isUptrend = prevTrend[0].close < prevTrend[prevTrend.length - 1].close;
 
-            if (isUptrend) {
+            if (isUptrend && candles[i].volume > maxVolume) {
                 maxVolume = candles[i].volume;
                 bcIndex = i;
             }
@@ -167,7 +205,7 @@ function detectDistribution(candles) {
 
     for (let i = arIndex + 1; i < Math.min(arIndex + 20, candles.length); i++) {
         const nearBCHigh = Math.abs(candles[i].high - bcHigh) / bcHigh < 0.03; // Within 3%
-        const lowerVolume = candles[i].volume < bc.volume * 0.7;
+        const lowerVolume = isTestVolume(candles[i].volume, bc.volume, 0.7); // Enhanced: precise test volume
 
         if (nearBCHigh && lowerVolume) {
             stIndex = i;

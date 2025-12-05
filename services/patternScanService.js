@@ -12,6 +12,8 @@ const { detectRSIDivergence } = require('../utils/rsiDivergence');
 const { analyzeMarketStructure, isPatternAlignedWithStructure } = require('../utils/marketStructure');
 const { detectWyckoffPatterns } = require('../utils/wyckoffPatterns');
 const { detectHarmonicPatterns } = require('../utils/harmonicPatterns');
+const { findSupportResistanceLevels, calculateConfluence } = require('../utils/supportResistance');
+const { filterValidPatterns, applyPatternDecay } = require('../utils/patternExpiration');
 const { generateCriticalAlertSummary } = require('./aiAlertSummary');
 const { sendTelegramMessage } = require('./notificationService');
 
@@ -104,10 +106,13 @@ async function scanCoinForPatterns(symbol) {
             findings.currentPrice = currentPrice;
         }
 
-        // Analyze market structure FIRST (provides context for patterns)
+        // Analyze market structure FIRST        // 1. Analyze market structure
         const marketStructure = analyzeMarketStructure(candles);
 
-        // 1. Check Support/Resistance Proximity
+        // 2. Find Support/Resistance levels for confluence
+        const srLevels = findSupportResistanceLevels(candles);
+
+        // 3. Check Chart Patternsistance Proximity
         const srLevels = findSupportResistance(candles);
         const allLevels = [
             ...(srLevels.swingLevels?.resistance || []),
@@ -174,16 +179,37 @@ async function scanCoinForPatterns(symbol) {
             patterns.push(...harmonicPatterns);
         }
 
-        for (const pattern of patterns) {
-            // Check pattern alignment with market structure
-            const structureAlignment = isPatternAlignedWithStructure(pattern, marketStructure);
+        // Filter out expired patterns
+        let validPatterns = filterValidPatterns(patterns);
 
-            // Adjust confidence based on structure
-            let adjustedConfidence = pattern.confidence + structureAlignment.confidenceAdjustment;
+        for (const pattern of validPatterns) {
+            // Apply pattern decay (confidence reduction over time)
+            const decayedPattern = applyPatternDecay(pattern);
+
+            // Check pattern alignment with market structure
+            const structureAlignment = isPatternAlignedWithStructure(decayedPattern, marketStructure);
+
+            // Calculate confluence with S/R levels and other patterns
+            const confluence = calculateConfluence(decayedPattern, srLevels, validPatterns);
+
+            // Adjust confidence
+            let adjustedConfidence = decayedPattern.confidence + structureAlignment.confidenceAdjustment;
+
+            // Structure alignment bonus
+            if (structureAlignment.aligned) {
+                adjustedConfidence += structureAlignment.bonus;
+            }
+
+            // Confluence bonus (S/R levels + multiple patterns)
+            if (confluence.hasConfluence) {
+                adjustedConfidence += confluence.score;
+            }
+
+            // Cap confidence at 10.0
             adjustedConfidence = Math.max(0, Math.min(10, adjustedConfidence)); // Clamp to 0-10
 
             // Use specific pattern name (e.g., "hammer", "bullish_engulfing") instead of generic "CANDLESTICK_PATTERN"
-            const patternName = pattern.pattern || pattern.type;
+            const patternName = decayedPattern.pattern || decayedPattern.type;
             const formattedName = patternName.replace(/_/g, ' ').toUpperCase();
 
             // Format message based on pattern type
