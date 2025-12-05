@@ -110,11 +110,17 @@ Keep response under 500 words. Be specific with prices and dates. Focus on the m
                     {
                         role: 'user',
                         content: prompt
-                            'Content-Type': 'application/json',
-                        'HTTP-Referer': 'https://github.com/ramihomecare1-commits/my-deepseek-bot',
-                        'X-Title': 'Pattern Scanner AI Summary'
                     }
-                    }
+                ]
+            },
+            {
+                headers: {
+                    'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': 'https://github.com/ramihomecare1-commits/my-deepseek-bot',
+                    'X-Title': 'Pattern Scanner AI Summary'
+                }
+            }
         );
 
         const aiSummary = response.data.choices[0].message.content.trim();
