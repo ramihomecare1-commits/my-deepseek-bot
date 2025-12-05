@@ -10,6 +10,7 @@ const {
 } = require('../utils/chartPatterns');
 const { detectRSIDivergence } = require('../utils/rsiDivergence');
 const { analyzeMarketStructure, isPatternAlignedWithStructure } = require('../utils/marketStructure');
+const { detectWyckoffPatterns } = require('../utils/wyckoffPatterns');
 const { generateCriticalAlertSummary } = require('./aiAlertSummary');
 const { sendTelegramMessage } = require('./notificationService');
 
@@ -158,6 +159,12 @@ async function scanCoinForPatterns(symbol) {
         const rsiDivergences = detectRSIDivergence(candles, timeframe);
         if (rsiDivergences && rsiDivergences.length > 0) {
             patterns.push(...rsiDivergences);
+        }
+
+        // 4. Check Wyckoff Patterns (Accumulation/Distribution)
+        const wyckoffPatterns = detectWyckoffPatterns(candles);
+        if (wyckoffPatterns && wyckoffPatterns.length > 0) {
+            patterns.push(...wyckoffPatterns);
         }
 
         for (const pattern of patterns) {
