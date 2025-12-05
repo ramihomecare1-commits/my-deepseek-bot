@@ -65,42 +65,57 @@ async function generateCriticalAlertSummary(criticalAlerts) {
 
         console.log('📝 Alert data formatted for AI prompt');
 
+        // Get current date for accurate forecasts
+        const today = new Date();
+        const currentDate = today.toISOString().split('T')[0]; // YYYY-MM-DD
+        const weekFromNow = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
         const prompt = `You are an expert crypto trading analyst with deep market insight. Analyze these critical pattern alerts and provide actionable intelligence.
+
+TODAY'S DATE: ${currentDate}
+FORECAST PERIOD: Next 7 days (until ${weekFromNow})
 
 CRITICAL ALERTS:
 ${alertsText}
 
-IMPORTANT: Each coin shows its CURRENT PRICE in parentheses. Always reference current prices in your analysis, NOT the invalidation/stop levels.
+IMPORTANT CONTEXT:
+- Each coin shows its CURRENT PRICE in parentheses - always reference these, NOT the stop levels
+- "Stop:" levels are INVALIDATION points where the pattern fails - these are NOT price targets
+- Use realistic price targets based on pattern structure, not invalidation levels
+- All forecasts must use dates relative to today (e.g., "by Dec 12" not generic dates)
 
 Provide a comprehensive analysis with:
 
 1. **Market Context** (2-3 sentences)
    - Overall market state and sentiment
    - Key trends across major assets
-   - Mention current prices
+   - Reference current prices (not stops)
 
 2. **Top 3 Actionable Insights**
-   - Specific entry/exit recommendations with current prices
+   - Specific entry/exit recommendations with CURRENT prices
    - Risk/reward ratios
-   - Timeframe for each trade
+   - Realistic timeframes (hours/days from today)
+   - Use pattern structure for targets, not invalidation levels
 
-3. **Weekly Forecast** (NEW - Most Important)
-   - Based on current patterns, volume trends, and market structure:
-     * Expected price movements for next 7 days
-     * Key levels to watch (support/resistance)
-     * Potential breakout/breakdown scenarios
-     * Volume expectations and what they signal
-   - For each major coin, provide:
-     * Bullish scenario: "If BTC holds $X, target $Y by [date]"
-     * Bearish scenario: "If BTC breaks $X, expect $Y by [date]"
-     * Probability assessment (High/Medium/Low confidence)
+3. **Weekly Forecast** (Most Important)
+   - Based on current patterns, volume trends, and market structure
+   - Expected price movements for next 7 days (until ${weekFromNow})
+   - Key levels to watch (support/resistance from patterns)
+   - Potential breakout/breakdown scenarios with DATES
+   - Volume expectations and signals
+   
+   For each major coin, provide:
+   - Bullish scenario: "If [COIN] holds $X, target $Y by [specific date]"
+   - Bearish scenario: "If [COIN] breaks $X, expect $Y by [specific date]"
+   - Probability assessment (High/Medium/Low confidence)
+   - Use realistic targets based on pattern measurements
 
 4. **Risk Assessment**
-   - Key invalidation levels
+   - Key invalidation levels (the "Stop:" prices from patterns)
    - Warning signs to watch
    - Position sizing recommendations
 
-Keep response under 500 words. Be specific with prices and dates. Focus on the most important patterns and forecasts.`;
+Keep response under 500 words. Be specific with prices and dates (use ${currentDate} as reference). Focus on the most important patterns and forecasts.`;
 
         const response = await axios.post(
             OPENROUTER_API_URL,

@@ -21,10 +21,10 @@ function calculateRetracement(start, end, current) {
  * Check if value is within tolerance of target
  * @param {number} value - Actual value
  * @param {number} target - Target value
- * @param {number} tolerance - Tolerance (default 0.05 = 5%)
+ * @param {number} tolerance - Tolerance (default 0.08 = 8%)
  * @returns {boolean} True if within tolerance
  */
-function isWithinTolerance(value, target, tolerance = 0.05) {
+function isWithinTolerance(value, target, tolerance = 0.08) {
     return Math.abs(value - target) / target <= tolerance;
 }
 
