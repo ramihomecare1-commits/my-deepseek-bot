@@ -30,6 +30,16 @@ function getIntervalMs(interval) {
  * Run pattern scan
  */
 async function runPatternScan() {
+    const startTime = Date.now();
+    let scanResult = {
+        status: 'failure',
+        duration: 0,
+        coinsScanned: 0,
+        critical: 0,
+        watch: 0,
+        errors: []
+    };
+
     try {
         console.log('');
         console.log('📊 [AUTO] Running scheduled pattern scan...');
@@ -42,12 +52,38 @@ async function runPatternScan() {
 
         updateLastRun();
 
+        // Calculate duration
+        const duration = Math.round((Date.now() - startTime) / 1000);
+
+        // Update scan result
+        scanResult = {
+            status: 'success',
+            duration,
+            coinsScanned: results.totalCoins || 20,
+            critical: results.critical.length,
+            watch: results.watchList.length,
+            errors: []
+        };
+
         console.log('✅ Scheduled pattern scan complete');
         console.log(`   🔴 Critical: ${results.critical.length}`);
         console.log(`   ⚠️  Watch: ${results.watchList.length}`);
-        console.log(`   ✅ No signals: ${results.noSignals.length}`);
+        console.log(`   ⏱️  Duration: ${duration}s`);
     } catch (error) {
         console.error('❌ Error in scheduled pattern scan:', error.message);
+
+        // Calculate duration even on error
+        const duration = Math.round((Date.now() - startTime) / 1000);
+
+        // Update scan result with error
+        scanResult = {
+            status: 'failure',
+            duration,
+            coinsScanned: 0,
+            critical: 0,
+            watch: 0,
+            errors: [error.message]
+        };
 
         // Send error notification
         try {
@@ -59,6 +95,10 @@ async function runPatternScan() {
         } catch (notifyError) {
             console.error('Failed to send error notification:', notifyError.message);
         }
+    } finally {
+        // Always save scan result to history
+        const { addScanResult } = require('../models/scanHistory');
+        addScanResult(scanResult);
     }
 }
 
