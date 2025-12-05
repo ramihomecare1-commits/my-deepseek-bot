@@ -106,17 +106,17 @@ async function scanCoinForPatterns(symbol) {
             findings.currentPrice = currentPrice;
         }
 
-        // Analyze market structure FIRST        // 1. Analyze market structure
+        // 1. Analyze market structure
         const marketStructure = analyzeMarketStructure(candles);
 
         // 2. Find Support/Resistance levels for confluence
         const srLevels = findSupportResistanceLevels(candles);
 
-        // 3. Check Chart Patternsistance Proximity
-        const srLevels = findSupportResistance(candles);
+        // 3. Check Support/Resistance Proximity (for existing pattern detector)
+        const oldSRLevels = findSupportResistance(candles);
         const allLevels = [
-            ...(srLevels.swingLevels?.resistance || []),
-            ...(srLevels.swingLevels?.support || [])
+            ...(oldSRLevels.swingLevels?.resistance || []),
+            ...(oldSRLevels.swingLevels?.support || [])
         ];
 
         for (const level of allLevels) {
