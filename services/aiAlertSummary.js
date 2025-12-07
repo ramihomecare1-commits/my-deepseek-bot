@@ -177,15 +177,18 @@ Keep response under 600 words (was 500). Be specific with prices and dates (use 
 
         console.log(`✅ AI summary generated successfully using: ${modelUsed}`);
 
+        // Format the summary
+        const formattedSummary = formatAISummary(aiSummary);
+
         // Store the last report with model info
         lastReport = {
-            summary: aiSummary,
+            summary: formattedSummary,
             model: modelUsed,
             timestamp: new Date().toISOString()
         };
 
         return {
-            summary: formatAISummary(aiSummary),
+            summary: formattedSummary,
             model: modelUsed
         };
     } catch (error) {
