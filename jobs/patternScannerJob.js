@@ -50,6 +50,13 @@ async function runPatternScan() {
 
         await sendTelegramMessage(report);
 
+        // Send AI summary if available
+        if (results.aiSummary) {
+            const modelName = results.aiSummary.model || 'Unknown';
+            const modelEmoji = modelName.includes('claude') ? '🤖' : '🆓';
+            const aiMessage = `${modelEmoji} AI ANALYSIS (${modelName}):\n\n${results.aiSummary.summary || results.aiSummary}`;
+            await sendTelegramMessage(aiMessage);
+        }
         updateLastRun();
 
         // Calculate duration

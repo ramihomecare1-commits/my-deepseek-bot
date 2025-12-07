@@ -171,9 +171,23 @@ Keep response under 600 words (was 500). Be specific with prices and dates (use 
         );
 
         const aiSummary = response.data.choices[0].message.content.trim();
-        console.log('✅ AI summary generated successfully');
-        return formatAISummary(aiSummary);
 
+        // Extract the actual model used from OpenRouter response
+        const modelUsed = response.data.model || 'anthropic/claude-3.5-sonnet';
+
+        console.log(`✅ AI summary generated successfully using: ${modelUsed}`);
+
+        // Store the last report with model info
+        lastReport = {
+            summary: aiSummary,
+            model: modelUsed,
+            timestamp: new Date().toISOString()
+        };
+
+        return {
+            summary: formatAISummary(aiSummary),
+            model: modelUsed
+        };
     } catch (error) {
         console.error('❌ Error generating AI summary:');
         console.error('  Message:', error.message);
