@@ -177,20 +177,15 @@ Keep response under 600 words (was 500). Be specific with prices and dates (use 
 
         console.log(`✅ AI summary generated successfully using: ${modelUsed}`);
 
-        // Format the summary
+        // Format the summary and add model info at the top
         const formattedSummary = formatAISummary(aiSummary);
+        const modelEmoji = modelUsed.includes('claude') ? '🤖' : '🆓';
+        const summaryWithModel = `${modelEmoji} AI MODEL: ${modelUsed}\n\n${formattedSummary}`;
 
-        // Store the last report with model info
-        lastReport = {
-            summary: formattedSummary,
-            model: modelUsed,
-            timestamp: new Date().toISOString()
-        };
+        // Store the last report
+        lastReport = summaryWithModel;
 
-        return {
-            summary: formattedSummary,
-            model: modelUsed
-        };
+        return summaryWithModel;
     } catch (error) {
         console.error('❌ Error generating AI summary:');
         console.error('  Message:', error.message);

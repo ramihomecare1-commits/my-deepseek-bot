@@ -87,7 +87,7 @@ function addScanResult(scanData) {
             watch: scanData.watch || 0,
             total: (scanData.critical || 0) + (scanData.watch || 0)
         },
-        aiSummary: scanData.aiSummary?.summary || scanData.aiSummary || null, // Store text for context
+        aiSummary: scanData.aiSummary || null, // Store AI summary string
         errors: scanData.errors || []
     };
 
