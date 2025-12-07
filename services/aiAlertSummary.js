@@ -22,6 +22,19 @@ async function generateCriticalAlertSummary(criticalAlerts) {
     console.log(`🤖 Generating AI summary for ${criticalAlerts.length} critical alert(s)...`);
 
     try {
+        // Get previous report for context
+        const { getLastScans } = require('../models/scanHistory');
+        const previousScans = getLastScans(2); // Get last 2 scans
+        let previousContext = '';
+
+        if (previousScans && previousScans.length > 1) {
+            const lastScan = previousScans[0];
+            if (lastScan.aiSummary) {
+                const timeSinceLastScan = Math.round((Date.now() - new Date(lastScan.timestamp).getTime()) / (1000 * 60 * 60)); // hours
+                previousContext = `\n\nPREVIOUS REPORT CONTEXT (${timeSinceLastScan}h ago):\n${lastScan.aiSummary.substring(0, 500)}...\n\nIMPORTANT: Reference your previous analysis. Note what has changed, what remains the same, and update your recommendations accordingly. Don't repeat the same advice if nothing has changed - instead say "Maintaining previous recommendation" or "Update: [what changed]".\n`;
+            }
+        }
+
         // Format alerts for AI prompt
         const alertsText = criticalAlerts.map(alert => {
             const alertList = alert.alerts
@@ -74,7 +87,7 @@ async function generateCriticalAlertSummary(criticalAlerts) {
 
 TODAY'S DATE: ${currentDate}
 FORECAST PERIOD: Next 7 days (until ${weekFromNow})
-
+${previousContext}
 CRITICAL ALERTS:
 ${alertsText}
 

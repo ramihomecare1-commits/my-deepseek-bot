@@ -127,6 +127,16 @@ function getRecentScans(limit = 10) {
 }
 
 /**
+ * Get last N scans
+ * @param {number} count - Number of scans to retrieve
+ * @returns {Array} Last N scans
+ */
+function getLastScans(count = 5) {
+    const history = loadHistory();
+    return history.scans.slice(0, count);
+}
+
+/**
  * Get scan statistics
  * @returns {Object} Statistics
  */
@@ -170,9 +180,9 @@ function clearHistory() {
 }
 
 module.exports = {
-    loadHistory,
     addScanResult,
-    getRecentScans,
+    getHistory: loadHistory, // Assuming getHistory is meant to be loadHistory
+    getLastScans,
     getStats,
     clearHistory
 };

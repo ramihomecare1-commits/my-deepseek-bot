@@ -66,10 +66,13 @@ async function scanAllCoinsForPatterns() {
     results.critical = calculateTimeframeConfluence(results.critical);
     results.watchList = calculateTimeframeConfluence(results.watchList);
 
-    // Generate AI summary for critical alerts
+    // Generate AI summary for critical alerts (A/B test mode)
     if (results.critical.length > 0) {
-        console.log(`🤖 Generating AI summary for ${results.critical.length} critical alert(s)...`);
-        results.aiSummary = await generateCriticalAlertSummary(results.critical);
+        console.log(`🤖 Generating AI summaries for ${results.critical.length} critical alert(s)...`);
+        const aiSummary = await generateCriticalAlertSummary(results.critical);
+        results.aiSummary = aiSummary; // Store for scan history
+
+        console.log(`✅ AI summary generated: ${aiSummary ? 'YES' : 'NO'}`);
     }
 
     return results;
