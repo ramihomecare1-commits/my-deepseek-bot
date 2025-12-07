@@ -153,10 +153,6 @@ Keep response under 600 words (was 500). Be specific with prices and dates (use 
             {
                 model: 'anthropic/claude-3.5-sonnet',  // Switched to Claude 3.5 Sonnet for better quality
                 max_tokens: 800,  // Increased from default to prevent truncation
-                provider: {
-                    order: ['Anthropic'],  // Force Anthropic provider only
-                    allow_fallbacks: false  // Disable fallbacks to free models
-                },
                 messages: [
                     {
                         role: 'user',
