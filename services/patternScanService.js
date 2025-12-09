@@ -279,56 +279,49 @@ function generateTelegramReport(results) {
         if (results.aiSummary) {
             report += `🤖 AI MARKET ANALYSIS: \n\n`;
             report += `${results.aiSummary} \n\n`;
-        } else {
-            // Fallback to basic format if AI fails (with metadata)
-            report += `🔴 CRITICAL ALERTS(${results.critical.length}): \n`;
-            for (const coin of results.critical) {
-                const priceStr = coin.currentPrice ? ` @$${coin.currentPrice.toFixed(2)} ` : '';
-                report += `\n💎 ${coin.symbol}${priceStr}: \n`;
-                for (const alert of coin.alerts.filter(a => a.severity === 'critical')) {
-                    let alertLine = `  [${alert.timeframe}] ${alert.message}`;
+            let alertLine = `  [${alert.timeframe}] ${alert.message}`;
 
-                    // Add confidence if available
-                    if (alert.confidence) {
-                        alertLine += ` (Conf: ${alert.confidence.toFixed(1)})`;
-                    }
-
-                    // Add volume info
-                    if (alert.volumeConfirmed) {
-                        alertLine += ` | Vol: ✓`;
-                        if (alert.volumeRatio) {
-                            alertLine += ` ${alert.volumeRatio.toFixed(1)}x`;
-                        }
-                    } else if (alert.volumeRatio) {
-                        alertLine += ` | Vol: ${alert.volumeRatio.toFixed(1)}x`;
-                    }
-
-                    // Add market structure
-                    if (alert.marketStructure && alert.marketStructure.trend !== 'ranging') {
-                        const { trend, strength, aligned } = alert.marketStructure;
-                        const symbol = aligned ? '✓' : '✗';
-                        alertLine += ` | ${trend.toUpperCase()} ${symbol} (${strength}/10)`;
-                    }
-
-                    // Add confluence
-                    if (alert.confluence && alert.confluence.hasConfluence) {
-                        alertLine += ` | Confluence: ${alert.confluence.direction.toUpperCase()} ✓✓`;
-                    }
-
-                    report += `${alertLine} \n`;
-                }
+            // Add confidence if available
+            if (alert.confidence) {
+                alertLine += ` (Conf: ${alert.confidence.toFixed(1)})`;
             }
-            report += `\n`;
+
+            // Add volume info
+            if (alert.volumeConfirmed) {
+                alertLine += ` | Vol: ✓`;
+                if (alert.volumeRatio) {
+                    alertLine += ` ${alert.volumeRatio.toFixed(1)}x`;
+                }
+            } else if (alert.volumeRatio) {
+                alertLine += ` | Vol: ${alert.volumeRatio.toFixed(1)}x`;
+            }
+
+            // Add market structure
+            if (alert.marketStructure && alert.marketStructure.trend !== 'ranging') {
+                const { trend, strength, aligned } = alert.marketStructure;
+                const symbol = aligned ? '✓' : '✗';
+                alertLine += ` | ${trend.toUpperCase()} ${symbol} (${strength}/10)`;
+            }
+
+            // Add confluence
+            if (alert.confluence && alert.confluence.hasConfluence) {
+                alertLine += ` | Confluence: ${alert.confluence.direction.toUpperCase()} ✓✓`;
+            }
+
+            report += `${alertLine} \n`;
         }
     }
-
-    // No Signals section (watch list removed for cleaner reports)
-    if (results.noSignals.length > 0) {
-        report += `✅ NO SIGNALS(${results.noSignals.length}): \n`;
-        report += results.noSignals.join(', ');
+    report += `\n`;
+}
     }
 
-    return report;
+// No Signals section (watch list removed for cleaner reports)
+if (results.noSignals.length > 0) {
+    report += `✅ NO SIGNALS(${results.noSignals.length}): \n`;
+    report += results.noSignals.join(', ');
+}
+
+return report;
 }
 
 /**
