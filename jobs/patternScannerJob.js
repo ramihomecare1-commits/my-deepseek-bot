@@ -50,11 +50,6 @@ async function runPatternScan() {
 
         await sendTelegramMessage(report);
 
-        // Send AI summary if available
-        if (results.aiSummary) {
-            const aiMessage = `🤖 AI MARKET ANALYSIS: \n\n${results.aiSummary}`;
-            await sendTelegramMessage(aiMessage);
-        }
         updateLastRun();
 
         // Calculate duration
